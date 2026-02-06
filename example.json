@@ -1,0 +1,209 @@
+{
+  "dict_id": "my_dict",
+  "version": "1.0.0",
+  "entry_id": "fog_001",
+  "headword": "fog",
+  "headword_normalized": "fog",
+  "auxi_search": "fog",
+  "entry_type": "word",
+  "page": "medical",
+  "section": "基本释义",
+  "certifications": ["IELTS", "TOEFL", "CET-4"],
+  "frequency": {
+    "level": "B1",
+    "stars": "3/5",
+    "source": "Oxford 3000"
+  },
+  "topics": ["赛车", "时尚", "经济"],
+  "theasaruses": {
+    "group_name": "nature",
+    "word_list": ["mist"]
+  },
+  "etymology": [
+    {
+      "display": "11",
+      "title": "词源",
+      "text": "可能源自斯堪的纳维亚语，与古诺斯语 'fjuk'（飘雪）有关。"
+    },
+    {
+      "display": "11",
+      "text": "可能源sdfsdfsd自斯堪的纳维亚语，与古诺斯语 'fjuk'（飘雪）有关。"
+    }
+  ],
+  "collocations": [
+    {
+      "display": "11",
+      "collocation": [
+        {
+          "collo_before": "in a",
+          "collo_after": ""
+        },
+        {
+          "collo_before": "aaa",
+          "collo_after": "bbb"
+        }
+      ]
+    },
+    {
+      "display": "22",
+      "collocation": [
+        {
+          "collo_before": "in a",
+          "collo_after": ""
+        },
+        {
+          "collo_before": "aaa",
+          "collo_after": "bbb"
+        }
+      ]
+    }
+  ],
+  "pronunciations": [
+    {
+      "region": "US",
+      "notation": "/fɔːɡ/",
+      "audio_file": "fog_us.mp3"
+    },
+    {
+      "region": "UK",
+      "notation": "/fɒɡ/",
+      "audio_file": "fog_uk.opus"
+    }
+  ],
+  "phrases": {},
+  "sense_groups": [
+    {
+      "group_name": "noun",
+      "senses": []
+    },
+    {
+      "group_name": "verb",
+      "senses": []
+    }
+  ],
+  "senses": [
+    {
+      "index": 1,
+      "label": {
+        "pos": "n",
+        "pattern": ["in a ~", "mental ~"],
+        "grammar": ["U", "S"],
+        "region": "global",
+        "register": "informal",
+        "usage": ["figurative"],
+        "tone": "neutral",
+        "topic": ["psychology"],
+        "unclassified": "test"
+      },
+      "definition": {
+        "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
+        "en": "A state of mental confusion or uncertainty."
+      },
+      "images": {
+        "image_file": "fog.jpg"
+      },
+      "datas": {
+        "key1": {},
+        "key2": {}
+      },
+      "note": "常用于 'in a fog' 结构，描述因疲倦或震惊而无法正常思考。",
+      "references": [
+        {
+          "pre_text": "Please refer to ",
+          "target_word": "daze",
+          "target_sense_index": 1,
+          "display_text": "daze",
+          "post_text": ", which can be compared for a similar mental state.",
+          "interaction": "popup"
+        }
+      ],
+      "example": [
+        {
+          "en": "He was walking around in a mental fog after the accident.",
+          "zh": "事故发生后，他整个人都陷入了意识模糊的状态中。",
+          "source": {
+            "author": "Robert Louis",
+            "title": "Mental States and Trauma",
+            "date": "2025-01",
+            "publisher": "Health Press"
+          },
+          "audios": [
+            {
+              "region": "UK",
+              "url": "https://cdn.dict.com/ex/fog_ex1_uk.mp3"
+            }
+          ]
+        }
+      ],
+      "sub_senses": [
+        {
+          "index": "a",
+          "label": {
+            "pos": "n",
+            "grammar": ["U"],
+            "pattern": ["~ of N"],
+            "region": "us",
+            "topic": ["medicine"]
+          },
+          "definition": {
+            "zh": "（头脑）昏沉",
+            "en": "A state of mental fatigue or grogginess."
+          },
+          "note": "脑雾是疲劳的常见症状。",
+          "example": [
+            {
+              "en": "Brain fog is a common symptom of fatigue.",
+              "zh": "脑雾是疲劳的常见症状。"
+            }
+          ]
+        },
+        {
+          "index": "b",
+          "pos": "n",
+          "grammar": {
+            "tags": ["C", "vi"],
+            "patterns": ["~ of N"]
+          },
+          "label": {
+            "region": "uk",
+            "topic": ["meteorology"],
+            "register": "literary"
+          },
+          "definition": {
+            "zh": "云雾状的遮挡物",
+            "en": "A cloud-like mass of something."
+          },
+          "example": [
+            {
+              "usage": "~ of N",
+              "en": "A fog of cigarette smoke hung in the air.",
+              "zh": "空气中弥漫着香烟的烟雾。"
+            }
+          ]
+        },
+        {
+          "index": "c",
+          "pos": "v",
+          "grammar": {
+            "tags": ["T", "often passive"],
+            "patterns": ["~ N", "be ~ged with"]
+          },
+          "label": {
+            "tone": "neutral"
+          },
+          "definition": {
+            "zh": "使困惑，使迷惘",
+            "en": "To confuse or puzzle someone."
+          },
+          "note": "常用于被动语态 be fogged。",
+          "example": [
+            {
+              "en": "The复杂的 instructions fogged the newcomers.",
+              "zh": "复杂的说明让新来者感到困惑。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

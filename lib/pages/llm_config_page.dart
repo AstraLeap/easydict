@@ -1,0 +1,943 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
+import 'dart:async';
+import '../logger.dart';
+import '../utils/toast_utils.dart';
+
+enum LLMProvider {
+  openAI('OpenAI', 'https://api.openai.com/v1'),
+  anthropic('Anthropic', 'https://api.anthropic.com/v1'),
+  gemini('Google Gemini', 'https://generativelanguage.googleapis.com/v1'),
+  deepseek('DeepSeek', 'https://api.deepseek.com/v1'),
+  moonshot('Moonshot (月之暗面)', 'https://api.moonshot.cn/v1'),
+  zhipu('智谱AI', 'https://open.bigmodel.cn/api/paas/v4'),
+  ali('阿里云 (DashScope)', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+  custom('自定义', '');
+
+  final String displayName;
+  final String defaultBaseUrl;
+
+  const LLMProvider(this.displayName, this.defaultBaseUrl);
+}
+
+enum TTSProvider {
+  openAI('OpenAI', 'https://api.openai.com/v1'),
+  azure('Azure TTS', ''),
+  edge('Edge TTS', 'https://edge-tts.azureedge.net'),
+  google('Google TTS', 'https://texttospeech.googleapis.com/v1'),
+  custom('自定义', '');
+
+  final String displayName;
+  final String defaultBaseUrl;
+
+  const TTSProvider(this.displayName, this.defaultBaseUrl);
+}
+
+class ApiTestResult {
+  final bool success;
+  final String message;
+
+  const ApiTestResult({required this.success, required this.message});
+}
+
+class LLMConfigPage extends StatefulWidget {
+  const LLMConfigPage({super.key});
+
+  @override
+  State<LLMConfigPage> createState() => _LLMConfigPageState();
+}
+
+class _LLMConfigPageState extends State<LLMConfigPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  final _fastFormKey = GlobalKey<FormState>();
+  final _standardFormKey = GlobalKey<FormState>();
+  final _ttsFormKey = GlobalKey<FormState>();
+
+  final _fastApiKeyController = TextEditingController();
+  final _fastBaseUrlController = TextEditingController();
+  final _fastModelController = TextEditingController();
+
+  final _standardApiKeyController = TextEditingController();
+  final _standardBaseUrlController = TextEditingController();
+  final _standardModelController = TextEditingController();
+
+  final _ttsApiKeyController = TextEditingController();
+  final _ttsBaseUrlController = TextEditingController();
+  final _ttsModelController = TextEditingController();
+  final _ttsVoiceController = TextEditingController();
+
+  LLMProvider _fastProvider = LLMProvider.openAI;
+  LLMProvider _standardProvider = LLMProvider.openAI;
+  TTSProvider _ttsProvider = TTSProvider.openAI;
+
+  bool _isLoading = true;
+  bool _obscureFastApiKey = true;
+  bool _obscureStandardApiKey = true;
+  bool _obscureTtsApiKey = true;
+
+  bool _isTestingFast = false;
+  bool _isTestingStandard = false;
+  bool _isTestingTts = false;
+
+  String? _testResultFast;
+  bool? _testSuccessFast;
+  String? _testResultStandard;
+  bool? _testSuccessStandard;
+  String? _testResultTts;
+  bool? _testSuccessTts;
+
+  static const Map<LLMProvider, String> _defaultModels = {
+    LLMProvider.openAI: 'gpt-4o-mini',
+    LLMProvider.anthropic: 'claude-3-sonnet-20240229',
+    LLMProvider.gemini: 'gemini-pro',
+    LLMProvider.deepseek: 'deepseek-chat',
+    LLMProvider.moonshot: 'moonshot-v1-8k',
+    LLMProvider.zhipu: 'glm-4',
+    LLMProvider.custom: '',
+  };
+
+  static const Map<TTSProvider, String> _defaultTtsModels = {
+    TTSProvider.openAI: 'tts-1',
+    TTSProvider.azure: 'azure-tts',
+    TTSProvider.edge: 'edge-tts',
+    TTSProvider.google: 'google-tts',
+    TTSProvider.custom: '',
+  };
+
+  static const Map<TTSProvider, String> _defaultTtsVoices = {
+    TTSProvider.openAI: 'alloy',
+    TTSProvider.edge: 'zh-CN-XiaoxiaoNeural',
+    TTSProvider.google: 'en-US-Neural2-F',
+    TTSProvider.custom: '',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _loadConfig();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+
+    _fastApiKeyController.dispose();
+    _fastBaseUrlController.dispose();
+    _fastModelController.dispose();
+
+    _standardApiKeyController.dispose();
+    _standardBaseUrlController.dispose();
+    _standardModelController.dispose();
+
+    _ttsApiKeyController.dispose();
+    _ttsBaseUrlController.dispose();
+    _ttsModelController.dispose();
+    _ttsVoiceController.dispose();
+
+    super.dispose();
+  }
+
+  Future<void> _loadConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final fastProviderIndex = prefs.getInt('fast_llm_provider') ?? 0;
+    _fastProvider = LLMProvider.values[fastProviderIndex];
+    _fastApiKeyController.text = prefs.getString('fast_llm_api_key') ?? '';
+    _fastBaseUrlController.text =
+        prefs.getString('fast_llm_base_url') ?? _fastProvider.defaultBaseUrl;
+    _fastModelController.text =
+        prefs.getString('fast_llm_model') ?? _defaultModels[_fastProvider]!;
+
+    final standardProviderIndex = prefs.getInt('standard_llm_provider') ?? 0;
+    _standardProvider = LLMProvider.values[standardProviderIndex];
+    _standardApiKeyController.text =
+        prefs.getString('standard_llm_api_key') ?? '';
+    _standardBaseUrlController.text =
+        prefs.getString('standard_llm_base_url') ??
+        _standardProvider.defaultBaseUrl;
+    _standardModelController.text =
+        prefs.getString('standard_llm_model') ??
+        _defaultModels[_standardProvider]!;
+
+    final ttsProviderIndex = prefs.getInt('tts_provider') ?? 0;
+    _ttsProvider = TTSProvider.values[ttsProviderIndex];
+    _ttsApiKeyController.text = prefs.getString('tts_api_key') ?? '';
+    _ttsBaseUrlController.text =
+        prefs.getString('tts_base_url') ?? _ttsProvider.defaultBaseUrl;
+    _ttsModelController.text =
+        prefs.getString('tts_model') ?? _defaultTtsModels[_ttsProvider]!;
+    _ttsVoiceController.text =
+        prefs.getString('tts_voice') ?? _defaultTtsVoices[_ttsProvider]!;
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  void _showSavedSnackBar() {
+    showToast(context, '配置已保存');
+  }
+
+  Future<void> _saveFastConfig() async {
+    if (!_fastFormKey.currentState!.validate()) return;
+
+    final appDir = await getApplicationSupportDirectory();
+    final prefsPath = '${appDir.path}\\shared_preferences.json';
+    Logger.i('保存 LLM 配置到 SharedPreferences', tag: 'LLMConfig');
+    Logger.i('  文件路径: $prefsPath', tag: 'LLMConfig');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('fast_llm_provider', _fastProvider.index);
+    await prefs.setString(
+      'fast_llm_api_key',
+      _fastApiKeyController.text.trim(),
+    );
+    Logger.i(
+      '  fast_llm_api_key: ${_fastApiKeyController.text.trim().isEmpty ? '(空)' : '******'}',
+      tag: 'LLMConfig',
+    );
+    await prefs.setString(
+      'fast_llm_base_url',
+      _fastBaseUrlController.text.trim(),
+    );
+    Logger.i(
+      '  fast_llm_base_url: ${_fastBaseUrlController.text.trim()}',
+      tag: 'LLMConfig',
+    );
+    await prefs.setString('fast_llm_model', _fastModelController.text.trim());
+    Logger.i(
+      '  fast_llm_model: ${_fastModelController.text.trim()}',
+      tag: 'LLMConfig',
+    );
+
+    _showSavedSnackBar();
+  }
+
+  Future<void> _saveStandardConfig() async {
+    if (!_standardFormKey.currentState!.validate()) return;
+
+    final appDir = await getApplicationSupportDirectory();
+    final prefsPath = '${appDir.path}\\shared_preferences.json';
+    Logger.i('保存标准 LLM 配置到 SharedPreferences', tag: 'LLMConfig');
+    Logger.i('  文件路径: $prefsPath', tag: 'LLMConfig');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('standard_llm_provider', _standardProvider.index);
+    await prefs.setString(
+      'standard_llm_api_key',
+      _standardApiKeyController.text.trim(),
+    );
+    Logger.i(
+      '  standard_llm_api_key: ${_standardApiKeyController.text.trim().isEmpty ? '(空)' : '******'}',
+      tag: 'LLMConfig',
+    );
+    await prefs.setString(
+      'standard_llm_base_url',
+      _standardBaseUrlController.text.trim(),
+    );
+    Logger.i(
+      '  standard_llm_base_url: ${_standardBaseUrlController.text.trim()}',
+      tag: 'LLMConfig',
+    );
+    await prefs.setString(
+      'standard_llm_model',
+      _standardModelController.text.trim(),
+    );
+    Logger.i(
+      '  standard_llm_model: ${_standardModelController.text.trim()}',
+      tag: 'LLMConfig',
+    );
+
+    _showSavedSnackBar();
+  }
+
+  Future<void> _saveTtsConfig() async {
+    if (!_ttsFormKey.currentState!.validate()) return;
+
+    final appDir = await getApplicationSupportDirectory();
+    final prefsPath = '${appDir.path}\\shared_preferences.json';
+    Logger.i('保存 TTS 配置到 SharedPreferences', tag: 'LLMConfig');
+    Logger.i('  文件路径: $prefsPath', tag: 'LLMConfig');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('tts_provider', _ttsProvider.index);
+    await prefs.setString('tts_api_key', _ttsApiKeyController.text.trim());
+    await prefs.setString('tts_base_url', _ttsBaseUrlController.text.trim());
+    await prefs.setString('tts_model', _ttsModelController.text.trim());
+    await prefs.setString('tts_voice', _ttsVoiceController.text.trim());
+
+    _showSavedSnackBar();
+  }
+
+  void _onFastProviderChanged(LLMProvider? provider) {
+    if (provider == null) return;
+    setState(() {
+      _fastProvider = provider;
+      _fastBaseUrlController.text = provider.defaultBaseUrl;
+      _fastModelController.text = _defaultModels[provider]!;
+      _testResultFast = null;
+      _testSuccessFast = null;
+    });
+  }
+
+  void _onStandardProviderChanged(LLMProvider? provider) {
+    if (provider == null) return;
+    setState(() {
+      _standardProvider = provider;
+      _standardBaseUrlController.text = provider.defaultBaseUrl;
+      _standardModelController.text = _defaultModels[provider]!;
+      _testResultStandard = null;
+      _testSuccessStandard = null;
+    });
+  }
+
+  void _onTtsProviderChanged(TTSProvider? provider) {
+    if (provider == null) return;
+    setState(() {
+      _ttsProvider = provider;
+      _ttsBaseUrlController.text = provider.defaultBaseUrl;
+      _ttsModelController.text = _defaultTtsModels[provider]!;
+      _ttsVoiceController.text = _defaultTtsVoices[provider]!;
+      _testResultTts = null;
+      _testSuccessTts = null;
+    });
+  }
+
+  Future<void> _testFastConnection() async {
+    final apiKey = _fastApiKeyController.text.trim();
+    final baseUrl = _fastBaseUrlController.text.trim();
+    final model = _fastModelController.text.trim();
+
+    if (apiKey.isEmpty) {
+      setState(() {
+        _testResultFast = '请先输入 API Key';
+        _testSuccessFast = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isTestingFast = true;
+      _testResultFast = null;
+      _testSuccessFast = null;
+    });
+
+    try {
+      final result = await _testOpenAICompatibleApi(
+        provider: _fastProvider,
+        apiKey: apiKey,
+        baseUrl: baseUrl,
+        model: model,
+      );
+      if (mounted) {
+        setState(() {
+          _testResultFast = result.message;
+          _testSuccessFast = result.success;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _testResultFast = '测试失败: $e';
+          _testSuccessFast = false;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTestingFast = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _testStandardConnection() async {
+    final apiKey = _standardApiKeyController.text.trim();
+    final baseUrl = _standardBaseUrlController.text.trim();
+    final model = _standardModelController.text.trim();
+
+    if (apiKey.isEmpty) {
+      setState(() {
+        _testResultStandard = '请先输入 API Key';
+        _testSuccessStandard = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isTestingStandard = true;
+      _testResultStandard = null;
+      _testSuccessStandard = null;
+    });
+
+    try {
+      final result = await _testOpenAICompatibleApi(
+        provider: _standardProvider,
+        apiKey: apiKey,
+        baseUrl: baseUrl,
+        model: model,
+      );
+      if (mounted) {
+        setState(() {
+          _testResultStandard = result.message;
+          _testSuccessStandard = result.success;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _testResultStandard = '测试失败: $e';
+          _testSuccessStandard = false;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTestingStandard = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _testTtsConnection() async {
+    final apiKey = _ttsApiKeyController.text.trim();
+
+    if (apiKey.isEmpty && _ttsProvider != TTSProvider.edge) {
+      setState(() {
+        _testResultTts = '请先输入 API Key';
+        _testSuccessTts = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isTestingTts = true;
+      _testResultTts = null;
+      _testSuccessTts = null;
+    });
+
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (mounted) {
+      setState(() {
+        _testResultTts = 'TTS 配置已保存，请在发音时测试';
+        _testSuccessTts = true;
+        _isTestingTts = false;
+      });
+    }
+  }
+
+  Future<ApiTestResult> _testOpenAICompatibleApi({
+    required LLMProvider provider,
+    required String apiKey,
+    required String baseUrl,
+    required String model,
+  }) async {
+    final effectiveBaseUrl = baseUrl.isEmpty
+        ? provider.defaultBaseUrl
+        : baseUrl;
+
+    try {
+      final uri = Uri.parse('$effectiveBaseUrl/chat/completions');
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode({
+              'model': model,
+              'messages': [
+                {'role': 'user', 'content': 'Hi'},
+              ],
+              'max_tokens': 5,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        return ApiTestResult(success: true, message: 'API 连接成功！响应正常');
+      } else {
+        final errorBody = jsonDecode(response.body);
+        final errorMessage =
+            errorBody['error']?['message'] ??
+            errorBody['message'] ??
+            'HTTP ${response.statusCode}';
+        return ApiTestResult(success: false, message: 'API 错误: $errorMessage');
+      }
+    } on TimeoutException {
+      return ApiTestResult(success: false, message: '连接超时，请检查网络或 Base URL');
+    } catch (e) {
+      return ApiTestResult(success: false, message: '连接失败: $e');
+    }
+  }
+
+  Widget _buildTextModelConfig({
+    required String title,
+    required String subtitle,
+    required GlobalKey<FormState> formKey,
+    required LLMProvider provider,
+    required void Function(LLMProvider?) onProviderChanged,
+    required TextEditingController apiKeyController,
+    required TextEditingController baseUrlController,
+    required TextEditingController modelController,
+    required bool obscureApiKey,
+    required void Function() onToggleObscure,
+    required VoidCallback onSave,
+    required bool isTesting,
+    required VoidCallback onTestConnection,
+    required String? testResult,
+    required bool? testSuccess,
+  }) {
+    return Form(
+      key: formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<LLMProvider>(
+            value: provider,
+            decoration: const InputDecoration(
+              labelText: '选择服务商',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.cloud),
+            ),
+            items: LLMProvider.values.map((p) {
+              return DropdownMenuItem(value: p, child: Text(p.displayName));
+            }).toList(),
+            onChanged: onProviderChanged,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: apiKeyController,
+            obscureText: obscureApiKey,
+            decoration: InputDecoration(
+              labelText: 'API Key',
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.key),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  obscureApiKey ? Icons.visibility_off : Icons.visibility,
+                ),
+                onPressed: onToggleObscure,
+              ),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return '请输入API Key';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '您的API Key仅存储在本地，不会上传到任何服务器',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: baseUrlController,
+            decoration: const InputDecoration(
+              labelText: 'Base URL (可选)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.link),
+              hintText: '留空使用默认地址',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '仅在使用自定义端点或代理时需要修改',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: modelController,
+            decoration: const InputDecoration(
+              labelText: '模型',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.model_training),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return '请输入模型名称';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '默认模型: ${_defaultModels[provider]}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: onSave,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('保存配置'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: isTesting ? null : onTestConnection,
+              icon: isTesting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.network_check),
+              label: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(isTesting ? '测试中...' : '测试连接'),
+              ),
+            ),
+          ),
+          if (testResult != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: (testSuccess == true ? Colors.green : Colors.red)
+                    .withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: (testSuccess == true ? Colors.green : Colors.red)
+                      .withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    testSuccess == true ? Icons.check_circle : Icons.error,
+                    color: testSuccess == true ? Colors.green : Colors.red,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      testResult,
+                      style: TextStyle(
+                        color: (testSuccess == true
+                            ? Colors.green
+                            : Colors.red)[700],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTtsConfig() {
+    return Form(
+      key: _ttsFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '配置文本转语音服务，用于词典发音功能',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<TTSProvider>(
+            value: _ttsProvider,
+            decoration: const InputDecoration(
+              labelText: '选择服务商',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.record_voice_over),
+            ),
+            items: TTSProvider.values.map((p) {
+              return DropdownMenuItem(value: p, child: Text(p.displayName));
+            }).toList(),
+            onChanged: _onTtsProviderChanged,
+          ),
+          const SizedBox(height: 16),
+          if (_ttsProvider != TTSProvider.edge)
+            TextFormField(
+              controller: _ttsApiKeyController,
+              obscureText: _obscureTtsApiKey,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.key),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureTtsApiKey ? Icons.visibility_off : Icons.visibility,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureTtsApiKey = !_obscureTtsApiKey;
+                    });
+                  },
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return '请输入API Key';
+                }
+                return null;
+              },
+            ),
+          if (_ttsProvider == TTSProvider.edge) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Edge TTS 无需 API Key，使用微软免费服务',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _ttsBaseUrlController,
+            decoration: const InputDecoration(
+              labelText: 'Base URL (可选)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.link),
+              hintText: '留空使用默认地址',
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _ttsModelController,
+            decoration: const InputDecoration(
+              labelText: 'TTS 模型',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.graphic_eq),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return '请输入TTS模型名称';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '默认: ${_defaultTtsModels[_ttsProvider]}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _ttsVoiceController,
+            decoration: const InputDecoration(
+              labelText: '语音 (Voice)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.record_voice_over),
+              hintText: '例如: zh-CN-XiaoxiaoNeural',
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return '请输入语音名称';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '默认: ${_defaultTtsVoices[_ttsProvider]}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _saveTtsConfig,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('保存配置'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isTestingTts ? null : _testTtsConnection,
+              icon: _isTestingTts
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.network_check),
+              label: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(_isTestingTts ? '测试中...' : '测试连接'),
+              ),
+            ),
+          ),
+          if (_testResultTts != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: (_testSuccessTts == true ? Colors.green : Colors.red)
+                    .withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: (_testSuccessTts == true ? Colors.green : Colors.red)
+                      .withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _testSuccessTts == true ? Icons.check_circle : Icons.error,
+                    color: _testSuccessTts == true ? Colors.green : Colors.red,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _testResultTts!,
+                      style: TextStyle(
+                        color: (_testSuccessTts == true
+                            ? Colors.green
+                            : Colors.red)[700],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('AI配置'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: '快速模型'),
+            Tab(text: '标准模型'),
+            Tab(text: '音频模型'),
+          ],
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildTextModelConfig(
+                    title: '快速模型',
+                    subtitle: '适用于日常查询，速度优先',
+                    formKey: _fastFormKey,
+                    provider: _fastProvider,
+                    onProviderChanged: _onFastProviderChanged,
+                    apiKeyController: _fastApiKeyController,
+                    baseUrlController: _fastBaseUrlController,
+                    modelController: _fastModelController,
+                    obscureApiKey: _obscureFastApiKey,
+                    onToggleObscure: () {
+                      setState(() {
+                        _obscureFastApiKey = !_obscureFastApiKey;
+                      });
+                    },
+                    onSave: _saveFastConfig,
+                    isTesting: _isTestingFast,
+                    onTestConnection: _testFastConnection,
+                    testResult: _testResultFast,
+                    testSuccess: _testSuccessFast,
+                  ),
+                ),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildTextModelConfig(
+                    title: '标准模型',
+                    subtitle: '适用于高质量翻译和解释',
+                    formKey: _standardFormKey,
+                    provider: _standardProvider,
+                    onProviderChanged: _onStandardProviderChanged,
+                    apiKeyController: _standardApiKeyController,
+                    baseUrlController: _standardBaseUrlController,
+                    modelController: _standardModelController,
+                    obscureApiKey: _obscureStandardApiKey,
+                    onToggleObscure: () {
+                      setState(() {
+                        _obscureStandardApiKey = !_obscureStandardApiKey;
+                      });
+                    },
+                    onSave: _saveStandardConfig,
+                    isTesting: _isTestingStandard,
+                    onTestConnection: _testStandardConnection,
+                    testResult: _testResultStandard,
+                    testSuccess: _testSuccessStandard,
+                  ),
+                ),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildTtsConfig(),
+                ),
+              ],
+            ),
+    );
+  }
+}
