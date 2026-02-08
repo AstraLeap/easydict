@@ -115,7 +115,6 @@ class TranslationService {
 
       if (existingValue is Map<String, dynamic> &&
           existingValue.containsKey(targetLanguage)) {
-        Logger.d('释义已存在目标语言翻译，跳过翻译', tag: 'TranslationService');
         return false;
       }
 

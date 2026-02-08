@@ -1,7 +1,9 @@
 import 'dart:io';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import 'english_db_service.dart';
+import 'database_initializer.dart';
+import '../logger.dart';
 
 /// 搜索结果与原始搜索词的关系信息
 class SearchRelation {
@@ -53,10 +55,8 @@ class EnglishSearchService {
   }
 
   Future<Database> _initDatabase() async {
-    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
+    // 使用统一的数据库初始化器
+    DatabaseInitializer().initialize();
 
     final path = await EnglishDbService().getDbPath();
     final exists = await File(path).exists();
@@ -65,7 +65,13 @@ class EnglishSearchService {
       return Future.error('英语词典数据库不存在，请先下载。');
     }
 
-    return await openDatabase(path, readOnly: true);
+    // 以只读方式打开，禁用WAL模式
+    final db = await openDatabase(path, readOnly: true, singleInstance: true);
+
+    // 确保使用DELETE日志模式（禁用WAL）
+    await db.execute('PRAGMA journal_mode=DELETE');
+
+    return db;
   }
 
   /// 搜索简单表，返回映射词列表
@@ -151,7 +157,7 @@ class EnglishSearchService {
         }
       }
     } catch (e) {
-      print('Error searching table $table: $e');
+      // Error handling without debug output
     }
   }
 
@@ -171,7 +177,7 @@ class EnglishSearchService {
         return maps.first['base'] as String?;
       }
     } catch (e) {
-      print('Error searching nominalization: $e');
+      // Error handling without debug output
     }
     return null;
   }
@@ -206,7 +212,7 @@ class EnglishSearchService {
           }
         }
       } catch (e) {
-        print('Error searching inflection ($col): $e');
+        // Error handling without debug output
       }
     }
 
@@ -304,7 +310,7 @@ class EnglishSearchService {
           }
         }
       } catch (e) {
-        print('Error searching inflection ($col): $e');
+        // Error handling without debug output
       }
     }
 
@@ -369,7 +375,7 @@ class EnglishSearchService {
         }
       }
     } catch (e) {
-      print('Error searching table $table: $e');
+      // Error handling without debug output
     }
   }
 }

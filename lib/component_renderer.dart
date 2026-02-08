@@ -536,7 +536,7 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
 
       await db.close();
     } catch (e) {
-      Logger.e('查找精确跳转目标失败: $e', tag: 'ComponentRenderer');
+      // Error handling without debug output
     }
   }
 
@@ -636,18 +636,10 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     return GestureDetector(
       onTap: () {
         final pathStr = _convertPathToString(pathData.path);
-        Logger.d(
-          'Widget tap: path=$pathStr, label=${pathData.label}',
-          tag: 'ComponentRenderer',
-        );
         _handleElementTap(pathStr, pathData.label);
       },
       onSecondaryTapUp: (details) {
         final pathStr = _convertPathToString(pathData.path);
-        Logger.d(
-          'Widget right-click: path=$pathStr, label=${pathData.label}',
-          tag: 'ComponentRenderer',
-        );
         _handleElementSecondaryTap(
           pathStr,
           pathData.label,
@@ -657,10 +649,6 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       },
       onLongPressStart: (details) {
         final pathStr = _convertPathToString(pathData.path);
-        Logger.d(
-          'Widget long-press: path=$pathStr, label=${pathData.label}',
-          tag: 'ComponentRenderer',
-        );
         _handleElementSecondaryTap(
           pathStr,
           pathData.label,
@@ -982,19 +970,9 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                       final textToCopy = _extractTextToCopy(currentValue);
                       if (textToCopy != null) {
                         Clipboard.setData(ClipboardData(text: textToCopy));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('文本已复制'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
+                        showToast(context, '文本已复制');
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('无法提取文本内容'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
+                        showToast(context, '无法提取文本内容');
                       }
                     },
                   ),
@@ -1071,12 +1049,6 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     final entry = widget.entry;
     final page = _getPage();
     final sections = _getSections();
-
-    // 添加平台调试信息
-    Logger.d(
-      'Platform: ${Platform.operatingSystem}, isAndroid: ${Platform.isAndroid}, isIOS: ${Platform.isIOS}, isWindows: ${Platform.isWindows}, isMacOS: ${Platform.isMacOS}, isLinux: ${Platform.isLinux}',
-      tag: 'ComponentRenderer',
-    );
 
     return DictionaryInteractionScope(
       onElementTap: widget.onElementTap,
@@ -1474,77 +1446,76 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                     key: '$index',
                     child: Builder(
                       builder: (context) {
-                        final pronunciationPath = PathScope.of(context);
                         return Material(
                           color: Colors.transparent,
-                          child: _buildTappableWidget(
-                            context: context,
-                            pathData: _PathData(
-                              pronunciationPath,
-                              'Pronunciation',
-                            ),
-                            child: InkWell(
-                              onTap: audioFile.isNotEmpty
-                                  ? () {
-                                      _playAudio(currentDictId, audioFile);
-                                    }
-                                  : null,
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: colorScheme.outlineVariant
-                                        .withValues(alpha: 0.6),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (region.isNotEmpty)
-                                      PathScope.append(
-                                        context,
-                                        key: 'region',
-                                        child: Builder(
-                                          builder: (context) {
-                                            return _buildPronunciationRegionElement(
-                                              context,
-                                              region,
-                                            );
-                                          },
-                                        ),
+                          child: InkWell(
+                            onTap: audioFile.isNotEmpty
+                                ? () {
+                                    _playAudio(currentDictId, audioFile);
+                                  }
+                                : null,
+                            borderRadius: BorderRadius.circular(12),
+                            splashColor: audioFile.isNotEmpty
+                                ? colorScheme.primary.withValues(alpha: 0.1)
+                                : null,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: audioFile.isNotEmpty
+                                    ? colorScheme.surfaceContainerHighest
+                                    : null,
+                                borderRadius: BorderRadius.circular(12),
+                                border: audioFile.isNotEmpty
+                                    ? null
+                                    : Border.all(
+                                        color: colorScheme.outlineVariant,
+                                        width: 1,
                                       ),
-                                    if (notation.isNotEmpty)
-                                      PathScope.append(
-                                        context,
-                                        key: 'notation',
-                                        child: Builder(
-                                          builder: (context) {
-                                            return _buildPronunciationPhoneticElement(
-                                              context,
-                                              notation,
-                                              hasAudio: audioFile.isNotEmpty,
-                                            );
-                                          },
-                                        ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  if (region.isNotEmpty)
+                                    PathScope.append(
+                                      context,
+                                      key: 'region',
+                                      child: Builder(
+                                        builder: (context) {
+                                          return _buildPronunciationRegionElement(
+                                            context,
+                                            region,
+                                            hasAudio: audioFile.isNotEmpty,
+                                          );
+                                        },
                                       ),
-                                    if (audioFile.isNotEmpty) ...[
-                                      const SizedBox(width: 4),
-                                      Icon(
-                                        Icons.volume_up,
-                                        size: 12,
-                                        color: colorScheme.primary.withValues(
-                                          alpha: 0.8,
-                                        ),
+                                    ),
+                                  if (notation.isNotEmpty)
+                                    PathScope.append(
+                                      context,
+                                      key: 'notation',
+                                      child: Builder(
+                                        builder: (context) {
+                                          return _buildPronunciationPhoneticElement(
+                                            context,
+                                            notation,
+                                            hasAudio: audioFile.isNotEmpty,
+                                          );
+                                        },
                                       ),
-                                    ],
+                                    ),
+                                  if (audioFile.isNotEmpty) ...[
+                                    const SizedBox(width: 5),
+                                    Icon(
+                                      Icons.volume_up,
+                                      size: 13,
+                                      color: colorScheme.primary,
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
                             ),
                           ),
@@ -1653,21 +1624,29 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     return s[0].toUpperCase() + s.substring(1);
   }
 
-  Widget _buildPronunciationRegionElement(BuildContext context, String region) {
+  Widget _buildPronunciationRegionElement(
+    BuildContext context,
+    String region, {
+    bool hasAudio = false,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return _buildTappableWidget(
-      context: context,
-      pathData: _PathData(PathScope.of(context), 'Region'),
-      child: buildText(
-        '$region ',
-        style: TextStyle(
-          fontSize: 11,
-          color: colorScheme.outline,
-          fontWeight: FontWeight.w500,
-        ),
+    final text = buildText(
+      '$region ',
+      style: TextStyle(
+        fontSize: 11,
+        color: colorScheme.outline,
+        fontWeight: FontWeight.w500,
       ),
     );
+
+    return hasAudio
+        ? text
+        : _buildTappableWidget(
+            context: context,
+            pathData: _PathData(PathScope.of(context), 'Region'),
+            child: text,
+          );
   }
 
   Widget _buildPronunciationPhoneticElement(
@@ -1677,18 +1656,22 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return _buildTappableWidget(
-      context: context,
-      pathData: _PathData(PathScope.of(context), 'Phonetic'),
-      child: buildText(
-        phonetic,
-        style: TextStyle(
-          fontSize: 13,
-          fontFamily: 'Monospace',
-          color: hasAudio ? colorScheme.primary : colorScheme.onSurfaceVariant,
-        ),
+    final text = buildText(
+      phonetic,
+      style: TextStyle(
+        fontSize: 13,
+        fontFamily: 'Monospace',
+        color: hasAudio ? colorScheme.primary : colorScheme.onSurfaceVariant,
       ),
     );
+
+    return hasAudio
+        ? text
+        : _buildTappableWidget(
+            context: context,
+            pathData: _PathData(PathScope.of(context), 'Phonetic'),
+            child: text,
+          );
   }
 
   Widget _buildSenseContent({
@@ -2948,9 +2931,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     bool isSvg,
   ) {
     if (imageBytes == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('图片加载失败')));
+      showToast(context, '图片加载失败');
       return;
     }
 

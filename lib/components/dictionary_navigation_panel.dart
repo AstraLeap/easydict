@@ -148,9 +148,6 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       // 添加当前page的sections
       if (currentPageIndex < currentDict.pageGroups.length) {
         final currentPage = currentDict.pageGroups[currentPageIndex];
-        print(
-          '[DEBUG] Current Dict: ${currentDict.dictionaryId}, Page: $currentPageIndex, Sections: ${currentPage.sections.length}',
-        );
         if (currentPage.sections.length > 1) {
           for (int i = 0; i < currentPage.sections.length; i++) {
             final section = currentPage.sections[i];
@@ -180,9 +177,6 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
             ? dict.currentPageIndex
             : 0;
         final targetPage = dict.pageGroups[pageIndex];
-        print(
-          '[DEBUG] Lower Dict: ${dict.dictionaryId}, Page: $pageIndex, Sections: ${targetPage.sections.length}',
-        );
         if (targetPage.sections.length > 1) {
           for (int j = 0; j < targetPage.sections.length; j++) {
             final section = targetPage.sections[j];

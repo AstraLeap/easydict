@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'components/dictionary_interaction_scope.dart';
 import 'logger.dart';
 import 'utils/toast_utils.dart';
+import 'utils/dpi_utils.dart';
 
 class BoardWidget extends StatefulWidget {
   final Map<String, dynamic> board;
@@ -33,10 +34,6 @@ class _BoardWidgetState extends State<BoardWidget> {
 
   void _showPath([Offset? position]) {
     final pathString = widget.path.join('.');
-    Logger.d(
-      'Board interaction: path=$pathString, position=$position',
-      tag: 'BoardWidget',
-    );
 
     // 优先尝试右键回调 (如果有位置信息)
     if (position != null) {
@@ -44,14 +41,8 @@ class _BoardWidgetState extends State<BoardWidget> {
         context,
       )?.onElementSecondaryTap;
       if (secondaryCallback != null) {
-        Logger.d('Triggering secondary tap callback', tag: 'BoardWidget');
         secondaryCallback(pathString, 'Board', context, position);
         return;
-      } else {
-        Logger.d(
-          'No secondary tap callback found in scope',
-          tag: 'BoardWidget',
-        );
       }
     }
 
@@ -60,10 +51,8 @@ class _BoardWidgetState extends State<BoardWidget> {
         DictionaryInteractionScope.of(context)?.onElementTap;
 
     if (callback != null) {
-      Logger.d('Triggering primary tap callback', tag: 'BoardWidget');
       callback(pathString, 'Board');
     } else {
-      Logger.d('Showing toast fallback', tag: 'BoardWidget');
       showToast(context, 'Board: $pathString');
     }
   }
@@ -89,10 +78,12 @@ class _BoardWidgetState extends State<BoardWidget> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.only(bottom: DpiUtils.scale(context, 8)),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(
+          DpiUtils.scaleBorderRadius(context, 6),
+        ),
         border: Border.all(
           color: colorScheme.outlineVariant.withValues(alpha: 0.6),
           width: 1,
@@ -100,8 +91,8 @@ class _BoardWidgetState extends State<BoardWidget> {
         boxShadow: [
           BoxShadow(
             color: colorScheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
+            blurRadius: DpiUtils.scale(context, 3),
+            offset: Offset(0, DpiUtils.scale(context, 1)),
           ),
         ],
       ),
@@ -119,14 +110,16 @@ class _BoardWidgetState extends State<BoardWidget> {
               onLongPress: _showPath,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 11,
+                padding: EdgeInsets.symmetric(
+                  horizontal: DpiUtils.scale(context, 8),
+                  vertical: DpiUtils.scale(context, 6),
                 ),
                 decoration: BoxDecoration(
                   color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(7),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(
+                      DpiUtils.scaleBorderRadius(context, 5),
+                    ),
                   ),
                 ),
                 child: Row(
@@ -137,18 +130,18 @@ class _BoardWidgetState extends State<BoardWidget> {
                       curve: Curves.easeInOut,
                       child: Icon(
                         Icons.keyboard_arrow_down,
-                        size: 20,
+                        size: DpiUtils.scaleIconSize(context, 16),
                         color: colorScheme.onSecondaryContainer.withValues(
                           alpha: 0.8,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    SizedBox(width: DpiUtils.scale(context, 4)),
                     Expanded(
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: DpiUtils.scaleFontSize(context, 13),
                           fontWeight: FontWeight.w600,
                           color: colorScheme.onSecondaryContainer,
                           letterSpacing: 0.2,
@@ -162,7 +155,10 @@ class _BoardWidgetState extends State<BoardWidget> {
           ),
           if (!_isCollapsed)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              padding: DpiUtils.scaleEdgeInsets(
+                context,
+                const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              ),
               child: widget.contentBuilder(contentBoard, widget.path),
             ),
         ],

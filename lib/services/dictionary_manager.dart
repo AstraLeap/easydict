@@ -178,7 +178,6 @@ class DictionaryManager {
         }
 
         if (eocdPos == -1) {
-          Logger.d('未找到 EOCD', tag: 'DictionaryManager');
           return null;
         }
 
@@ -277,7 +276,6 @@ class DictionaryManager {
                   final decoded = Inflate(data).getBytes();
                   return Uint8List.fromList(decoded);
                 } catch (e) {
-                  Logger.e('解压失败: $e', tag: 'DictionaryManager');
                   return null;
                 }
               } else {
@@ -345,7 +343,6 @@ class DictionaryManager {
       }
       return null;
     } catch (e) {
-      Logger.e('从媒体数据库读取失败: $e', tag: 'DictionaryManager', error: e);
       return null;
     }
   }
@@ -458,13 +455,11 @@ class DictionaryManager {
           pos += 46 + nameLen + extraLen + commentLen;
         }
 
-        Logger.d('未找到文件: $fileName', tag: 'extractAudioFromZip');
         return null;
       } finally {
         await raf.close();
       }
     } catch (e) {
-      Logger.e('从 zip 提取文件失败: $e', tag: 'DictionaryManager', error: e);
       return null;
     }
   }
@@ -644,7 +639,6 @@ class DictionaryManager {
         await db.close();
       }
     } catch (e) {
-      Logger.e('获取词典词条数量失败: $e', tag: 'DictionaryManager', error: e);
       return 0;
     }
   }
@@ -777,7 +771,6 @@ class DictionaryManager {
       await file.writeAsBytes(data);
       return true;
     } catch (e) {
-      Logger.e('缓存资源文件失败: $e', tag: 'DictionaryManager');
       return false;
     }
   }

@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../logger.dart';
+import 'database_initializer.dart';
 
 /// AI聊天记录模型
 class AiChatRecordModel {
@@ -78,7 +78,8 @@ class AiChatRecordModel {
 
 /// AI聊天记录数据库服务
 class AiChatDatabaseService {
-  static final AiChatDatabaseService _instance = AiChatDatabaseService._internal();
+  static final AiChatDatabaseService _instance =
+      AiChatDatabaseService._internal();
   factory AiChatDatabaseService() => _instance;
   AiChatDatabaseService._internal();
 
@@ -109,10 +110,8 @@ class AiChatDatabaseService {
     final String dbPath = await _databasePath;
     Logger.i('AI聊天记录数据库路径: $dbPath', tag: 'AiChatDatabase');
 
-    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
+    // 使用统一的数据库初始化器
+    DatabaseInitializer().initialize();
 
     return await openDatabase(
       dbPath,
@@ -169,7 +168,7 @@ class AiChatDatabaseService {
       record.toDbMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    
+
     // 检查并执行自动清理
     await _autoCleanupIfNeeded();
   }
@@ -188,11 +187,7 @@ class AiChatDatabaseService {
   /// 删除单条聊天记录
   Future<void> deleteRecord(String id) async {
     final db = await database;
-    await db.delete(
-      _tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete(_tableName, where: 'id = ?', whereArgs: [id]);
   }
 
   /// 清空所有聊天记录
@@ -207,13 +202,13 @@ class AiChatDatabaseService {
     final db = await database;
     final cutoffDate = DateTime.now().subtract(Duration(days: days));
     final cutoffTimestamp = cutoffDate.millisecondsSinceEpoch;
-    
+
     final count = await db.delete(
       _tableName,
       where: 'timestamp < ?',
       whereArgs: [cutoffTimestamp],
     );
-    
+
     Logger.i('已清除 $days 天前的 $count 条AI聊天记录', tag: 'AiChatDatabase');
     return count;
   }
@@ -229,7 +224,6 @@ class AiChatDatabaseService {
   Future<void> setAutoCleanupDays(int days) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_autoCleanupKey, days);
-    Logger.i('设置自动清理天数: $days', tag: 'AiChatDatabase');
   }
 
   /// 获取自动清理天数

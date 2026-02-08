@@ -123,9 +123,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('在线订阅地址已保存')));
+      showToast(context, '在线订阅地址已保存');
     }
   }
 
@@ -181,6 +179,32 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     return _onlineDictionaries.any((dict) => dict.id == dictionaryId);
   }
 
+  /// 检查本地词典是否已链接在线词表
+  bool _isLinkedOnline(String dictionaryId) {
+    if (_onlineDictionaries.isEmpty) return false;
+    final onlineDict = _onlineDictionaries.firstWhere(
+      (dict) => dict.id == dictionaryId,
+      orElse: () => _onlineDictionaries.first.copyWith(isLinked: false),
+    );
+    return onlineDict.isLinked;
+  }
+
+  /// 格式化大数字，例如 235000 -> 235k, 1500000 -> 1.5M
+  String _formatLargeNumber(int number) {
+    if (number >= 1000000) {
+      final value = number / 1000000;
+      return value == value.truncateToDouble()
+          ? '${value.toInt()}M'
+          : '${value.toStringAsFixed(1)}M';
+    } else if (number >= 10000) {
+      final value = number / 1000;
+      return value == value.truncateToDouble()
+          ? '${value.toInt()}k'
+          : '${value.toStringAsFixed(0)}k';
+    }
+    return number.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -190,8 +214,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           title: const Text('词典管理'),
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.toggle_on), text: '词典启用'),
-              Tab(icon: Icon(Icons.cloud), text: '词典来源'),
+              Tab(text: '词典启用'),
+              Tab(text: '词典来源'),
             ],
           ),
         ),
@@ -570,6 +594,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   Widget _buildDictionaryCard(DictionaryMetadata metadata) {
     final isEnabled = _isEnabled(metadata.id);
     final hasOnlineSubscription = _hasOnlineSubscription(metadata.id);
+    final isLinkedOnline = _isLinkedOnline(metadata.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -590,8 +615,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 );
               },
             ),
-            // 在线订阅状态指示器（小绿灯）
-            if (hasOnlineSubscription)
+            // 在线订阅链接状态指示器（小绿灯）
+            if (hasOnlineSubscription && isLinkedOnline)
               Positioned(
                 right: 0,
                 bottom: 0,
@@ -614,37 +639,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               ),
           ],
         ),
-        title: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(child: Text(metadata.name)),
-            if (hasOnlineSubscription)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.green),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.cloud_done, size: 12, color: Colors.green[700]),
-                    const SizedBox(width: 4),
-                    Text(
-                      '在线',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.green[700],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
+        title: Text(metadata.name),
         subtitle: Text(
           '版本: ${metadata.version} | ${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
         ),
@@ -658,6 +653,18 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   }
 
   void _toggleDictionaryLink(String dictId) {
+    setState(() {
+      final index = _onlineDictionaries.indexWhere((d) => d.id == dictId);
+      if (index != -1) {
+        _onlineDictionaries[index] = _onlineDictionaries[index].copyWith(
+          isLinked: !_onlineDictionaries[index].isLinked,
+        );
+      }
+    });
+    // TODO: 保存链接状态到本地存储
+  }
+
+  Future<void> _toggleDictionaryLinkWithSave(String dictId) async {
     setState(() {
       final index = _onlineDictionaries.indexWhere((d) => d.id == dictId);
       if (index != -1) {
@@ -884,7 +891,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${dict.entryCount}',
+                  _formatLargeNumber(dict.entryCount),
                   style: TextStyle(
                     fontSize: 12,
                     color: colorScheme.onSurfaceVariant,
@@ -895,7 +902,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   Icon(Icons.audiotrack, size: 14, color: colorScheme.tertiary),
                   const SizedBox(width: 4),
                   Text(
-                    '${dict.audioCount}',
+                    _formatLargeNumber(dict.audioCount),
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.onSurfaceVariant,
@@ -907,7 +914,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   Icon(Icons.image, size: 14, color: colorScheme.secondary),
                   const SizedBox(width: 4),
                   Text(
-                    '${dict.imageCount}',
+                    _formatLargeNumber(dict.imageCount),
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.onSurfaceVariant,
@@ -950,7 +957,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                       : colorScheme.outline,
                 ),
                 tooltip: dict.isLinked ? '已链接' : '未链接',
-                onPressed: () => _toggleDictionaryLink(dict.id),
+                onPressed: () => _toggleDictionaryLinkWithSave(dict.id),
               ),
             ],
           ),
@@ -1023,7 +1030,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               _buildDetailItem('版本', dict.version),
               _buildDetailItem('语言', dict.language),
               _buildDetailItem('作者', dict.author),
-              _buildDetailItem('词条数', '${dict.entryCount}'),
+              _buildDetailItem('词条数', _formatLargeNumber(dict.entryCount)),
               _buildDetailItem('数据库大小', dict.formattedDatabaseSize),
               const SizedBox(height: 16),
               const Text('简介', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1042,7 +1049,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                     Chip(
                       avatar: const Icon(Icons.library_music, size: 16),
                       label: Text(
-                        '包含媒体 (${dict.audioCount + dict.imageCount})',
+                        '包含媒体 (${_formatLargeNumber(dict.audioCount + dict.imageCount)})',
                       ),
                     ),
                 ],

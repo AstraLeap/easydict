@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'dart:io';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:provider/provider.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dictionary_search.dart';
 import 'theme_provider.dart';
 import 'word_bank_page.dart';
@@ -16,22 +16,36 @@ import 'services/ai_chat_history_service.dart';
 import 'services/download_manager.dart';
 import 'services/dictionary_store_service.dart';
 import 'services/english_db_service.dart';
+import 'services/database_initializer.dart';
 import 'utils/toast_utils.dart';
+import 'utils/dpi_utils.dart';
+import 'logger.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   // 初始化 media_kit
   MediaKit.ensureInitialized();
 
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+  // 初始化数据库（只执行一次）
+  DatabaseInitializer().initialize();
 
   // 初始化 DownloadManager 并设置 DictionaryStoreService
   final downloadManager = DownloadManager();
   downloadManager.setStoreService(
     DictionaryStoreService(baseUrl: 'https://dict.dxde.de'),
   );
+
+  // 打印用户配置文件目录
+  try {
+    final appDir = await getApplicationSupportDirectory();
+    Logger.i('======================================', tag: 'Config');
+    Logger.i('用户配置文件目录: ${appDir.path}', tag: 'Config');
+    Logger.i('单词本数据库路径: ${appDir.path}\\word_list.db', tag: 'Config');
+    Logger.i('======================================', tag: 'Config');
+  } catch (e) {
+    Logger.e('获取配置目录失败: $e', tag: 'Config');
+  }
 
   runApp(
     MultiProvider(
@@ -139,7 +153,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
+      body: IndexedStack(index: _selectedIndex, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (int index) {
@@ -154,9 +168,9 @@ class _MainScreenState extends State<MainScreen> {
             label: '查词',
           ),
           NavigationDestination(
-            icon: Icon(Icons.bookmark_outline),
-            selectedIcon: Icon(Icons.bookmark),
-            label: '生词本',
+            icon: Icon(Icons.style_outlined),
+            selectedIcon: Icon(Icons.style),
+            label: '单词本',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
@@ -403,20 +417,8 @@ class SettingsPage extends StatelessWidget {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // 顶部标题
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-              child: Text(
-                '设置',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 24),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 // 核心功能组
@@ -426,7 +428,6 @@ class SettingsPage extends StatelessWidget {
                     _buildSettingsTile(
                       context,
                       title: '词典管理',
-                      subtitle: '管理本地词典和在线订阅',
                       icon: Icons.folder_outlined,
                       iconColor: colorScheme.primary,
                       onTap: () {
@@ -441,7 +442,6 @@ class SettingsPage extends StatelessWidget {
                     _buildSettingsTile(
                       context,
                       title: 'AI 配置',
-                      subtitle: '配置 OpenAI、DeepSeek 等 API',
                       icon: Icons.auto_awesome,
                       iconColor: colorScheme.primary,
                       onTap: () {
@@ -456,44 +456,21 @@ class SettingsPage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                // 外观与帮助组
+                // 外观设置组
                 _buildSettingsGroup(
                   context,
                   children: [
                     _buildSettingsTile(
                       context,
                       title: '主题模式',
-                      subtitle: themeProvider.getThemeModeDisplayName(),
                       icon: Icons.dark_mode_outlined,
+                      iconColor: colorScheme.primary,
                       showArrow: true,
                       onTap: () => _showThemeModeDialog(context),
                     ),
                     _buildSettingsTile(
                       context,
-                      title: '使用帮助',
-                      subtitle: '查看帮助文档',
-                      icon: Icons.help_outline,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const HelpPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // 杂项设置组
-                _buildSettingsGroup(
-                  context,
-                  children: [
-                    _buildSettingsTile(
-                      context,
                       title: '杂项设置',
-                      subtitle: 'AI聊天记录管理等',
                       icon: Icons.settings_suggest_outlined,
                       iconColor: colorScheme.primary,
                       showArrow: true,
@@ -509,20 +486,58 @@ class SettingsPage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                // 关于组
+                // 帮助与支持组
                 _buildSettingsGroup(
                   context,
                   children: [
                     _buildSettingsTile(
                       context,
+                      title: '使用帮助',
+                      icon: Icons.help_outline,
+                      iconColor: colorScheme.primary,
+                      showArrow: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const HelpPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildSettingsTile(
+                      context,
+                      title: '词典反馈',
+                      icon: Icons.feedback,
+                      iconColor: colorScheme.primary,
+                      onTap: () async {},
+                    ),
+                    _buildSettingsTile(
+                      context,
                       title: 'GitHub',
-                      subtitle: '访问项目主页',
                       icon: Icons.code,
+                      iconColor: colorScheme.primary,
                       isExternal: true,
                       onTap: () async {
                         final url = Uri.parse(
                           'https://github.com/AstraLeap/easydict',
                         );
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(
+                            url,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                    ),
+                    _buildSettingsTile(
+                      context,
+                      title: '爱发电',
+                      icon: Icons.favorite,
+                      iconColor: colorScheme.primary,
+                      isExternal: true,
+                      onTap: () async {
+                        final url = Uri.parse('https://afdian.com/a/karx_');
                         if (await canLaunchUrl(url)) {
                           await launchUrl(
                             url,
@@ -604,25 +619,43 @@ class SettingsPage extends StatelessWidget {
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
 
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Icon(icon, color: effectiveIconColor, size: 22),
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: DpiUtils.scale(context, 16),
+        vertical: DpiUtils.scale(context, 4),
+      ),
+      leading: Icon(
+        icon,
+        color: effectiveIconColor,
+        size: DpiUtils.scaleIconSize(context, 18),
+      ),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        style: TextStyle(
+          fontSize: DpiUtils.scaleFontSize(context, 13),
+          fontWeight: FontWeight.w500,
+        ),
       ),
       subtitle: subtitle != null
           ? Text(
               subtitle,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: DpiUtils.scaleFontSize(context, 11.5),
                 color: colorScheme.onSurfaceVariant,
               ),
             )
           : null,
       trailing: showArrow
-          ? Icon(Icons.chevron_right, color: colorScheme.outline, size: 20)
+          ? Icon(
+              Icons.chevron_right,
+              color: colorScheme.outline,
+              size: DpiUtils.scaleIconSize(context, 20),
+            )
           : isExternal
-          ? Icon(Icons.open_in_new, color: colorScheme.outline, size: 18)
+          ? Icon(
+              Icons.open_in_new,
+              color: colorScheme.outline,
+              size: DpiUtils.scaleIconSize(context, 18),
+            )
           : null,
       onTap: onTap,
     );
@@ -692,26 +725,31 @@ class SettingsPage extends StatelessWidget {
                   : Colors.transparent,
               width: 2,
             ),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(
+              DpiUtils.scaleBorderRadius(context, 12),
+            ),
           ),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: EdgeInsets.all(DpiUtils.scale(context, 8)),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? Theme.of(context).colorScheme.primaryContainer
                       : Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(
+                    DpiUtils.scaleBorderRadius(context, 8),
+                  ),
                 ),
                 child: Icon(
                   icon,
+                  size: DpiUtils.scaleIconSize(context, 24),
                   color: isSelected
                       ? Theme.of(context).colorScheme.onPrimaryContainer
                       : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: DpiUtils.scale(context, 12)),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,7 +757,7 @@ class SettingsPage extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: DpiUtils.scaleFontSize(context, 16),
                         fontWeight: FontWeight.w500,
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary
@@ -729,7 +767,7 @@ class SettingsPage extends StatelessWidget {
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: DpiUtils.scaleFontSize(context, 12),
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -739,6 +777,7 @@ class SettingsPage extends StatelessWidget {
               if (isSelected)
                 Icon(
                   Icons.check_circle,
+                  size: DpiUtils.scaleIconSize(context, 24),
                   color: Theme.of(context).colorScheme.primary,
                 ),
             ],
@@ -896,12 +935,8 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                             Icons.translate,
                             color: colorScheme.primary,
                           ),
-                          title: const Text('恢复英语词典下载询问'),
-                          subtitle: Text(
-                            _neverAskAgain
-                                ? '已选择不再询问，点击开关恢复'
-                                : '已恢复询问，下次查询英语单词时会询问是否下载',
-                          ),
+                          title: const Text('不询问查词重定向数据库'),
+                          subtitle: Text(_neverAskAgain ? '已选择不再询问' : '已恢复询问'),
                           trailing: Switch(
                             value: _neverAskAgain,
                             onChanged: (value) async {
@@ -915,7 +950,6 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                 setState(() {
                                   _neverAskAgain = false;
                                 });
-                                showToast(context, '已恢复英语词典下载询问');
                               }
                             },
                           ),

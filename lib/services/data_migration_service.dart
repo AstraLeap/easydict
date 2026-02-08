@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
 import 'dictionary_manager.dart';
 import '../models/dictionary_metadata.dart';
 import '../logger.dart';
+import 'database_initializer.dart';
 
 class DataMigrationService {
   final DictionaryManager _dictManager = DictionaryManager();
@@ -76,8 +77,13 @@ class DataMigrationService {
         return 0;
       }
 
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+      // 使用统一的数据库初始化器
+      DatabaseInitializer().initialize();
+
+      Logger.d(
+        '_getWordCount: 打开数据库 (readOnly=true): $dbPath',
+        tag: 'DataMigration',
+      );
 
       final db = await openDatabase(dbPath, readOnly: true);
       final result = await db.rawQuery('SELECT COUNT(*) as count FROM entries');
@@ -119,10 +125,9 @@ class DataMigrationService {
 
       if (await oldDir.exists()) {
         await oldDir.delete(recursive: true);
-        Logger.d('旧文件已清理', tag: 'DataMigration');
       }
     } catch (e) {
-      Logger.e('清理旧文件失败: $e', tag: 'DataMigration');
+      // Error handling without debug output
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import '../utils/dpi_utils.dart';
 
 const Color windowBorderColor = Color(0xFFCCCCCC);
 const Color lightWindowBackground = Color(0xFFE5E5E5);
@@ -14,7 +15,9 @@ class WindowTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final backgroundColor = isDark ? darkWindowBackground : lightWindowBackground;
+    final backgroundColor = isDark
+        ? darkWindowBackground
+        : lightWindowBackground;
     final borderColor = isDark ? const Color(0xFF3D3D3D) : windowBorderColor;
 
     return Column(
@@ -27,11 +30,15 @@ class WindowTitleBar extends StatelessWidget {
                 Expanded(
                   child: MoveWindow(
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+                      padding: EdgeInsets.only(
+                        left: DpiUtils.scale(context, 16),
+                        top: DpiUtils.scale(context, 8),
+                        bottom: DpiUtils.scale(context, 8),
+                      ),
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: DpiUtils.scaleFontSize(context, 13),
                           fontWeight: FontWeight.w500,
                           color: isDark ? Colors.white : Colors.black,
                         ),

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../database_service.dart';
 import '../models/dictionary_entry_group.dart';
+import '../models/dictionary_metadata.dart';
 import '../components/dictionary_navigation_panel.dart';
 import '../component_renderer.dart';
 import '../word_bank_service.dart';
@@ -15,6 +16,7 @@ import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
 import '../logger.dart';
 import '../utils/toast_utils.dart';
+import '../utils/word_list_dialog.dart';
 
 /// AI聊天记录模型
 class AiChatRecord {
@@ -62,7 +64,22 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     Duration? duration,
     SnackBarAction? action,
   }) {
-    showToast(context, message);
+    if (action != null) {
+      final colorScheme = Theme.of(context).colorScheme;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: TextStyle(color: colorScheme.onSurface),
+          ),
+          backgroundColor: colorScheme.surfaceContainerHighest,
+          duration: duration ?? const Duration(seconds: 2),
+          action: action,
+        ),
+      );
+    } else {
+      showToast(context, message);
+    }
   }
 
   final Map<String, GlobalKey> _entryKeys = {};
@@ -123,8 +140,23 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
+  /// 获取当前词典的语言
+  Future<String> _getCurrentLanguage() async {
+    final currentDictId = _entryGroup.currentDictionaryId;
+    if (currentDictId.isEmpty) return 'en';
+
+    final metadata = await DictionaryManager().getDictionaryMetadata(
+      currentDictId,
+    );
+    return metadata?.sourceLanguage ?? 'en';
+  }
+
   Future<void> _loadFavoriteStatus() async {
-    final isFavorite = await _wordBankService.isFavorite(widget.initialWord);
+    final language = await _getCurrentLanguage();
+    final isFavorite = await _wordBankService.isInWordBank(
+      widget.initialWord,
+      language,
+    );
     if (mounted) {
       setState(() {
         _isFavorite = isFavorite;
@@ -142,53 +174,64 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Widget _buildSearchRelationBanner() {
     final colorScheme = Theme.of(context).colorScheme;
     final relations = widget.searchRelations!;
+    final dynamicPadding = _getDynamicPadding(context);
 
-    return Card(
-      color: colorScheme.primaryContainer.withOpacity(0.9),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: colorScheme.primary.withOpacity(0.3), width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 16,
-              color: colorScheme.onPrimaryContainer,
-            ),
-            Text(
-              '${widget.initialWord}',
-              style: TextStyle(
-                fontSize: 14,
+    return Padding(
+      padding: EdgeInsets.only(bottom: dynamicPadding.bottom),
+      child: Card(
+        color: colorScheme.primaryContainer.withOpacity(0.9),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(
+            color: colorScheme.primary.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        margin: EdgeInsets.symmetric(
+          horizontal: dynamicPadding.horizontal / 2,
+          vertical: dynamicPadding.top / 2,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
                 color: colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w500,
-                decoration: TextDecoration.lineThrough,
               ),
-            ),
-            Icon(
-              Icons.arrow_forward,
-              size: 14,
-              color: colorScheme.onPrimaryContainer,
-            ),
-            ...relations.entries.expand((entry) {
-              final mappedWord = entry.key;
-              final relationList = entry.value;
-              return relationList.map((relation) {
-                return Text(
-                  '${mappedWord}（${relation.description ?? relation.relationType}）',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.w500,
-                  ),
-                );
-              });
-            }),
-          ],
+              Text(
+                '${widget.initialWord}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward,
+                size: 14,
+                color: colorScheme.onPrimaryContainer,
+              ),
+              ...relations.entries.expand((entry) {
+                final mappedWord = entry.key;
+                final relationList = entry.value;
+                return relationList.map((relation) {
+                  return Text(
+                    '${mappedWord}（${relation.description ?? relation.relationType}）',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  );
+                });
+              }),
+            ],
+          ),
         ),
       ),
     );
@@ -221,10 +264,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final currentDict = _entryGroup.currentDictionaryGroup;
     final currentDictIndex = _entryGroup.currentDictionaryIndex;
     final currentPageIndex = currentDict.currentPageIndex;
-
-    print(
-      '[DEBUG] _getAllEntriesInOrder: currentDict=${currentDict.dictionaryId}, pageIndex=$currentPageIndex',
-    );
 
     for (int i = 0; i < currentDictIndex; i++) {
       final dict = allDicts[i];
@@ -318,22 +357,15 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   void _onPageChanged() {
-    print('[DEBUG] EntryDetailPage._onPageChanged called');
     _entryKeys.clear();
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentDict = _entryGroup.currentDictionaryGroup;
-      print(
-        '[DEBUG] PostFrameCallback: current page index is ${currentDict.currentPageIndex}',
-      );
       if (currentDict.pageGroups.isNotEmpty &&
           currentDict.currentPageIndex < currentDict.pageGroups.length) {
         final currentPage =
             currentDict.pageGroups[currentDict.currentPageIndex];
         if (currentPage.sections.isNotEmpty) {
-          print(
-            '[DEBUG] Scrolling to entry: ${currentPage.sections[0].entry.id}',
-          );
           _scrollToEntry(currentPage.sections[0].entry);
         }
       }
@@ -346,24 +378,60 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   Future<void> _toggleFavorite() async {
     final word = widget.initialWord;
-    if (_isFavorite) {
-      await _wordBankService.removeFavorite(word);
+    final language = await _getCurrentLanguage();
+
+    final selectedLists = await WordListDialog.show(
+      context,
+      language: language,
+      word: word,
+      isNewWord: !_isFavorite,
+      wordBankService: _wordBankService,
+    );
+
+    if (selectedLists == null) {
+      return;
+    }
+
+    if (selectedLists.contains('__REMOVE__')) {
+      await _wordBankService.removeWord(word, language);
       if (mounted) {
-        _showSnackBar('已将 "$word" 从生词本移除');
+        _showSnackBar('已将 "$word" 从单词本移除');
+        setState(() => _isFavorite = false);
+      }
+      return;
+    }
+
+    if (_isFavorite) {
+      final listChanges = <String, int>{};
+      final allLists = await _wordBankService.getWordLists(language);
+      for (final list in allLists) {
+        listChanges[list.name] = selectedLists.contains(list.name) ? 1 : 0;
+      }
+      await _wordBankService.updateWordLists(word, language, listChanges);
+      if (mounted) {
+        _showSnackBar('已更新 "$word" 的词表归属');
       }
     } else {
-      final success = await _wordBankService.addFavorite(word);
-      if (mounted) {
-        if (success) {
-          _showSnackBar('已将 "$word" 加入生词本');
-        } else {
-          _showSnackBar('"$word" 已在生词本中');
+      if (selectedLists.isEmpty) {
+        if (mounted) {
+          _showSnackBar('请至少选择一个词表');
+        }
+      } else {
+        final success = await _wordBankService.addWord(
+          word,
+          language,
+          lists: selectedLists,
+        );
+        if (mounted) {
+          if (success) {
+            _showSnackBar('已将 "$word" 加入单词本');
+            setState(() => _isFavorite = true);
+          } else {
+            _showSnackBar('添加失败');
+          }
         }
       }
     }
-    setState(() {
-      _isFavorite = !_isFavorite;
-    });
   }
 
   void _showNewSearch() {
@@ -387,17 +455,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
     final totalCount = entries.length + (hasRelations ? 1 : 0);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Logger.d('渲染完成词典，共 $totalCount 个项目', tag: 'EntryDetailPage');
-    });
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
           ListView.builder(
             controller: _contentScrollController,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            padding: _getDynamicPadding(context).copyWith(bottom: 100),
             itemCount: totalCount,
             itemBuilder: (context, index) {
               if (hasRelations && index == 0) {
@@ -437,7 +501,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final bottomPadding = mediaQuery.padding.bottom;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      margin: _getDynamicPadding(context).copyWith(top: 0, bottom: 12),
       padding: EdgeInsets.only(bottom: bottomPadding > 0 ? bottomPadding : 4),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
@@ -537,8 +601,21 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
+  /// 根据屏幕宽度动态计算边距
+  EdgeInsets _getDynamicPadding(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    if (screenWidth < 600) {
+      return const EdgeInsets.symmetric(horizontal: 4, vertical: 6);
+    } else if (screenWidth < 900) {
+      return const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+    } else {
+      return const EdgeInsets.symmetric(horizontal: 24, vertical: 6);
+    }
+  }
+
   Widget _buildEntryContent(DictionaryEntry entry) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,7 +623,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           Stack(
             children: [
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: _getDynamicPadding(context),
                 child: ComponentRenderer(
                   entry: entry,
                   onElementTap: (path, label) {
@@ -593,7 +670,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final colorScheme = Theme.of(context).colorScheme;
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: _getDynamicPadding(context).copyWith(top: 0),
           child: Row(
             children: [
               Icon(Icons.translate, size: 16, color: colorScheme.primary),
@@ -1526,7 +1603,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 8),
-            const Expanded(child: Text('AI回答')),
+            const Text('AI回答'),
             // 查看历史按钮
             IconButton(
               onPressed: () {
@@ -1632,323 +1709,333 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   /// 显示AI聊天记录
   void _showAiChatHistory() {
+    final freeChatController = TextEditingController();
+    final freeChatFocusNode = FocusNode();
+    bool isFullScreen = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // 标题栏
-                Row(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return DraggableScrollableSheet(
+            initialChildSize: isFullScreen ? 0.95 : 0.7,
+            minChildSize: isFullScreen ? 0.95 : 0.5,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (context, scrollController) {
+              return Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                   children: [
-                    Icon(
-                      Icons.history,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'AI聊天',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ),
-                    // 总结当前页按钮
-                    FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _summarizeCurrentPage();
-                      },
-                      icon: const Icon(Icons.auto_awesome, size: 18),
-                      label: const Text('总结当前页'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                    // 标题栏
+                    Row(
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _summarizeCurrentPage();
+                          },
+                          icon: const Icon(Icons.auto_awesome, size: 18),
+                          label: const Text('总结当前页'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('清空聊天记录'),
-                            content: const Text('确定要清空所有AI聊天记录吗？此操作不可恢复。'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('取消'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.error,
-                                ),
-                                child: const Text('清空'),
-                              ),
-                            ],
+                        const Spacer(),
+                        IconButton(
+                          onPressed: () {
+                            setModalState(() {
+                              isFullScreen = !isFullScreen;
+                            });
+                          },
+                          icon: Icon(
+                            isFullScreen
+                                ? Icons.fullscreen_exit
+                                : Icons.fullscreen,
                           ),
-                        );
-                        if (confirm == true) {
-                          await _aiChatHistoryService.clearAllRecords();
-                          setState(() {
-                            _aiChatHistory.clear();
-                          });
-                          Navigator.pop(context);
-                        }
-                      },
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('清空'),
+                          tooltip: isFullScreen ? '退出全屏' : '全屏',
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                // 聊天记录列表
-                Expanded(
-                  child: _aiChatHistory.isEmpty
-                      ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.chat_bubble_outline,
-                                size: 48,
-                                color: Colors.grey,
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                '暂无聊天记录',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: scrollController,
-                          itemCount: _aiChatHistory.length,
-                          itemBuilder: (context, index) {
-                            final record =
-                                _aiChatHistory[_aiChatHistory.length -
-                                    1 -
-                                    index];
-                            final isLoading =
-                                record.answer.isEmpty &&
-                                _pendingAiRequests.containsKey(record.id);
-                            final isError = record.answer.startsWith('请求失败:');
-
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: ExpansionTile(
-                                leading: isLoading
-                                    ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.primary,
-                                        ),
-                                      )
-                                    : isError
-                                    ? Icon(
-                                        Icons.error_outline,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      )
-                                    : Icon(
-                                        Icons.check_circle_outline,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                      ),
-                                title: Text(
-                                  record.question,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${record.word} · ${_formatTimestamp(record.timestamp)}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outline,
-                                  ),
-                                ),
+                    const Divider(),
+                    // 聊天记录列表
+                    Expanded(
+                      child: _aiChatHistory.isEmpty
+                          ? const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // 显示JSON内容（紧凑格式，最多两行）
-                                        if (record.elementJson != null)
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .surfaceContainerHighest,
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
+                                  Icon(
+                                    Icons.chat_bubble_outline,
+                                    size: 48,
+                                    color: Colors.grey,
+                                  ),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    '暂无聊天记录',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: scrollController,
+                              itemCount: _aiChatHistory.length,
+                              itemBuilder: (context, index) {
+                                final record =
+                                    _aiChatHistory[_aiChatHistory.length -
+                                        1 -
+                                        index];
+                                final isLoading =
+                                    record.answer.isEmpty &&
+                                    _pendingAiRequests.containsKey(record.id);
+                                final isError = record.answer.startsWith(
+                                  '请求失败:',
+                                );
+
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  child: ExpansionTile(
+                                    leading: isLoading
+                                        ? SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
                                             ),
-                                            child: Text(
-                                              record.elementJson!,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontFamily: 'Consolas',
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
+                                          )
+                                        : isError
+                                        ? Icon(
+                                            Icons.error_outline,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          )
+                                        : Icon(
+                                            Icons.check_circle_outline,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
                                           ),
-                                        const SizedBox(height: 8),
-                                        // 显示加载中、错误或回答内容
-                                        if (isLoading)
-                                          Row(
-                                            children: [
-                                              SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
+                                    title: Text(
+                                      record.question,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${record.word} · ${_formatTimestamp(record.timestamp)}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outline,
+                                      ),
+                                    ),
+                                    // 修复深色模式下的亮色横条问题
+                                    collapsedShape:
+                                        const RoundedRectangleBorder(
+                                          side: BorderSide.none,
+                                        ),
+                                    shape: const RoundedRectangleBorder(
+                                      side: BorderSide.none,
+                                    ),
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            // 显示JSON内容（紧凑格式，最多两行）
+                                            if (record.elementJson != null)
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(
+                                                  8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  record.elementJson!,
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontFamily: 'Consolas',
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            const SizedBox(height: 8),
+                                            // 显示加载中、错误或回答内容
+                                            if (isLoading)
+                                              Row(
+                                                children: [
+                                                  SizedBox(
+                                                    width: 16,
+                                                    height: 16,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).colorScheme.primary,
+                                                        ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    'AI正在思考中...',
+                                                    style: TextStyle(
                                                       color: Theme.of(
                                                         context,
-                                                      ).colorScheme.primary,
+                                                      ).colorScheme.outline,
                                                     ),
-                                              ),
-                                              const SizedBox(width: 8),
+                                                  ),
+                                                ],
+                                              )
+                                            else if (isError)
                                               Text(
-                                                'AI正在思考中...',
+                                                record.answer,
                                                 style: TextStyle(
                                                   color: Theme.of(
                                                     context,
-                                                  ).colorScheme.outline,
+                                                  ).colorScheme.error,
+                                                ),
+                                              )
+                                            else
+                                              // Markdown渲染回答
+                                              MarkdownBody(
+                                                data: record.answer,
+                                                selectable: true,
+                                                styleSheet: MarkdownStyleSheet(
+                                                  p: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodyMedium,
+                                                  code: TextStyle(
+                                                    fontFamily: 'Consolas',
+                                                    backgroundColor:
+                                                        Theme.of(context)
+                                                            .colorScheme
+                                                            .surfaceContainerHighest,
+                                                  ),
+                                                  blockquote: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                                  blockquoteDecoration:
+                                                      BoxDecoration(
+                                                        border: Border(
+                                                          left: BorderSide(
+                                                            color:
+                                                                Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .outline,
+                                                            width: 4,
+                                                          ),
+                                                        ),
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .surfaceContainerHighest
+                                                            .withOpacity(0.5),
+                                                      ),
                                                 ),
                                               ),
-                                            ],
-                                          )
-                                        else if (isError)
-                                          Text(
-                                            record.answer,
-                                            style: TextStyle(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.error,
-                                            ),
-                                          )
-                                        else
-                                          // Markdown渲染回答
-                                          MarkdownBody(
-                                            data: record.answer,
-                                            selectable: true,
-                                            styleSheet: MarkdownStyleSheet(
-                                              p: Theme.of(
-                                                context,
-                                              ).textTheme.bodyMedium,
-                                              code: TextStyle(
-                                                fontFamily: 'Consolas',
-                                                backgroundColor:
-                                                    Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerHighest,
-                                              ),
-                                              blockquote: Theme.of(context)
-                                                  .textTheme
-                                                  .bodyMedium
-                                                  ?.copyWith(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.end,
+                                              children: [
+                                                if (!isLoading)
+                                                  TextButton.icon(
+                                                    onPressed: () {
+                                                      Clipboard.setData(
+                                                        ClipboardData(
+                                                          text: record.answer,
+                                                        ),
+                                                      );
+                                                      _showSnackBar('已复制到剪贴板');
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons.copy,
+                                                      size: 18,
+                                                    ),
+                                                    label: const Text('复制回答'),
                                                   ),
-                                              blockquoteDecoration:
-                                                  BoxDecoration(
-                                                    border: Border(
-                                                      left: BorderSide(
-                                                        color: Theme.of(
-                                                          context,
-                                                        ).colorScheme.outline,
-                                                        width: 4,
-                                                      ),
+                                                const SizedBox(width: 8),
+                                                // 继续对话按钮
+                                                if (!isLoading && !isError)
+                                                  TextButton.icon(
+                                                    onPressed: () {
+                                                      _showContinueChatDialog(
+                                                        record,
+                                                        onMessageSent: () {
+                                                          setModalState(() {});
+                                                          setState(() {});
+                                                        },
+                                                      );
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons.chat,
+                                                      size: 18,
                                                     ),
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerHighest
-                                                        .withOpacity(0.5),
+                                                    label: const Text('继续对话'),
                                                   ),
-                                            ),
-                                          ),
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.end,
-                                          children: [
-                                            if (!isLoading)
-                                              TextButton.icon(
-                                                onPressed: () {
-                                                  Clipboard.setData(
-                                                    ClipboardData(
-                                                      text: record.answer,
-                                                    ),
-                                                  );
-                                                  _showSnackBar('已复制到剪贴板');
-                                                },
-                                                icon: const Icon(
-                                                  Icons.copy,
-                                                  size: 18,
-                                                ),
-                                                label: const Text('复制回答'),
-                                              ),
-                                            const SizedBox(width: 8),
-                                            // 删除单条记录按钮
-                                            TextButton.icon(
-                                              onPressed: () async {
-                                                final confirm = await showDialog<bool>(
-                                                  context: context,
-                                                  builder: (context) => AlertDialog(
-                                                    title: const Text('删除记录'),
-                                                    content: const Text(
-                                                      '确定删除这条AI聊天记录吗？',
-                                                    ),
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                              context,
-                                                              false,
+                                                const SizedBox(width: 8),
+                                                // 删除单条记录按钮
+                                                TextButton.icon(
+                                                  onPressed: () async {
+                                                    final confirm = await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (context) => AlertDialog(
+                                                        title: const Text(
+                                                          '删除记录',
+                                                        ),
+                                                        content: const Text(
+                                                          '确定删除这条AI聊天记录吗？',
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  context,
+                                                                  false,
+                                                                ),
+                                                            child: const Text(
+                                                              '取消',
                                                             ),
-                                                        child: const Text('取消'),
-                                                      ),
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                              context,
-                                                              true,
-                                                            ),
-                                                        style:
-                                                            TextButton.styleFrom(
+                                                          ),
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  context,
+                                                                  true,
+                                                                ),
+                                                            style: TextButton.styleFrom(
                                                               foregroundColor:
                                                                   Theme.of(
                                                                         context,
@@ -1956,54 +2043,669 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                                       .colorScheme
                                                                       .error,
                                                             ),
-                                                        child: const Text('删除'),
+                                                            child: const Text(
+                                                              '删除',
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
-                                                    ],
-                                                  ),
-                                                );
-                                                if (confirm == true) {
-                                                  await _aiChatHistoryService
-                                                      .deleteRecord(record.id);
-                                                  setState(() {
-                                                    _aiChatHistory.removeWhere(
-                                                      (r) => r.id == record.id,
                                                     );
-                                                  });
-                                                }
-                                              },
-                                              icon: Icon(
-                                                Icons.delete_outline,
-                                                size: 18,
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.error,
-                                              ),
-                                              label: Text(
-                                                '删除',
-                                                style: TextStyle(
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.error,
+                                                    if (confirm == true) {
+                                                      await _aiChatHistoryService
+                                                          .deleteRecord(
+                                                            record.id,
+                                                          );
+                                                      setState(() {
+                                                        _aiChatHistory
+                                                            .removeWhere(
+                                                              (r) =>
+                                                                  r.id ==
+                                                                  record.id,
+                                                            );
+                                                      });
+                                                      setModalState(() {});
+                                                    }
+                                                  },
+                                                  icon: Icon(
+                                                    Icons.delete_outline,
+                                                    size: 18,
+                                                    color: Theme.of(
+                                                      context,
+                                                    ).colorScheme.error,
+                                                  ),
+                                                  label: Text(
+                                                    '删除',
+                                                    style: TextStyle(
+                                                      color: Theme.of(
+                                                        context,
+                                                      ).colorScheme.error,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                );
+                              },
+                            ),
+                    ),
+                    const Divider(),
+                    // 自由发送文本框
+                    Container(
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                            ? MediaQuery.of(context).viewInsets.bottom
+                            : 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: freeChatController,
+                              focusNode: freeChatFocusNode,
+                              maxLines: 3,
+                              minLines: 1,
+                              decoration: InputDecoration(
+                                hintText: '输入任意问题，AI将结合当前单词上下文回答...',
+                                hintStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                filled: true,
+                                fillColor: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
                               ),
-                            );
-                          },
-                        ),
+                              onSubmitted: (text) {
+                                if (text.trim().isNotEmpty) {
+                                  _sendFreeChatMessage(
+                                    text.trim(),
+                                    onMessageSent: () {
+                                      freeChatController.clear();
+                                      setModalState(() {});
+                                      setState(() {});
+                                      // 滚动到最新消息
+                                      Future.delayed(
+                                        const Duration(milliseconds: 300),
+                                        () {
+                                          if (scrollController.hasClients) {
+                                            scrollController.animateTo(
+                                              0,
+                                              duration: const Duration(
+                                                milliseconds: 300,
+                                              ),
+                                              curve: Curves.easeOut,
+                                            );
+                                          }
+                                        },
+                                      );
+                                    },
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            onPressed: () {
+                              final text = freeChatController.text.trim();
+                              if (text.isNotEmpty) {
+                                _sendFreeChatMessage(
+                                  text,
+                                  onMessageSent: () {
+                                    freeChatController.clear();
+                                    freeChatFocusNode.unfocus();
+                                    setModalState(() {});
+                                    setState(() {});
+                                    // 滚动到最新消息
+                                    Future.delayed(
+                                      const Duration(milliseconds: 300),
+                                      () {
+                                        if (scrollController.hasClients) {
+                                          scrollController.animateTo(
+                                            0,
+                                            duration: const Duration(
+                                              milliseconds: 300,
+                                            ),
+                                            curve: Curves.easeOut,
+                                          );
+                                        }
+                                      },
+                                    );
+                                  },
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.send),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  /// 发送自由聊天消息
+  Future<void> _sendFreeChatMessage(
+    String message, {
+    required VoidCallback onMessageSent,
+  }) async {
+    final requestId = 'free_${DateTime.now().millisecondsSinceEpoch}';
+
+    // 构建当前单词上下文
+    final currentWord = widget.initialWord;
+    final currentDict = _entryGroup.currentDictionaryGroup;
+    String context = '当前查询单词: $currentWord';
+    if (currentDict.dictionaryId.isNotEmpty) {
+      context += '\n当前词典: ${currentDict.dictionaryId}';
+    }
+
+    // 创建加载中的记录
+    final loadingRecord = AiChatRecord(
+      id: requestId,
+      word: currentWord,
+      question: message,
+      answer: '',
+      timestamp: DateTime.now(),
+      path: null,
+      elementJson: null,
+    );
+    _aiChatHistory.add(loadingRecord);
+    _currentLoadingId = requestId;
+
+    // 保存到持久化存储
+    _aiChatHistoryService.addRecord(
+      AiChatRecordModel(
+        id: requestId,
+        word: currentWord,
+        question: message,
+        answer: '',
+        timestamp: loadingRecord.timestamp,
+        path: null,
+        elementJson: null,
+      ),
+    );
+
+    onMessageSent();
+
+    // 准备历史对话（最近5轮）
+    final history = _buildChatHistory();
+
+    // 启动后台请求
+    final requestFuture = _aiService.freeChat(
+      message,
+      history: history,
+      context: context,
+    );
+    _pendingAiRequests[requestId] = requestFuture;
+
+    // 处理请求完成
+    requestFuture
+        .then((answer) {
+          _pendingAiRequests.remove(requestId);
+          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
+          if (index != -1) {
+            _aiChatHistory[index] = AiChatRecord(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: answer,
+              timestamp: _aiChatHistory[index].timestamp,
+              path: null,
+              elementJson: null,
+            );
+          }
+          _aiChatHistoryService.updateRecord(
+            AiChatRecordModel(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: answer,
+              timestamp: _aiChatHistory[index].timestamp,
+              path: null,
+              elementJson: null,
+            ),
+          );
+          if (_currentLoadingId == requestId) {
+            _currentLoadingId = null;
+          }
+          if (mounted) {
+            setState(() {});
+          }
+        })
+        .catchError((e) {
+          _pendingAiRequests.remove(requestId);
+          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
+          if (index != -1) {
+            _aiChatHistory[index] = AiChatRecord(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: '请求失败: $e',
+              timestamp: _aiChatHistory[index].timestamp,
+              path: null,
+              elementJson: null,
+            );
+          }
+          _aiChatHistoryService.updateRecord(
+            AiChatRecordModel(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: '请求失败: $e',
+              timestamp: _aiChatHistory[index].timestamp,
+              path: null,
+              elementJson: null,
+            ),
+          );
+          if (_currentLoadingId == requestId) {
+            _currentLoadingId = null;
+          }
+          if (mounted) {
+            setState(() {});
+          }
+        });
+  }
+
+  /// 构建聊天历史（用于连续对话）
+  List<Map<String, String>> _buildChatHistory() {
+    final history = <Map<String, String>>[];
+    // 取最近5轮对话（最多10条消息）
+    final recentRecords = _aiChatHistory
+        .where((r) => r.answer.isNotEmpty && !r.answer.startsWith('请求失败:'))
+        .toList();
+
+    final startIndex = recentRecords.length > 5 ? recentRecords.length - 5 : 0;
+    for (var i = startIndex; i < recentRecords.length; i++) {
+      final record = recentRecords[i];
+      history.add({'role': 'user', 'content': record.question});
+      history.add({'role': 'assistant', 'content': record.answer});
+    }
+    return history;
+  }
+
+  /// 显示继续对话对话框
+  void _showContinueChatDialog(
+    AiChatRecord record, {
+    required VoidCallback onMessageSent,
+  }) {
+    final messageController = TextEditingController();
+    final scrollController = ScrollController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            minChildSize: 0.4,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (context, sheetScrollController) {
+              return Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    // 标题栏
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '继续对话',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    // 历史消息显示
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        children: [
+                          // 原始问题
+                          Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '原始问题',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(record.question),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // AI回答
+                          Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'AI回答',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  MarkdownBody(
+                                    data: record.answer,
+                                    selectable: true,
+                                    styleSheet: MarkdownStyleSheet(
+                                      p: Theme.of(context).textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Divider(),
+                          const SizedBox(height: 8),
+                          Text(
+                            '继续提问',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                    const Divider(),
+                    // 输入框
+                    Container(
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                            ? MediaQuery.of(context).viewInsets.bottom
+                            : 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: messageController,
+                              maxLines: 3,
+                              minLines: 1,
+                              decoration: InputDecoration(
+                                hintText: '基于以上对话继续提问...',
+                                hintStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                filled: true,
+                                fillColor: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                              ),
+                              onSubmitted: (text) {
+                                if (text.trim().isNotEmpty) {
+                                  _sendContinueChatMessage(
+                                    record,
+                                    text.trim(),
+                                    onMessageSent: () {
+                                      messageController.clear();
+                                      Navigator.pop(context);
+                                      onMessageSent();
+                                    },
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            onPressed: () {
+                              final text = messageController.text.trim();
+                              if (text.isNotEmpty) {
+                                _sendContinueChatMessage(
+                                  record,
+                                  text,
+                                  onMessageSent: () {
+                                    messageController.clear();
+                                    Navigator.pop(context);
+                                    onMessageSent();
+                                  },
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.send),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  /// 发送继续对话消息
+  Future<void> _sendContinueChatMessage(
+    AiChatRecord parentRecord,
+    String message, {
+    required VoidCallback onMessageSent,
+  }) async {
+    final requestId = 'continue_${DateTime.now().millisecondsSinceEpoch}';
+    final currentWord = widget.initialWord;
+
+    // 构建上下文信息
+    String context = '当前查询单词: $currentWord\n';
+    context += '原始问题: ${parentRecord.question}\n';
+    context +=
+        '原始回答: ${parentRecord.answer.substring(0, parentRecord.answer.length > 500 ? 500 : parentRecord.answer.length)}...';
+    if (parentRecord.elementJson != null) {
+      context += '\n相关词典内容: ${parentRecord.elementJson}';
+    }
+
+    // 创建加载中的记录
+    final loadingRecord = AiChatRecord(
+      id: requestId,
+      word: currentWord,
+      question: message,
+      answer: '',
+      timestamp: DateTime.now(),
+      path: parentRecord.path,
+      elementJson: parentRecord.elementJson,
+    );
+    _aiChatHistory.add(loadingRecord);
+    _currentLoadingId = requestId;
+
+    // 保存到持久化存储
+    _aiChatHistoryService.addRecord(
+      AiChatRecordModel(
+        id: requestId,
+        word: currentWord,
+        question: message,
+        answer: '',
+        timestamp: loadingRecord.timestamp,
+        path: parentRecord.path,
+        elementJson: parentRecord.elementJson,
+      ),
+    );
+
+    onMessageSent();
+
+    // 准备历史对话（包含父对话）
+    final history = <Map<String, String>>[
+      {'role': 'user', 'content': parentRecord.question},
+      {'role': 'assistant', 'content': parentRecord.answer},
+    ];
+
+    // 启动后台请求
+    final requestFuture = _aiService.freeChat(
+      message,
+      history: history,
+      context: context,
+    );
+    _pendingAiRequests[requestId] = requestFuture;
+
+    // 处理请求完成
+    requestFuture
+        .then((answer) {
+          _pendingAiRequests.remove(requestId);
+          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
+          if (index != -1) {
+            _aiChatHistory[index] = AiChatRecord(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: answer,
+              timestamp: _aiChatHistory[index].timestamp,
+              path: parentRecord.path,
+              elementJson: parentRecord.elementJson,
+            );
+          }
+          _aiChatHistoryService.updateRecord(
+            AiChatRecordModel(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: answer,
+              timestamp: _aiChatHistory[index].timestamp,
+              path: parentRecord.path,
+              elementJson: parentRecord.elementJson,
+            ),
+          );
+          if (_currentLoadingId == requestId) {
+            _currentLoadingId = null;
+          }
+          if (mounted) {
+            setState(() {});
+          }
+        })
+        .catchError((e) {
+          _pendingAiRequests.remove(requestId);
+          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
+          if (index != -1) {
+            _aiChatHistory[index] = AiChatRecord(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: '请求失败: $e',
+              timestamp: _aiChatHistory[index].timestamp,
+              path: parentRecord.path,
+              elementJson: parentRecord.elementJson,
+            );
+          }
+          _aiChatHistoryService.updateRecord(
+            AiChatRecordModel(
+              id: requestId,
+              word: currentWord,
+              question: message,
+              answer: '请求失败: $e',
+              timestamp: _aiChatHistory[index].timestamp,
+              path: parentRecord.path,
+              elementJson: parentRecord.elementJson,
+            ),
+          );
+          if (_currentLoadingId == requestId) {
+            _currentLoadingId = null;
+          }
+          if (mounted) {
+            setState(() {});
+          }
+        });
   }
 
   /// 格式化时间戳
@@ -2247,9 +2949,7 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
 
   void _handleSave() async {
     if (_hasSyntaxError) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('JSON 格式错误: $_errorMessage')));
+      showToast(context, 'JSON 格式错误: $_errorMessage');
       return;
     }
 
@@ -2258,21 +2958,13 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
       await widget.onSave(newValue);
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+      showToast(context, '保存失败: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
-    // 调试日志
-    Logger.d(
-      'Building _JsonEditorBottomSheet: initialPath=${widget.initialPath}, pathParts=${widget.pathParts}',
-      tag: 'EntryDetailPage',
-    );
 
     return Padding(
       padding: EdgeInsets.only(

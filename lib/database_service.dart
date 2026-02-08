@@ -4,9 +4,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'services/dictionary_manager.dart';
 import 'services/english_search_service.dart';
+import 'services/database_initializer.dart';
+import 'logger.dart';
 
 /// 搜索结果，包含 entries 和关系信息
 class SearchResult {
@@ -227,17 +228,17 @@ class DatabaseService {
       throw Exception('Database file not found at: $dbPath');
     }
 
-    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
+    // 使用统一的数据库初始化器
+    DatabaseInitializer().initialize();
+
+    Logger.d('writableDatabase: 打开可写数据库: $dbPath', tag: 'DatabaseService');
 
     return await openDatabase(
       dbPath,
       version: 1,
       readOnly: false,
       onCreate: (db, version) {
-        print('Creating database schema...');
+        Logger.d('Creating database schema...', tag: 'DatabaseService');
       },
     );
   }
@@ -249,9 +250,17 @@ class DatabaseService {
       throw Exception('Database file not found at: $dbPath');
     }
 
-    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+    // 使用统一的数据库初始化器
+    DatabaseInitializer().initialize();
+
+    Logger.d(
+      '_initDatabase: 打开数据库 (readOnly=$readOnly): $dbPath',
+      tag: 'DatabaseService',
+    );
+
+    // 只读模式下不设置 version 和 onCreate，避免触发写入操作
+    if (readOnly) {
+      return await openDatabase(dbPath, readOnly: true);
     }
 
     return await openDatabase(
@@ -259,7 +268,7 @@ class DatabaseService {
       version: 1,
       readOnly: readOnly,
       onCreate: (db, version) {
-        print('Creating database schema...');
+        Logger.d('Creating database schema...', tag: 'DatabaseService');
       },
     );
   }
@@ -326,7 +335,7 @@ class DatabaseService {
             entries.addAll(relatedEntries);
           }
         } catch (e) {
-          print('EnglishSearchService error (db not found): $e');
+          // Error handling without debug output
         }
       }
     }
@@ -403,7 +412,7 @@ class DatabaseService {
 
         await db.close();
       } catch (e) {
-        print('Error searching in dictionary ${metadata.id}: $e');
+        // Error handling without debug output
       }
     }
 
@@ -432,7 +441,6 @@ class DatabaseService {
   Future<DictionaryEntry?> getEntry(String word) async {
     try {
       final db = await database;
-      print('Searching for word: $word');
 
       // 默认使用headword_normalized进行搜索（规范化匹配）
       final String whereClause = 'headword_normalized = ?';
@@ -509,7 +517,7 @@ class DatabaseService {
         await db.close();
         if (results.length >= limit) break;
       } catch (e) {
-        print('Error prefix searching in dictionary ${metadata.id}: $e');
+        // Error handling without debug output
       }
     }
 
@@ -528,7 +536,6 @@ class DatabaseService {
     try {
       final dictId = entry.dictId;
       if (dictId == null) {
-        print('Error: entry.dictId is null');
         return false;
       }
 
@@ -536,17 +543,11 @@ class DatabaseService {
       final dbPath = await dictManager.getDictionaryDbPath(dictId);
 
       if (!await File(dbPath).exists()) {
-        print('Error: Database file not found at: $dbPath');
         return false;
       }
 
-      if (kIsWeb ||
-          Platform.isWindows ||
-          Platform.isLinux ||
-          Platform.isMacOS) {
-        sqfliteFfiInit();
-        databaseFactory = databaseFactoryFfi;
-      }
+      // 使用统一的数据库初始化器
+      DatabaseInitializer().initialize();
 
       final db = await openDatabase(dbPath, readOnly: false);
 
@@ -570,7 +571,6 @@ class DatabaseService {
         }
 
         if (entryId == null) {
-          print('Error: Cannot parse entry_id from "${entry.id}"');
           return false;
         }
 
@@ -586,7 +586,6 @@ class DatabaseService {
         await db.close();
       }
     } catch (e) {
-      print('Error updating entry: $e');
       return false;
     }
   }
