@@ -8,6 +8,10 @@ import 'services/dictionary_manager.dart';
 import 'services/english_db_service.dart';
 import 'pages/entry_detail_page.dart';
 import 'utils/toast_utils.dart';
+import 'utils/language_utils.dart';
+import 'utils/language_dropdown.dart';
+import 'utils/dpi_utils.dart';
+import 'widgets/search_bar.dart';
 import 'components/english_db_download_dialog.dart';
 import 'logger.dart';
 
@@ -45,12 +49,26 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   bool _showSearchResults = false;
   Timer? _debounceTimer;
 
+  bool _isInitializing = true;
+
   @override
   void initState() {
     super.initState();
-    _loadSearchHistory();
-    _loadAdvancedSettings();
-    _loadDictionaryGroups();
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    await Future.wait([
+      _loadSearchHistory(),
+      _loadAdvancedSettings(),
+      _loadDictionaryGroups(),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
   }
 
   Future<void> _loadDictionaryGroups() async {
@@ -58,9 +76,18 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final languages = dicts.map((d) => d.sourceLanguage).toSet().toList()
       ..sort();
 
+    final availableGroups = ['auto', ...languages];
+
+    final lastGroup = await _advancedSettingsService.getLastSelectedGroup();
+    final selectedGroup =
+        (lastGroup != null && availableGroups.contains(lastGroup))
+        ? lastGroup
+        : 'auto';
+
     if (mounted) {
       setState(() {
-        _availableGroups = ['auto', ...languages];
+        _availableGroups = availableGroups;
+        _selectedGroup = selectedGroup;
       });
     }
   }
@@ -249,11 +276,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       sourceLanguage: _selectedGroup,
     );
 
-    Logger.d(
-      '检索到所有词典的内容，共 ${searchResult.entries.length} 条结果',
-      tag: 'DictionarySearch',
-    );
-
     if (searchResult.entries.isNotEmpty) {
       final entryGroup = DictionaryEntryGroup.groupEntries(
         searchResult.entries,
@@ -314,168 +336,88 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       body: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    decoration: InputDecoration(
-                      hintText: '输入单词',
-                      prefixIcon: Container(
-                        margin: const EdgeInsets.fromLTRB(8, 4, 4, 4),
-                        child: Material(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(6),
-                          clipBehavior: Clip.hardEdge,
-                          child: PopupMenuButton<String>(
-                            tooltip: '选择搜索范围',
-                            offset: const Offset(-8, 45),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            initialValue: _selectedGroup,
-                            onSelected: (value) {
-                              setState(() {
-                                _selectedGroup = value;
-                                // 切换分组时，如果不支持当前高级选项，则重置
-                                if (value != 'en' && value != 'auto') {
-                                  _useAuxiliarySearch = false;
-                                  _exactMatch = false;
-                                }
-                              });
-                            },
-                            itemBuilder: (context) => _availableGroups.map((
-                              group,
-                            ) {
-                              return PopupMenuItem(
-                                value: group,
-                                child: Text(
-                                  group == 'auto' ? '自动' : group.toUpperCase(),
-                                ),
-                              );
-                            }).toList(),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_selectedGroup == 'auto')
-                                    Icon(
-                                      Icons.search,
-                                      size: 20,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    )
-                                  else
-                                    Text(
-                                      _selectedGroup.toUpperCase(),
-                                      style: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    Icons.arrow_drop_down,
-                                    size: 18,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      prefixIconConstraints: const BoxConstraints(
-                        minWidth: 48,
-                        minHeight: 40,
-                      ),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 高级选项按钮
-                          IconButton(
-                            icon: Icon(
-                              Icons.tune,
-                              size: 18,
-                              color: _showAdvancedOptions
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _showAdvancedOptions = !_showAdvancedOptions;
-                              });
-                            },
-                            tooltip: '高级选项',
-                          ),
-                          // 清除按钮
-                          if (_searchController.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {});
-                              },
-                            ),
-                        ],
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                    onChanged: (text) {
-                      setState(() {});
-                      _onSearchTextChanged(text);
-                    },
-                    onSubmitted: (_) {
-                      // 如果开启了精确搜索，直接搜索输入框内容（不采纳联想词）
-                      // 因为联想词可能是规范化后的结果，会丢失原始输入的大小写
-                      if (_exactMatch) {
-                        _searchWord();
-                      } else {
-                        // 如果有搜索结果，默认进入第一个
-                        if (_showSearchResults && _searchResults.isNotEmpty) {
-                          _onSearchResultTap(_searchResults.first);
-                        } else {
-                          _searchWord();
-                        }
-                      }
-                    },
+            child: UnifiedSearchBar.withLanguageSelector(
+              controller: _searchController,
+              selectedLanguage: _selectedGroup,
+              availableLanguages: _availableGroups,
+              onLanguageSelected: (value) async {
+                if (value != null) {
+                  setState(() {
+                    _selectedGroup = value;
+                    if (value != 'en' && value != 'auto') {
+                      _useAuxiliarySearch = false;
+                      _exactMatch = false;
+                    }
+                  });
+                  await _advancedSettingsService.setLastSelectedGroup(value);
+                }
+              },
+              hintText: '输入单词',
+              extraSuffixIcons: [
+                IconButton(
+                  icon: Icon(
+                    Icons.tune,
+                    size: 18,
+                    color: _showAdvancedOptions
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
+                  onPressed: () {
+                    setState(() {
+                      _showAdvancedOptions = !_showAdvancedOptions;
+                    });
+                  },
+                  tooltip: '高级选项',
                 ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  height: 48, // 与TextField高度一致
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _searchWord,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                if (_searchController.text.isNotEmpty)
+                  IconButton(
+                    icon: Icon(
+                      Icons.clear,
+                      size: DpiUtils.scaleIconSize(context, 18),
                     ),
-                    child: const Text('查询'),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {});
+                    },
                   ),
+                IconButton(
+                  icon: Icon(
+                    Icons.arrow_forward,
+                    size: 20,
+                    color: _isLoading
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withOpacity(0.38)
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  onPressed: _isLoading ? null : _searchWord,
+                  tooltip: '查询',
                 ),
               ],
+              onChanged: (text) {
+                setState(() {});
+                _onSearchTextChanged(text);
+              },
+              onSubmitted: (_) {
+                if (_exactMatch) {
+                  _searchWord();
+                } else {
+                  if (_showSearchResults && _searchResults.isNotEmpty) {
+                    _onSearchResultTap(_searchResults.first);
+                  } else {
+                    _searchWord();
+                  }
+                }
+              },
             ),
           ),
           // 高级搜索选项
@@ -624,7 +566,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             ? Text(
                                 '按回车进入',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: DpiUtils.scaleFontSize(context, 12),
                                   color: Theme.of(context).colorScheme.outline,
                                 ),
                               )
@@ -679,7 +621,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 4,
+            bottom: 12,
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -691,7 +638,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               ),
               TextButton.icon(
                 onPressed: _clearHistory,
-                icon: const Icon(Icons.delete_outline, size: 18),
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: DpiUtils.scaleIconSize(context, 18),
+                ),
                 label: const Text('清除'),
               ),
             ],
@@ -705,11 +655,17 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               final word = _searchHistory[index];
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
+                elevation: 0,
                 child: ListTile(
                   leading: const Icon(Icons.history),
                   title: Text(word),
                   trailing: IconButton(
-                    icon: const Icon(Icons.close, size: 18),
+                    icon: Icon(
+                      Icons.close,
+                      size: DpiUtils.scaleIconSize(context, 18),
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: () async {
                       await _historyService.removeSearchRecord(word);
                       await _loadSearchHistory();

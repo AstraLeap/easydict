@@ -15,10 +15,6 @@
     "source": "Oxford 3000"
   },
   "topics": ["赛车", "时尚", "经济"],
-  "theasaruses": {
-    "group_name": "nature",
-    "word_list": ["mist"]
-  },
   "etymology": [
     {
       "display": "11",
@@ -28,34 +24,6 @@
     {
       "display": "11",
       "text": "可能源sdfsdfsd自斯堪的纳维亚语，与古诺斯语 'fjuk'（飘雪）有关。"
-    }
-  ],
-  "collocations": [
-    {
-      "display": "11",
-      "collocation": [
-        {
-          "collo_before": "in a",
-          "collo_after": ""
-        },
-        {
-          "collo_before": "aaa",
-          "collo_after": "bbb"
-        }
-      ]
-    },
-    {
-      "display": "22",
-      "collocation": [
-        {
-          "collo_before": "in a",
-          "collo_after": ""
-        },
-        {
-          "collo_before": "aaa",
-          "collo_after": "bbb"
-        }
-      ]
     }
   ],
   "pronunciations": [
@@ -74,11 +42,11 @@
   "sense_groups": [
     {
       "group_name": "noun",
-      "senses": []
+      "senses": [{}, {}]
     },
     {
       "group_name": "verb",
-      "senses": []
+      "senses": [{}, {}]
     }
   ],
   "senses": [
@@ -138,13 +106,6 @@
       "sub_senses": [
         {
           "index": "a",
-          "label": {
-            "pos": "n",
-            "grammar": ["U"],
-            "pattern": ["~ of N"],
-            "region": "us",
-            "topic": ["medicine"]
-          },
           "definition": {
             "zh": "（头脑）昏沉",
             "en": "A state of mental fatigue or grogginess."
@@ -160,15 +121,6 @@
         {
           "index": "b",
           "pos": "n",
-          "grammar": {
-            "tags": ["C", "vi"],
-            "patterns": ["~ of N"]
-          },
-          "label": {
-            "region": "uk",
-            "topic": ["meteorology"],
-            "register": "literary"
-          },
           "definition": {
             "zh": "云雾状的遮挡物",
             "en": "A cloud-like mass of something."
@@ -178,28 +130,6 @@
               "usage": "~ of N",
               "en": "A fog of cigarette smoke hung in the air.",
               "zh": "空气中弥漫着香烟的烟雾。"
-            }
-          ]
-        },
-        {
-          "index": "c",
-          "pos": "v",
-          "grammar": {
-            "tags": ["T", "often passive"],
-            "patterns": ["~ N", "be ~ged with"]
-          },
-          "label": {
-            "tone": "neutral"
-          },
-          "definition": {
-            "zh": "使困惑，使迷惘",
-            "en": "To confuse or puzzle someone."
-          },
-          "note": "常用于被动语态 be fogged。",
-          "example": [
-            {
-              "en": "The复杂的 instructions fogged the newcomers.",
-              "zh": "复杂的说明让新来者感到困惑。"
             }
           ]
         }
