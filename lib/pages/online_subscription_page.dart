@@ -79,9 +79,7 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
     await _dictManager.setOnlineSubscriptionUrl(url);
 
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('设置已保存')));
+      showToast(context, '设置已保存');
     }
 
     _initializeService();

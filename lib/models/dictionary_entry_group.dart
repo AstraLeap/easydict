@@ -57,12 +57,9 @@ class DictionaryGroup {
   int get currentPageSectionCount => currentPageGroup.sections.length;
 
   void setCurrentPageIndex(int index) {
-    print('[DEBUG] DictionaryGroup.setCurrentPageIndex: $index (current: $_currentPageIndex)');
     if (index >= 0 && index < pageGroups.length) {
       _currentPageIndex = index;
       _currentSectionIndex = 0;
-    } else {
-      print('[DEBUG] DictionaryGroup.setCurrentPageIndex: Index out of bounds');
     }
   }
 

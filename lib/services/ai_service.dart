@@ -236,4 +236,216 @@ class AIService {
 
     return await chat(prompt, systemPrompt: systemPrompt);
   }
+
+  /// 连续对话 - 支持多轮对话上下文
+  Future<String> chatWithHistory(
+    String question, {
+    required List<Map<String, String>> history,
+    String? systemPrompt,
+    bool useFastModel = false,
+  }) async {
+    final config = await _getLLMConfig(isFast: useFastModel);
+    if (config == null) {
+      throw Exception('未配置${useFastModel ? "快速" : "标准"}AI模型，请先在设置中配置API');
+    }
+
+    final apiKey = config['apiKey'] as String;
+    final baseUrl = config['baseUrl'] as String;
+    final model = config['model'] as String;
+    final provider = config['provider'] as LLMProvider;
+
+    if (apiKey.isEmpty) {
+      throw Exception('未配置API Key');
+    }
+
+    final effectiveBaseUrl = baseUrl.isEmpty
+        ? provider.defaultBaseUrl
+        : baseUrl;
+
+    switch (provider) {
+      case LLMProvider.openAI:
+      case LLMProvider.deepseek:
+      case LLMProvider.moonshot:
+      case LLMProvider.zhipu:
+      case LLMProvider.ali:
+      case LLMProvider.custom:
+        return await _callOpenAICompatibleApiWithHistory(
+          baseUrl: effectiveBaseUrl,
+          apiKey: apiKey,
+          model: model,
+          question: question,
+          history: history,
+          systemPrompt: systemPrompt,
+        );
+      case LLMProvider.anthropic:
+        return await _callAnthropicApiWithHistory(
+          baseUrl: effectiveBaseUrl,
+          apiKey: apiKey,
+          model: model,
+          question: question,
+          history: history,
+          systemPrompt: systemPrompt,
+        );
+      case LLMProvider.gemini:
+        return await _callGeminiApiWithHistory(
+          baseUrl: effectiveBaseUrl,
+          apiKey: apiKey,
+          model: model,
+          question: question,
+          history: history,
+          systemPrompt: systemPrompt,
+        );
+    }
+  }
+
+  /// 调用OpenAI兼容API（支持历史对话）
+  Future<String> _callOpenAICompatibleApiWithHistory({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String question,
+    required List<Map<String, String>> history,
+    String? systemPrompt,
+  }) async {
+    final messages = <Map<String, String>>[];
+    if (systemPrompt != null && systemPrompt.isNotEmpty) {
+      messages.add({'role': 'system', 'content': systemPrompt});
+    }
+    // 添加历史对话
+    messages.addAll(history);
+    // 添加当前问题
+    messages.add({'role': 'user', 'content': question});
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/chat/completions'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $apiKey',
+      },
+      body: jsonEncode({
+        'model': model,
+        'messages': messages,
+        'temperature': 0.7,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['choices'][0]['message']['content'] as String;
+    } else {
+      throw Exception('API调用失败: ${response.statusCode} - ${response.body}');
+    }
+  }
+
+  /// 调用Anthropic API（支持历史对话）
+  Future<String> _callAnthropicApiWithHistory({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String question,
+    required List<Map<String, String>> history,
+    String? systemPrompt,
+  }) async {
+    final messages = <Map<String, String>>[];
+    // 添加历史对话
+    messages.addAll(history);
+    // 添加当前问题
+    messages.add({'role': 'user', 'content': question});
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/messages'),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: jsonEncode({
+        'model': model,
+        'messages': messages,
+        'system': systemPrompt,
+        'max_tokens': 4096,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['content'][0]['text'] as String;
+    } else {
+      throw Exception('API调用失败: ${response.statusCode} - ${response.body}');
+    }
+  }
+
+  /// 调用Google Gemini API（支持历史对话）
+  Future<String> _callGeminiApiWithHistory({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String question,
+    required List<Map<String, String>> history,
+    String? systemPrompt,
+  }) async {
+    final url = '$baseUrl/models/$model:generateContent?key=$apiKey';
+
+    final contents = <Map<String, dynamic>>[];
+    
+    // 添加历史对话
+    for (final msg in history) {
+      final role = msg['role'] == 'assistant' ? 'model' : 'user';
+      contents.add({
+        'role': role,
+        'parts': [{'text': msg['content']}],
+      });
+    }
+    
+    // 添加当前问题
+    contents.add({
+      'role': 'user',
+      'parts': [{'text': question}],
+    });
+
+    final requestBody = <String, dynamic>{
+      'contents': contents,
+    };
+    
+    if (systemPrompt != null && systemPrompt.isNotEmpty) {
+      requestBody['systemInstruction'] = {
+        'parts': [{'text': systemPrompt}],
+      };
+    }
+
+    final response = await http.post(
+      Uri.parse(url),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(requestBody),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['candidates'][0]['content']['parts'][0]['text'] as String;
+    } else {
+      throw Exception('API调用失败: ${response.statusCode} - ${response.body}');
+    }
+  }
+
+  /// 自由对话（支持连续对话）
+  Future<String> freeChat(
+    String question, {
+    required List<Map<String, String>> history,
+    String? context,
+  }) async {
+    const systemPrompt =
+        "你是一个专业的语言学习助手。用户可能正在学习词汇或语言相关内容。"
+        "请提供准确、有帮助的回答，如果用户提供了上下文信息，请结合上下文回答。";
+
+    String fullQuestion = question;
+    if (context != null && context.isNotEmpty) {
+      fullQuestion = "当前学习上下文:\n$context\n\n用户问题: $question";
+    }
+
+    return await chatWithHistory(
+      fullQuestion,
+      history: history,
+      systemPrompt: systemPrompt,
+    );
+  }
 }
