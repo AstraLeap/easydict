@@ -6,6 +6,7 @@ import '../pages/llm_config_page.dart';
 import 'dictionary_manager.dart';
 import '../models/dictionary_metadata.dart';
 import '../logger.dart';
+import '../utils/language_utils.dart';
 
 class TranslationService {
   static final TranslationService _instance = TranslationService._internal();
@@ -182,24 +183,8 @@ class TranslationService {
     String sourceLang,
     String targetLang,
   ) {
-    final langName = _getLangName(targetLang);
+    final langName = LanguageUtils.getLanguageDisplayName(targetLang);
     return '请将以下文本翻译成$langName，只输出翻译结果，不要任何解释或格式：\n\n$text';
-  }
-
-  String _getLangName(String code) {
-    final names = {
-      'zh': '中文',
-      'en': '英语',
-      'ja': '日语',
-      'ko': '韩语',
-      'fr': '法语',
-      'de': '德语',
-      'es': '西班牙语',
-      'it': '意大利语',
-      'pt': '葡萄牙语',
-      'ru': '俄语',
-    };
-    return names[code] ?? code;
   }
 
   Map<String, dynamic> _insertTranslation(

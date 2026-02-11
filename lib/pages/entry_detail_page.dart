@@ -15,8 +15,10 @@ import '../services/ai_chat_history_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
 import '../logger.dart';
+import '../services/preferences_service.dart';
 import '../utils/toast_utils.dart';
 import '../utils/word_list_dialog.dart';
+import '../utils/language_utils.dart';
 
 /// AI聊天记录模型
 class AiChatRecord {
@@ -37,6 +39,107 @@ class AiChatRecord {
     this.path,
     this.elementJson,
   });
+}
+
+class _DraggableNavPanel extends StatefulWidget {
+  final DictionaryEntryGroup entryGroup;
+  final VoidCallback onDictionaryChanged;
+  final VoidCallback onPageChanged;
+  final VoidCallback onSectionChanged;
+  final Function(DictionaryEntry) onNavigateToEntry;
+  final bool initialIsRight;
+  final double initialDy;
+
+  const _DraggableNavPanel({
+    required this.entryGroup,
+    required this.onDictionaryChanged,
+    required this.onPageChanged,
+    required this.onSectionChanged,
+    required this.onNavigateToEntry,
+    required this.initialIsRight,
+    required this.initialDy,
+  });
+
+  @override
+  State<_DraggableNavPanel> createState() => _DraggableNavPanelState();
+}
+
+class _DraggableNavPanelState extends State<_DraggableNavPanel> {
+  late bool _isRight;
+  late double _dy;
+  Offset? _dragOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _isRight = widget.initialIsRight;
+    _dy = widget.initialDy;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    double top;
+    double? left;
+    double? right;
+
+    if (_dragOffset != null) {
+      top = _dragOffset!.dy;
+      left = _dragOffset!.dx;
+    } else {
+      top = screenSize.height * _dy;
+      // 确保不超出屏幕底部
+      if (top > screenSize.height - 100) {
+        top = screenSize.height - 100;
+      }
+      if (_isRight) {
+        right = 16;
+      } else {
+        left = 16;
+      }
+    }
+
+    return Positioned(
+      top: top,
+      left: left,
+      right: right,
+      child: GestureDetector(
+        onPanStart: (details) {
+          setState(() {
+            // 初始化拖动位置
+            final currentLeft = _isRight ? (screenSize.width - 16 - 52) : 16.0;
+            _dragOffset = Offset(currentLeft, screenSize.height * _dy);
+          });
+        },
+        onPanUpdate: (details) {
+          setState(() {
+            _dragOffset = _dragOffset! + details.delta;
+          });
+        },
+        onPanEnd: (details) {
+          // 计算停靠
+          final centerX = _dragOffset!.dx + 52 / 2;
+          final isRight = centerX > screenSize.width / 2;
+          final newDy = (_dragOffset!.dy / screenSize.height).clamp(0.1, 0.8);
+
+          setState(() {
+            _isRight = isRight;
+            _dy = newDy;
+            _dragOffset = null;
+          });
+          PreferencesService().setNavPanelPosition(_isRight, _dy);
+        },
+        child: DictionaryNavigationPanel(
+          entryGroup: widget.entryGroup,
+          onDictionaryChanged: widget.onDictionaryChanged,
+          onPageChanged: widget.onPageChanged,
+          onSectionChanged: widget.onSectionChanged,
+          onNavigateToEntry: widget.onNavigateToEntry,
+          isRight: _isRight,
+        ),
+      ),
+    );
+  }
 }
 
 class EntryDetailPage extends StatefulWidget {
@@ -102,12 +205,105 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   /// 当前正在加载的AI请求ID
   String? _currentLoadingId;
 
+  // 导航栏位置状态
+  bool _isNavPanelRight = true;
+  double _navPanelDy = 0.7; // 相对屏幕高度的比例
+  bool _isNavPanelLoaded = false;
+
+  // 非目标语言显示状态 - 延迟初始化
+  bool? _areNonTargetLanguagesVisible;
+
+  // 用于访问 ComponentRenderer 的状态
+  final GlobalKey<ComponentRendererState> _componentRendererKey =
+      GlobalKey<ComponentRendererState>();
+
   @override
   void initState() {
     super.initState();
     _entryGroup = widget.entryGroup;
     _loadFavoriteStatus();
     _loadAiChatHistory();
+    _loadNavPanelPosition();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 在 didChangeDependencies 中初始化，确保 context 可用
+    if (_areNonTargetLanguagesVisible == null) {
+      _initializeTargetLanguagesVisibility();
+    }
+  }
+
+  /// 获取当前目标语言显示状态，如果未初始化则返回 true
+  bool get _isNonTargetLanguagesVisible =>
+      _areNonTargetLanguagesVisible ?? true;
+
+  /// 初始化目标语言显示状态
+  Future<void> _initializeTargetLanguagesVisibility() async {
+    // 根据当前条目的隐藏状态初始化
+    final entries = _getAllEntriesInOrder();
+    if (entries.isEmpty) {
+      _areNonTargetLanguagesVisible = true;
+      return;
+    }
+
+    // 获取当前词典的元数据
+    final currentDictId = _entryGroup.currentDictionaryId;
+    if (currentDictId.isEmpty) {
+      _areNonTargetLanguagesVisible = true;
+      return;
+    }
+
+    final metadata = await DictionaryManager().getDictionaryMetadata(
+      currentDictId,
+    );
+    if (metadata == null) {
+      _areNonTargetLanguagesVisible = true;
+      return;
+    }
+
+    final sourceLang = metadata.sourceLanguage;
+    final targetLangs = metadata.targetLanguages;
+
+    // 检查是否有目标语言被隐藏
+    bool hasVisibleTargetLanguages = false;
+
+    for (final entry in entries) {
+      final hiddenLanguages = entry.hiddenLanguages;
+      final json = entry.toJson();
+
+      // 收集所有目标语言路径
+      final Set<String> languagePaths = {};
+      _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
+
+      for (final path in languagePaths) {
+        if (!hiddenLanguages.contains(path)) {
+          hasVisibleTargetLanguages = true;
+          break;
+        }
+      }
+      if (hasVisibleTargetLanguages) break;
+    }
+
+    // 如果所有目标语言都被隐藏，则设置为 false
+    // 如果有可见的目标语言，则设置为 true
+    if (mounted) {
+      setState(() {
+        _areNonTargetLanguagesVisible = hasVisibleTargetLanguages;
+      });
+    }
+  }
+
+  Future<void> _loadNavPanelPosition() async {
+    final position = await PreferencesService().getNavPanelPosition();
+    if (mounted) {
+      setState(() {
+        _isNavPanelRight = position['isRight'] == 1.0;
+        _navPanelDy = position['dy']!;
+        _isNavPanelLoaded = true;
+      });
+    }
   }
 
   /// 加载AI聊天记录
@@ -238,8 +434,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   /// 更新_entryGroup中对应的entry
-  void _updateEntryInGroup(DictionaryEntry updatedEntry) {
-    setState(() {
+  void _updateEntryInGroup(
+    DictionaryEntry updatedEntry, {
+    bool shouldSetState = true,
+  }) {
+    final updateLogic = () {
       for (final dictGroup in _entryGroup.dictionaryGroups) {
         for (final pageGroup in dictGroup.pageGroups) {
           for (int i = 0; i < pageGroup.sections.length; i++) {
@@ -254,7 +453,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
         }
       }
-    });
+    };
+
+    if (shouldSetState) {
+      setState(updateLogic);
+    } else {
+      updateLogic();
+    }
   }
 
   List<DictionaryEntry> _getAllEntriesInOrder() {
@@ -442,8 +647,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Widget build(BuildContext context) {
     final entries = _getAllEntriesInOrder();
 
-    Logger.d('开始渲染词典，共 ${entries.length} 个词条', tag: 'EntryDetailPage');
-
     for (final entry in entries) {
       _entryKeys.putIfAbsent(entry.id, () => GlobalKey());
     }
@@ -475,22 +678,25 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               );
             },
           ),
-          if (_entryGroup.dictionaryGroups.isNotEmpty)
-            Positioned(
-              right: 16,
-              bottom: bottomPadding + 70,
-              child: DictionaryNavigationPanel(
-                entryGroup: _entryGroup,
-                onDictionaryChanged: _onDictionaryChanged,
-                onPageChanged: _onPageChanged,
-                onSectionChanged: _onSectionChanged,
-                onNavigateToEntry: _scrollToEntry,
-              ),
+          if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
+            _DraggableNavPanel(
+              entryGroup: _entryGroup,
+              onDictionaryChanged: _onDictionaryChanged,
+              onPageChanged: _onPageChanged,
+              onSectionChanged: _onSectionChanged,
+              onNavigateToEntry: _scrollToEntry,
+              initialIsRight: _isNavPanelRight,
+              initialDy: _navPanelDy,
             ),
+          // 浮动底部功能栏
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: bottomPadding > 0 ? bottomPadding : 16,
+            child: _buildBottomActionBar(),
+          ),
         ],
       ),
-      // 底部功能栏（与主页面底部栏区分）
-      bottomNavigationBar: _buildBottomActionBar(),
     );
   }
 
@@ -501,11 +707,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final bottomPadding = mediaQuery.padding.bottom;
 
     return Container(
-      margin: _getDynamicPadding(context).copyWith(top: 0, bottom: 12),
-      padding: EdgeInsets.only(bottom: bottomPadding > 0 ? bottomPadding : 4),
+      margin: _getDynamicPadding(
+        context,
+      ).copyWith(top: 0, bottom: bottomPadding > 0 ? bottomPadding / 2 : 0),
+      padding: EdgeInsets.zero,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: colorScheme.outlineVariant.withOpacity(0.5),
           width: 1,
@@ -520,35 +728,45 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       ),
       child: SafeArea(
         top: false,
+        bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               // 返回按钮（最左边）
-              _buildActionButton(
-                icon: Icons.arrow_back,
-                label: '返回',
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              // 查词按钮（第二左）
-              _buildActionButton(
-                icon: Icons.search,
-                label: '查词',
-                onPressed: _showNewSearch,
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.arrow_back,
+                  onPressed: () => Navigator.of(context).pop(),
+                  onLongPress: () =>
+                      Navigator.of(context).popUntil((route) => route.isFirst),
+                ),
               ),
               // 收藏按钮
-              _buildActionButton(
-                icon: _isFavorite ? Icons.bookmark : Icons.bookmark_outline,
-                label: '收藏',
-                isActive: _isFavorite,
-                onPressed: _toggleFavorite,
+              Expanded(
+                child: _buildActionButton(
+                  icon: _isFavorite ? Icons.bookmark : Icons.bookmark_outline,
+                  isActive: _isFavorite,
+                  onPressed: _toggleFavorite,
+                ),
+              ),
+              // 一键显示/隐藏非目标语言
+              Expanded(
+                child: _buildActionButton(
+                  icon: _isNonTargetLanguagesVisible
+                      ? Icons.translate
+                      : Icons.translate_outlined,
+                  isActive: _isNonTargetLanguagesVisible,
+                  onPressed: _toggleAllNonTargetLanguages,
+                ),
               ),
               // 大模型历史记录
-              _buildActionButton(
-                icon: Icons.auto_awesome,
-                label: '大模型',
-                onPressed: _showAiChatHistory,
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.auto_awesome,
+                  onPressed: _showAiChatHistory,
+                ),
               ),
             ],
           ),
@@ -560,8 +778,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   // 构建单个操作按钮
   Widget _buildActionButton({
     required IconData icon,
-    required String label,
     required VoidCallback onPressed,
+    VoidCallback? onLongPress,
     bool isActive = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -570,31 +788,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isActive
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isActive
-                      ? colorScheme.primary
-                      : colorScheme.onSurfaceVariant,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          child: Icon(
+            icon,
+            size: 24,
+            color: isActive
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -625,27 +828,22 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               Padding(
                 padding: _getDynamicPadding(context),
                 child: ComponentRenderer(
+                  key: _componentRendererKey,
                   entry: entry,
                   onElementTap: (path, label) {
-                    Logger.d(
-                      'onElementTap: path=$path, label=$label',
-                      tag: 'EntryDetailPage',
-                    );
                     _handleTranslationTap(entry, path, label);
                   },
                   onEditElement: (path, label) {
-                    Logger.d(
-                      'onEditElement: path=$path, label=$label',
-                      tag: 'EntryDetailPage',
-                    );
                     _showJsonElementEditorFromPath(entry, path);
                   },
                   onAiAsk: (path, label) {
-                    Logger.d(
-                      'onAiAsk: path=$path, label=$label',
-                      tag: 'EntryDetailPage',
-                    );
                     _handleAiElementTap(entry, path, label);
+                  },
+                  onTranslationInsert: (path, newEntry) {
+                    _componentRendererKey.currentState?.handleTranslationInsert(
+                      path,
+                      newEntry,
+                    );
                   },
                 ),
               ),
@@ -709,7 +907,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
-  void _handleNominalizationTap(String word) async {
+  /// 导航到指定单词的详情页
+  void _navigateToWord(String word) async {
+    if (word.isEmpty) return;
+
     final dbService = DatabaseService();
     final historyService = SearchHistoryService();
 
@@ -734,18 +935,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
+  void _handleNominalizationTap(String word) async {
+    _navigateToWord(word);
+  }
+
   void _showJsonElementEditorFromPath(
     DictionaryEntry entry,
     String pathStr,
   ) async {
-    Logger.d(
-      '_showJsonElementEditorFromPath called with path: $pathStr',
-      tag: 'EntryDetailPage',
-    );
     try {
       final json = entry.toJson();
       final pathParts = pathStr.split('.');
-      Logger.d('Path parts: $pathParts', tag: 'EntryDetailPage');
 
       // 移除可能的根路径 'entry'
       if (pathParts.isNotEmpty && pathParts.first == 'entry') {
@@ -753,16 +953,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
 
       dynamic currentValue = json;
-      Logger.d(
-        'Starting path traversal, initial type: ${currentValue.runtimeType}',
-        tag: 'EntryDetailPage',
-      );
 
       for (final part in pathParts) {
-        Logger.d(
-          'Traversing part: $part, current type: ${currentValue.runtimeType}',
-          tag: 'EntryDetailPage',
-        );
         if (currentValue is Map) {
           if (currentValue.containsKey(part)) {
             currentValue = currentValue[part];
@@ -789,10 +981,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         }
       }
 
-      Logger.d(
-        'Path traversal complete, calling _showJsonElementEditor',
-        tag: 'EntryDetailPage',
-      );
       _showJsonElementEditor(entry, pathParts, currentValue);
     } catch (e) {
       Logger.d(
@@ -861,14 +1049,22 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     List<String> pathParts,
     Function(List<String>) onPathSelected, {
     String? title,
+    VoidCallback? onHomeTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (title != null)
-          Text('$title: ', style: Theme.of(context).textTheme.titleMedium),
+        if (onHomeTap != null)
+          InkWell(
+            onTap: onHomeTap,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Icon(Icons.home, size: 18, color: colorScheme.primary),
+            ),
+          ),
         ...pathParts.asMap().entries.expand((entry) {
           final index = entry.key;
           final part = entry.value;
@@ -907,7 +1103,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         ? colorScheme.primary
                         : colorScheme.primary.withOpacity(0.8),
                     fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-                    decoration: isLast ? null : TextDecoration.underline,
                   ),
                 ),
               ),
@@ -984,12 +1179,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _processAiDialog(entry, path, label);
   }
 
-  /// 处理普通模式下点击元素（尝试翻译）
+  /// 处理普通模式下点击元素（尝试翻译或查词）
   void _handleTranslationTap(
     DictionaryEntry entry,
     String path,
     String label,
   ) async {
+    // 处理查词请求（来自文本选择）
+    if (path.startsWith('lookup:')) {
+      final word = path.substring(7); // 移除 'lookup:' 前缀
+      _navigateToWord(word);
+      return;
+    }
+
     try {
       final metadata = await DictionaryManager().getDictionaryMetadata(
         entry.dictId ?? '',
@@ -1014,17 +1216,21 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         pathParts.removeAt(0);
       }
 
-      bool isInSensesOrExamples =
-          pathParts.contains('senses') || pathParts.contains('example');
+      // 获取最后一个 key（即被点击的字段名）
+      final lastKey = pathParts.isNotEmpty ? pathParts.last : '';
 
-      if (!isInSensesOrExamples) {
+      // 检查最后一个 key 是否是语言代码（在 languageNames 中定义的 key）
+      final isLanguageCode =
+          LanguageUtils.getLanguageDisplayName(lastKey) !=
+          lastKey.toUpperCase();
+
+      if (!isLanguageCode) {
         return;
       }
 
       final json = entry.toJson();
       dynamic parentValue = json;
       dynamic currentValue = json;
-      String lastKey = '';
 
       for (int i = 0; i < pathParts.length; i++) {
         final part = pathParts[i];
@@ -1044,20 +1250,34 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           int? index = int.tryParse(part);
           if (index != null) currentValue = currentValue[index];
         }
-
-        lastKey = part;
       }
 
       String textToTranslate = '';
       bool needTranslation = false;
+      bool needToggleTranslation = false;
 
+      // 如果点击的是源语言 key
       if (lastKey == sourceLang) {
-        if (parentValue is Map && !parentValue.containsKey(targetLang)) {
-          textToTranslate = currentValue as String;
-          needTranslation = true;
+        if (parentValue is Map) {
+          if (!parentValue.containsKey(targetLang)) {
+            // 没有目标语言翻译，需要翻译
+            textToTranslate = currentValue as String;
+            needTranslation = true;
+          } else {
+            // 已有目标语言翻译，需要切换显示/隐藏
+            needToggleTranslation = true;
+          }
         }
+      } else if (lastKey == targetLang) {
+        // 点击的是目标语言，需要切换显示/隐藏
+        needToggleTranslation = true;
       } else {
-        if (currentValue is Map) {
+        // 如果点击的是其他语言代码 key
+        if (currentValue is String) {
+          // 直接翻译当前值
+          textToTranslate = currentValue;
+          needTranslation = true;
+        } else if (currentValue is Map) {
           if (currentValue.containsKey(sourceLang) &&
               !currentValue.containsKey(targetLang)) {
             textToTranslate = currentValue[sourceLang] as String;
@@ -1067,12 +1287,23 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
 
       if (needTranslation && textToTranslate.isNotEmpty) {
+        // 去除格式标记后再进行翻译
+        final plainText = _removeFormatting(textToTranslate);
         _performTranslation(
           entry,
           pathParts,
-          textToTranslate,
+          plainText,
           targetLang,
           sourceLang,
+        );
+      } else if (needToggleTranslation) {
+        // 如果是语言切换，ComponentRenderer 已经本地更新了 UI，这里不需要 setState
+        _toggleTranslationVisibility(
+          entry,
+          pathParts,
+          targetLang,
+          sourceLang,
+          shouldSetState: false,
         );
       }
     } catch (e) {
@@ -1114,13 +1345,215 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
         final newEntry = DictionaryEntry.fromJson(json);
         await DatabaseService().updateEntry(newEntry);
-        _updateEntryInGroup(newEntry);
+
+        final hiddenPath = targetPath.join('.');
+        final hiddenKey = '$hiddenPath.$targetLang';
+
+        final hiddenLanguages = List<String>.from(
+          json['hidden_languages'] ?? [],
+        );
+        if (hiddenLanguages.contains(hiddenKey)) {
+          hiddenLanguages.remove(hiddenKey);
+          json['hidden_languages'] = hiddenLanguages;
+          final updatedEntry = DictionaryEntry.fromJson(json);
+          await DatabaseService().updateEntry(updatedEntry);
+        }
+
+        _componentRendererKey.currentState?.handleTranslationInsert(
+          hiddenKey,
+          newEntry,
+        );
       }
     } catch (e) {
       if (mounted) {
         _showSnackBar('翻译失败: $e');
       }
     }
+  }
+
+  Future<void> _toggleTranslationVisibility(
+    DictionaryEntry entry,
+    List<String> pathParts,
+    String targetLang,
+    String sourceLang, {
+    bool shouldSetState = true,
+  }) async {
+    try {
+      final json = entry.toJson();
+      dynamic parentValue = json;
+      dynamic currentValue = json;
+
+      List<String> parentPath = List.from(pathParts);
+      if (parentPath.isNotEmpty && parentPath.last == sourceLang) {
+        parentPath.removeLast();
+      } else if (parentPath.isNotEmpty && parentPath.last == targetLang) {
+        parentPath.removeLast();
+      }
+
+      for (final part in parentPath) {
+        if (parentValue is Map) {
+          parentValue = parentValue[part];
+        } else if (parentValue is List) {
+          int? index = int.tryParse(part);
+          if (index != null) parentValue = parentValue[index];
+        }
+      }
+
+      if (parentValue is Map && parentValue.containsKey(targetLang)) {
+        final hiddenLanguages = List<String>.from(
+          json['hidden_languages'] ?? [],
+        );
+
+        final hiddenPath = parentPath.join('.');
+        final hiddenKey = '$hiddenPath.$targetLang';
+
+        if (hiddenLanguages.contains(hiddenKey)) {
+          hiddenLanguages.remove(hiddenKey);
+        } else {
+          hiddenLanguages.add(hiddenKey);
+        }
+        json['hidden_languages'] = hiddenLanguages;
+
+        final newEntry = DictionaryEntry.fromJson(json);
+        await DatabaseService().updateEntry(newEntry);
+        _updateEntryInGroup(newEntry, shouldSetState: shouldSetState);
+      }
+    } catch (e) {
+      Logger.d('Error in _toggleTranslationVisibility: $e', tag: 'Translation');
+      if (mounted) {
+        _showSnackBar('切换失败: $e');
+      }
+    }
+  }
+
+  /// 一键切换所有非目标语言的显示/隐藏
+  Future<void> _toggleAllNonTargetLanguages() async {
+    try {
+      final entries = _getAllEntriesInOrder();
+      if (entries.isEmpty) return;
+
+      // 获取当前词典的元数据
+      final currentDictId = _entryGroup.currentDictionaryId;
+      if (currentDictId.isEmpty) return;
+
+      final metadata = await DictionaryManager().getDictionaryMetadata(
+        currentDictId,
+      );
+      if (metadata == null) return;
+
+      final sourceLang = metadata.sourceLanguage;
+      final targetLangs = metadata.targetLanguages;
+
+      // 收集所有需要切换的语言路径
+      final Set<String> languagePaths = {};
+
+      for (final entry in entries) {
+        final json = entry.toJson();
+        _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
+      }
+
+      // 切换显示状态
+      final newVisibility = !_isNonTargetLanguagesVisible;
+      setState(() {
+        _areNonTargetLanguagesVisible = newVisibility;
+      });
+
+      // 更新所有条目的隐藏状态
+      for (final entry in entries) {
+        final json = entry.toJson();
+        final hiddenLanguages = List<String>.from(
+          json['hidden_languages'] ?? [],
+        );
+
+        for (final path in languagePaths) {
+          if (newVisibility) {
+            // 显示：从隐藏列表中移除
+            hiddenLanguages.remove(path);
+          } else {
+            // 隐藏：添加到隐藏列表
+            if (!hiddenLanguages.contains(path)) {
+              hiddenLanguages.add(path);
+            }
+          }
+        }
+
+        json['hidden_languages'] = hiddenLanguages;
+        final newEntry = DictionaryEntry.fromJson(json);
+        await DatabaseService().updateEntry(newEntry);
+        _updateEntryInGroup(newEntry);
+      }
+
+      _showSnackBar(newVisibility ? '已显示所有语言' : '已隐藏非目标语言');
+    } catch (e) {
+      Logger.d('Error in _toggleAllNonTargetLanguages: $e', tag: 'Translation');
+      if (mounted) {
+        _showSnackBar('切换失败: $e');
+      }
+    }
+  }
+
+  /// 递归收集所有非目标语言的路径（只收集有实际翻译内容的）
+  void _collectLanguagePaths(
+    dynamic data,
+    String currentPath,
+    Set<String> languagePaths,
+    String sourceLang,
+    List<String> targetLangs,
+  ) {
+    if (data is Map<String, dynamic>) {
+      for (final entry in data.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        final newPath = currentPath.isEmpty ? key : '$currentPath.$key';
+
+        // 检查是否是语言代码（非源语言）
+        final isLanguageCode =
+            LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
+        if (isLanguageCode && key != sourceLang) {
+          // 只收集有实际翻译内容的目标语言
+          // 值可以是字符串、非空列表或非空Map
+          final hasTranslation = _hasTranslationContent(value);
+          if (hasTranslation) {
+            languagePaths.add(newPath);
+          }
+        }
+
+        // 递归处理
+        if (value is Map || value is List) {
+          _collectLanguagePaths(
+            value,
+            newPath,
+            languagePaths,
+            sourceLang,
+            targetLangs,
+          );
+        }
+      }
+    } else if (data is List<dynamic>) {
+      for (int i = 0; i < data.length; i++) {
+        final item = data[i];
+        // 使用与 ComponentRenderer 相同的格式：直接数字，不带方括号
+        final newPath = currentPath.isEmpty ? '$i' : '$currentPath.$i';
+        if (item is Map || item is List) {
+          _collectLanguagePaths(
+            item,
+            newPath,
+            languagePaths,
+            sourceLang,
+            targetLangs,
+          );
+        }
+      }
+    }
+  }
+
+  /// 检查是否有翻译内容
+  bool _hasTranslationContent(dynamic value) {
+    if (value == null) return false;
+    if (value is String) return value.isNotEmpty;
+    if (value is List) return value.isNotEmpty;
+    if (value is Map) return value.isNotEmpty;
+    return true;
   }
 
   void _processAiDialog(DictionaryEntry entry, String path, String label) {
@@ -1630,12 +2063,24 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               ),
               if (record?.path != null) ...[
                 const SizedBox(height: 4),
-                Text(
-                  '路径: ${record!.path}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.home,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        record!.path!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
               const SizedBox(height: 12),
@@ -2980,22 +3425,30 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
           Row(
             children: [
               Expanded(
-                child: _buildPathNavigator(context, widget.pathParts, (
-                  newPathParts,
-                ) {
-                  Navigator.pop(context);
-                  final json = widget.entry.toJson();
-                  dynamic currentValue = json;
-                  for (final part in newPathParts) {
-                    if (currentValue is Map) {
-                      currentValue = currentValue[part];
-                    } else if (currentValue is List) {
-                      int? index = int.tryParse(part);
-                      if (index != null) currentValue = currentValue[index];
+                child: _buildPathNavigator(
+                  context,
+                  widget.pathParts,
+                  (newPathParts) {
+                    Navigator.pop(context);
+                    final json = widget.entry.toJson();
+                    dynamic currentValue = json;
+                    for (final part in newPathParts) {
+                      if (currentValue is Map) {
+                        currentValue = currentValue[part];
+                      } else if (currentValue is List) {
+                        int? index = int.tryParse(part);
+                        if (index != null) currentValue = currentValue[index];
+                      }
                     }
-                  }
-                  widget.onNavigate(newPathParts, currentValue);
-                }, title: '路径'),
+                    widget.onNavigate(newPathParts, currentValue);
+                  },
+                  onHomeTap: () {
+                    // 跳转到根目录
+                    Navigator.pop(context);
+                    final json = widget.entry.toJson();
+                    widget.onNavigate([], json);
+                  },
+                ),
               ),
             ],
           ),
@@ -3157,14 +3610,22 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
     List<String> pathParts,
     Function(List<String>) onPathSelected, {
     String? title,
+    VoidCallback? onHomeTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (title != null)
-          Text('$title: ', style: Theme.of(context).textTheme.titleMedium),
+        if (onHomeTap != null)
+          InkWell(
+            onTap: onHomeTap,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Icon(Icons.home, size: 18, color: colorScheme.primary),
+            ),
+          ),
         ...pathParts.asMap().entries.expand((entry) {
           final index = entry.key;
           final part = entry.value;
@@ -3201,7 +3662,6 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
                         ? colorScheme.primary
                         : colorScheme.primary.withValues(alpha: 0.8),
                     fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-                    decoration: isLast ? null : TextDecoration.underline,
                   ),
                 ),
               ),

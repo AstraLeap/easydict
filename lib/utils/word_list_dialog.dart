@@ -161,7 +161,7 @@ class WordListDialog {
     WordBankService wordBankService,
   ) async {
     final controller = TextEditingController();
-    return showDialog<String>(
+    final result = await showDialog<String>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -190,5 +190,7 @@ class WordListDialog {
         );
       },
     );
+    controller.dispose();
+    return result;
   }
 }
