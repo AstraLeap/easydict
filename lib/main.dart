@@ -17,6 +17,7 @@ import 'services/download_manager.dart';
 import 'services/dictionary_store_service.dart';
 import 'services/english_db_service.dart';
 import 'services/database_initializer.dart';
+import 'services/preferences_service.dart';
 import 'utils/toast_utils.dart';
 import 'utils/dpi_utils.dart';
 import 'logger.dart';
@@ -62,8 +63,32 @@ void main() async {
   });
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      MediaKit.ensureInitialized();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,13 +105,11 @@ class MyApp extends StatelessWidget {
             useMaterial3: true,
             fontFamily: 'Segoe UI',
             fontFamilyFallback: const [
-              // 优先使用西文字体，确保英文数字显示美观
               'SF Pro Text',
               'Helvetica Neue',
               'Roboto',
               'Ubuntu',
               'Arial',
-              // 后备中文字体
               'Microsoft YaHei',
               'SimHei',
               'SimSun',
@@ -107,13 +130,11 @@ class MyApp extends StatelessWidget {
             useMaterial3: true,
             fontFamily: 'Segoe UI',
             fontFamilyFallback: const [
-              // 优先使用西文字体，确保英文数字显示美观
               'SF Pro Text',
               'Helvetica Neue',
               'Roboto',
               'Ubuntu',
               'Arial',
-              // 后备中文字体
               'Microsoft YaHei',
               'SimHei',
               'SimSun',
@@ -470,7 +491,7 @@ class SettingsPage extends StatelessWidget {
                     ),
                     _buildSettingsTile(
                       context,
-                      title: '杂项设置',
+                      title: '其他设置',
                       icon: Icons.settings_suggest_outlined,
                       iconColor: colorScheme.primary,
                       showArrow: true,
@@ -788,7 +809,7 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-/// 杂项设置页面
+/// 其它设置页面
 class MiscSettingsPage extends StatefulWidget {
   const MiscSettingsPage({super.key});
 
@@ -799,9 +820,11 @@ class MiscSettingsPage extends StatefulWidget {
 class _MiscSettingsPageState extends State<MiscSettingsPage> {
   final _chatService = AiChatHistoryService();
   final _englishDbService = EnglishDbService();
+  final _preferencesService = PreferencesService();
   int _recordCount = 0;
   int _autoCleanupDays = 0;
   bool _neverAskAgain = false;
+  String _clickAction = PreferencesService.actionAiTranslate;
   bool _isLoading = true;
 
   @override
@@ -814,10 +837,12 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final count = await _chatService.getRecordCount();
     final days = await _chatService.getAutoCleanupDays();
     final neverAsk = await _englishDbService.getNeverAskAgain();
+    final clickAction = await _preferencesService.getClickAction();
     setState(() {
       _recordCount = count;
       _autoCleanupDays = days;
       _neverAskAgain = neverAsk;
+      _clickAction = clickAction;
       _isLoading = false;
     });
   }
@@ -827,7 +852,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('杂项设置'), centerTitle: true),
+      appBar: AppBar(title: const Text('其它设置'), centerTitle: true),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
@@ -914,6 +939,34 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                         ),
                       ),
                       const SizedBox(height: 24),
+                      // 交互设置
+                      _buildSectionTitle(context, '交互设置'),
+                      const SizedBox(height: 8),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: colorScheme.outlineVariant.withOpacity(0.5),
+                            width: 1,
+                          ),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          leading: Icon(
+                            Icons.touch_app_outlined,
+                            color: colorScheme.primary,
+                          ),
+                          title: const Text('点击动作设置'),
+                          subtitle: Text(_getClickActionLabel(_clickAction)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _showClickActionDialog,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       // 英语词典数据库设置
                       _buildSectionTitle(context, '英语词典数据库设置'),
                       const SizedBox(height: 8),
@@ -976,6 +1029,45 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     );
   }
 
+  String _getClickActionLabel(String action) {
+    switch (action) {
+      case PreferencesService.actionAiTranslate:
+        return 'AI 翻译';
+      case PreferencesService.actionCopy:
+        return '复制文本';
+      case PreferencesService.actionAskAi:
+        return '询问 AI';
+      case PreferencesService.actionEdit:
+        return '编辑';
+      case PreferencesService.actionSpeak:
+        return '朗读';
+      default:
+        return 'AI 翻译';
+    }
+  }
+
+  void _showClickActionDialog() async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final currentOrder = await _preferencesService.getClickActionOrder();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _ClickActionOrderDialog(
+          initialOrder: currentOrder,
+          onSave: (newOrder) async {
+            await _preferencesService.setClickActionOrder(newOrder);
+            setState(() {
+              _clickAction = newOrder.first;
+            });
+          },
+        );
+      },
+    );
+  }
+
   void _showAutoCleanupDialog() {
     final colorScheme = Theme.of(context).colorScheme;
     final options = [
@@ -994,7 +1086,6 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
             mainAxisSize: MainAxisSize.min,
             children: options.map((option) {
               final (days, label) = option;
-              final isSelected = _autoCleanupDays == days;
               return RadioListTile<int>(
                 title: Text(label),
                 value: days,
@@ -1058,6 +1149,134 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
           ],
         );
       },
+    );
+  }
+}
+
+class _ClickActionOrderDialog extends StatefulWidget {
+  final List<String> initialOrder;
+  final Function(List<String>) onSave;
+
+  const _ClickActionOrderDialog({
+    required this.initialOrder,
+    required this.onSave,
+  });
+
+  @override
+  State<_ClickActionOrderDialog> createState() =>
+      _ClickActionOrderDialogState();
+}
+
+class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
+  late List<String> _order;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = List.from(widget.initialOrder);
+  }
+
+  String _getActionLabel(String action) {
+    switch (action) {
+      case PreferencesService.actionAiTranslate:
+        return 'AI 翻译';
+      case PreferencesService.actionCopy:
+        return '复制文本';
+      case PreferencesService.actionAskAi:
+        return '询问 AI';
+      case PreferencesService.actionEdit:
+        return '编辑';
+      case PreferencesService.actionSpeak:
+        return '朗读';
+      default:
+        return action;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return AlertDialog(
+      title: const Text('点击动作设置'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                '拖动排序，列表第一项将作为点击时的默认动作',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ReorderableListView(
+                shrinkWrap: true,
+                buildDefaultDragHandles: false,
+                children: [
+                  for (int index = 0; index < _order.length; index++)
+                    ListTile(
+                      key: ValueKey(_order[index]),
+                      title: Text(_getActionLabel(_order[index])),
+                      leading: ReorderableDragStartListener(
+                        index: index,
+                        child: const Icon(Icons.drag_handle),
+                      ),
+                      trailing: index == 0
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '默认',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.onPrimaryContainer,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                ],
+                onReorder: (oldIndex, newIndex) {
+                  setState(() {
+                    if (oldIndex < newIndex) {
+                      newIndex -= 1;
+                    }
+                    final item = _order.removeAt(oldIndex);
+                    _order.insert(newIndex, item);
+                  });
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.onSave(_order);
+            Navigator.pop(context);
+          },
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
