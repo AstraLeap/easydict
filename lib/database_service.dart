@@ -44,6 +44,7 @@ class DictionaryEntry {
   final Map<String, dynamic>? phrases;
   final Map<String, dynamic>? theasaruses;
   final List<Map<String, dynamic>> senseGroups;
+  final List<String> hiddenLanguages;
 
   DictionaryEntry({
     required this.id,
@@ -65,6 +66,7 @@ class DictionaryEntry {
     this.phrases,
     this.theasaruses,
     this.senseGroups = const [],
+    this.hiddenLanguages = const [],
   });
 
   factory DictionaryEntry.fromJson(Map<String, dynamic> json) {
@@ -138,6 +140,12 @@ class DictionaryEntry {
                   .map((e) => e!)
                   .toList()
             : [],
+        hiddenLanguages: json['hidden_languages'] != null
+            ? (json['hidden_languages'] as List<dynamic>)
+                  .map((e) => e?.toString() ?? '')
+                  .where((e) => e.isNotEmpty)
+                  .toList()
+            : [],
       );
     } catch (e) {
       rethrow;
@@ -165,6 +173,7 @@ class DictionaryEntry {
       if (phrases != null) 'phrases': phrases,
       if (theasaruses != null) 'theasaruses': theasaruses,
       'sense_groups': senseGroups,
+      'hidden_languages': hiddenLanguages,
     };
   }
 }

@@ -24,17 +24,330 @@ enum LLMProvider {
 }
 
 enum TTSProvider {
-  openAI('OpenAI', 'https://api.openai.com/v1'),
   azure('Azure TTS', ''),
-  edge('Edge TTS', 'https://edge-tts.azureedge.net'),
-  google('Google TTS', 'https://texttospeech.googleapis.com/v1'),
-  custom('自定义', '');
+  google('Google TTS', 'https://texttospeech.googleapis.com/v1');
 
   final String displayName;
   final String defaultBaseUrl;
 
   const TTSProvider(this.displayName, this.defaultBaseUrl);
 }
+
+/// Google TTS 模型选项
+enum GoogleTTSModel {
+  chirp3HD('Chirp 3 HD', 'chirp3-hd', '最新高质量语音，基于大语言模型，最自然'),
+  journey('Journey', 'journey', '专为长文本和叙事优化，流畅自然'),
+  studio('Studio', 'studio', '专业级语音，适合商业和媒体内容'),
+  neural2('Neural2', 'neural2', '神经网络语音，高质量且自然'),
+  wavenet('WaveNet', 'wavenet', '基于DeepMind WaveNet技术'),
+  standard('Standard', 'standard', '标准语音，基础质量');
+
+  final String displayName;
+  final String modelCode;
+  final String description;
+
+  const GoogleTTSModel(this.displayName, this.modelCode, this.description);
+}
+
+/// Google TTS 音色选项（按模型分类）
+class GoogleTTSVoice {
+  final String name;
+  final String gender;
+  final String language;
+  final String model;
+  final String description;
+
+  const GoogleTTSVoice({
+    required this.name,
+    required this.gender,
+    required this.language,
+    required this.model,
+    required this.description,
+  });
+}
+
+/// Google TTS 可用音色列表
+final List<GoogleTTSVoice> googleTTSVoices = [
+  // Chirp 3 HD Voices - 最新高质量
+  const GoogleTTSVoice(
+    name: 'en-US-Chirp3-HD-Aoede',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'chirp3-hd',
+    description: '温暖、友好',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Chirp3-HD-Charon',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Chirp3-HD-Fenrir',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'chirp3-hd',
+    description: '清晰、有力，适合新闻播报',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Chirp3-HD-Kore',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'chirp3-hd',
+    description: '年轻、活力',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Chirp3-HD-Puck',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'chirp3-hd',
+    description: '自然、流畅，适合客服和教育',
+  ),
+  // Journey Voices
+  const GoogleTTSVoice(
+    name: 'en-US-Journey-D',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'journey',
+    description: '叙事风格，适合长文本',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Journey-F',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'journey',
+    description: '叙事风格，适合长文本',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Journey-O',
+    gender: '其他',
+    language: '英语(美国)',
+    model: 'journey',
+    description: '叙事风格，中性声音',
+  ),
+  // Studio Voices
+  const GoogleTTSVoice(
+    name: 'en-US-Studio-M',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'studio',
+    description: '专业男声，适合商业内容',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Studio-O',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'studio',
+    description: '专业女声，适合商业内容',
+  ),
+  // Neural2 Voices
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-A',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络女声A',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-C',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络女声C',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-D',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络男声D',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-E',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络女声E',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-F',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络女声F（默认）',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-G',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络女声G',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-H',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络女声H',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-I',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络男声I',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Neural2-J',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'neural2',
+    description: '神经网络男声J',
+  ),
+  // WaveNet Voices
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-A',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet女声A',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-B',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet男声B',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-C',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet女声C',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-D',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet男声D',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-E',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet女声E',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-F',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet女声F',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-G',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet女声G',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-H',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet女声H',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-I',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet男声I',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-WaveNet-J',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'wavenet',
+    description: 'WaveNet男声J',
+  ),
+  // Standard Voices
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-A',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准女声A',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-B',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准男声B',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-C',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准女声C',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-D',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准男声D',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-E',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准女声E',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-F',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准女声F',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-G',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准女声G',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-H',
+    gender: '女性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准女声H',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-I',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准男声I',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-US-Standard-J',
+    gender: '男性',
+    language: '英语(美国)',
+    model: 'standard',
+    description: '标准男声J',
+  ),
+];
 
 class ApiTestResult {
   final bool success;
@@ -73,7 +386,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
   LLMProvider _fastProvider = LLMProvider.openAI;
   LLMProvider _standardProvider = LLMProvider.openAI;
-  TTSProvider _ttsProvider = TTSProvider.openAI;
+  TTSProvider _ttsProvider = TTSProvider.azure;
+
+  // Google TTS 音色配置
+  GoogleTTSVoice? _selectedGoogleVoice;
 
   bool _isLoading = true;
   bool _obscureFastApiKey = true;
@@ -102,18 +418,13 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   };
 
   static const Map<TTSProvider, String> _defaultTtsModels = {
-    TTSProvider.openAI: 'tts-1',
     TTSProvider.azure: 'azure-tts',
-    TTSProvider.edge: 'edge-tts',
-    TTSProvider.google: 'google-tts',
-    TTSProvider.custom: '',
+    TTSProvider.google: '',
   };
 
   static const Map<TTSProvider, String> _defaultTtsVoices = {
-    TTSProvider.openAI: 'alloy',
-    TTSProvider.edge: 'zh-CN-XiaoxiaoNeural',
+    TTSProvider.azure: 'zh-CN-XiaoxiaoNeural',
     TTSProvider.google: 'en-US-Neural2-F',
-    TTSProvider.custom: '',
   };
 
   @override
@@ -165,8 +476,13 @@ class _LLMConfigPageState extends State<LLMConfigPage>
         prefs.getString('standard_llm_model') ??
         _defaultModels[_standardProvider]!;
 
-    final ttsProviderIndex = prefs.getInt('tts_provider') ?? 0;
-    _ttsProvider = TTSProvider.values[ttsProviderIndex];
+    final ttsProviderIndex = prefs.getInt('tts_provider');
+    if (ttsProviderIndex != null &&
+        ttsProviderIndex < TTSProvider.values.length) {
+      _ttsProvider = TTSProvider.values[ttsProviderIndex];
+    } else {
+      _ttsProvider = TTSProvider.azure;
+    }
     _ttsApiKeyController.text = prefs.getString('tts_api_key') ?? '';
     _ttsBaseUrlController.text =
         prefs.getString('tts_base_url') ?? _ttsProvider.defaultBaseUrl;
@@ -174,6 +490,24 @@ class _LLMConfigPageState extends State<LLMConfigPage>
         prefs.getString('tts_model') ?? _defaultTtsModels[_ttsProvider]!;
     _ttsVoiceController.text =
         prefs.getString('tts_voice') ?? _defaultTtsVoices[_ttsProvider]!;
+
+    // 加载 Google TTS 音色配置（默认使用 Chirp 3 HD 模型）
+    final savedVoiceName = prefs.getString('google_tts_voice');
+    if (savedVoiceName != null && savedVoiceName.isNotEmpty) {
+      _selectedGoogleVoice = googleTTSVoices.firstWhere(
+        (v) => v.name == savedVoiceName,
+        orElse: () => googleTTSVoices.firstWhere(
+          (v) => v.model == 'chirp3-hd',
+          orElse: () => googleTTSVoices.first,
+        ),
+      );
+    } else {
+      // 默认选择 Chirp 3 HD 模型的第一个音色
+      _selectedGoogleVoice = googleTTSVoices.firstWhere(
+        (v) => v.model == 'chirp3-hd',
+        orElse: () => googleTTSVoices.first,
+      );
+    }
 
     setState(() {
       _isLoading = false;
@@ -269,8 +603,16 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     await prefs.setInt('tts_provider', _ttsProvider.index);
     await prefs.setString('tts_api_key', _ttsApiKeyController.text.trim());
     await prefs.setString('tts_base_url', _ttsBaseUrlController.text.trim());
-    await prefs.setString('tts_model', _ttsModelController.text.trim());
-    await prefs.setString('tts_voice', _ttsVoiceController.text.trim());
+
+    // 如果是 Google TTS，保存音色选择
+    if (_ttsProvider == TTSProvider.google) {
+      if (_selectedGoogleVoice != null) {
+        await prefs.setString('google_tts_voice', _selectedGoogleVoice!.name);
+        await prefs.setString('tts_voice', _selectedGoogleVoice!.name);
+      }
+    } else {
+      await prefs.setString('tts_voice', _ttsVoiceController.text.trim());
+    }
 
     _showSavedSnackBar();
   }
@@ -302,10 +644,24 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     setState(() {
       _ttsProvider = provider;
       _ttsBaseUrlController.text = provider.defaultBaseUrl;
-      _ttsModelController.text = _defaultTtsModels[provider]!;
       _ttsVoiceController.text = _defaultTtsVoices[provider]!;
       _testResultTts = null;
       _testSuccessTts = null;
+
+      // 切换到 Google TTS 时，初始化默认 Chirp 3 HD 音色
+      if (provider == TTSProvider.google && _selectedGoogleVoice == null) {
+        _selectedGoogleVoice = googleTTSVoices.firstWhere(
+          (v) => v.model == 'chirp3-hd',
+          orElse: () => googleTTSVoices.first,
+        );
+      }
+    });
+  }
+
+  void _onGoogleVoiceChanged(GoogleTTSVoice? voice) {
+    if (voice == null) return;
+    setState(() {
+      _selectedGoogleVoice = voice;
     });
   }
 
@@ -408,7 +764,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   Future<void> _testTtsConnection() async {
     final apiKey = _ttsApiKeyController.text.trim();
 
-    if (apiKey.isEmpty && _ttsProvider != TTSProvider.edge) {
+    if (apiKey.isEmpty) {
       setState(() {
         _testResultTts = '请先输入 API Key';
         _testSuccessTts = false;
@@ -685,115 +1041,117 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             onChanged: _onTtsProviderChanged,
           ),
           const SizedBox(height: 16),
-          if (_ttsProvider != TTSProvider.edge)
-            TextFormField(
-              controller: _ttsApiKeyController,
-              obscureText: _obscureTtsApiKey,
-              decoration: InputDecoration(
-                labelText: 'API Key',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.key),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureTtsApiKey ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _obscureTtsApiKey = !_obscureTtsApiKey;
-                    });
-                  },
+          TextFormField(
+            controller: _ttsApiKeyController,
+            obscureText: _obscureTtsApiKey,
+            maxLines: _obscureTtsApiKey
+                ? 1
+                : (_ttsProvider == TTSProvider.google ? 5 : 1),
+            minLines: 1,
+            decoration: InputDecoration(
+              labelText: _ttsProvider == TTSProvider.google
+                  ? 'Service Account JSON Key'
+                  : 'API Key',
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.key),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureTtsApiKey ? Icons.visibility_off : Icons.visibility,
                 ),
+                onPressed: () {
+                  setState(() {
+                    _obscureTtsApiKey = !_obscureTtsApiKey;
+                  });
+                },
+              ),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return '请输入API Key';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _ttsProvider == TTSProvider.google
+                ? '使用 Google Cloud Service Account JSON Key\n访问 https://console.cloud.google.com/apis/credentials 创建'
+                : '使用 Azure Speech Service 获取 API Key',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _ttsBaseUrlController,
+            decoration: InputDecoration(
+              labelText: 'Base URL (可选)',
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.link),
+              hintText: _ttsProvider == TTSProvider.google
+                  ? '留空使用: https://texttospeech.googleapis.com/v1'
+                  : '留空使用默认地址',
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_ttsProvider == TTSProvider.google) ...[
+            // Google TTS 音色选择（默认使用 Chirp 3 HD 模型）
+            DropdownButtonFormField<GoogleTTSVoice>(
+              value: _selectedGoogleVoice,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: '选择音色',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.record_voice_over),
+              ),
+              items: googleTTSVoices.where((v) => v.model == 'chirp3-hd').map((
+                voice,
+              ) {
+                return DropdownMenuItem(
+                  value: voice,
+                  child: Text(
+                    '${voice.name} (${voice.gender})',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: _onGoogleVoiceChanged,
+            ),
+            const SizedBox(height: 8),
+            if (_selectedGoogleVoice != null)
+              Text(
+                '${_selectedGoogleVoice!.description} (Chirp 3 HD 高质量语音)',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            const SizedBox(height: 16),
+          ] else ...[
+            // Azure TTS 语音选择
+            TextFormField(
+              controller: _ttsVoiceController,
+              decoration: InputDecoration(
+                labelText: '语音 (Voice)',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.record_voice_over),
+                hintText: '例如: zh-CN-XiaoxiaoNeural',
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return '请输入API Key';
+                  return '请输入语音名称';
                 }
                 return null;
               },
             ),
-          if (_ttsProvider == TTSProvider.edge) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Edge TTS 无需 API Key，使用微软免费服务',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 8),
+            Text(
+              '默认: ${_defaultTtsVoices[_ttsProvider]}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
               ),
             ),
             const SizedBox(height: 16),
           ],
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _ttsBaseUrlController,
-            decoration: const InputDecoration(
-              labelText: 'Base URL (可选)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.link),
-              hintText: '留空使用默认地址',
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _ttsModelController,
-            decoration: const InputDecoration(
-              labelText: 'TTS 模型',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.graphic_eq),
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return '请输入TTS模型名称';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '默认: ${_defaultTtsModels[_ttsProvider]}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _ttsVoiceController,
-            decoration: const InputDecoration(
-              labelText: '语音 (Voice)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.record_voice_over),
-              hintText: '例如: zh-CN-XiaoxiaoNeural',
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return '请输入语音名称';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '默认: ${_defaultTtsVoices[_ttsProvider]}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-          ),
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,

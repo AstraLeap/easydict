@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:googleapis_auth/auth_io.dart';
+import 'package:googleapis/texttospeech/v1.dart' as tts;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../pages/llm_config_page.dart';
+import '../logger.dart';
 
 /// AI服务类，用于调用大模型API
 class AIService {
@@ -387,29 +390,33 @@ class AIService {
     final url = '$baseUrl/models/$model:generateContent?key=$apiKey';
 
     final contents = <Map<String, dynamic>>[];
-    
+
     // 添加历史对话
     for (final msg in history) {
       final role = msg['role'] == 'assistant' ? 'model' : 'user';
       contents.add({
         'role': role,
-        'parts': [{'text': msg['content']}],
+        'parts': [
+          {'text': msg['content']},
+        ],
       });
     }
-    
+
     // 添加当前问题
     contents.add({
       'role': 'user',
-      'parts': [{'text': question}],
+      'parts': [
+        {'text': question},
+      ],
     });
 
-    final requestBody = <String, dynamic>{
-      'contents': contents,
-    };
-    
+    final requestBody = <String, dynamic>{'contents': contents};
+
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
       requestBody['systemInstruction'] = {
-        'parts': [{'text': systemPrompt}],
+        'parts': [
+          {'text': systemPrompt},
+        ],
       };
     }
 
@@ -447,5 +454,203 @@ class AIService {
       history: history,
       systemPrompt: systemPrompt,
     );
+  }
+
+  /// 获取TTS配置
+  Future<Map<String, dynamic>?> _getTTSConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final providerIndex = prefs.getInt('tts_provider');
+    if (providerIndex == null) return null;
+
+    final providers = [
+      {'name': 'azure', 'baseUrl': ''},
+      {'name': 'google', 'baseUrl': 'https://texttospeech.googleapis.com/v1'},
+    ];
+
+    if (providerIndex >= providers.length) return null;
+
+    final provider = providers[providerIndex]['name'];
+    String voice = prefs.getString('tts_voice') ?? '';
+
+    // 对于 Google TTS，优先使用保存的 google_tts_voice
+    if (provider == 'google') {
+      final googleVoice = prefs.getString('google_tts_voice');
+      if (googleVoice != null && googleVoice.isNotEmpty) {
+        voice = googleVoice;
+      } else if (voice.isEmpty) {
+        // 默认使用 Chirp 3 HD 音色
+        voice = 'en-US-Chirp3-HD-Puck';
+      }
+    }
+
+    return {
+      'provider': provider,
+      'baseUrl':
+          prefs.getString('tts_base_url') ??
+          providers[providerIndex]['baseUrl'],
+      'apiKey': prefs.getString('tts_api_key') ?? '',
+      'model': prefs.getString('tts_model') ?? '',
+      'voice': voice,
+    };
+  }
+
+  /// 调用TTS进行文本转语音
+  Future<List<int>> textToSpeech(String text) async {
+    final config = await _getTTSConfig();
+    if (config == null) {
+      throw Exception('未配置TTS服务，请先在设置中配置API');
+    }
+
+    final provider = config['provider'] as String;
+    final apiKey = config['apiKey'] as String;
+    final baseUrl = config['baseUrl'] as String;
+    final model = config['model'] as String;
+    final voice = config['voice'] as String;
+
+    if (apiKey.isEmpty) {
+      if (provider == 'google') {
+        throw Exception(
+          'Google TTS 需要配置 API Key。请访问 https://console.cloud.google.com 创建项目并启用 Cloud Text-to-Speech API',
+        );
+      } else {
+        throw Exception('未配置API Key');
+      }
+    }
+
+    switch (provider) {
+      case 'google':
+        return await _callGoogleTTS(
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          model: model,
+          voice: voice,
+          text: text,
+        );
+      case 'azure':
+        return await _callAzureTTS(
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          model: model,
+          voice: voice,
+          text: text,
+        );
+      default:
+        throw Exception('不支持的TTS服务商: $provider');
+    }
+  }
+
+  /// 调用Google TTS API (Google Cloud Text-to-Speech)
+  Future<List<int>> _callGoogleTTS({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String voice,
+    required String text,
+  }) async {
+    if (apiKey.isEmpty) {
+      throw Exception(
+        'Google TTS 需要配置 Service Account JSON Key。请访问 https://console.cloud.google.com/apis/credentials 创建',
+      );
+    }
+
+    try {
+      final serviceAccountCredentials = ServiceAccountCredentials.fromJson(
+        apiKey,
+      );
+      final scopes = [tts.TexttospeechApi.cloudPlatformScope];
+      final client = await clientViaServiceAccount(
+        serviceAccountCredentials,
+        scopes,
+      );
+
+      try {
+        final ttsApi = tts.TexttospeechApi(client);
+
+        // 从voice名称推断语言代码，例如 en-US-Neural2-F -> en-US
+        String languageCode = 'en-US';
+        String voiceName = voice;
+
+        // 如果voice是旧的Gemini模型名称（如Zeus），使用默认的Google TTS语音
+        if (['Zeus', 'Charon', 'Eros', 'Hera'].contains(voice)) {
+          voiceName = 'en-US-Neural2-F';
+        }
+
+        final parts = voiceName.split('-');
+        if (parts.length >= 2) {
+          languageCode = '${parts[0]}-${parts[1]}';
+        }
+
+        final input = tts.SynthesisInput(text: text);
+        final voiceSelection = tts.VoiceSelectionParams(
+          languageCode: languageCode,
+          name: voiceName.isNotEmpty ? voiceName : 'en-US-Neural2-F',
+        );
+        final audioConfig = tts.AudioConfig(audioEncoding: 'MP3');
+
+        final request = tts.SynthesizeSpeechRequest(
+          input: input,
+          voice: voiceSelection,
+          audioConfig: audioConfig,
+        );
+
+        final response = await ttsApi.text.synthesize(request);
+
+        if (response.audioContent != null) {
+          return base64Decode(response.audioContent!);
+        } else {
+          throw Exception('Google TTS API返回的音频内容为空');
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      Logger.e('Google TTS API调用失败: $e', tag: '_callGoogleTTS', error: e);
+      throw Exception('Google TTS API调用失败: $e');
+    }
+  }
+
+  String _getLanguageCode(String voice) {
+    if (voice.startsWith('en-')) return 'en-US';
+    if (voice.startsWith('zh-')) return 'zh-CN';
+    if (voice.startsWith('ja-')) return 'ja-JP';
+    if (voice.startsWith('ko-')) return 'ko-KR';
+    return 'en-US';
+  }
+
+  /// 调用Azure TTS API
+  Future<List<int>> _callAzureTTS({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String voice,
+    required String text,
+  }) async {
+    final effectiveBaseUrl = baseUrl.isEmpty
+        ? 'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1'
+        : baseUrl;
+
+    final response = await http.post(
+      Uri.parse(effectiveBaseUrl),
+      headers: {
+        'Ocp-Apim-Subscription-Key': apiKey,
+        'Content-Type': 'application/ssml+xml',
+        'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
+      },
+      body:
+          '''<speak version='1.0' xml:lang='zh-CN'>
+    <voice xml:lang='$voice' name='$voice'>
+      <s>$text</s>
+    </voice>
+  </speak>''',
+    );
+
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception(
+        'Azure TTS API调用失败: ${response.statusCode} - ${response.body}',
+      );
+    }
   }
 }

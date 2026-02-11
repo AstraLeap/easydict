@@ -14,16 +14,20 @@ import 'board_widget.dart';
 import 'components/dictionary_interaction_scope.dart';
 import 'logger.dart';
 import 'services/dictionary_manager.dart';
+import 'services/preferences_service.dart';
+import 'services/ai_service.dart';
 import 'models/dictionary_entry_group.dart';
 import 'pages/entry_detail_page.dart';
 import 'services/search_history_service.dart';
 import 'utils/toast_utils.dart';
+import 'utils/language_utils.dart';
 
 class FormattedTextResult {
   final List<InlineSpan> spans;
   final List<String> plainTexts;
+  final bool hidden;
 
-  FormattedTextResult(this.spans, this.plainTexts);
+  FormattedTextResult(this.spans, this.plainTexts, {this.hidden = false});
 }
 
 // 颜色映射表
@@ -53,10 +57,14 @@ class _PathData {
 class _MultiGestureRecognizer extends OneSequenceGestureRecognizer {
   final TapGestureRecognizer tapRecognizer;
   final _SecondaryTapGestureRecognizer secondaryTapRecognizer;
+  final LongPressGestureRecognizer? longPressRecognizer;
+  final DoubleTapGestureRecognizer? doubleTapRecognizer;
 
   _MultiGestureRecognizer({
     required this.tapRecognizer,
     required this.secondaryTapRecognizer,
+    this.longPressRecognizer,
+    this.doubleTapRecognizer,
   });
 
   @override
@@ -65,6 +73,8 @@ class _MultiGestureRecognizer extends OneSequenceGestureRecognizer {
       secondaryTapRecognizer.addPointer(event);
     } else {
       tapRecognizer.addPointer(event);
+      longPressRecognizer?.addPointer(event);
+      doubleTapRecognizer?.addPointer(event);
     }
   }
 
@@ -80,6 +90,9 @@ class _MultiGestureRecognizer extends OneSequenceGestureRecognizer {
       secondaryTapRecognizer.handleEvent(event);
     } else {
       tapRecognizer.handleEvent(event);
+      longPressRecognizer?.handleEvent(event);
+      // DoubleTapGestureRecognizer 不需要在这里处理事件
+      // 它会在 addPointer 时自动开始跟踪
     }
   }
 }
@@ -258,7 +271,13 @@ FormattedTextResult parseFormattedText(
   void Function(String path, String label)? onElementTap,
   void Function(String path, String label)? onElementSecondaryTap,
   GestureRecognizer? recognizer,
+  bool hidden = false,
 }) {
+  // 如果被隐藏，返回空的 spans
+  if (hidden) {
+    return FormattedTextResult([], [], hidden: true);
+  }
+
   // 强制所有样式使用简体中文 Locale
   final effectiveBaseStyle = baseStyle.copyWith(
     locale: const Locale('zh', 'CN'),
@@ -273,7 +292,11 @@ FormattedTextResult parseFormattedText(
     if (match.start > lastIndex) {
       final normalText = text.substring(lastIndex, match.start);
       spans.add(
-        TextSpan(text: normalText, style: baseStyle, recognizer: recognizer),
+        TextSpan(
+          text: normalText,
+          style: effectiveBaseStyle,
+          recognizer: recognizer,
+        ),
       );
       plainTexts.add(normalText);
     }
@@ -282,7 +305,7 @@ FormattedTextResult parseFormattedText(
     final typesStr = match.group(2) ?? '';
     final types = typesStr.split(',').map((t) => t.trim()).toList();
 
-    TextStyle style = baseStyle;
+    TextStyle style = effectiveBaseStyle;
     List<TextDecoration> decorations = [];
     bool isSup = false;
     bool isSub = false;
@@ -446,7 +469,7 @@ FormattedTextResult parseFormattedText(
     plainTexts.add(remainingText);
   }
 
-  return FormattedTextResult(spans, plainTexts);
+  return FormattedTextResult(spans, plainTexts, hidden: hidden);
 }
 
 Future<void> _handleLinkTap(BuildContext context, String word) async {
@@ -569,44 +592,116 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
   }
 }
 
-Widget buildFormattedText(
-  String text,
-  TextStyle style, {
-  BuildContext? context,
-}) {
-  final result = parseFormattedText(text, style, context: context);
-  return RichText(
-    text: TextSpan(children: result.spans),
-    locale: const Locale('zh', 'CN'),
-  );
-}
+/// 用于管理隐藏语言状态的通知器
+class HiddenLanguagesNotifier extends ValueNotifier<List<String>> {
+  HiddenLanguagesNotifier(List<String> initialValue) : super(initialValue);
 
-Widget buildSelectableFormattedText(
-  String text,
-  TextStyle style, {
-  BuildContext? context,
-}) {
-  final result = parseFormattedText(text, style, context: context);
-  return SelectableText.rich(
-    TextSpan(children: result.spans),
-    style: style,
-    textScaleFactor: MediaQuery.of(context!).textScaleFactor,
-  );
-}
-
-// 统一的文本构建方法 - 默认所有文本都经过格式化处理
-// 如果不需要格式化，可以设置 [selectable] 为 false
-Widget buildText(
-  String text, {
-  required TextStyle style,
-  bool selectable = false,
-  BuildContext? context,
-}) {
-  // 默认使用格式化的文本渲染
-  if (selectable) {
-    return buildSelectableFormattedText(text, style, context: context);
+  void toggle(String path) {
+    if (value.contains(path)) {
+      value = List<String>.from(value)..remove(path);
+    } else {
+      value = List<String>.from(value)..add(path);
+    }
   }
-  return buildFormattedText(text, style, context: context);
+
+  bool contains(String path) => value.contains(path);
+
+  /// 强制通知监听器，用于数据更新后触发重建
+  void forceNotify() {
+    notifyListeners();
+  }
+}
+
+/// 用于在组件树中传递 HiddenLanguagesNotifier
+class HiddenLanguagesScope extends InheritedWidget {
+  final HiddenLanguagesNotifier notifier;
+
+  const HiddenLanguagesScope({
+    super.key,
+    required this.notifier,
+    required super.child,
+  });
+
+  static HiddenLanguagesNotifier of(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<HiddenLanguagesScope>();
+    assert(scope != null, 'HiddenLanguagesScope not found in context');
+    return scope!.notifier;
+  }
+
+  @override
+  bool updateShouldNotify(HiddenLanguagesScope oldWidget) {
+    return oldWidget.notifier != notifier;
+  }
+}
+
+/// 仅当 selector 返回的值发生变化时才重建的组件
+class HiddenLanguagesSelector<T> extends StatefulWidget {
+  final T Function(List<String> hiddenLanguages) selector;
+  final Widget Function(BuildContext context, T value, Widget? child) builder;
+  final Widget? child;
+
+  const HiddenLanguagesSelector({
+    super.key,
+    required this.selector,
+    required this.builder,
+    this.child,
+  });
+
+  @override
+  State<HiddenLanguagesSelector<T>> createState() =>
+      _HiddenLanguagesSelectorState<T>();
+}
+
+class _HiddenLanguagesSelectorState<T>
+    extends State<HiddenLanguagesSelector<T>> {
+  late T _value;
+  HiddenLanguagesNotifier? _notifier;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newNotifier = HiddenLanguagesScope.of(context);
+    if (_notifier != newNotifier) {
+      _notifier?.removeListener(_onValueChanged);
+      _notifier = newNotifier;
+      _notifier!.addListener(_onValueChanged);
+      _value = widget.selector(_notifier!.value);
+    }
+  }
+
+  @override
+  void didUpdateWidget(HiddenLanguagesSelector<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_notifier != null) {
+      final newValue = widget.selector(_notifier!.value);
+      if (newValue != _value) {
+        setState(() {
+          _value = newValue;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _notifier?.removeListener(_onValueChanged);
+    super.dispose();
+  }
+
+  void _onValueChanged() {
+    final newValue = widget.selector(_notifier!.value);
+    if (newValue != _value) {
+      setState(() {
+        _value = newValue;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(context, _value, widget.child);
+  }
 }
 
 class ComponentRenderer extends StatefulWidget {
@@ -614,6 +709,8 @@ class ComponentRenderer extends StatefulWidget {
   final void Function(String path, String label)? onElementTap;
   final void Function(String path, String label)? onEditElement;
   final void Function(String path, String label)? onAiAsk;
+  final void Function(String path, DictionaryEntry newEntry)?
+  onTranslationInsert;
 
   const ComponentRenderer({
     super.key,
@@ -621,22 +718,109 @@ class ComponentRenderer extends StatefulWidget {
     this.onElementTap,
     this.onEditElement,
     this.onAiAsk,
+    this.onTranslationInsert,
   });
 
   @override
-  State<ComponentRenderer> createState() => _ComponentRendererState();
+  State<ComponentRenderer> createState() => ComponentRendererState();
 }
 
-class _ComponentRendererState extends State<ComponentRenderer> {
+class ComponentRendererState extends State<ComponentRenderer> {
+  final List<GestureRecognizer> _recognizers = [];
+  final List<StreamSubscription> _streamSubscriptions = [];
+  DateTime? _lastTapTime;
+  int? _lastTapButton;
+  Offset? _lastTapPosition;
+  late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
+  late DictionaryEntry _localEntry;
+
+  @override
+  void initState() {
+    super.initState();
+    _localEntry = widget.entry;
+    _hiddenLanguagesNotifier = HiddenLanguagesNotifier(
+      List<String>.from(widget.entry.hiddenLanguages),
+    );
+    _loadSourceLanguage();
+    _loadClickAction();
+  }
+
+  @override
+  void didUpdateWidget(ComponentRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 当 entry 的 id 改变时重置隐藏语言状态
+    if (oldWidget.entry.id != widget.entry.id) {
+      _localEntry = widget.entry;
+      _hiddenLanguagesNotifier.value = List<String>.from(
+        widget.entry.hiddenLanguages,
+      );
+    } else {
+      // 即使 id 相同，也检查隐藏语言列表是否变化
+      // 这对于底部工具栏一键显示/隐藏目标语言是必要的
+      final oldHidden = oldWidget.entry.hiddenLanguages;
+      final newHidden = widget.entry.hiddenLanguages;
+      if (!_listsEqual(oldHidden, newHidden)) {
+        _hiddenLanguagesNotifier.value = List<String>.from(newHidden);
+      }
+    }
+  }
+
+  /// 比较两个列表是否相等
+  bool _listsEqual(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    final setA = Set<String>.from(a);
+    final setB = Set<String>.from(b);
+    return setA.containsAll(setB) && setB.containsAll(setA);
+  }
+
   Widget _buildTappableWidget({
     required BuildContext context,
     required _PathData pathData,
     required Widget child,
+    String? text,
+    TextStyle? textStyle,
+    GlobalKey? customTextKey,
   }) {
+    final textKey = customTextKey ?? GlobalKey();
+
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTapDown: text != null && textStyle != null
+          ? (details) {
+              _lastTapPosition = details.globalPosition;
+            }
+          : null,
       onTap: () {
+        // 单击立即生效
         final pathStr = _convertPathToString(pathData.path);
         _handleElementTap(pathStr, pathData.label);
+
+        if (text == null || textStyle == null) {
+          return;
+        }
+
+        final now = DateTime.now();
+        final isDoubleTap =
+            _lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 300) &&
+            _lastTapButton == 0;
+
+        if (isDoubleTap && _lastTapPosition != null) {
+          Logger.d('双击触发', tag: 'DoubleTapWord');
+          _handleDoubleTapOnText(
+            _lastTapPosition!,
+            text,
+            textStyle,
+            textKey,
+            context,
+          );
+          _lastTapTime = null;
+          _lastTapButton = null;
+          _lastTapPosition = null;
+        } else {
+          _lastTapTime = now;
+          _lastTapButton = 0;
+        }
       },
       onSecondaryTapUp: (details) {
         final pathStr = _convertPathToString(pathData.path);
@@ -656,8 +840,96 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           details.globalPosition,
         );
       },
-      child: _TappableWrapper(pathData: pathData, child: child),
+      child: _TappableWrapper(
+        pathData: pathData,
+        child: customTextKey != null
+            ? child
+            : Builder(key: textKey, builder: (context) => child),
+      ),
     );
+  }
+
+  void _handleDoubleTapOnText(
+    Offset globalPosition,
+    String text,
+    TextStyle textStyle,
+    GlobalKey textKey,
+    BuildContext context, {
+    int startOffset = 0,
+  }) {
+    Logger.d('双击触发，全局坐标: $globalPosition', tag: 'DoubleTapWord');
+    Logger.d('文本内容: $text', tag: 'DoubleTapWord');
+    Logger.d('起始偏移量: $startOffset', tag: 'DoubleTapWord');
+
+    final renderObject = textKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderParagraph) {
+      Logger.d('renderObject 不是 RenderParagraph', tag: 'DoubleTapWord');
+      return;
+    }
+
+    final localPosition = renderObject.globalToLocal(globalPosition);
+    Logger.d('本地坐标: $localPosition', tag: 'DoubleTapWord');
+
+    // 直接使用 RenderParagraph 获取点击位置的全局字符偏移量
+    final textPosition = renderObject.getPositionForOffset(localPosition);
+    final globalOffset = textPosition.offset;
+    Logger.d('全局字符偏移量: $globalOffset', tag: 'DoubleTapWord');
+
+    // 使用 parseFormattedText 解析文本，以获取纯文本内容
+    final result = parseFormattedText(text, textStyle, context: context);
+    final plainText = result.spans.fold<String>(
+      '',
+      (prev, span) => prev + span.toPlainText(),
+    );
+
+    // 计算相对于当前文本段的局部偏移量
+    final localOffset = globalOffset - startOffset;
+    Logger.d('局部字符偏移量: $localOffset', tag: 'DoubleTapWord');
+
+    // 检查偏移量是否在当前文本段范围内
+    if (localOffset >= 0 && localOffset < plainText.length) {
+      final tappedWord = _extractWordAtOffset(plainText, localOffset);
+
+      if (tappedWord.isNotEmpty) {
+        Logger.d('双击识别的单词: $tappedWord', tag: 'DoubleTapWord');
+      } else {
+        Logger.d('未识别到单词', tag: 'DoubleTapWord');
+      }
+    } else {
+      Logger.d('点击位置超出当前文本段范围', tag: 'DoubleTapWord');
+    }
+  }
+
+  void handleTranslationInsert(String path, DictionaryEntry newEntry) {
+    // 确保该路径不被隐藏（即显示）
+    if (_hiddenLanguagesNotifier.value.contains(path)) {
+      _hiddenLanguagesNotifier.toggle(path);
+    }
+
+    setState(() {
+      _localEntry = newEntry;
+    });
+
+    // 触发 HiddenLanguagesNotifier 通知监听器，强制重建 HiddenLanguagesSelector
+    // 这对于 AI 翻译后显示新添加的翻译是必要的
+    _hiddenLanguagesNotifier.forceNotify();
+  }
+
+  String _extractWordAtOffset(String text, int offset) {
+    if (offset < 0 || offset >= text.length) return '';
+
+    int start = offset;
+    int end = offset;
+
+    while (start > 0 && text[start - 1].startsWith(RegExp(r'[a-zA-Z]'))) {
+      start--;
+    }
+
+    while (end < text.length && text[end].startsWith(RegExp(r'[a-zA-Z]'))) {
+      end++;
+    }
+
+    return text.substring(start, end);
   }
 
   Widget _buildExampleItem({
@@ -673,6 +945,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final spans = <InlineSpan>[];
+    int currentTextOffset = 0;
 
     if (usage.isNotEmpty) {
       spans.add(
@@ -696,7 +969,10 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           ),
         ),
       );
+      currentTextOffset += 1; // WidgetSpan 占 1 个字符
     }
+
+    final exampleTextKey = GlobalKey();
 
     for (int i = 0; i < texts.length; i++) {
       final textEntry = texts[i];
@@ -706,12 +982,21 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       // 不同语言的 example 之间添加间距
       if (i > 0) {
         spans.add(WidgetSpan(child: SizedBox(width: 12)));
+        currentTextOffset += 1; // WidgetSpan 占 1 个字符
       } else if (spans.isNotEmpty) {
         spans.add(const TextSpan(text: ' '));
+        currentTextOffset += 1; // 空格占 1 个字符
       }
+
+      final startOffset = currentTextOffset;
+      currentTextOffset += text.length;
 
       final path = key.isEmpty ? basePath : [...basePath, key];
       final pathData = _PathData(path, 'Example Text ($key)');
+
+      final hiddenPath = path.join('.');
+      // 使用 notifier 的当前值，这样当状态变化时会重建
+      final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
       // 创建手势识别器以支持点击和右键菜单
       final tapRecognizer = TapGestureRecognizer()
@@ -730,10 +1015,58 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           }
         };
 
-      // 使用 MultiGestureRecognizer 来同时支持点击和右键
+      final longPressRecognizer = LongPressGestureRecognizer()
+        ..onLongPressStart = (details) {
+          if (onElementSecondaryTapWithPosition != null) {
+            onElementSecondaryTapWithPosition(
+              _convertPathToString(path),
+              pathData.label,
+              details.globalPosition,
+            );
+          }
+        };
+
+      // 创建双击识别器
+      final exampleTextStyle = TextStyle(
+        fontSize: 14,
+        color: colorScheme.onSurface.withValues(alpha: 0.85),
+        height: 1.5,
+        fontStyle:
+            key == 'ja' ||
+                key == 'zh' ||
+                key.startsWith('zh_') ||
+                key.startsWith('ja_')
+            ? FontStyle.normal
+            : FontStyle.italic,
+      );
+
+      final doubleTapRecognizer = DoubleTapGestureRecognizer()
+        ..onDoubleTapDown = (details) {
+          // 不再需要手动去除格式化标记，因为 _handleDoubleTapOnText 内部会调用 parseFormattedText
+          // 但我们需要传递原始文本（带标记的），以便 parseFormattedText 能正确解析
+          _handleDoubleTapOnText(
+            details.globalPosition,
+            text, // 传递原始文本
+            exampleTextStyle,
+            exampleTextKey,
+            context,
+            startOffset: startOffset,
+          );
+        };
+
+      _recognizers.addAll([
+        tapRecognizer,
+        secondaryTapRecognizer,
+        longPressRecognizer,
+        doubleTapRecognizer,
+      ]);
+
+      // 使用 MultiGestureRecognizer 来同时支持点击、右键和双击
       final multiRecognizer = _MultiGestureRecognizer(
         tapRecognizer: tapRecognizer,
         secondaryTapRecognizer: secondaryTapRecognizer,
+        longPressRecognizer: longPressRecognizer,
+        doubleTapRecognizer: doubleTapRecognizer,
       );
 
       // 判断是否为日语或汉语（key 为 'ja' 或 'zh' 或包含这些标识）
@@ -745,16 +1078,12 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
       final result = parseFormattedText(
         text,
-        TextStyle(
-          fontSize: 14,
-          color: colorScheme.onSurface.withValues(alpha: 0.85),
-          height: 1.5,
-          fontStyle: isCJK ? FontStyle.normal : FontStyle.italic,
-        ),
+        exampleTextStyle,
         context: context,
         path: path,
         label: 'Example Text ($key)',
         recognizer: multiRecognizer,
+        hidden: hidden,
       );
 
       // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
@@ -763,9 +1092,9 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
     return Container(
       margin: EdgeInsets.only(bottom: 6, left: leftMargin),
-      child: RichText(
-        text: TextSpan(children: spans),
-        locale: const Locale('zh', 'CN'),
+      child: Builder(
+        key: exampleTextKey,
+        builder: (context) => RichText(text: TextSpan(children: spans)),
       ),
     );
   }
@@ -773,18 +1102,22 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   final Map<int, GlobalKey> _sectionKeys = {};
   String? _sourceLanguage;
   List<String> _targetLanguages = [];
+  String _clickAction = PreferencesService.actionAiTranslate;
 
   OverlayEntry? _currentOverlayEntry;
   OverlayEntry? _currentBarrierEntry;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadSourceLanguage();
+  Future<void> _loadClickAction() async {
+    final action = await PreferencesService().getClickAction();
+    if (mounted) {
+      setState(() {
+        _clickAction = action;
+      });
+    }
   }
 
   Future<void> _loadSourceLanguage() async {
-    final dictId = widget.entry.dictId;
+    final dictId = _localEntry.dictId;
     if (dictId != null && dictId.isNotEmpty) {
       final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
       if (mounted && metadata != null) {
@@ -812,8 +1145,268 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     }
   }
 
+  dynamic _getValueByPath(dynamic json, List<String> pathParts) {
+    dynamic currentValue = json;
+    for (final part in pathParts) {
+      if (currentValue is Map) {
+        currentValue = currentValue[part];
+      } else if (currentValue is List) {
+        int? index;
+        if (part.startsWith('[') && part.endsWith(']')) {
+          index = int.tryParse(part.substring(1, part.length - 1));
+        } else {
+          index = int.tryParse(part);
+        }
+        if (index != null && index < currentValue.length) {
+          currentValue = currentValue[index];
+        } else {
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+    return currentValue;
+  }
+
   void _handleElementTap(String path, String label) {
-    widget.onElementTap?.call(path, label);
+    // 检查是否是语言切换操作（路径以语言代码结尾）
+    final pathParts = path.split('.');
+    if (pathParts.isNotEmpty) {
+      final lastKey = pathParts.last;
+      final isLanguageCode =
+          LanguageUtils.getLanguageDisplayName(lastKey) !=
+          lastKey.toUpperCase();
+      if (isLanguageCode) {
+        Logger.d(
+          '点击语言代码: path=$path, lastKey=$lastKey, sourceLanguage=$_sourceLanguage',
+          tag: 'LanguageToggle',
+        );
+        // 本地切换语言显示状态，立即更新UI
+        // _hiddenLanguagesNotifier.toggle(path);
+        // 异步通知父组件更新数据库
+        // widget.onElementTap?.call(path, label);
+        // return;
+
+        final parentPath = pathParts.sublist(0, pathParts.length - 1);
+        final parentValue = _getValueByPath(_localEntry.toJson(), parentPath);
+
+        String? currentSourceLang = _sourceLanguage;
+
+        // 如果未加载源语言，尝试推断
+        if (currentSourceLang == null && parentValue is Map) {
+          if (parentValue.containsKey('en')) {
+            currentSourceLang = 'en';
+          } else if (parentValue.containsKey('ja')) {
+            currentSourceLang = 'ja';
+          } else if (parentValue.containsKey('zh')) {
+            currentSourceLang = 'zh';
+          }
+        }
+
+        // 如果点击的是源语言
+        if (currentSourceLang != null && lastKey == currentSourceLang) {
+          if (parentValue is Map) {
+            bool hasTranslation = false;
+            // 检查是否有任何目标语言翻译
+            if (_targetLanguages.isNotEmpty) {
+              for (final targetLang in _targetLanguages) {
+                if (targetLang == currentSourceLang) continue; // 剔除源语言
+
+                if (parentValue.containsKey(targetLang)) {
+                  // 切换目标语言显示状态
+                  final targetPath = [...parentPath, targetLang].join('.');
+                  _hiddenLanguagesNotifier.toggle(targetPath);
+                  hasTranslation = true;
+                }
+              }
+            } else {
+              // 如果没有加载到目标语言信息，尝试推断
+              for (final key in parentValue.keys) {
+                if (key != currentSourceLang &&
+                    LanguageUtils.getLanguageDisplayName(key) !=
+                        key.toUpperCase()) {
+                  // 这是一个语言代码，且不是源语言
+                  final targetPath = [...parentPath, key].join('.');
+                  _hiddenLanguagesNotifier.toggle(targetPath);
+                  hasTranslation = true;
+                }
+              }
+            }
+
+            // 无论是否有翻译，都通知父组件
+            // 如果有翻译，父组件会更新数据库中的隐藏状态
+            // 如果没有翻译，父组件会触发翻译
+            widget.onElementTap?.call(path, label);
+            return;
+          }
+        } else {
+          // 点击的是非源语言（目标语言），切换自身显示状态
+          _hiddenLanguagesNotifier.toggle(path);
+          widget.onElementTap?.call(path, label);
+          return;
+        }
+      }
+    }
+
+    // 使用缓存的点击动作，避免异步延迟
+    final action = _clickAction;
+
+    switch (action) {
+      case PreferencesService.actionAiTranslate:
+        widget.onElementTap?.call(path, label);
+        break;
+      case PreferencesService.actionCopy:
+        _performCopy(path, label);
+        break;
+      case PreferencesService.actionAskAi:
+        widget.onAiAsk?.call(path, label);
+        break;
+      case PreferencesService.actionEdit:
+        widget.onEditElement?.call(path, label);
+        break;
+      case PreferencesService.actionSpeak:
+        _performSpeak(path, label);
+        break;
+      default:
+        widget.onElementTap?.call(path, label);
+    }
+  }
+
+  void _performCopy(String path, String label) {
+    final pathParts = path.split('.');
+    final json = _localEntry.toJson();
+    dynamic currentValue = json;
+
+    for (final part in pathParts) {
+      if (currentValue is Map) {
+        currentValue = currentValue[part];
+      } else if (currentValue is List) {
+        int? index;
+        if (part.startsWith('[') && part.endsWith(']')) {
+          index = int.tryParse(part.substring(1, part.length - 1));
+        } else {
+          index = int.tryParse(part);
+        }
+        if (index != null && index < currentValue.length) {
+          currentValue = currentValue[index];
+        } else {
+          currentValue = null;
+          break;
+        }
+      } else {
+        currentValue = null;
+        break;
+      }
+    }
+
+    final textToCopy = _extractTextToCopy(currentValue);
+    if (textToCopy != null) {
+      Clipboard.setData(ClipboardData(text: textToCopy));
+      showToast(context, '文本已复制');
+    } else {
+      showToast(context, '无法提取文本内容');
+    }
+  }
+
+  void _performSpeak(String path, String label) async {
+    final pathParts = path.split('.');
+    final json = _localEntry.toJson();
+    dynamic currentValue = json;
+
+    for (final part in pathParts) {
+      if (currentValue is Map) {
+        currentValue = currentValue[part];
+      } else if (currentValue is List) {
+        int? index;
+        if (part.startsWith('[') && part.endsWith(']')) {
+          index = int.tryParse(part.substring(1, part.length - 1));
+        } else {
+          index = int.tryParse(part);
+        }
+        if (index != null && index < currentValue.length) {
+          currentValue = currentValue[index];
+        } else {
+          currentValue = null;
+          break;
+        }
+      } else {
+        currentValue = null;
+        break;
+      }
+    }
+
+    final textToSpeak = _extractTextToCopy(currentValue);
+    if (textToSpeak == null || textToSpeak.isEmpty) {
+      showToast(context, '无法提取文本内容');
+      return;
+    }
+
+    try {
+      showToast(context, '正在生成音频...');
+      Logger.d('开始TTS: $textToSpeak', tag: '_performSpeak');
+
+      final audioData = await AIService().textToSpeech(textToSpeak);
+
+      Logger.d('TTS音频生成成功，长度: ${audioData.length} bytes', tag: '_performSpeak');
+
+      await _playTtsAudio(audioData);
+    } catch (e) {
+      Logger.e('TTS失败: $e', tag: '_performSpeak', error: e);
+      showToast(context, '朗读失败: $e');
+    }
+  }
+
+  Future<void> _playTtsAudio(List<int> audioData) async {
+    try {
+      await _currentPlayer?.stop();
+      await _currentPlayer?.dispose();
+
+      final player = Player();
+      _currentPlayer = player;
+
+      final tempDir = await Directory.systemTemp.createTemp();
+      final audioFile = File('${tempDir.path}/tts_audio.mp3');
+      await audioFile.writeAsBytes(audioData);
+
+      Logger.d('播放TTS音频: ${audioFile.path}', tag: '_playTtsAudio');
+
+      // 确保文件存在且有内容
+      if (!await audioFile.exists()) {
+        Logger.e('TTS音频文件不存在', tag: '_playTtsAudio');
+        return;
+      }
+      final fileSize = await audioFile.length();
+      Logger.d('TTS音频文件大小: $fileSize bytes', tag: '_playTtsAudio');
+
+      await player.open(Media(audioFile.path), play: true);
+
+      // 监听播放状态 - 使用弱引用避免热重启时回调错误
+      StreamSubscription? completionSub;
+      completionSub = player.stream.completed.listen((completed) {
+        if (completed) {
+          Logger.d('TTS音频播放完成', tag: '_playTtsAudio');
+          // 取消订阅避免内存泄漏
+          completionSub?.cancel();
+          _streamSubscriptions.remove(completionSub);
+          // 延迟删除，确保播放完全结束
+          Future.delayed(const Duration(seconds: 1), () {
+            try {
+              tempDir.delete(recursive: true);
+            } catch (e) {
+              // ignore
+            }
+          });
+        }
+      });
+      _streamSubscriptions.add(completionSub);
+
+      Logger.d('TTS音频播放已启动', tag: '_playTtsAudio');
+    } catch (e, stackTrace) {
+      Logger.e('播放TTS音频失败: $e', tag: '_playTtsAudio', error: e);
+      Logger.e('堆栈跟踪: $stackTrace', tag: '_playTtsAudio', error: stackTrace);
+      rethrow;
+    }
   }
 
   void _handleElementSecondaryTap(
@@ -875,6 +1468,8 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       dy = screenSize.height - 170;
     }
 
+    final order = await PreferencesService().getClickActionOrder();
+
     overlayEntry = OverlayEntry(
       builder: (context) {
         return Positioned(
@@ -898,84 +1493,100 @@ class _ComponentRendererState extends State<ComponentRenderer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ListTile(
-                    leading: const Icon(Icons.edit, size: 20),
-                    title: const Text('编辑'),
-                    dense: true,
-                    onTap: () {
-                      _removeCurrentOverlay();
-                      if (pathData != null) {
-                        _handlePathTap(pathData.path, pathData.label, (
-                          path,
-                          label,
-                        ) {
-                          widget.onEditElement?.call(path, label);
-                        });
-                      }
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.auto_awesome, size: 20),
-                    title: const Text('询问AI'),
-                    dense: true,
-                    onTap: () {
-                      _removeCurrentOverlay();
-                      if (pathData != null) {
-                        _handlePathTap(pathData.path, pathData.label, (
-                          path,
-                          label,
-                        ) {
-                          widget.onAiAsk?.call(path, label);
-                        });
-                      }
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.copy, size: 20),
-                    title: const Text('复制文本'),
-                    dense: true,
-                    onTap: () {
-                      _removeCurrentOverlay();
-
-                      if (pathData == null) return;
-
-                      final pathParts = pathData.path;
-                      final json = widget.entry.toJson();
-                      dynamic currentValue = json;
-
-                      for (final part in pathParts) {
-                        if (currentValue is Map) {
-                          currentValue = currentValue[part];
-                        } else if (currentValue is List) {
-                          int? index;
-                          if (part.startsWith('[') && part.endsWith(']')) {
-                            index = int.tryParse(
-                              part.substring(1, part.length - 1),
+                  for (int i = 0; i < order.length; i++) ...[
+                    Builder(
+                      builder: (context) {
+                        final action = order[i];
+                        switch (action) {
+                          case PreferencesService.actionAiTranslate:
+                            return ListTile(
+                              leading: const Icon(Icons.translate, size: 20),
+                              title: const Text('AI 翻译'),
+                              dense: true,
+                              onTap: () {
+                                _removeCurrentOverlay();
+                                if (pathData != null) {
+                                  widget.onElementTap?.call(
+                                    pathData.path.join('.'),
+                                    pathData.label,
+                                  );
+                                }
+                              },
                             );
-                          } else {
-                            index = int.tryParse(part);
-                          }
-                          if (index != null && index < currentValue.length) {
-                            currentValue = currentValue[index];
-                          } else {
-                            currentValue = null;
-                            break;
-                          }
-                        } else {
-                          currentValue = null;
-                          break;
+                          case PreferencesService.actionEdit:
+                            return ListTile(
+                              leading: const Icon(Icons.edit, size: 20),
+                              title: const Text('编辑'),
+                              dense: true,
+                              onTap: () {
+                                _removeCurrentOverlay();
+                                if (pathData != null) {
+                                  widget.onEditElement?.call(
+                                    pathData.path.join('.'),
+                                    pathData.label,
+                                  );
+                                }
+                              },
+                            );
+                          case PreferencesService.actionAskAi:
+                            return ListTile(
+                              leading: const Icon(Icons.auto_awesome, size: 20),
+                              title: const Text('询问AI'),
+                              dense: true,
+                              onTap: () {
+                                _removeCurrentOverlay();
+                                if (pathData != null) {
+                                  widget.onAiAsk?.call(
+                                    pathData.path.join('.'),
+                                    pathData.label,
+                                  );
+                                }
+                              },
+                            );
+                          case PreferencesService.actionCopy:
+                            return ListTile(
+                              leading: const Icon(Icons.copy, size: 20),
+                              title: const Text('复制文本'),
+                              dense: true,
+                              onTap: () {
+                                _removeCurrentOverlay();
+                                if (pathData != null) {
+                                  _performCopy(
+                                    pathData.path.join('.'),
+                                    pathData.label,
+                                  );
+                                }
+                              },
+                            );
+                          case PreferencesService.actionSpeak:
+                            return ListTile(
+                              leading: const Icon(Icons.volume_up, size: 20),
+                              title: const Text('朗读'),
+                              dense: true,
+                              onTap: () {
+                                _removeCurrentOverlay();
+                                if (pathData != null) {
+                                  _performSpeak(
+                                    pathData.path.join('.'),
+                                    pathData.label,
+                                  );
+                                }
+                              },
+                            );
+                          default:
+                            return const SizedBox.shrink();
                         }
-                      }
-
-                      final textToCopy = _extractTextToCopy(currentValue);
-                      if (textToCopy != null) {
-                        Clipboard.setData(ClipboardData(text: textToCopy));
-                        showToast(context, '文本已复制');
-                      } else {
-                        showToast(context, '无法提取文本内容');
-                      }
-                    },
-                  ),
+                      },
+                    ),
+                    if (i == 0 && order.length > 1)
+                      Divider(
+                        height: 1,
+                        thickness: 0.5,
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -1004,12 +1615,40 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
   @override
   void dispose() {
+    _hiddenLanguagesNotifier.dispose();
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
+    for (final subscription in _streamSubscriptions) {
+      subscription.cancel();
+    }
+    _streamSubscriptions.clear();
     _removeCurrentOverlay();
+    // 确保音频播放器完全清理，避免热重启时 Native 回调错误
+    _cleanupPlayer();
     super.dispose();
   }
 
+  /// 安全清理音频播放器
+  void _cleanupPlayer() {
+    try {
+      final player = _currentPlayer;
+      if (player != null) {
+        // 先停止播放
+        player.stop();
+        // 释放资源
+        player.dispose();
+        _currentPlayer = null;
+      }
+    } catch (e) {
+      // 忽略清理过程中的错误
+      Logger.d('清理播放器时出错: $e', tag: 'ComponentRenderer');
+    }
+  }
+
   String _getPage() {
-    final entry = widget.entry;
+    final entry = _localEntry;
     try {
       final jsonStr = entry.toString();
       if (jsonStr.contains('"page"')) {
@@ -1026,7 +1665,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }
 
   List<String> _getSections() {
-    final entry = widget.entry;
+    final entry = _localEntry;
     final sections = entry.senses
         .map((sense) {
           final section = sense['section'] as String?;
@@ -1046,72 +1685,71 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
   @override
   Widget build(BuildContext context) {
-    final entry = widget.entry;
+    final entry = _localEntry;
     final page = _getPage();
     final sections = _getSections();
 
-    return DictionaryInteractionScope(
-      onElementTap: widget.onElementTap,
-      onElementSecondaryTap: _handleElementSecondaryTap,
-      child: PathScope(
-        path: const ['entry'],
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (page.isNotEmpty) ...[
-                _buildPageDisplay(context, page),
-                const SizedBox(height: 16),
-              ],
-              if (sections.isNotEmpty) ...[
-                _buildSectionNavigation(context, sections),
-                const SizedBox(height: 12),
-              ],
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  _buildWord(context),
-                  if (entry.frequency.isNotEmpty ||
-                      entry.pronunciations.isNotEmpty) ...[
-                    if (entry.frequency.isNotEmpty)
-                      _buildFrequencyStars(context),
-                    if (entry.pronunciations.isNotEmpty)
-                      _buildPronunciations(context),
-                  ],
-                  if (entry.certifications.isNotEmpty) ...[
-                    ..._buildCertificationsInline(context),
-                  ],
+    return HiddenLanguagesScope(
+      notifier: _hiddenLanguagesNotifier,
+      child: DictionaryInteractionScope(
+        onElementTap: widget.onElementTap,
+        onElementSecondaryTap: _handleElementSecondaryTap,
+        child: PathScope(
+          path: const ['entry'],
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (page.isNotEmpty) ...[
+                  _buildPageDisplay(context, page),
+                  const SizedBox(height: 16),
                 ],
-              ),
-              if (entry.senses.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _buildSenses(context),
+                if (sections.isNotEmpty) ...[
+                  _buildSectionNavigation(context, sections),
+                  const SizedBox(height: 12),
+                ],
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _buildWord(context),
+                    if (entry.frequency.isNotEmpty ||
+                        entry.pronunciations.isNotEmpty) ...[
+                      if (entry.frequency.isNotEmpty)
+                        _buildFrequencyStars(context),
+                      if (entry.pronunciations.isNotEmpty)
+                        _buildPronunciations(context),
+                    ],
+                    if (entry.certifications.isNotEmpty) ...[
+                      ..._buildCertificationsInline(context),
+                    ],
+                  ],
+                ),
+                // 渲染 datas（在 senses 之前）
+                _buildDatasIfExist(context),
+                if (entry.senses.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildSenses(context),
+                ],
+                if (entry.senseGroups.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildSenseGroups(context),
+                ],
+                // 渲染所有未渲染的 key 为 board
+                _buildRemainingBoards(context),
               ],
-              if (entry.senseGroups.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _buildSenseGroups(context),
-              ],
-              if (entry.boards.isNotEmpty ||
-                  entry.etymology != null ||
-                  entry.collocations != null ||
-                  entry.phrases != null ||
-                  entry.theasaruses != null) ...[
-                const SizedBox(height: 12),
-                _buildBoardsUnclassified(context),
-              ],
-            ],
+            ),
           ),
         ),
       ),
-    );
+    ); // 注意这里：闭合 HiddenLanguagesScope 并以分号结束
   }
 
   Widget _buildWord(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final entry = widget.entry;
+    final entry = _localEntry;
 
     final word = entry.headword;
     final pos = entry.senses.isNotEmpty
@@ -1129,13 +1767,18 @@ class _ComponentRendererState extends State<ComponentRenderer> {
               return _buildTappableWidget(
                 context: context,
                 pathData: _PathData(PathScope.of(context), 'Headword'),
-                child: buildFormattedText(
-                  word,
-                  TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurface,
-                    height: 1.0,
+                child: RichText(
+                  text: TextSpan(
+                    children: parseFormattedText(
+                      word,
+                      TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onSurface,
+                        height: 1.0,
+                      ),
+                      context: context,
+                    ).spans,
                   ),
                 ),
               );
@@ -1163,7 +1806,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
   Widget _buildFrequencyStars(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final entry = widget.entry;
+    final entry = _localEntry;
     final frequency = entry.frequency;
 
     final starsValue = frequency['stars'] as String? ?? '';
@@ -1258,15 +1901,37 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     }
 
     final examplePath = path ?? PathScope.of(context);
-    return _buildExampleItem(
-      context: context,
-      texts: texts,
-      usage: usage,
-      leftMargin: leftMargin,
-      basePath: examplePath,
-      onElementTap: _handleElementTap,
-      onElementSecondaryTapWithPosition: (path, label, position) {
-        _handleElementSecondaryTap(path, label, context, position);
+    // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
+    return HiddenLanguagesSelector<String>(
+      selector: (hiddenLanguages) {
+        final relevantHidden = <String>[];
+        for (final entry in texts) {
+          final key = entry.key;
+          final path = key.isEmpty ? examplePath : [...examplePath, key];
+          final pathStr = path.join('.');
+          if (hiddenLanguages.contains(pathStr)) {
+            relevantHidden.add(pathStr);
+          }
+        }
+        relevantHidden.sort();
+        return relevantHidden.join(',');
+      },
+      builder: (context, hiddenPathsStr, child) {
+        Logger.d(
+          '重建 Example: path=${examplePath.join('.')}, hiddenPaths=$hiddenPathsStr',
+          tag: 'Rebuild',
+        );
+        return _buildExampleItem(
+          context: context,
+          texts: texts,
+          usage: usage,
+          leftMargin: leftMargin,
+          basePath: examplePath,
+          onElementTap: _handleElementTap,
+          onElementSecondaryTapWithPosition: (path, label, position) {
+            _handleElementSecondaryTap(path, label, context, position);
+          },
+        );
       },
     );
   }
@@ -1289,6 +1954,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       path: path ?? PathScope.of(context),
       colorScheme: colorScheme,
       contentBuilder: (board, p) => _buildBoardContent(context, board, p),
+      onElementTap: _handleElementTap,
     );
   }
 
@@ -1328,12 +1994,17 @@ class _ComponentRendererState extends State<ComponentRenderer> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: buildText(
-                note,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
-                  height: 1.5,
+              child: RichText(
+                text: TextSpan(
+                  children: parseFormattedText(
+                    note,
+                    TextStyle(
+                      fontSize: 13,
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                    context: context,
+                  ).spans,
                 ),
               ),
             ),
@@ -1352,12 +2023,17 @@ class _ComponentRendererState extends State<ComponentRenderer> {
         color: colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: buildText(
-        page[0].toUpperCase() + page.substring(1),
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: colorScheme.onPrimaryContainer,
+      child: RichText(
+        text: TextSpan(
+          children: parseFormattedText(
+            page[0].toUpperCase() + page.substring(1),
+            TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onPrimaryContainer,
+            ),
+            context: context,
+          ).spans,
         ),
       ),
     );
@@ -1393,11 +2069,16 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                   color: colorScheme.secondaryContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: buildText(
-                  section,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSecondaryContainer,
+                child: RichText(
+                  text: TextSpan(
+                    children: parseFormattedText(
+                      section,
+                      TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSecondaryContainer,
+                      ),
+                      context: context,
+                    ).spans,
                   ),
                 ),
               ),
@@ -1410,7 +2091,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
   Widget _buildPronunciations(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final entry = widget.entry;
+    final entry = _localEntry;
 
     return PathScope.append(
       context,
@@ -1446,76 +2127,97 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                     key: '$index',
                     child: Builder(
                       builder: (context) {
+                        final path = PathScope.of(context);
+                        final pathData = _PathData(path, 'Pronunciation');
+
                         return Material(
                           color: Colors.transparent,
-                          child: InkWell(
-                            onTap: audioFile.isNotEmpty
-                                ? () {
-                                    _playAudio(currentDictId, audioFile);
-                                  }
-                                : null,
-                            borderRadius: BorderRadius.circular(12),
-                            splashColor: audioFile.isNotEmpty
-                                ? colorScheme.primary.withValues(alpha: 0.1)
-                                : null,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: audioFile.isNotEmpty
-                                    ? colorScheme.surfaceContainerHighest
-                                    : null,
-                                borderRadius: BorderRadius.circular(12),
-                                border: audioFile.isNotEmpty
-                                    ? null
-                                    : Border.all(
-                                        color: colorScheme.outlineVariant,
-                                        width: 1,
+                          child: GestureDetector(
+                            onSecondaryTapUp: (details) {
+                              _handleElementSecondaryTap(
+                                _convertPathToString(path),
+                                pathData.label,
+                                context,
+                                details.globalPosition,
+                              );
+                            },
+                            onLongPressStart: (details) {
+                              _handleElementSecondaryTap(
+                                _convertPathToString(path),
+                                pathData.label,
+                                context,
+                                details.globalPosition,
+                              );
+                            },
+                            child: InkWell(
+                              onTap: audioFile.isNotEmpty
+                                  ? () {
+                                      _playAudio(currentDictId, audioFile);
+                                    }
+                                  : null,
+                              borderRadius: BorderRadius.circular(12),
+                              splashColor: audioFile.isNotEmpty
+                                  ? colorScheme.primary.withValues(alpha: 0.1)
+                                  : null,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: audioFile.isNotEmpty
+                                      ? colorScheme.surfaceContainerHighest
+                                      : null,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: audioFile.isNotEmpty
+                                      ? null
+                                      : Border.all(
+                                          color: colorScheme.outlineVariant,
+                                          width: 1,
+                                        ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    if (region.isNotEmpty)
+                                      PathScope.append(
+                                        context,
+                                        key: 'region',
+                                        child: Builder(
+                                          builder: (context) {
+                                            return _buildPronunciationRegionElement(
+                                              context,
+                                              region,
+                                              hasAudio: audioFile.isNotEmpty,
+                                            );
+                                          },
+                                        ),
                                       ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  if (region.isNotEmpty)
-                                    PathScope.append(
-                                      context,
-                                      key: 'region',
-                                      child: Builder(
-                                        builder: (context) {
-                                          return _buildPronunciationRegionElement(
-                                            context,
-                                            region,
-                                            hasAudio: audioFile.isNotEmpty,
-                                          );
-                                        },
+                                    if (notation.isNotEmpty)
+                                      PathScope.append(
+                                        context,
+                                        key: 'notation',
+                                        child: Builder(
+                                          builder: (context) {
+                                            return _buildPronunciationPhoneticElement(
+                                              context,
+                                              notation,
+                                              hasAudio: audioFile.isNotEmpty,
+                                            );
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                  if (notation.isNotEmpty)
-                                    PathScope.append(
-                                      context,
-                                      key: 'notation',
-                                      child: Builder(
-                                        builder: (context) {
-                                          return _buildPronunciationPhoneticElement(
-                                            context,
-                                            notation,
-                                            hasAudio: audioFile.isNotEmpty,
-                                          );
-                                        },
+                                    if (audioFile.isNotEmpty) ...[
+                                      const SizedBox(width: 5),
+                                      Icon(
+                                        Icons.volume_up,
+                                        size: 13,
+                                        color: colorScheme.primary,
                                       ),
-                                    ),
-                                  if (audioFile.isNotEmpty) ...[
-                                    const SizedBox(width: 5),
-                                    Icon(
-                                      Icons.volume_up,
-                                      size: 13,
-                                      color: colorScheme.primary,
-                                    ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           ),
@@ -1534,7 +2236,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
   List<Widget> _buildCertificationsInline(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final entry = widget.entry;
+    final entry = _localEntry;
 
     return entry.certifications.asMap().entries.map((entryMap) {
       final index = entryMap.key;
@@ -1555,13 +2257,18 @@ class _ComponentRendererState extends State<ComponentRenderer> {
               color: colorScheme.tertiary.withValues(alpha: 0.3),
             ),
           ),
-          child: buildText(
-            cert,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.tertiary,
-              letterSpacing: 0.3,
+          child: RichText(
+            text: TextSpan(
+              children: parseFormattedText(
+                cert,
+                TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.tertiary,
+                  letterSpacing: 0.3,
+                ),
+                context: context,
+              ).spans,
             ),
           ),
         ),
@@ -1577,12 +2284,17 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       pathData: _PathData(PathScope.of(context), 'Index'),
       child: Padding(
         padding: const EdgeInsets.only(top: 4),
-        child: buildText(
-          indexStr,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: colorScheme.primary,
+        child: RichText(
+          text: TextSpan(
+            children: parseFormattedText(
+              indexStr,
+              TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: colorScheme.primary,
+              ),
+              context: context,
+            ).spans,
           ),
         ),
       ),
@@ -1597,13 +2309,18 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     return _buildTappableWidget(
       context: context,
       pathData: _PathData(PathScope.of(context), 'Part of Speech'),
-      child: buildText(
-        pos,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: colorScheme.primary,
-          letterSpacing: 0.5,
+      child: RichText(
+        text: TextSpan(
+          children: parseFormattedText(
+            pos,
+            TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.primary,
+              letterSpacing: 0.5,
+            ),
+            context: context,
+          ).spans,
         ),
       ),
     );
@@ -1631,12 +2348,17 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final text = buildText(
-      '$region ',
-      style: TextStyle(
-        fontSize: 11,
-        color: colorScheme.outline,
-        fontWeight: FontWeight.w500,
+    final text = RichText(
+      text: TextSpan(
+        children: parseFormattedText(
+          '$region ',
+          TextStyle(
+            fontSize: 11,
+            color: colorScheme.outline,
+            fontWeight: FontWeight.w500,
+          ),
+          context: context,
+        ).spans,
       ),
     );
 
@@ -1656,12 +2378,19 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final text = buildText(
-      phonetic,
-      style: TextStyle(
-        fontSize: 13,
-        fontFamily: 'Monospace',
-        color: hasAudio ? colorScheme.primary : colorScheme.onSurfaceVariant,
+    final text = RichText(
+      text: TextSpan(
+        children: parseFormattedText(
+          phonetic,
+          TextStyle(
+            fontSize: 13,
+            fontFamily: 'Monospace',
+            color: hasAudio
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant,
+          ),
+          context: context,
+        ).spans,
       ),
     );
 
@@ -1684,6 +2413,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final spans = <InlineSpan>[];
+    int currentTextOffset = 0;
 
     if (pos.isNotEmpty) {
       spans.add(
@@ -1698,7 +2428,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                   context: context,
                   pathData: _PathData(PathScope.of(context), 'Part of Speech'),
                   child: Container(
-                    margin: const EdgeInsets.only(right: 4, top: 4),
+                    margin: const EdgeInsets.only(right: 8, top: 4),
                     child: Text(
                       pos.toUpperCase(),
                       style: TextStyle(
@@ -1714,12 +2444,20 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           ),
         ),
       );
+      currentTextOffset += 1; // WidgetSpan 占 1 个字符
     }
 
     final labelSpans = _buildLabelInlineSpans(context, label);
     for (final span in labelSpans) {
       spans.add(span);
+      if (span is WidgetSpan) {
+        currentTextOffset += 1; // WidgetSpan 占 1 个字符
+      } else if (span is TextSpan) {
+        currentTextOffset += span.toPlainText().length;
+      }
     }
+
+    final definitionTextKey = GlobalKey();
 
     if (definitions != null) {
       for (int i = 0; i < definitions.length; i++) {
@@ -1728,12 +2466,21 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           // 不同语言的 definition 之间添加间距
           if (i > 0) {
             spans.add(WidgetSpan(child: SizedBox(width: 12)));
+            currentTextOffset += 1; // WidgetSpan 占 1 个字符
           } else if (spans.isNotEmpty) {
             spans.add(const TextSpan(text: ' '));
+            currentTextOffset += 1; // 空格占 1 个字符
           }
+
+          final startOffset = currentTextOffset;
+          currentTextOffset += definition.value.length;
 
           final path = [...PathScope.of(context), definition.key];
           final pathData = _PathData(path, 'Definition (${definition.key})');
+
+          final hiddenPath = path.join('.');
+          // 使用 notifier 的当前值，这样当状态变化时会重建
+          final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
           // 创建手势识别器以支持点击和右键菜单
           final tapRecognizer = TapGestureRecognizer()
@@ -1751,19 +2498,59 @@ class _ComponentRendererState extends State<ComponentRenderer> {
               );
             };
 
-          // 使用 MultiGestureRecognizer 来同时支持点击和右键
+          final longPressRecognizer = LongPressGestureRecognizer()
+            ..onLongPressStart = (details) {
+              _handleElementSecondaryTap(
+                _convertPathToString(path),
+                pathData.label,
+                context,
+                details.globalPosition,
+              );
+            };
+
+          final definitionTextStyle = TextStyle(
+            fontSize: 15,
+            color: colorScheme.onSurface,
+            height: 1.6,
+          );
+
+          final doubleTapRecognizer = DoubleTapGestureRecognizer()
+            ..onDoubleTapDown = (details) {
+              // 不再需要手动去除格式化标记，因为 _handleDoubleTapOnText 内部会调用 parseFormattedText
+              // 但我们需要传递原始文本（带标记的），以便 parseFormattedText 能正确解析
+              _handleDoubleTapOnText(
+                details.globalPosition,
+                definition.value, // 传递原始文本
+                definitionTextStyle,
+                definitionTextKey,
+                context,
+                startOffset: startOffset,
+              );
+            };
+
+          _recognizers.addAll([
+            tapRecognizer,
+            secondaryTapRecognizer,
+            longPressRecognizer,
+            doubleTapRecognizer,
+          ]);
+
+          // 使用 MultiGestureRecognizer 来同时支持点击、右键和双击
           final multiRecognizer = _MultiGestureRecognizer(
             tapRecognizer: tapRecognizer,
             secondaryTapRecognizer: secondaryTapRecognizer,
+            longPressRecognizer: longPressRecognizer,
+            doubleTapRecognizer: doubleTapRecognizer,
           );
 
           final result = parseFormattedText(
             definition.value,
-            TextStyle(fontSize: 15, color: colorScheme.onSurface, height: 1.6),
+            definitionTextStyle,
             context: context,
             path: path,
             label: 'Definition (${definition.key})',
             recognizer: multiRecognizer,
+            hidden: hidden,
           );
 
           // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
@@ -1772,7 +2559,10 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    return RichText(text: TextSpan(children: spans));
+    return Builder(
+      key: definitionTextKey,
+      builder: (context) => RichText(text: TextSpan(children: spans)),
+    );
   }
 
   List<InlineSpan> _buildLabelInlineSpans(
@@ -1849,26 +2639,40 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final pathKey = index != null ? 'label.$key.$index' : 'label.$key';
+    final textKey = GlobalKey();
+
+    TextStyle textStyle;
+    if (!hasBackground) {
+      textStyle = TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: colorScheme.primary,
+      );
+    } else {
+      final onSurface = colorScheme.onSurface;
+      textStyle = TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: onSurface,
+        height: 1.2,
+      );
+    }
+
+    final result = parseFormattedText(text, textStyle, context: context);
+    final richText = RichText(text: TextSpan(children: result.spans));
 
     Widget child;
     if (!hasBackground) {
       child = Container(
-        margin: const EdgeInsets.only(right: 4, top: 4),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: colorScheme.primary,
-          ),
-        ),
+        margin: const EdgeInsets.only(right: 8, top: 4),
+        child: Builder(key: textKey, builder: (context) => richText),
       );
     } else {
       final onSurface = colorScheme.onSurface;
       final onSurfaceVariant = colorScheme.onSurfaceVariant;
 
       child = Container(
-        margin: const EdgeInsets.only(right: 2, left: 4),
+        margin: const EdgeInsets.only(right: 6, left: 4),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
         decoration: BoxDecoration(
           color: onSurface.withValues(alpha: 0.08),
@@ -1878,15 +2682,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           ),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: onSurface,
-            height: 1.2,
-          ),
-        ),
+        child: Builder(key: textKey, builder: (context) => richText),
       );
     }
 
@@ -1899,6 +2695,9 @@ class _ComponentRendererState extends State<ComponentRenderer> {
           return _buildTappableWidget(
             context: context,
             pathData: _PathData(PathScope.of(context), _capitalizeFirst(key)),
+            text: text,
+            textStyle: textStyle,
+            customTextKey: textKey,
             child: child,
           );
         },
@@ -1990,13 +2789,34 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: _buildSenseContent(
-                      context: context,
-                      pos: pos,
-                      label: senselabel,
-                      definitions: definitions,
-                      sourceLanguage: _sourceLanguage,
-                      targetLanguages: _targetLanguages,
+                    // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
+                    child: HiddenLanguagesSelector<String>(
+                      selector: (hiddenLanguages) {
+                        final relevantHidden = <String>[];
+                        for (final def in definitions) {
+                          final path = [...PathScope.of(context), def.key];
+                          final pathStr = path.join('.');
+                          if (hiddenLanguages.contains(pathStr)) {
+                            relevantHidden.add(pathStr);
+                          }
+                        }
+                        relevantHidden.sort();
+                        return relevantHidden.join(',');
+                      },
+                      builder: (context, hiddenPathsStr, child) {
+                        Logger.d(
+                          '重建 SenseContent: pos=$pos, definitions=$definitions, hiddenPaths=$hiddenPathsStr',
+                          tag: 'Rebuild',
+                        );
+                        return _buildSenseContent(
+                          context: context,
+                          pos: pos,
+                          label: senselabel,
+                          definitions: definitions,
+                          sourceLanguage: _sourceLanguage,
+                          targetLanguages: _targetLanguages,
+                        );
+                      },
                     ),
                   ),
                   if (image != null && image.isNotEmpty)
@@ -2009,7 +2829,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
                         return _buildImageElement(
                           context,
                           image,
-                          widget.entry.dictId,
+                          _localEntry.dictId,
                           'image',
                           imageFile,
                         );
@@ -2094,7 +2914,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
   }
 
   Widget _buildSenses(BuildContext context) {
-    final entry = widget.entry;
+    final entry = _localEntry;
 
     return PathScope.append(
       context,
@@ -2135,7 +2955,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
   Widget _buildSenseGroups(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final entry = widget.entry;
+    final entry = _localEntry;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2152,13 +2972,18 @@ class _ComponentRendererState extends State<ComponentRenderer> {
             if (groupName.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: buildFormattedText(
-                  groupName.toUpperCase(),
-                  TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
-                    letterSpacing: 1.0,
+                child: RichText(
+                  text: TextSpan(
+                    children: parseFormattedText(
+                      groupName.toUpperCase(),
+                      TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
+                        letterSpacing: 1.0,
+                      ),
+                      context: context,
+                    ).spans,
                   ),
                 ),
               ),
@@ -2208,25 +3033,71 @@ class _ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  static const List<String> boardKeysAtRoot = [
-    'etymology',
-    'theasaruses',
-    'collocations',
-    'phrases',
+  // 已单独渲染的 key 列表，这些 key 不会出现在 _buildRemainingBoards 中
+  static const List<String> _renderedKeys = [
+    'entry_id',
+    'dict_id',
+    'version',
+    'headword',
+    'entry_type',
+    'page',
+    'section',
+    'tags',
+    'certifications',
+    'frequency',
+    'inflections',
+    'pronunciation',
+    'pronunciations',
+    'senses',
+    'boards',
+    'sense_groups',
+    'datas', // datas 单独渲染
   ];
 
-  Widget _buildBoardsUnclassified(BuildContext context) {
-    final entry = widget.entry;
+  /// 渲染 datas（如果存在），在 senses 之前显示
+  Widget _buildDatasIfExist(BuildContext context) {
+    final entry = _localEntry;
+    final entryJson = entry.toJson();
+
+    if (!entryJson.containsKey('datas')) return const SizedBox.shrink();
+
+    final value = entryJson['datas'];
+    if (value is! List<dynamic> || value.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        renderListWithKey(context, 'datas', value, ['datas'], 'datas'),
+      ],
+    );
+  }
+
+  /// 渲染所有未单独渲染的 key 为 board
+  Widget _buildRemainingBoards(BuildContext context) {
+    final entry = _localEntry;
     final entryJson = entry.toJson();
 
     final widgets = <Widget>[];
-    for (final key in boardKeysAtRoot) {
-      if (!entryJson.containsKey(key)) continue;
 
-      final value = entryJson[key];
+    for (final entry in entryJson.entries) {
+      final key = entry.key;
+      final value = entry.value;
+
+      // 跳过已单独渲染的 key
+      if (_renderedKeys.contains(key)) continue;
+
+      // 跳过 null 值
+      if (value == null) continue;
+
+      // 跳过空列表
+      if (value is List && value.isEmpty) continue;
+
+      final path = [key];
 
       if (value is Map<String, dynamic>) {
-        final path = [key];
         final title = value['title'] as String? ?? key;
         final display = value['display'] as String? ?? '00';
         final boardData = {...value, 'title': title, 'display': display};
@@ -2243,7 +3114,18 @@ class _ComponentRendererState extends State<ComponentRenderer> {
         final renderer = predefinedRenderers.containsKey(key)
             ? predefinedRenderers[key]
             : null;
-        widgets.add(renderListWithKey(context, key, value, [key], renderer));
+        widgets.add(renderListWithKey(context, key, value, path, renderer));
+      } else {
+        // 其他类型（字符串、数字等）也包装为 board
+        final boardData = {'title': key, 'text': value.toString()};
+        widgets.add(
+          BoardWidget(
+            board: boardData,
+            contentBuilder: (board, path) =>
+                _buildBoardContent(context, board, path),
+            path: path,
+          ),
+        );
       }
     }
 
@@ -2251,7 +3133,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets,
+      children: [const SizedBox(height: 12), ...widgets],
     );
   }
 
@@ -2268,43 +3150,81 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       return const SizedBox.shrink();
     }
 
-    final widgets = <Widget>[];
-
-    for (final key in keys) {
-      final value = board[key];
-      final keyPath = [...path, key];
-
-      if (value is Map<String, dynamic>) {
-        widgets.add(
-          BoardWidget(
-            board: value,
-            contentBuilder: (board, path) =>
-                _buildBoardContent(context, board, path),
-            path: keyPath,
-          ),
-        );
-      } else if (value is List<dynamic>) {
-        final renderer = predefinedRenderers.containsKey(key)
-            ? predefinedRenderers[key]
-            : null;
-        widgets.add(renderListWithKey(context, key, value, keyPath, renderer));
-      } else {
-        final text = value is String ? value : (value?.toString() ?? '');
-        if (key == 'text') {
-          widgets.add(_buildPlainTextItem(context, text, keyPath));
-        } else {
-          widgets.add(_buildContentItem(context, text, keyPath));
+    // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
+    return HiddenLanguagesSelector<String>(
+      selector: (hiddenLanguages) {
+        final relevantHidden = <String>[];
+        for (final key in keys) {
+          final isLanguageCode =
+              LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
+          if (isLanguageCode) {
+            final pathStr = [...path, key].join('.');
+            if (hiddenLanguages.contains(pathStr)) {
+              relevantHidden.add(pathStr);
+            }
+          }
         }
-      }
-    }
+        relevantHidden.sort();
+        return relevantHidden.join(',');
+      },
+      builder: (context, hiddenPathsStr, child) {
+        Logger.d(
+          '重建 BoardContent: path=${path.join('.')}, keys=$keys, hiddenPaths=$hiddenPathsStr',
+          tag: 'Rebuild',
+        );
+        final widgets = <Widget>[];
+        final hiddenLanguages = _hiddenLanguagesNotifier.value;
 
-    if (widgets.isEmpty) {
-      return const SizedBox.shrink();
-    }
+        for (final key in keys) {
+          final value = board[key];
+          final keyPath = [...path, key];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets,
+          // 检查是否是语言代码且被隐藏
+          final isLanguageCode =
+              LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
+          if (isLanguageCode) {
+            final hiddenPath = keyPath.join('.');
+            if (hiddenLanguages.contains(hiddenPath)) {
+              // 跳过被隐藏的语言
+              continue;
+            }
+          }
+
+          if (value is Map<String, dynamic>) {
+            widgets.add(
+              BoardWidget(
+                board: value,
+                contentBuilder: (board, path) =>
+                    _buildBoardContent(context, board, path),
+                path: keyPath,
+              ),
+            );
+          } else if (value is List<dynamic>) {
+            final renderer = predefinedRenderers.containsKey(key)
+                ? predefinedRenderers[key]
+                : null;
+            widgets.add(
+              renderListWithKey(context, key, value, keyPath, renderer),
+            );
+          } else {
+            final text = value is String ? value : (value?.toString() ?? '');
+            if (isLanguageCode) {
+              widgets.add(_buildPlainTextItem(context, text, keyPath));
+            } else {
+              widgets.add(_buildContentItem(context, text, keyPath));
+            }
+          }
+        }
+
+        if (widgets.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: widgets,
+        );
+      },
     );
   }
 
@@ -2321,29 +3241,39 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       letterSpacing: 0.2,
     );
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 7),
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              color: colorScheme.primary.withValues(alpha: 0.75),
-              shape: BoxShape.circle,
+    final textKey = GlobalKey();
+
+    return _buildTappableWidget(
+      context: context,
+      pathData: _PathData(path, 'Content Item'),
+      text: text,
+      textStyle: textStyle,
+      customTextKey: textKey,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 7),
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.75),
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildTappableWidget(
-              context: context,
-              pathData: _PathData(path, 'Content Item'),
-              child: buildFormattedText(text, textStyle),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildDoubleTapText(
+                context: context,
+                text: text,
+                style: textStyle,
+                textKey: textKey,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2361,14 +3291,57 @@ class _ComponentRendererState extends State<ComponentRenderer> {
       letterSpacing: 0.2,
     );
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: _buildTappableWidget(
-        context: context,
-        pathData: _PathData(path, 'Plain Text'),
-        child: buildFormattedText(text, textStyle),
-      ),
+    final textKey = GlobalKey();
+    final hiddenPath = path.join('.');
+
+    // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
+    return HiddenLanguagesSelector<bool>(
+      selector: (hiddenLanguages) => hiddenLanguages.contains(hiddenPath),
+      builder: (context, hidden, child) {
+        Logger.d(
+          '重建 PlainTextItem: path=${path.join('.')}, hidden=$hidden',
+          tag: 'Rebuild',
+        );
+        return _buildTappableWidget(
+          context: context,
+          pathData: _PathData(path, 'Plain Text Item'),
+          text: text,
+          textStyle: textStyle,
+          customTextKey: textKey,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _buildDoubleTapText(
+              context: context,
+              text: text,
+              style: textStyle,
+              textKey: textKey,
+              hidden: hidden,
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  Widget _buildDoubleTapText({
+    required BuildContext context,
+    required String text,
+    required TextStyle style,
+    GlobalKey? textKey,
+    bool hidden = false,
+  }) {
+    final result = parseFormattedText(
+      text,
+      style,
+      context: context,
+      hidden: hidden,
+    );
+    final richText = RichText(text: TextSpan(children: result.spans));
+
+    if (textKey != null) {
+      return Builder(key: textKey, builder: (context) => richText);
+    }
+    return richText;
   }
 
   Widget _buildInlineContentItem(
@@ -2390,12 +3363,17 @@ class _ComponentRendererState extends State<ComponentRenderer> {
             width: 0.8,
           ),
         ),
-        child: buildFormattedText(
-          text,
-          TextStyle(
-            fontSize: 13,
-            color: colorScheme.onSurface,
-            letterSpacing: 0.15,
+        child: RichText(
+          text: TextSpan(
+            children: parseFormattedText(
+              text,
+              TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurface,
+                letterSpacing: 0.15,
+              ),
+              context: context,
+            ).spans,
           ),
         ),
       ),
@@ -2499,14 +3477,25 @@ class _ComponentRendererState extends State<ComponentRenderer> {
         Logger.d('使用在线音频: $audioSource', tag: '_playAudio');
       }
 
-      await _currentPlayer?.stop();
-      await _currentPlayer?.dispose();
+      // 清理旧播放器
+      _cleanupPlayer();
 
       player = Player();
       _currentPlayer = player;
 
       Logger.d('播放音频: ${isLocal ? "本地" : "在线"}', tag: '_playAudio');
       await player.open(Media(audioSource), play: true);
+
+      // 监听播放完成，自动清理资源
+      StreamSubscription? completionSub;
+      completionSub = player.stream.completed.listen((completed) {
+        if (completed) {
+          completionSub?.cancel();
+          _streamSubscriptions.remove(completionSub);
+          _cleanupPlayer();
+        }
+      });
+      _streamSubscriptions.add(completionSub);
 
       await Future.delayed(const Duration(milliseconds: 200));
 
@@ -2689,7 +3678,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
         return _buildImageElement(
           context,
           value,
-          widget.entry.dictId,
+          _localEntry.dictId,
           path.join('.'),
           imageFile,
         );
@@ -2730,6 +3719,7 @@ class _ComponentRendererState extends State<ComponentRenderer> {
         } else {
           widgets.add(
             BoardWidget(
+              key: ValueKey(itemPath.join('.')), // 添加 key 以检测数据变化
               board: item,
               contentBuilder: (board, path) =>
                   _buildBoardContent(context, board, path),
@@ -3147,6 +4137,7 @@ class _DatasTabWidget extends StatefulWidget {
   final ColorScheme colorScheme;
   final Widget Function(Map<String, dynamic> board, List<String> path)
   contentBuilder;
+  final void Function(String path, String label)? onElementTap;
 
   const _DatasTabWidget({
     required this.keys,
@@ -3154,6 +4145,7 @@ class _DatasTabWidget extends StatefulWidget {
     required this.path,
     required this.colorScheme,
     required this.contentBuilder,
+    this.onElementTap,
   });
 
   @override
@@ -3163,7 +4155,7 @@ class _DatasTabWidget extends StatefulWidget {
 class _DatasTabWidgetState extends State<_DatasTabWidget> {
   int? _selectedIndex;
 
-  void _selectTab(int? index) {
+  void _selectTab(int? index, String key) {
     setState(() {
       if (_selectedIndex == index) {
         _selectedIndex = null;
@@ -3171,6 +4163,11 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
         _selectedIndex = index;
       }
     });
+    // 触发点击回调，支持点击目标语言关闭显示
+    if (widget.onElementTap != null) {
+      final path = [...widget.path, key].join('.');
+      widget.onElementTap!(path, 'Language ($key)');
+    }
   }
 
   @override
@@ -3187,7 +4184,7 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
             final isSelected = _selectedIndex == index;
 
             return GestureDetector(
-              onTap: () => _selectTab(index),
+              onTap: () => _selectTab(index, key),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -3210,16 +4207,21 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    buildText(
-                      key,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: isSelected
-                            ? widget.colorScheme.onPrimaryContainer
-                            : widget.colorScheme.onSurface,
+                    RichText(
+                      text: TextSpan(
+                        children: parseFormattedText(
+                          key,
+                          TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: isSelected
+                                ? widget.colorScheme.onPrimaryContainer
+                                : widget.colorScheme.onSurface,
+                          ),
+                          context: context,
+                        ).spans,
                       ),
                     ),
                     if (isSelected) ...[

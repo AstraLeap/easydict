@@ -9,6 +9,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
   final VoidCallback? onPageChanged;
   final VoidCallback? onSectionChanged;
   final Function(DictionaryEntry entry)? onNavigateToEntry;
+  final bool isRight; // 新增：导航栏是否在右侧
 
   const DictionaryNavigationPanel({
     super.key,
@@ -17,6 +18,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
     this.onPageChanged,
     this.onSectionChanged,
     this.onNavigateToEntry,
+    this.isRight = true, // 默认为右侧
   });
 
   @override
@@ -36,6 +38,22 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     _removeOverlay();
     _mainScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(DictionaryNavigationPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 当导航栏位置改变时，如果 page 列表已展开，则更新其位置
+    if (oldWidget.isRight != widget.isRight && _isPageListExpanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _isPageListExpanded) {
+          _removeOverlay();
+          final currentDict = widget.entryGroup.currentDictionaryGroup;
+          _overlayEntry = _createOverlayEntry(currentDict);
+          Overlay.of(context).insert(_overlayEntry!);
+        }
+      });
+    }
   }
 
   void _removeOverlay() {
@@ -60,13 +78,18 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   }
 
   OverlayEntry _createOverlayEntry(DictionaryGroup dict) {
+    // 如果导航栏在右侧，列表向左展开；如果在左侧，列表向右展开
+    final offset = widget.isRight
+        ? const Offset(-108, 0) // 向左偏移 (100宽度 + 8间距)
+        : const Offset(52, 0); // 向右偏移 (52宽度)
+
     return OverlayEntry(
       builder: (context) => Positioned(
         width: 100,
         child: CompositedTransformFollower(
           link: _layerLink,
           showWhenUnlinked: false,
-          offset: const Offset(-108, 0), // 向左偏移 (100宽度 + 8间距)
+          offset: offset,
           child: _buildPageList(context, dict),
         ),
       ),
@@ -218,8 +241,11 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       onTap: isCurrent ? _togglePageList : () => _onDictionarySelected(dict),
       child: Container(
         width: 36,
-        height: 36,
-        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+        height: 40, // 增加高度
+        margin: const EdgeInsets.symmetric(
+          vertical: 4,
+          horizontal: 8,
+        ), // 增加垂直间距
         child: ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: Stack(
@@ -230,23 +256,26 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 dictionaryName: dict.dictionaryName,
                 size: 36,
               ),
-              if (isCurrent)
+              if (isCurrent && dict.pageGroups.length > 1)
                 Positioned(
                   right: 2,
                   bottom: 2,
                   child: Container(
-                    width: 10,
-                    height: 10,
+                    width: 16,
+                    height: 16,
                     decoration: BoxDecoration(
                       color: colorScheme.primary,
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      _isPageListExpanded
-                          ? Icons.keyboard_arrow_left
-                          : Icons.keyboard_arrow_right,
-                      size: 8,
-                      color: colorScheme.onPrimary,
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${dict.pageGroups.length}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onPrimary,
+                        height: 0.9,
+                      ),
                     ),
                   ),
                 ),
@@ -271,19 +300,24 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       width: 100,
       constraints: const BoxConstraints(maxHeight: 300),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(4),
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(-2, 2),
+            color: colorScheme.shadow.withOpacity(0.15),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border.all(
+          color: colorScheme.outlineVariant.withOpacity(0.2),
+          width: 1,
+        ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(12),
         child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: List.generate(dict.pageGroups.length, (index) {
@@ -299,32 +333,31 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                       vertical: 8,
                       horizontal: 12,
                     ),
-                    color: isSelected
-                        ? colorScheme.primaryContainer
-                        : Colors.transparent,
+                    decoration: isSelected
+                        ? BoxDecoration(
+                            color: colorScheme.primaryContainer.withOpacity(
+                              0.5,
+                            ),
+                            border: Border(
+                              left: BorderSide(
+                                color: colorScheme.primary,
+                                width: 3,
+                              ),
+                            ),
+                          )
+                        : null,
                     child: Row(
                       children: [
-                        Container(
-                          width: 3,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? colorScheme.primary
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(1.5),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             page.page.isNotEmpty ? page.page : '${index + 1}',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 13,
                               fontWeight: isSelected
-                                  ? FontWeight.bold
+                                  ? FontWeight.w600
                                   : FontWeight.normal,
                               color: isSelected
-                                  ? colorScheme.onPrimaryContainer
+                                  ? colorScheme.primary
                                   : colorScheme.onSurfaceVariant,
                             ),
                             maxLines: 1,
@@ -357,8 +390,11 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       onTap: () => _onSectionTapped(section, dictId),
       child: Container(
         width: 40,
-        height: 28,
-        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 6),
+        height: 32, // 增加高度
+        margin: const EdgeInsets.symmetric(
+          vertical: 3,
+          horizontal: 6,
+        ), // 增加垂直间距
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
           color: isSelected
