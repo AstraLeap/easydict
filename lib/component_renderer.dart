@@ -16,6 +16,7 @@ import 'logger.dart';
 import 'services/dictionary_manager.dart';
 import 'services/preferences_service.dart';
 import 'services/ai_service.dart';
+import 'services/advanced_search_settings_service.dart';
 import 'models/dictionary_entry_group.dart';
 import 'pages/entry_detail_page.dart';
 import 'services/search_history_service.dart';
@@ -738,9 +739,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
   void initState() {
     super.initState();
     _localEntry = widget.entry;
-    _hiddenLanguagesNotifier = HiddenLanguagesNotifier(
-      List<String>.from(widget.entry.hiddenLanguages),
-    );
+    // 初始化为空列表，不从 entry.hiddenLanguages 读取
+    // 全局状态由 EntryDetailPage 控制，单独状态在内存中管理
+    _hiddenLanguagesNotifier = HiddenLanguagesNotifier([]);
     _loadSourceLanguage();
     _loadClickAction();
   }
@@ -751,26 +752,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 当 entry 的 id 改变时重置隐藏语言状态
     if (oldWidget.entry.id != widget.entry.id) {
       _localEntry = widget.entry;
-      _hiddenLanguagesNotifier.value = List<String>.from(
-        widget.entry.hiddenLanguages,
-      );
-    } else {
-      // 即使 id 相同，也检查隐藏语言列表是否变化
-      // 这对于底部工具栏一键显示/隐藏目标语言是必要的
-      final oldHidden = oldWidget.entry.hiddenLanguages;
-      final newHidden = widget.entry.hiddenLanguages;
-      if (!_listsEqual(oldHidden, newHidden)) {
-        _hiddenLanguagesNotifier.value = List<String>.from(newHidden);
-      }
+      // 重置为空列表，不保留之前的隐藏状态
+      _hiddenLanguagesNotifier.value = [];
     }
-  }
-
-  /// 比较两个列表是否相等
-  bool _listsEqual(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    final setA = Set<String>.from(a);
-    final setB = Set<String>.from(b);
-    return setA.containsAll(setB) && setB.containsAll(setA);
+    // 注意：不再从 widget.entry.hiddenLanguages 读取状态
+    // 全局状态由 EntryDetailPage 通过 batchToggleHiddenLanguages 控制
+    // 单独状态在内存中由 _hiddenLanguagesNotifier 管理
   }
 
   Widget _buildTappableWidget({
@@ -892,11 +879,61 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       if (tappedWord.isNotEmpty) {
         Logger.d('双击识别的单词: $tappedWord', tag: 'DoubleTapWord');
+        // 执行查词
+        _performDoubleTapSearch(tappedWord, context);
       } else {
         Logger.d('未识别到单词', tag: 'DoubleTapWord');
       }
     } else {
       Logger.d('点击位置超出当前文本段范围', tag: 'DoubleTapWord');
+    }
+  }
+
+  /// 执行双击查词
+  Future<void> _performDoubleTapSearch(
+    String word,
+    BuildContext context,
+  ) async {
+    Logger.d('双击查词: $word', tag: 'DoubleTapWord');
+
+    // 获取当前语言的默认搜索选项
+    final advancedSettingsService = AdvancedSearchSettingsService();
+    final defaultOptions = advancedSettingsService.getDefaultOptionsForLanguage(
+      _sourceLanguage,
+    );
+
+    // 查询词典
+    final dbService = DatabaseService();
+    final searchResult = await dbService.getAllEntries(
+      word,
+      useFuzzySearch: defaultOptions.useFuzzySearch,
+      exactMatch: defaultOptions.exactMatch,
+      sourceLanguage: _sourceLanguage,
+    );
+
+    if (searchResult.entries.isNotEmpty) {
+      final entryGroup = DictionaryEntryGroup.groupEntries(
+        searchResult.entries,
+      );
+
+      if (context.mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EntryDetailPage(
+              entryGroup: entryGroup,
+              initialWord: word,
+              searchRelations: searchResult.hasRelations
+                  ? searchResult.relations
+                  : null,
+            ),
+          ),
+        );
+      }
+    } else {
+      if (context.mounted) {
+        showToast(context, '未找到单词: $word');
+      }
     }
   }
 
@@ -913,6 +950,35 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 触发 HiddenLanguagesNotifier 通知监听器，强制重建 HiddenLanguagesSelector
     // 这对于 AI 翻译后显示新添加的翻译是必要的
     _hiddenLanguagesNotifier.forceNotify();
+  }
+
+  /// 切换指定路径的隐藏状态（仅本地状态，不保存到数据库）
+  void toggleHiddenLanguage(String path) {
+    _hiddenLanguagesNotifier.toggle(path);
+  }
+
+  /// 批量设置隐藏状态（仅本地状态，不保存到数据库）
+  /// [pathsToHide] 要隐藏的路径列表
+  /// [pathsToShow] 要显示的路径列表
+  void batchToggleHiddenLanguages({
+    required List<String> pathsToHide,
+    required List<String> pathsToShow,
+  }) {
+    final currentHidden = List<String>.from(_hiddenLanguagesNotifier.value);
+
+    // 移除要显示的路径
+    for (final path in pathsToShow) {
+      currentHidden.remove(path);
+    }
+
+    // 添加要隐藏的路径
+    for (final path in pathsToHide) {
+      if (!currentHidden.contains(path)) {
+        currentHidden.add(path);
+      }
+    }
+
+    _hiddenLanguagesNotifier.value = currentHidden;
   }
 
   String _extractWordAtOffset(String text, int offset) {
@@ -1169,7 +1235,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return currentValue;
   }
 
-  void _handleElementTap(String path, String label) {
+  /// 执行 AI 翻译/切换翻译显示
+  /// 这是原来的单击功能，现在提取为可复用方法
+  void _performAiTranslate(String path, String label) {
     // 检查是否是语言切换操作（路径以语言代码结尾）
     final pathParts = path.split('.');
     if (pathParts.isNotEmpty) {
@@ -1182,11 +1250,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
           '点击语言代码: path=$path, lastKey=$lastKey, sourceLanguage=$_sourceLanguage',
           tag: 'LanguageToggle',
         );
-        // 本地切换语言显示状态，立即更新UI
-        // _hiddenLanguagesNotifier.toggle(path);
-        // 异步通知父组件更新数据库
-        // widget.onElementTap?.call(path, label);
-        // return;
 
         final parentPath = pathParts.sublist(0, pathParts.length - 1);
         final parentValue = _getValueByPath(_localEntry.toJson(), parentPath);
@@ -1214,10 +1277,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 if (targetLang == currentSourceLang) continue; // 剔除源语言
 
                 if (parentValue.containsKey(targetLang)) {
-                  // 切换目标语言显示状态
-                  final targetPath = [...parentPath, targetLang].join('.');
-                  _hiddenLanguagesNotifier.toggle(targetPath);
                   hasTranslation = true;
+                  break;
                 }
               }
             } else {
@@ -1227,34 +1288,38 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     LanguageUtils.getLanguageDisplayName(key) !=
                         key.toUpperCase()) {
                   // 这是一个语言代码，且不是源语言
-                  final targetPath = [...parentPath, key].join('.');
-                  _hiddenLanguagesNotifier.toggle(targetPath);
                   hasTranslation = true;
+                  break;
                 }
               }
             }
 
             // 无论是否有翻译，都通知父组件
-            // 如果有翻译，父组件会更新数据库中的隐藏状态
+            // 如果有翻译，父组件会切换显示状态
             // 如果没有翻译，父组件会触发翻译
             widget.onElementTap?.call(path, label);
             return;
           }
         } else {
-          // 点击的是非源语言（目标语言），切换自身显示状态
-          _hiddenLanguagesNotifier.toggle(path);
+          // 点击的是非源语言（目标语言），通知父组件切换显示状态
           widget.onElementTap?.call(path, label);
           return;
         }
       }
     }
 
+    // 非语言代码路径，直接调用 onElementTap
+    widget.onElementTap?.call(path, label);
+  }
+
+  /// 根据点击动作设置执行对应的动作
+  void _handleElementTap(String path, String label) {
     // 使用缓存的点击动作，避免异步延迟
     final action = _clickAction;
 
     switch (action) {
       case PreferencesService.actionAiTranslate:
-        widget.onElementTap?.call(path, label);
+        _performAiTranslate(path, label);
         break;
       case PreferencesService.actionCopy:
         _performCopy(path, label);
@@ -1269,7 +1334,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _performSpeak(path, label);
         break;
       default:
-        widget.onElementTap?.call(path, label);
+        _performAiTranslate(path, label);
     }
   }
 
@@ -1501,12 +1566,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           case PreferencesService.actionAiTranslate:
                             return ListTile(
                               leading: const Icon(Icons.translate, size: 20),
-                              title: const Text('AI 翻译'),
+                              title: const Text('切换翻译'),
                               dense: true,
                               onTap: () {
                                 _removeCurrentOverlay();
                                 if (pathData != null) {
-                                  widget.onElementTap?.call(
+                                  _performAiTranslate(
                                     pathData.path.join('.'),
                                     pathData.label,
                                   );

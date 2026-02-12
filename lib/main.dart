@@ -1030,20 +1030,8 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   }
 
   String _getClickActionLabel(String action) {
-    switch (action) {
-      case PreferencesService.actionAiTranslate:
-        return 'AI 翻译';
-      case PreferencesService.actionCopy:
-        return '复制文本';
-      case PreferencesService.actionAskAi:
-        return '询问 AI';
-      case PreferencesService.actionEdit:
-        return '编辑';
-      case PreferencesService.actionSpeak:
-        return '朗读';
-      default:
-        return 'AI 翻译';
-    }
+    final label = PreferencesService.getActionLabel(action);
+    return label == action ? '切换翻译' : label;
   }
 
   void _showClickActionDialog() async {
@@ -1177,20 +1165,7 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
   }
 
   String _getActionLabel(String action) {
-    switch (action) {
-      case PreferencesService.actionAiTranslate:
-        return 'AI 翻译';
-      case PreferencesService.actionCopy:
-        return '复制文本';
-      case PreferencesService.actionAskAi:
-        return '询问 AI';
-      case PreferencesService.actionEdit:
-        return '编辑';
-      case PreferencesService.actionSpeak:
-        return '朗读';
-      default:
-        return action;
-    }
+    return PreferencesService.getActionLabel(action);
   }
 
   @override
