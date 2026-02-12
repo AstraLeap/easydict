@@ -240,58 +240,57 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       _areNonTargetLanguagesVisible ?? true;
 
   /// 初始化目标语言显示状态
+  /// 从全局设置读取，如果没有设置则默认为 true（显示所有语言）
   Future<void> _initializeTargetLanguagesVisibility() async {
-    // 根据当前条目的隐藏状态初始化
-    final entries = _getAllEntriesInOrder();
-    if (entries.isEmpty) {
-      _areNonTargetLanguagesVisible = true;
-      return;
-    }
-
-    // 获取当前词典的元数据
-    final currentDictId = _entryGroup.currentDictionaryId;
-    if (currentDictId.isEmpty) {
-      _areNonTargetLanguagesVisible = true;
-      return;
-    }
-
-    final metadata = await DictionaryManager().getDictionaryMetadata(
-      currentDictId,
-    );
-    if (metadata == null) {
-      _areNonTargetLanguagesVisible = true;
-      return;
-    }
-
-    final sourceLang = metadata.sourceLanguage;
-    final targetLangs = metadata.targetLanguages;
-
-    // 检查是否有目标语言被隐藏
-    bool hasVisibleTargetLanguages = false;
-
-    for (final entry in entries) {
-      final hiddenLanguages = entry.hiddenLanguages;
-      final json = entry.toJson();
-
-      // 收集所有目标语言路径
-      final Set<String> languagePaths = {};
-      _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
-
-      for (final path in languagePaths) {
-        if (!hiddenLanguages.contains(path)) {
-          hasVisibleTargetLanguages = true;
-          break;
-        }
-      }
-      if (hasVisibleTargetLanguages) break;
-    }
-
-    // 如果所有目标语言都被隐藏，则设置为 false
-    // 如果有可见的目标语言，则设置为 true
+    final globalVisibility = await PreferencesService()
+        .getGlobalTranslationVisibility();
     if (mounted) {
       setState(() {
-        _areNonTargetLanguagesVisible = hasVisibleTargetLanguages;
+        _areNonTargetLanguagesVisible = globalVisibility;
       });
+      // 应用全局状态到 ComponentRenderer
+      _applyGlobalTranslationVisibility(globalVisibility);
+    }
+  }
+
+  /// 应用全局翻译显示状态到 ComponentRenderer
+  Future<void> _applyGlobalTranslationVisibility(bool visible) async {
+    try {
+      final entries = _getAllEntriesInOrder();
+      if (entries.isEmpty) return;
+
+      // 获取当前词典的元数据
+      final currentDictId = _entryGroup.currentDictionaryId;
+      if (currentDictId.isEmpty) return;
+
+      final metadata = await DictionaryManager().getDictionaryMetadata(
+        currentDictId,
+      );
+      if (metadata == null) return;
+
+      final sourceLang = metadata.sourceLanguage;
+      final targetLangs = metadata.targetLanguages;
+
+      // 收集所有需要切换的语言路径
+      final Set<String> languagePaths = {};
+
+      for (final entry in entries) {
+        final json = entry.toJson();
+        _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
+      }
+
+      // 根据全局状态设置显示/隐藏
+      final pathsToHide = visible ? <String>[] : languagePaths.toList();
+      final pathsToShow = visible ? languagePaths.toList() : <String>[];
+      _componentRendererKey.currentState?.batchToggleHiddenLanguages(
+        pathsToHide: pathsToHide,
+        pathsToShow: pathsToShow,
+      );
+    } catch (e) {
+      Logger.d(
+        'Error in _applyGlobalTranslationVisibility: $e',
+        tag: 'Translation',
+      );
     }
   }
 
@@ -1349,16 +1348,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final hiddenPath = targetPath.join('.');
         final hiddenKey = '$hiddenPath.$targetLang';
 
-        final hiddenLanguages = List<String>.from(
-          json['hidden_languages'] ?? [],
-        );
-        if (hiddenLanguages.contains(hiddenKey)) {
-          hiddenLanguages.remove(hiddenKey);
-          json['hidden_languages'] = hiddenLanguages;
-          final updatedEntry = DictionaryEntry.fromJson(json);
-          await DatabaseService().updateEntry(updatedEntry);
-        }
-
+        // 确保新翻译的内容显示出来（只更新本地状态，不保存到数据库的 hidden_languages）
         _componentRendererKey.currentState?.handleTranslationInsert(
           hiddenKey,
           newEntry,
@@ -1378,11 +1368,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     String sourceLang, {
     bool shouldSetState = true,
   }) async {
+    // 不再保存到数据库，只通过 ComponentRenderer 的 _hiddenLanguagesNotifier 更新本地状态
+    // 这样每次重新查词时都会重置为显示状态
     try {
-      final json = entry.toJson();
-      dynamic parentValue = json;
-      dynamic currentValue = json;
-
       List<String> parentPath = List.from(pathParts);
       if (parentPath.isNotEmpty && parentPath.last == sourceLang) {
         parentPath.removeLast();
@@ -1390,34 +1378,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         parentPath.removeLast();
       }
 
-      for (final part in parentPath) {
-        if (parentValue is Map) {
-          parentValue = parentValue[part];
-        } else if (parentValue is List) {
-          int? index = int.tryParse(part);
-          if (index != null) parentValue = parentValue[index];
-        }
-      }
+      final hiddenPath = parentPath.join('.');
+      final hiddenKey = '$hiddenPath.$targetLang';
 
-      if (parentValue is Map && parentValue.containsKey(targetLang)) {
-        final hiddenLanguages = List<String>.from(
-          json['hidden_languages'] ?? [],
-        );
-
-        final hiddenPath = parentPath.join('.');
-        final hiddenKey = '$hiddenPath.$targetLang';
-
-        if (hiddenLanguages.contains(hiddenKey)) {
-          hiddenLanguages.remove(hiddenKey);
-        } else {
-          hiddenLanguages.add(hiddenKey);
-        }
-        json['hidden_languages'] = hiddenLanguages;
-
-        final newEntry = DictionaryEntry.fromJson(json);
-        await DatabaseService().updateEntry(newEntry);
-        _updateEntryInGroup(newEntry, shouldSetState: shouldSetState);
-      }
+      // 通知 ComponentRenderer 更新本地隐藏状态
+      _componentRendererKey.currentState?.toggleHiddenLanguage(hiddenKey);
     } catch (e) {
       Logger.d('Error in _toggleTranslationVisibility: $e', tag: 'Translation');
       if (mounted) {
@@ -1427,6 +1392,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   /// 一键切换所有非目标语言的显示/隐藏
+  /// 保存到全局设置（shared_preferences），同时更新本地状态
   Future<void> _toggleAllNonTargetLanguages() async {
     try {
       final entries = _getAllEntriesInOrder();
@@ -1444,7 +1410,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       final sourceLang = metadata.sourceLanguage;
       final targetLangs = metadata.targetLanguages;
 
-      // 收集所有需要切换的语言路径
+      // 收集所有需要切换的语言路径（目标语言列表扣除源语言）
       final Set<String> languagePaths = {};
 
       for (final entry in entries) {
@@ -1458,30 +1424,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         _areNonTargetLanguagesVisible = newVisibility;
       });
 
-      // 更新所有条目的隐藏状态
-      for (final entry in entries) {
-        final json = entry.toJson();
-        final hiddenLanguages = List<String>.from(
-          json['hidden_languages'] ?? [],
-        );
+      // 保存到全局设置
+      await PreferencesService().setGlobalTranslationVisibility(newVisibility);
 
-        for (final path in languagePaths) {
-          if (newVisibility) {
-            // 显示：从隐藏列表中移除
-            hiddenLanguages.remove(path);
-          } else {
-            // 隐藏：添加到隐藏列表
-            if (!hiddenLanguages.contains(path)) {
-              hiddenLanguages.add(path);
-            }
-          }
-        }
-
-        json['hidden_languages'] = hiddenLanguages;
-        final newEntry = DictionaryEntry.fromJson(json);
-        await DatabaseService().updateEntry(newEntry);
-        _updateEntryInGroup(newEntry);
-      }
+      // 更新 ComponentRenderer 的本地隐藏状态
+      final pathsToHide = newVisibility ? <String>[] : languagePaths.toList();
+      final pathsToShow = newVisibility ? languagePaths.toList() : <String>[];
+      _componentRendererKey.currentState?.batchToggleHiddenLanguages(
+        pathsToHide: pathsToHide,
+        pathsToShow: pathsToShow,
+      );
 
       _showSnackBar(newVisibility ? '已显示所有语言' : '已隐藏非目标语言');
     } catch (e) {
@@ -1492,7 +1444,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
-  /// 递归收集所有非目标语言的路径（只收集有实际翻译内容的）
+  /// 递归收集所有目标语言的路径（目标语言列表扣除源语言，只收集有实际翻译内容的）
   void _collectLanguagePaths(
     dynamic data,
     String currentPath,
@@ -1500,16 +1452,21 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     String sourceLang,
     List<String> targetLangs,
   ) {
+    // 计算有效的目标语言列表（目标语言列表扣除源语言）
+    final effectiveTargetLangs = targetLangs
+        .where((lang) => lang != sourceLang)
+        .toSet();
+
     if (data is Map<String, dynamic>) {
       for (final entry in data.entries) {
         final key = entry.key;
         final value = entry.value;
         final newPath = currentPath.isEmpty ? key : '$currentPath.$key';
 
-        // 检查是否是语言代码（非源语言）
+        // 检查是否是有效的目标语言（在目标语言列表中且不是源语言）
         final isLanguageCode =
             LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
-        if (isLanguageCode && key != sourceLang) {
+        if (isLanguageCode && effectiveTargetLangs.contains(key)) {
           // 只收集有实际翻译内容的目标语言
           // 值可以是字符串、非空列表或非空Map
           final hasTranslation = _hasTranslationContent(value);

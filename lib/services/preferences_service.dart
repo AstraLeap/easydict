@@ -8,6 +8,10 @@ class PreferencesService {
   static const String _kNavPanelPosition = 'nav_panel_position';
   static const String _kClickActionOrder = 'click_action_order';
 
+  // 全局翻译显示/隐藏状态
+  static const String _kGlobalTranslationVisibility =
+      'global_translation_visibility';
+
   // 导航栏位置模型
   static const String navPositionLeft = 'left';
   static const String navPositionRight = 'right';
@@ -71,5 +75,40 @@ class PreferencesService {
   Future<String> getClickAction() async {
     final order = await getClickActionOrder();
     return order.isNotEmpty ? order.first : actionAiTranslate;
+  }
+
+  /// 获取动作的中文标签
+  static String getActionLabel(String action) {
+    switch (action) {
+      case actionAiTranslate:
+        return '切换翻译';
+      case actionCopy:
+        return '复制文本';
+      case actionAskAi:
+        return '询问 AI';
+      case actionEdit:
+        return '编辑';
+      case actionSpeak:
+        return '朗读';
+      default:
+        return action;
+    }
+  }
+
+  // ==================== 全局翻译显示/隐藏状态 ====================
+
+  /// 获取全局翻译显示状态
+  /// 返回 true 表示显示所有目标语言，false 表示隐藏所有目标语言
+  /// 默认为 true（显示所有语言）
+  Future<bool> getGlobalTranslationVisibility() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kGlobalTranslationVisibility) ?? true;
+  }
+
+  /// 设置全局翻译显示状态
+  /// [visible] true 表示显示所有目标语言，false 表示隐藏所有目标语言
+  Future<void> setGlobalTranslationVisibility(bool visible) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kGlobalTranslationVisibility, visible);
   }
 }
