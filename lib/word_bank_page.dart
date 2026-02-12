@@ -14,6 +14,7 @@ import 'utils/language_utils.dart';
 import 'utils/language_dropdown.dart';
 import 'utils/dpi_utils.dart';
 import 'widgets/search_bar.dart';
+import 'services/advanced_search_settings_service.dart';
 import 'logger.dart';
 
 enum SortMode {
@@ -1268,11 +1269,17 @@ class _WordBankPageState extends State<WordBankPage> {
 
   /// 搜索单词
   Future<void> _searchWord(String word, String language) async {
-    // 查询词典
+    // 获取当前语言的默认搜索选项
+    final advancedSettingsService = AdvancedSearchSettingsService();
+    final defaultOptions = advancedSettingsService.getDefaultOptionsForLanguage(
+      language == 'auto' ? null : language,
+    );
+
+    // 查询词典，使用默认高级选项
     final searchResult = await _dictionaryService.getAllEntries(
       word,
-      useFuzzySearch: false,
-      exactMatch: true,
+      useFuzzySearch: defaultOptions.useFuzzySearch,
+      exactMatch: defaultOptions.exactMatch,
       sourceLanguage: language == 'auto' ? null : language,
     );
 

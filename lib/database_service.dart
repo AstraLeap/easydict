@@ -173,7 +173,8 @@ class DictionaryEntry {
       if (phrases != null) 'phrases': phrases,
       if (theasaruses != null) 'theasaruses': theasaruses,
       'sense_groups': senseGroups,
-      'hidden_languages': hiddenLanguages,
+      // 注意：hidden_languages 不保存到数据库，只在内存中使用
+      // 'hidden_languages': hiddenLanguages,
     };
   }
 }
