@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/online_dictionary_service.dart';
+import '../services/dictionary_store_service.dart';
+import '../models/remote_dictionary.dart';
 import '../services/dictionary_manager.dart';
 import '../logger.dart';
 import '../utils/toast_utils.dart';
@@ -15,11 +16,11 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
   final DictionaryManager _dictManager = DictionaryManager();
   final TextEditingController _urlController = TextEditingController();
 
-  OnlineDictionaryService? _service;
-  List<OnlineDictionaryInfo> _availableDictionaries = [];
+  DictionaryStoreService? _service;
+  List<RemoteDictionary> _availableDictionaries = [];
   bool _isLoading = false;
   String? _errorMessage;
-  final Map<String, DictionaryDownloadProgress> _downloadProgress = {};
+  final Map<String, double> _downloadProgress = {};
 
   @override
   void initState() {
@@ -30,6 +31,7 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
   @override
   void dispose() {
     _urlController.dispose();
+    _service?.dispose();
     super.dispose();
   }
 
@@ -44,8 +46,9 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
   void _initializeService() {
     final url = _urlController.text.trim();
     if (url.isNotEmpty) {
+      _service?.dispose();
       setState(() {
-        _service = OnlineDictionaryService(baseUrl: url);
+        _service = DictionaryStoreService(baseUrl: url);
         _errorMessage = null;
       });
       _fetchDictionaries();
@@ -61,7 +64,7 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
     });
 
     try {
-      final dictionaries = await _service!.fetchAvailableDictionaries();
+      final dictionaries = await _service!.fetchDictionaryList();
       setState(() {
         _availableDictionaries = dictionaries;
         _isLoading = false;
@@ -85,10 +88,10 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
     _initializeService();
   }
 
-  Future<void> _downloadDictionary(OnlineDictionaryInfo info) async {
+  Future<void> _downloadDictionary(RemoteDictionary dict) async {
     if (_service == null) return;
 
-    final isInstalled = await _dictManager.dictionaryExists(info.id);
+    final isInstalled = await _dictManager.dictionaryExists(dict.id);
     if (isInstalled) {
       if (mounted) {
         showToast(context, '词典已安装');
@@ -97,42 +100,45 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
     }
 
     setState(() {
-      _downloadProgress[info.id] = DictionaryDownloadProgress(
-        fileName: info.name,
-        downloadedBytes: 0,
-        totalBytes: info.fileSize,
-      );
+      _downloadProgress[dict.id] = 0;
     });
 
     try {
       await _service!.downloadDictionary(
-        info.id,
-        (fileName, current, total) {
+        dict: dict,
+        options: DownloadOptions(
+          includeDatabase: true,
+          includeMedia: dict.hasAudios || dict.hasImages,
+        ),
+        onProgress: (current, total, status) {
+          if (!mounted) return;
+          if (total > 0) {
+            setState(() {
+              _downloadProgress[dict.id] = current / total;
+            });
+          }
+        },
+        onComplete: () {
           if (!mounted) return;
           setState(() {
-            _downloadProgress[info.id] = DictionaryDownloadProgress(
-              fileName: fileName,
-              downloadedBytes: current,
-              totalBytes: total,
-            );
+            _downloadProgress.remove(dict.id);
           });
+          showToast(context, '${dict.name} 下载完成');
         },
-        downloadAudios: info.hasAudios,
-        downloadImages: info.hasImages,
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            _downloadProgress.remove(dict.id);
+          });
+          showToast(context, '下载失败: $error');
+          Logger.e('下载词典失败: $error', tag: 'OnlineSubscriptionPage');
+        },
       );
-
-      if (!mounted) return;
-      setState(() {
-        _downloadProgress.remove(info.id);
-      });
-
-      showToast(context, '${info.name} 下载完成');
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _downloadProgress.remove(info.id);
+        _downloadProgress.remove(dict.id);
       });
-
       showToast(context, '下载失败: $e');
       Logger.e('下载词典失败: $e', tag: 'OnlineSubscriptionPage');
     }
@@ -282,15 +288,14 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        ..._availableDictionaries.map((info) => _buildDictionaryCard(info)),
+        ..._availableDictionaries.map((dict) => _buildDictionaryCard(dict)),
       ],
     );
   }
 
-  Widget _buildDictionaryCard(OnlineDictionaryInfo info) {
-    final progress = _downloadProgress[info.id];
-    // 使用 service 中的 baseUrl，确保与列表来源一致，避免受输入框编辑影响
-    final logoUrl = info.buildLogoUrl(
+  Widget _buildDictionaryCard(RemoteDictionary dict) {
+    final progress = _downloadProgress[dict.id];
+    final logoUrl = dict.getLogoUrl(
       _service?.baseUrl ?? _urlController.text.trim(),
     );
 
@@ -298,12 +303,11 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _showDictionaryDetails(info),
+        onTap: () => _showDictionaryDetails(dict),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Logo
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: Image.network(
@@ -357,20 +361,19 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
                 ),
               ),
               const SizedBox(width: 16),
-              // Info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      info.name,
+                      dict.name,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      info.description,
+                      dict.description,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -380,17 +383,17 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
                       runSpacing: 4,
                       children: [
                         Chip(
-                          label: Text(info.language),
+                          label: Text(dict.language),
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
                         ),
                         Chip(
-                          label: Text('v${info.version}'),
+                          label: Text('v${dict.version}'),
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
                         ),
                         Chip(
-                          label: Text(info.formattedFileSize),
+                          label: Text(dict.formattedDictSize),
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
                         ),
@@ -404,7 +407,7 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
                 _buildProgressIndicator(progress)
               else
                 IconButton.filled(
-                  onPressed: () => _downloadDictionary(info),
+                  onPressed: () => _downloadDictionary(dict),
                   icon: const Icon(Icons.download),
                   tooltip: '下载',
                 ),
@@ -415,15 +418,15 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
     );
   }
 
-  void _showDictionaryDetails(OnlineDictionaryInfo info) {
-    final logoUrl = info.buildLogoUrl(
+  void _showDictionaryDetails(RemoteDictionary dict) {
+    final logoUrl = dict.getLogoUrl(
       _service?.baseUrl ?? _urlController.text.trim(),
     );
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(info.name),
+        title: Text(dict.name),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -460,36 +463,25 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
                 ),
               ),
               const SizedBox(height: 24),
-              _buildDetailItem('ID', info.id),
-              _buildDetailItem('版本', info.version),
-              _buildDetailItem('语言', info.language),
-              _buildDetailItem('词条数', '${info.wordCount}'),
-              _buildDetailItem('文件大小', info.formattedFileSize),
+              _buildDetailItem('ID', dict.id),
+              _buildDetailItem('版本', dict.version),
+              _buildDetailItem('语言', dict.language),
+              _buildDetailItem('词条数', '${dict.entryCount}'),
+              _buildDetailItem('文件大小', dict.formattedDictSize),
               const SizedBox(height: 16),
               const Text('简介', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text(info.description),
-              if (info.sourceUrl.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text('来源', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                SelectableText(
-                  info.sourceUrl,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ],
+              Text(dict.description),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 8,
                 children: [
-                  if (info.hasImages)
+                  if (dict.hasImages)
                     const Chip(
                       avatar: Icon(Icons.image, size: 16),
                       label: Text('包含图片'),
                     ),
-                  if (info.hasAudios)
+                  if (dict.hasAudios)
                     const Chip(
                       avatar: Icon(Icons.audiotrack, size: 16),
                       label: Text('包含音频'),
@@ -507,7 +499,7 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
           FilledButton.icon(
             onPressed: () {
               Navigator.of(context).pop();
-              _downloadDictionary(info);
+              _downloadDictionary(dict);
             },
             icon: const Icon(Icons.download),
             label: const Text('下载'),
@@ -539,25 +531,17 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
     );
   }
 
-  Widget _buildProgressIndicator(DictionaryDownloadProgress progress) {
+  Widget _buildProgressIndicator(double progress) {
     return SizedBox(
       width: 100,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(value: progress.progress),
+          CircularProgressIndicator(value: progress),
           const SizedBox(height: 4),
           Text(
-            progress.progressText,
+            '${(progress * 100).toStringAsFixed(0)}%',
             style: Theme.of(context).textTheme.bodySmall,
-          ),
-          Text(
-            progress.fileName,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

@@ -1,43 +1,66 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../pages/llm_config_page.dart';
+
+class LLMConfig {
+  final LLMProvider provider;
+  final String apiKey;
+  final String baseUrl;
+  final String model;
+
+  LLMConfig({
+    required this.provider,
+    required this.apiKey,
+    required this.baseUrl,
+    required this.model,
+  });
+
+  String get effectiveBaseUrl =>
+      baseUrl.isEmpty ? provider.defaultBaseUrl : baseUrl;
+
+  bool get isValid => apiKey.isNotEmpty;
+}
 
 class PreferencesService {
   static final PreferencesService _instance = PreferencesService._internal();
   factory PreferencesService() => _instance;
   PreferencesService._internal();
 
+  SharedPreferences? _prefs;
+
+  Future<SharedPreferences> get prefs async {
+    if (_prefs != null) return _prefs!;
+    _prefs = await SharedPreferences.getInstance();
+    return _prefs!;
+  }
+
   static const String _kNavPanelPosition = 'nav_panel_position';
   static const String _kClickActionOrder = 'click_action_order';
-
-  // 全局翻译显示/隐藏状态
   static const String _kGlobalTranslationVisibility =
       'global_translation_visibility';
 
-  // 导航栏位置模型
   static const String navPositionLeft = 'left';
   static const String navPositionRight = 'right';
 
   Future<Map<String, double>> getNavPanelPosition() async {
-    final prefs = await SharedPreferences.getInstance();
-    final position = prefs.getString(_kNavPanelPosition);
-    final dy =
-        prefs.getDouble('${_kNavPanelPosition}_dy') ?? 0.7; // 默认在屏幕高度 70% 处
+    final p = await prefs;
+    final position = p.getString(_kNavPanelPosition);
+    final dy = p.getDouble('${_kNavPanelPosition}_dy') ?? 0.7;
 
     return {
-      'isRight': (position != navPositionLeft) ? 1.0 : 0.0, // 默认右边
+      'isRight': (position != navPositionLeft) ? 1.0 : 0.0,
       'dy': dy,
     };
   }
 
   Future<void> setNavPanelPosition(bool isRight, double dy) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
+    final p = await prefs;
+    await p.setString(
       _kNavPanelPosition,
       isRight ? navPositionRight : navPositionLeft,
     );
-    await prefs.setDouble('${_kNavPanelPosition}_dy', dy);
+    await p.setDouble('${_kNavPanelPosition}_dy', dy);
   }
 
-  // 点击动作枚举值
   static const String actionAiTranslate = 'ai_translate';
   static const String actionCopy = 'copy';
   static const String actionAskAi = 'ask_ai';
@@ -53,12 +76,11 @@ class PreferencesService {
   ];
 
   Future<List<String>> getClickActionOrder() async {
-    final prefs = await SharedPreferences.getInstance();
-    final order = prefs.getStringList(_kClickActionOrder);
+    final p = await prefs;
+    final order = p.getStringList(_kClickActionOrder);
     if (order == null || order.isEmpty) {
       return List.from(defaultActionOrder);
     }
-    // 确保包含所有默认动作
     for (final action in defaultActionOrder) {
       if (!order.contains(action)) {
         order.add(action);
@@ -68,8 +90,8 @@ class PreferencesService {
   }
 
   Future<void> setClickActionOrder(List<String> order) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_kClickActionOrder, order);
+    final p = await prefs;
+    await p.setStringList(_kClickActionOrder, order);
   }
 
   Future<String> getClickAction() async {
@@ -77,7 +99,6 @@ class PreferencesService {
     return order.isNotEmpty ? order.first : actionAiTranslate;
   }
 
-  /// 获取动作的中文标签
   static String getActionLabel(String action) {
     switch (action) {
       case actionAiTranslate:
@@ -95,20 +116,97 @@ class PreferencesService {
     }
   }
 
-  // ==================== 全局翻译显示/隐藏状态 ====================
-
-  /// 获取全局翻译显示状态
-  /// 返回 true 表示显示所有目标语言，false 表示隐藏所有目标语言
-  /// 默认为 true（显示所有语言）
   Future<bool> getGlobalTranslationVisibility() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_kGlobalTranslationVisibility) ?? true;
+    final p = await prefs;
+    return p.getBool(_kGlobalTranslationVisibility) ?? true;
   }
 
-  /// 设置全局翻译显示状态
-  /// [visible] true 表示显示所有目标语言，false 表示隐藏所有目标语言
   Future<void> setGlobalTranslationVisibility(bool visible) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kGlobalTranslationVisibility, visible);
+    final p = await prefs;
+    await p.setBool(_kGlobalTranslationVisibility, visible);
+  }
+
+  Future<LLMConfig?> getLLMConfig({bool isFast = false}) async {
+    final p = await prefs;
+    final prefix = isFast ? 'fast_llm' : 'standard_llm';
+
+    final providerIndex = p.getInt('${prefix}_provider');
+    if (providerIndex == null) return null;
+
+    final apiKey = p.getString('${prefix}_api_key') ?? '';
+    final baseUrl = p.getString('${prefix}_base_url') ?? '';
+    final model = p.getString('${prefix}_model') ?? '';
+
+    return LLMConfig(
+      provider: LLMProvider.values[providerIndex],
+      apiKey: apiKey,
+      baseUrl: baseUrl,
+      model: model,
+    );
+  }
+
+  Future<void> setLLMConfig({
+    required bool isFast,
+    required LLMProvider provider,
+    required String apiKey,
+    required String baseUrl,
+    required String model,
+  }) async {
+    final p = await prefs;
+    final prefix = isFast ? 'fast_llm' : 'standard_llm';
+
+    await p.setInt('${prefix}_provider', provider.index);
+    await p.setString('${prefix}_api_key', apiKey);
+    await p.setString('${prefix}_base_url', baseUrl);
+    await p.setString('${prefix}_model', model);
+  }
+
+  Future<Map<String, dynamic>?> getTTSConfig() async {
+    final p = await prefs;
+
+    final providerIndex = p.getInt('tts_provider');
+    if (providerIndex == null) return null;
+
+    final providers = [
+      {'name': 'azure', 'baseUrl': ''},
+      {'name': 'google', 'baseUrl': 'https://texttospeech.googleapis.com/v1'},
+    ];
+
+    if (providerIndex >= providers.length) return null;
+
+    final provider = providers[providerIndex]['name'];
+    String voice = p.getString('tts_voice') ?? '';
+
+    if (provider == 'google') {
+      final googleVoice = p.getString('google_tts_voice');
+      if (googleVoice != null && googleVoice.isNotEmpty) {
+        voice = googleVoice;
+      } else if (voice.isEmpty) {
+        voice = 'en-US-Chirp3-HD-Puck';
+      }
+    }
+
+    return {
+      'provider': provider,
+      'baseUrl': p.getString('tts_base_url') ?? providers[providerIndex]['baseUrl'],
+      'apiKey': p.getString('tts_api_key') ?? '',
+      'model': p.getString('tts_model') ?? '',
+      'voice': voice,
+    };
+  }
+
+  Future<void> setTTSConfig({
+    required int providerIndex,
+    required String apiKey,
+    required String baseUrl,
+    required String model,
+    required String voice,
+  }) async {
+    final p = await prefs;
+    await p.setInt('tts_provider', providerIndex);
+    await p.setString('tts_api_key', apiKey);
+    await p.setString('tts_base_url', baseUrl);
+    await p.setString('tts_model', model);
+    await p.setString('tts_voice', voice);
   }
 }

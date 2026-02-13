@@ -523,7 +523,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
             TextField(
               controller: _urlController,
               decoration: InputDecoration(
-                hintText: 'https://easydict.org',
+                hintText: '请输入词典订阅网址',
                 prefixIcon: const Icon(Icons.language),
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,

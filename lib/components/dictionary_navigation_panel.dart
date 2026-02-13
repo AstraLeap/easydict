@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import '../models/dictionary_entry_group.dart';
 import '../database_service.dart';
 import 'dictionary_logo.dart';
+import '../logger.dart';
 
 class DictionaryNavigationPanel extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
   final VoidCallback? onDictionaryChanged;
   final VoidCallback? onPageChanged;
   final VoidCallback? onSectionChanged;
-  final Function(DictionaryEntry entry)? onNavigateToEntry;
-  final bool isRight; // 新增：导航栏是否在右侧
+  final Function(DictionaryEntry entry, {String? targetPath})?
+  onNavigateToEntry;
 
   const DictionaryNavigationPanel({
     super.key,
@@ -18,24 +19,66 @@ class DictionaryNavigationPanel extends StatefulWidget {
     this.onPageChanged,
     this.onSectionChanged,
     this.onNavigateToEntry,
-    this.isRight = true, // 默认为右侧
   });
 
   @override
-  State<DictionaryNavigationPanel> createState() =>
-      _DictionaryNavigationPanelState();
+  DictionaryNavigationPanelState createState() =>
+      DictionaryNavigationPanelState();
 }
 
-class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
+class _ArrowPainter extends CustomPainter {
+  final Color color;
+  final Color borderColor;
+
+  _ArrowPainter({required this.color, required this.borderColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    final path = Path();
+    // 绘制向右的三角形箭头
+    path.moveTo(0, 0);
+    path.lineTo(size.width, size.height / 2);
+    path.lineTo(0, size.height);
+    path.close();
+
+    canvas.drawPath(path, paint);
+
+    // 绘制边框（只绘制右侧两条边）
+    final borderPath = Path();
+    borderPath.moveTo(0, 0);
+    borderPath.lineTo(size.width, size.height / 2);
+    borderPath.lineTo(0, size.height);
+    canvas.drawPath(borderPath, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   final ScrollController _mainScrollController = ScrollController();
   bool _isPageListExpanded = false;
+  bool _isDirectoryExpanded = false;
+  int? _selectedSectionIndex;
   final GlobalKey _navPanelKey = GlobalKey();
   final LayerLink _layerLink = LayerLink();
+  final LayerLink _directoryLayerLink = LayerLink();
   OverlayEntry? _overlayEntry;
+  OverlayEntry? _directoryOverlayEntry;
 
   @override
   void dispose() {
     _removeOverlay();
+    _removeDirectoryOverlay();
     _mainScrollController.dispose();
     super.dispose();
   }
@@ -43,17 +86,7 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   @override
   void didUpdateWidget(DictionaryNavigationPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 当导航栏位置改变时，如果 page 列表已展开，则更新其位置
-    if (oldWidget.isRight != widget.isRight && _isPageListExpanded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _isPageListExpanded) {
-          _removeOverlay();
-          final currentDict = widget.entryGroup.currentDictionaryGroup;
-          _overlayEntry = _createOverlayEntry(currentDict);
-          Overlay.of(context).insert(_overlayEntry!);
-        }
-      });
-    }
+    // 导航栏固定在右侧，不需要处理位置变化
   }
 
   void _removeOverlay() {
@@ -61,7 +94,21 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     _overlayEntry = null;
   }
 
+  void _removeDirectoryOverlay() {
+    _directoryOverlayEntry?.remove();
+    _directoryOverlayEntry = null;
+  }
+
   void _togglePageList() {
+    // 关闭目录列表（如果打开）
+    if (_isDirectoryExpanded) {
+      _removeDirectoryOverlay();
+      setState(() {
+        _isDirectoryExpanded = false;
+        _selectedSectionIndex = null;
+      });
+    }
+
     if (_isPageListExpanded) {
       _removeOverlay();
       setState(() {
@@ -77,15 +124,47 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     }
   }
 
+  void _toggleDirectory(int sectionIndex) {
+    // 关闭page列表（如果打开）
+    if (_isPageListExpanded) {
+      _removeOverlay();
+      setState(() {
+        _isPageListExpanded = false;
+      });
+    }
+
+    if (_isDirectoryExpanded && _selectedSectionIndex == sectionIndex) {
+      // 如果点击的是同一个section，则关闭目录
+      _removeDirectoryOverlay();
+      setState(() {
+        _isDirectoryExpanded = false;
+        _selectedSectionIndex = null;
+      });
+    } else {
+      // 打开或切换到新的目录
+      _removeDirectoryOverlay();
+      final currentDict = widget.entryGroup.currentDictionaryGroup;
+      final currentPage = currentDict.currentPageGroup;
+      _directoryOverlayEntry = _createDirectoryOverlayEntry(
+        currentPage,
+        sectionIndex,
+      );
+      Overlay.of(context).insert(_directoryOverlayEntry!);
+      setState(() {
+        _isDirectoryExpanded = true;
+        _selectedSectionIndex = sectionIndex;
+      });
+    }
+  }
+
   OverlayEntry _createOverlayEntry(DictionaryGroup dict) {
-    // 如果导航栏在右侧，列表向左展开；如果在左侧，列表向右展开
-    final offset = widget.isRight
-        ? const Offset(-108, 0) // 向左偏移 (100宽度 + 8间距)
-        : const Offset(52, 0); // 向右偏移 (52宽度)
+    // 导航栏固定在右侧，列表向左展开
+    // 宽度增加，从200变为300
+    const offset = Offset(-308, 0); // 向左偏移 (300宽度 + 8间距)
 
     return OverlayEntry(
       builder: (context) => Positioned(
-        width: 100,
+        width: 300, // 宽度增加
         child: CompositedTransformFollower(
           link: _layerLink,
           showWhenUnlinked: false,
@@ -96,43 +175,32 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     );
   }
 
+  OverlayEntry _createDirectoryOverlayEntry(PageGroup page, int sectionIndex) {
+    // 目录列表位于 section 按钮的左侧
+    // 目录列表的右边缘与 section 按钮的左边缘有一小段距离
+    // targetAnchor: section 按钮的左边缘中心
+    // followerAnchor: 目录列表的右边缘中心
+    // offset: 水平方向上的间距
+    const offset = Offset(-12, 0); // 向左偏移12像素，让目录列表与section按钮左边缘有间距
+
+    return OverlayEntry(
+      builder: (context) => Positioned(
+        width: 300,
+        child: CompositedTransformFollower(
+          link: _directoryLayerLink,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.centerLeft,
+          followerAnchor: Alignment.centerRight,
+          offset: offset,
+          child: _buildDirectoryBubble(context, page, sectionIndex),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _buildMainNavigation(context);
-  }
-
-  // 计算当前词典logo在导航栏中的偏移量
-  double _calculateCurrentDictLogoOffset() {
-    final allDicts = widget.entryGroup.dictionaryGroups;
-    final currentDictIndex = widget.entryGroup.currentDictionaryIndex;
-
-    double offset = 0;
-    // logo高度36 + margin 4 (上下各2)
-    const double itemHeight = 40;
-
-    // 计算当前词典logo之前的所有items高度
-    for (int i = 0; i < currentDictIndex; i++) {
-      final dict = allDicts[i];
-      if (dict.pageGroups.isNotEmpty) {
-        offset += itemHeight; // logo
-        // 使用当前显示的page的sections（对于非当前词典，使用第一个page）
-        final pageIndex = dict.currentPageIndex;
-        int sectionCount = 0;
-        if (pageIndex < dict.pageGroups.length) {
-          sectionCount = dict.pageGroups[pageIndex].sections.length;
-        } else {
-          sectionCount = dict.pageGroups[0].sections.length;
-        }
-
-        if (sectionCount > 1) {
-          offset += sectionCount * itemHeight;
-        }
-      }
-    }
-    // 当前词典的logo
-    offset += itemHeight;
-
-    return offset - itemHeight; // 返回logo顶部位置
   }
 
   // 主导航栏 - 包含词典logo（可展开page列表）和section列表
@@ -292,13 +360,12 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     return logoWidget;
   }
 
-  // 构建page列表（普通列表样式）
+  // 构建page列表（仅包含page选择器）
   Widget _buildPageList(BuildContext context, DictionaryGroup dict) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      width: 100,
-      constraints: const BoxConstraints(maxHeight: 300),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
         borderRadius: BorderRadius.circular(12),
@@ -314,66 +381,339 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           width: 1,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(dict.pageGroups.length, (index) {
-              final isSelected = index == dict.currentPageIndex;
-              final page = dict.pageGroups[index];
+      child: Material(
+        color: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 40,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: List.generate(dict.pageGroups.length, (index) {
+                  final page = dict.pageGroups[index];
+                  final isSelected = index == dict.currentPageIndex;
 
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => _onPageSelected(index),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 12,
-                    ),
-                    decoration: isSelected
-                        ? BoxDecoration(
-                            color: colorScheme.primaryContainer.withOpacity(
-                              0.5,
-                            ),
-                            border: Border(
-                              left: BorderSide(
-                                color: colorScheme.primary,
-                                width: 3,
-                              ),
-                            ),
-                          )
-                        : null,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            page.page.isNotEmpty ? page.page : '${index + 1}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                              color: isSelected
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      onTap: () => _onPageSelected(index),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: isSelected
+                            ? BoxDecoration(
+                                color: colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              )
+                            : null,
+                        child: Text(
+                          page.page.isNotEmpty ? page.page : '${index + 1}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              );
-            }),
+                  );
+                }),
+              ),
+            ),
           ),
         ),
       ),
     );
+  }
+
+  // 构建目录气泡（单独显示，箭头与section按钮中心对齐）
+  // 目录列表的中心位置和section按钮的中心位置处于同一高度
+  Widget _buildDirectoryBubble(
+    BuildContext context,
+    PageGroup page,
+    int sectionIndex,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          constraints: const BoxConstraints(maxHeight: 400),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.shadow.withOpacity(0.15),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            border: Border.all(
+              color: colorScheme.outlineVariant.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _buildDirectoryItems(context, page),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 箭头 - 位于目录列表右侧边缘的垂直中心，指向 section 按钮
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Transform.translate(
+              offset: const Offset(8, 0), // 箭头向右偏移，指向 section 按钮
+              child: CustomPaint(
+                painter: _ArrowPainter(
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
+                  borderColor: colorScheme.outlineVariant.withOpacity(0.2),
+                ),
+                size: const Size(8, 16),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildDirectoryItems(BuildContext context, PageGroup page) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final List<Widget> items = [];
+
+    // 获取当前选中的 section 的 entry
+    final currentSectionIndex =
+        widget.entryGroup.currentDictionaryGroup.currentSectionIndex;
+    if (currentSectionIndex >= page.sections.length) return items;
+
+    final section = page.sections[currentSectionIndex];
+    final entry = section.entry;
+
+    // 遍历 sense_groups
+    for (int i = 0; i < entry.senseGroups.length; i++) {
+      final group = entry.senseGroups[i];
+      final groupName = group['group_name'] as String? ?? '';
+      if (groupName.isNotEmpty) {
+        items.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Text(
+              groupName,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.primary,
+              ),
+            ),
+          ),
+        );
+      }
+
+      // 遍历该组下的 senses
+      final senses = group['senses'] as List<dynamic>? ?? [];
+      for (int j = 0; j < senses.length; j++) {
+        final sense = senses[j] as Map<String, dynamic>;
+        // 构建路径：sense_groups.[i].senses.[j]
+        final path = 'sense_groups.$i.senses.$j';
+        _addSenseItem(
+          context,
+          items,
+          sense,
+          j + 1,
+          colorScheme,
+          section,
+          path,
+          currentSectionIndex,
+          true,
+        );
+      }
+    }
+
+    // 如果没有 sense_groups，直接显示 senses
+    if (entry.senseGroups.isEmpty && entry.senses.isNotEmpty) {
+      for (int i = 0; i < entry.senses.length; i++) {
+        final sense = entry.senses[i];
+        final path = 'senses.$i';
+        _addSenseItem(
+          context,
+          items,
+          sense,
+          i + 1,
+          colorScheme,
+          section,
+          path,
+          currentSectionIndex,
+          true,
+        );
+      }
+    }
+
+    return items;
+  }
+
+  void _addSenseItem(
+    BuildContext context,
+    List<Widget> items,
+    Map<String, dynamic> sense,
+    int index,
+    ColorScheme colorScheme,
+    DictionarySection section,
+    String path,
+    int sectionIndex,
+    bool isSelected,
+  ) {
+    final definition = sense['definition'];
+    String defText = '';
+
+    if (definition is Map) {
+      defText = definition['zh'] ?? definition['en'] ?? '';
+    } else if (definition is String) {
+      defText = definition;
+    }
+
+    if (defText.isNotEmpty) {
+      items.add(
+        InkWell(
+          onTap: () {
+            Logger.d(
+              'Directory item tapped: $defText, target section: ${section.section}, dictId: ${section.entry.dictId}, path: $path',
+              tag: 'NavPanel',
+            );
+            // 复用 _onSectionTapped 的逻辑，确保跳转行为一致且健壮
+            _onSectionTapped(
+              section,
+              section.entry.dictId ?? '',
+              sectionIndex,
+              isSelected,
+              targetPath: path,
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 16,
+                  height: 16,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$index',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    defText,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: colorScheme.onSurface,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      // 处理子释义
+      final subSenses = sense['sub_senses'] as List<dynamic>?;
+      if (subSenses != null && subSenses.isNotEmpty) {
+        for (int j = 0; j < subSenses.length; j++) {
+          final subSense = subSenses[j];
+          final subDef = subSense['definition'];
+          String subDefText = '';
+          if (subDef is Map) {
+            subDefText = subDef['zh'] ?? subDef['en'] ?? '';
+          } else if (subDef is String) {
+            subDefText = subDef;
+          }
+
+          if (subDefText.isNotEmpty) {
+            final subPath = '$path.sub_senses.$j';
+            items.add(
+              InkWell(
+                onTap: () {
+                  Logger.d(
+                    'Directory sub-item tapped: $subDefText, target section: ${section.section}, dictId: ${section.entry.dictId}, path: $subPath',
+                    tag: 'NavPanel',
+                  );
+                  // 复用 _onSectionTapped 的逻辑，确保跳转行为一致且健壮
+                  _onSectionTapped(
+                    section,
+                    section.entry.dictId ?? '',
+                    sectionIndex,
+                    isSelected,
+                    targetPath: subPath,
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(36, 4, 12, 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 4,
+                        height: 4,
+                        margin: const EdgeInsets.only(top: 7),
+                        decoration: BoxDecoration(
+                          color: colorScheme.outline.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          subDefText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+      }
+    }
   }
 
   // 构建section项（扁的圆角矩形）
@@ -386,8 +726,8 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return GestureDetector(
-      onTap: () => _onSectionTapped(section, dictId),
+    Widget sectionWidget = GestureDetector(
+      onTap: () => _onSectionTapped(section, dictId, index, isSelected),
       child: Container(
         width: 40,
         height: 32, // 增加高度
@@ -423,6 +763,16 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         ),
       ),
     );
+
+    // 只有当前词典的活跃section才需要LayerLink来显示目录气泡
+    if (isSelected && dictId == widget.entryGroup.currentDictionaryId) {
+      return CompositedTransformTarget(
+        link: _directoryLayerLink,
+        child: sectionWidget,
+      );
+    }
+
+    return sectionWidget;
   }
 
   // 切换词典
@@ -465,12 +815,8 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       return;
     }
 
-    // 3. 如果点击的是当前已经选中的page，只关闭列表即可
+    // 3. 如果点击的是当前已经选中的page，只更新内容，不关闭列表
     if (currentDict.currentPageIndex == pageIndex) {
-      _removeOverlay();
-      setState(() {
-        _isPageListExpanded = false;
-      });
       return;
     }
 
@@ -479,25 +825,92 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     // 切换page时，默认选中第一个section
     currentDict.setCurrentSectionIndex(0);
 
-    // 5. 关闭列表 (UI状态更新)
-    _removeOverlay();
-    setState(() {
-      _isPageListExpanded = false;
-    });
+    // 5. 更新列表内容 (UI状态更新)
+    if (_isPageListExpanded) {
+      _removeOverlay();
+      _overlayEntry = _createOverlayEntry(currentDict);
+      Overlay.of(context).insert(_overlayEntry!);
+    }
 
     // 6. 通知父组件 (EntryDetailPage) 进行重建和滚动
     widget.onPageChanged?.call();
 
     // 同时通知 section 变化，因为 section index 重置了
     widget.onSectionChanged?.call();
+
+    // 导航到新页面的第一个section
+    if (currentDict.currentPageGroup.sections.isNotEmpty) {
+      widget.onNavigateToEntry?.call(
+        currentDict.currentPageGroup.sections[0].entry,
+      );
+    }
   }
 
   // section点击处理
-  void _onSectionTapped(DictionarySection section, String dictId) {
-    widget.onNavigateToEntry?.call(section.entry);
+  // [isSelected] 表示当前section是否是活跃状态
+  // [index] 是当前section在当前page中的索引
+  void _onSectionTapped(
+    DictionarySection section,
+    String dictId,
+    int index,
+    bool isSelected, {
+    String? targetPath,
+  }) {
+    Logger.d(
+      'Section tapped: ${section.section}, dictId: $dictId, index: $index, isSelected: $isSelected, targetPath: $targetPath',
+      tag: 'NavPanel',
+    );
+
+    // 关闭page列表（如果打开）
+    if (_isPageListExpanded) {
+      _removeOverlay();
+      setState(() {
+        _isPageListExpanded = false;
+      });
+    }
+
+    // 1. 如果点击的是当前词典的活跃section
+    if (isSelected &&
+        dictId == widget.entryGroup.currentDictionaryId &&
+        targetPath == null) {
+      // 1.1 如果目录列表处于打开状态，关闭目录列表
+      // 1.2 如果目录列表处于关闭状态，打开目录列表
+      _toggleDirectory(index);
+      return;
+    }
+
+    // 2. 如果点击的是非活跃section
+    // 先执行滚动操作
+    _navigateToSection(section, dictId, targetPath);
+
+    // 2.1 如果目录列表处于打开状态，关闭之前的目录列表，改为打开当前section的目录列表
+    if (_isDirectoryExpanded) {
+      _removeDirectoryOverlay();
+      // 延迟打开新section的目录列表，等待滚动完成
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openDirectoryForCurrentSection();
+        }
+      });
+    }
+    // 2.2 如果目录列表处于关闭状态，仅进行滚动操作（已在上面完成）
+  }
+
+  // 导航到指定section
+  void _navigateToSection(
+    DictionarySection section,
+    String dictId,
+    String? targetPath,
+  ) {
+    bool isCrossDictionary = false;
+    bool isCrossPage = false;
 
     for (int i = 0; i < widget.entryGroup.dictionaryGroups.length; i++) {
       if (widget.entryGroup.dictionaryGroups[i].dictionaryId == dictId) {
+        if (widget.entryGroup.currentDictionaryIndex != i) {
+          isCrossDictionary = true;
+        }
+
         widget.entryGroup.setCurrentDictionaryIndex(i);
 
         final dict = widget.entryGroup.dictionaryGroups[i];
@@ -513,22 +926,76 @@ class _DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
             sectionIndex++
           ) {
             if (page.sections[sectionIndex] == section) {
+              Logger.d(
+                'Found matching section at page $pageIndex, section $sectionIndex, isCrossDictionary: $isCrossDictionary, isCrossPage: $isCrossPage',
+                tag: 'NavPanel',
+              );
+
+              if (dict.currentPageIndex != pageIndex) {
+                isCrossPage = true;
+              }
+
               dict.setCurrentPageIndex(pageIndex);
               dict.setCurrentSectionIndex(sectionIndex);
 
-              widget.onDictionaryChanged?.call();
-              widget.onPageChanged?.call();
-              widget.onSectionChanged?.call();
+              if (isCrossDictionary) {
+                widget.onDictionaryChanged?.call();
+              } else if (isCrossPage) {
+                widget.onPageChanged?.call();
+              } else {
+                widget.onSectionChanged?.call();
+              }
 
-              _removeOverlay();
-              setState(() {
-                _isPageListExpanded = false;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (targetPath != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    widget.onNavigateToEntry?.call(
+                      section.entry,
+                      targetPath: targetPath,
+                    );
+                  });
+                } else {
+                  widget.onNavigateToEntry?.call(section.entry);
+                }
               });
               return;
             }
           }
         }
       }
+    }
+
+    Logger.w(
+      'Section not found in structure, navigating directly',
+      tag: 'NavPanel',
+    );
+    widget.onNavigateToEntry?.call(section.entry, targetPath: targetPath);
+  }
+
+  // 为当前活跃section打开目录列表
+  void _openDirectoryForCurrentSection() {
+    final currentDict = widget.entryGroup.currentDictionaryGroup;
+    final currentSectionIndex = currentDict.currentSectionIndex;
+    final currentPage = currentDict.currentPageGroup;
+
+    _directoryOverlayEntry = _createDirectoryOverlayEntry(
+      currentPage,
+      currentSectionIndex,
+    );
+    Overlay.of(context).insert(_directoryOverlayEntry!);
+    setState(() {
+      _isDirectoryExpanded = true;
+      _selectedSectionIndex = currentSectionIndex;
+    });
+  }
+
+  // 处理活跃section改变时的目录列表切换
+  // 当用户滚动界面导致活跃section改变时调用
+  void handleActiveSectionChanged() {
+    // 如果目录列表处于打开状态，关闭之前的目录列表，改为打开当前section的目录列表
+    if (_isDirectoryExpanded) {
+      _removeDirectoryOverlay();
+      _openDirectoryForCurrentSection();
     }
   }
 }
