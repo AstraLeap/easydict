@@ -17,6 +17,8 @@ import 'services/dictionary_manager.dart';
 import 'services/preferences_service.dart';
 import 'services/ai_service.dart';
 import 'services/advanced_search_settings_service.dart';
+import 'services/media_kit_manager.dart';
+import 'services/entry_event_bus.dart';
 import 'models/dictionary_entry_group.dart';
 import 'pages/entry_detail_page.dart';
 import 'services/search_history_service.dart';
@@ -175,6 +177,89 @@ class PathScope extends InheritedWidget {
       if (path[i] != oldWidget.path[i]) return true;
     }
     return false;
+  }
+}
+
+/// 高亮闪烁包装器 - 用于滚动到目标元素时显示闪烁效果
+class _HighlightWrapper extends StatefulWidget {
+  final bool isHighlighting;
+  final Widget child;
+
+  const _HighlightWrapper({required this.isHighlighting, required this.child});
+
+  @override
+  State<_HighlightWrapper> createState() => _HighlightWrapperState();
+}
+
+class _HighlightWrapperState extends State<_HighlightWrapper>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _animation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
+    ]).animate(_controller);
+
+    if (widget.isHighlighting) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_HighlightWrapper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isHighlighting != oldWidget.isHighlighting) {
+      if (widget.isHighlighting) {
+        _controller.repeat();
+      } else {
+        _controller.stop();
+        _controller.reset();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final highlightColor = colorScheme.primaryContainer.withValues(alpha: 0.6);
+
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            color: widget.isHighlighting
+                ? Color.lerp(
+                    Colors.transparent,
+                    highlightColor,
+                    _animation.value,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
   }
 }
 
@@ -732,32 +817,129 @@ class ComponentRendererState extends State<ComponentRenderer> {
   DateTime? _lastTapTime;
   int? _lastTapButton;
   Offset? _lastTapPosition;
+  DateTime? _lastTtsTime; // TTS防抖时间戳
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
+
+  // 用于存储元素 Key 的 Map，用于精确滚动
+  final Map<String, GlobalKey> _elementKeys = {};
+  StreamSubscription? _scrollSubscription;
+  StreamSubscription? _translationInsertSubscription;
+  StreamSubscription? _toggleHiddenSubscription;
+  StreamSubscription? _batchToggleHiddenSubscription;
+
+  // 用于存储正在闪烁的元素路径
+  final Set<String> _highlightingPaths = {};
+  // 闪烁动画控制器
+  final Map<String, AnimationController> _highlightControllers = {};
 
   @override
   void initState() {
     super.initState();
     _localEntry = widget.entry;
-    // 初始化为空列表，不从 entry.hiddenLanguages 读取
-    // 全局状态由 EntryDetailPage 控制，单独状态在内存中管理
     _hiddenLanguagesNotifier = HiddenLanguagesNotifier([]);
     _loadSourceLanguage();
     _loadClickAction();
+    _listenToEvents();
+  }
+
+  void _listenToEvents() {
+    final eventBus = EntryEventBus();
+    _scrollSubscription = eventBus.scrollToElement.listen((event) {
+      if (event.entryId == widget.entry.id && mounted) {
+        scrollToElement(event.path);
+      }
+    });
+    _translationInsertSubscription = eventBus.translationInsert.listen((event) {
+      if (event.entryId == widget.entry.id && mounted) {
+        handleTranslationInsert(
+          event.path,
+          DictionaryEntry.fromJson(event.newEntry),
+        );
+      }
+    });
+    _toggleHiddenSubscription = eventBus.toggleHiddenLanguage.listen((event) {
+      if (event.entryId == widget.entry.id && mounted) {
+        toggleHiddenLanguage(event.languageKey);
+      }
+    });
+    _batchToggleHiddenSubscription = eventBus.batchToggleHidden.listen((event) {
+      if (mounted) {
+        batchToggleHiddenLanguages(
+          pathsToHide: event.pathsToHide,
+          pathsToShow: event.pathsToShow,
+        );
+      }
+    });
   }
 
   @override
   void didUpdateWidget(ComponentRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 当 entry 的 id 改变时重置隐藏语言状态
     if (oldWidget.entry.id != widget.entry.id) {
       _localEntry = widget.entry;
-      // 重置为空列表，不保留之前的隐藏状态
       _hiddenLanguagesNotifier.value = [];
+      _elementKeys.clear();
     }
-    // 注意：不再从 widget.entry.hiddenLanguages 读取状态
-    // 全局状态由 EntryDetailPage 通过 batchToggleHiddenLanguages 控制
-    // 单独状态在内存中由 _hiddenLanguagesNotifier 管理
+  }
+
+  /// 滚动到指定路径的元素
+  void scrollToElement(String path, {int retryCount = 0}) {
+    final key = _elementKeys[path];
+    if (key != null && key.currentContext != null) {
+      Scrollable.ensureVisible(
+        key.currentContext!,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: 0.1,
+      ).then((_) {
+        // 滚动完成后触发闪烁效果
+        if (mounted) {
+          _triggerHighlight(path);
+        }
+      });
+    } else if (retryCount < 3) {
+      Logger.d(
+        'Element key not found or context null for path: $path, retrying... ($retryCount)',
+        tag: 'ComponentRenderer',
+      );
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          scrollToElement(path, retryCount: retryCount + 1);
+        }
+      });
+    } else {
+      Logger.w(
+        'Element key not found or context null for path: $path after $retryCount retries',
+        tag: 'ComponentRenderer',
+      );
+    }
+  }
+
+  /// 触发元素的闪烁效果
+  void _triggerHighlight(String path) {
+    setState(() {
+      _highlightingPaths.add(path);
+    });
+
+    // 2秒后移除闪烁效果
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _highlightingPaths.remove(path);
+        });
+      }
+    });
+  }
+
+  /// 检查元素是否正在闪烁
+  bool _isHighlighting(String path) {
+    return _highlightingPaths.contains(path);
+  }
+
+  /// 获取或创建元素的 GlobalKey
+  GlobalKey _getElementKey(String path) {
+    return _elementKeys.putIfAbsent(path, () => GlobalKey());
   }
 
   Widget _buildTappableWidget({
@@ -769,8 +951,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
     GlobalKey? customTextKey,
   }) {
     final textKey = customTextKey ?? GlobalKey();
+    final pathStr = _convertPathToString(pathData.path);
+
+    // 为每个可点击元素分配一个 GlobalKey，用于精确滚动
+    // 注意：这可能会导致大量的 GlobalKey，但对于精确跳转是必要的
+    final elementKey = _getElementKey(pathStr);
+
+    // 检查是否正在闪烁
+    final isHighlighting = _isHighlighting(pathStr);
 
     return GestureDetector(
+      key: elementKey, // 绑定 Key
       behavior: HitTestBehavior.translucent,
       onTapDown: text != null && textStyle != null
           ? (details) {
@@ -779,7 +970,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
           : null,
       onTap: () {
         // 单击立即生效
-        final pathStr = _convertPathToString(pathData.path);
         _handleElementTap(pathStr, pathData.label);
 
         if (text == null || textStyle == null) {
@@ -827,11 +1017,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
           details.globalPosition,
         );
       },
-      child: _TappableWrapper(
-        pathData: pathData,
-        child: customTextKey != null
-            ? child
-            : Builder(key: textKey, builder: (context) => child),
+      child: _HighlightWrapper(
+        isHighlighting: isHighlighting,
+        child: _TappableWrapper(
+          pathData: pathData,
+          child: customTextKey != null
+              ? child
+              : Builder(key: textKey, builder: (context) => child),
+        ),
       ),
     );
   }
@@ -1064,35 +1257,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 使用 notifier 的当前值，这样当状态变化时会重建
       final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
-      // 创建手势识别器以支持点击和右键菜单
-      final tapRecognizer = TapGestureRecognizer()
-        ..onTap = () {
-          onElementTap(_convertPathToString(path), pathData.label);
-        };
-
-      final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
-        ..onSecondaryTapUp = (details) {
-          if (onElementSecondaryTapWithPosition != null) {
-            onElementSecondaryTapWithPosition(
-              _convertPathToString(path),
-              pathData.label,
-              details.globalPosition,
-            );
-          }
-        };
-
-      final longPressRecognizer = LongPressGestureRecognizer()
-        ..onLongPressStart = (details) {
-          if (onElementSecondaryTapWithPosition != null) {
-            onElementSecondaryTapWithPosition(
-              _convertPathToString(path),
-              pathData.label,
-              details.globalPosition,
-            );
-          }
-        };
-
-      // 创建双击识别器
+      // 创建文本样式
       final exampleTextStyle = TextStyle(
         fontSize: 14,
         color: colorScheme.onSurface.withValues(alpha: 0.85),
@@ -1106,33 +1271,78 @@ class ComponentRendererState extends State<ComponentRenderer> {
             : FontStyle.italic,
       );
 
-      final doubleTapRecognizer = DoubleTapGestureRecognizer()
-        ..onDoubleTapDown = (details) {
-          // 不再需要手动去除格式化标记，因为 _handleDoubleTapOnText 内部会调用 parseFormattedText
-          // 但我们需要传递原始文本（带标记的），以便 parseFormattedText 能正确解析
-          _handleDoubleTapOnText(
-            details.globalPosition,
-            text, // 传递原始文本
-            exampleTextStyle,
-            exampleTextKey,
-            context,
-            startOffset: startOffset,
-          );
+      // 创建手势识别器以支持点击和右键菜单
+      final tapRecognizer = TapGestureRecognizer()
+        ..onTapDown = (details) {
+          _lastTapPosition = details.globalPosition;
+        }
+        ..onTap = () {
+          // 单击立即生效
+          onElementTap(_convertPathToString(path), pathData.label);
+
+          // 检测双击
+          final now = DateTime.now();
+          final isDoubleTap =
+              _lastTapTime != null &&
+              now.difference(_lastTapTime!) <
+                  const Duration(milliseconds: 300) &&
+              _lastTapButton == 0;
+
+          if (isDoubleTap && _lastTapPosition != null) {
+            Logger.d('双击触发', tag: 'DoubleTapWord');
+            _handleDoubleTapOnText(
+              _lastTapPosition!,
+              text,
+              exampleTextStyle,
+              exampleTextKey,
+              context,
+              startOffset: startOffset,
+            );
+            _lastTapTime = null;
+            _lastTapButton = null;
+            _lastTapPosition = null;
+          } else {
+            _lastTapTime = now;
+            _lastTapButton = 0;
+          }
+        };
+
+      final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+        ..onSecondaryTapUp = (details) {
+          _lastTapPosition = details.globalPosition;
+          if (onElementSecondaryTapWithPosition != null) {
+            onElementSecondaryTapWithPosition(
+              _convertPathToString(path),
+              pathData.label,
+              details.globalPosition,
+            );
+          }
+        };
+
+      final longPressRecognizer = LongPressGestureRecognizer()
+        ..onLongPressStart = (details) {
+          _lastTapPosition = details.globalPosition;
+          if (onElementSecondaryTapWithPosition != null) {
+            onElementSecondaryTapWithPosition(
+              _convertPathToString(path),
+              pathData.label,
+              details.globalPosition,
+            );
+          }
         };
 
       _recognizers.addAll([
         tapRecognizer,
         secondaryTapRecognizer,
         longPressRecognizer,
-        doubleTapRecognizer,
       ]);
 
-      // 使用 MultiGestureRecognizer 来同时支持点击、右键和双击
+      // 使用 MultiGestureRecognizer 来同时支持点击、右键和长按
       final multiRecognizer = _MultiGestureRecognizer(
         tapRecognizer: tapRecognizer,
         secondaryTapRecognizer: secondaryTapRecognizer,
         longPressRecognizer: longPressRecognizer,
-        doubleTapRecognizer: doubleTapRecognizer,
+        doubleTapRecognizer: null,
       );
 
       // 判断是否为日语或汉语（key 为 'ja' 或 'zh' 或包含这些标识）
@@ -1375,6 +1585,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   void _performSpeak(String path, String label) async {
+    // TTS防抖：每秒最多调用1次
+    final now = DateTime.now();
+    if (_lastTtsTime != null &&
+        now.difference(_lastTtsTime!) < const Duration(seconds: 1)) {
+      showToast(context, '请稍后再试');
+      return;
+    }
+    _lastTtsTime = now;
+
     final pathParts = path.split('.');
     final json = _localEntry.toJson();
     dynamic currentValue = json;
@@ -1429,6 +1648,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final player = Player();
       _currentPlayer = player;
+
+      // 注册到管理器以便热重启时清理
+      MediaKitManager().registerPlayer(player);
 
       final tempDir = await Directory.systemTemp.createTemp();
       final audioFile = File('${tempDir.path}/tts_audio.mp3');
@@ -1680,6 +1902,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   @override
   void dispose() {
+    _scrollSubscription?.cancel();
+    _translationInsertSubscription?.cancel();
+    _toggleHiddenSubscription?.cancel();
+    _batchToggleHiddenSubscription?.cancel();
     _hiddenLanguagesNotifier.dispose();
     for (final recognizer in _recognizers) {
       recognizer.dispose();
@@ -1690,8 +1916,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
     _streamSubscriptions.clear();
     _removeCurrentOverlay();
-    // 确保音频播放器完全清理，避免热重启时 Native 回调错误
     _cleanupPlayer();
+    // 清理闪烁动画控制器
+    for (final controller in _highlightControllers.values) {
+      controller.dispose();
+    }
+    _highlightControllers.clear();
     super.dispose();
   }
 
@@ -1700,6 +1930,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     try {
       final player = _currentPlayer;
       if (player != null) {
+        // 从管理器中注销
+        MediaKitManager().unregisterPlayer(player);
         // 先停止播放
         player.stop();
         // 释放资源
@@ -1982,10 +2214,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
         return relevantHidden.join(',');
       },
       builder: (context, hiddenPathsStr, child) {
-        Logger.d(
-          '重建 Example: path=${examplePath.join('.')}, hiddenPaths=$hiddenPathsStr',
-          tag: 'Rebuild',
-        );
+        // Logger.d(
+        //   '重建 Example: path=${examplePath.join('.')}, hiddenPaths=$hiddenPathsStr',
+        //   tag: 'Rebuild',
+        // );
         return _buildExampleItem(
           context: context,
           texts: texts,
@@ -2547,14 +2779,52 @@ class ComponentRendererState extends State<ComponentRenderer> {
           // 使用 notifier 的当前值，这样当状态变化时会重建
           final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
+          // 创建文本样式
+          final definitionTextStyle = TextStyle(
+            fontSize: 15,
+            color: colorScheme.onSurface,
+            height: 1.6,
+          );
+
           // 创建手势识别器以支持点击和右键菜单
           final tapRecognizer = TapGestureRecognizer()
+            ..onTapDown = (details) {
+              _lastTapPosition = details.globalPosition;
+            }
             ..onTap = () {
+              // 单击立即生效
               _handleElementTap(_convertPathToString(path), pathData.label);
+
+              // 检测双击
+              final now = DateTime.now();
+              final isDoubleTap =
+                  _lastTapTime != null &&
+                  now.difference(_lastTapTime!) <
+                      const Duration(milliseconds: 300) &&
+                  _lastTapButton == 0;
+
+              if (isDoubleTap && _lastTapPosition != null) {
+                Logger.d('双击触发', tag: 'DoubleTapWord');
+                _handleDoubleTapOnText(
+                  _lastTapPosition!,
+                  definition.value,
+                  definitionTextStyle,
+                  definitionTextKey,
+                  context,
+                  startOffset: startOffset,
+                );
+                _lastTapTime = null;
+                _lastTapButton = null;
+                _lastTapPosition = null;
+              } else {
+                _lastTapTime = now;
+                _lastTapButton = 0;
+              }
             };
 
           final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
             ..onSecondaryTapUp = (details) {
+              _lastTapPosition = details.globalPosition;
               _handleElementSecondaryTap(
                 _convertPathToString(path),
                 pathData.label,
@@ -2565,6 +2835,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
           final longPressRecognizer = LongPressGestureRecognizer()
             ..onLongPressStart = (details) {
+              _lastTapPosition = details.globalPosition;
               _handleElementSecondaryTap(
                 _convertPathToString(path),
                 pathData.label,
@@ -2573,39 +2844,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
               );
             };
 
-          final definitionTextStyle = TextStyle(
-            fontSize: 15,
-            color: colorScheme.onSurface,
-            height: 1.6,
-          );
-
-          final doubleTapRecognizer = DoubleTapGestureRecognizer()
-            ..onDoubleTapDown = (details) {
-              // 不再需要手动去除格式化标记，因为 _handleDoubleTapOnText 内部会调用 parseFormattedText
-              // 但我们需要传递原始文本（带标记的），以便 parseFormattedText 能正确解析
-              _handleDoubleTapOnText(
-                details.globalPosition,
-                definition.value, // 传递原始文本
-                definitionTextStyle,
-                definitionTextKey,
-                context,
-                startOffset: startOffset,
-              );
-            };
-
           _recognizers.addAll([
             tapRecognizer,
             secondaryTapRecognizer,
             longPressRecognizer,
-            doubleTapRecognizer,
           ]);
 
-          // 使用 MultiGestureRecognizer 来同时支持点击、右键和双击
+          // 使用 MultiGestureRecognizer 来同时支持点击、右键和长按
           final multiRecognizer = _MultiGestureRecognizer(
             tapRecognizer: tapRecognizer,
             secondaryTapRecognizer: secondaryTapRecognizer,
             longPressRecognizer: longPressRecognizer,
-            doubleTapRecognizer: doubleTapRecognizer,
+            doubleTapRecognizer: null,
           );
 
           final result = parseFormattedText(
@@ -2869,10 +3119,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         return relevantHidden.join(',');
                       },
                       builder: (context, hiddenPathsStr, child) {
-                        Logger.d(
-                          '重建 SenseContent: pos=$pos, definitions=$definitions, hiddenPaths=$hiddenPathsStr',
-                          tag: 'Rebuild',
-                        );
+                        // Logger.d(
+                        //   '重建 SenseContent: pos=$pos, definitions=$definitions, hiddenPaths=$hiddenPathsStr',
+                        //   tag: 'Rebuild',
+                        // );
                         return _buildSenseContent(
                           context: context,
                           pos: pos,
@@ -2955,10 +3205,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         key: 'sub_senses.${subEntry.key}',
                         child: Builder(
                           builder: (context) {
-                            return _buildSenseWidget(
-                              context,
-                              subEntry.value as Map<String, dynamic>,
-                              subIndexStr,
+                            final subSensePath = PathScope.of(context);
+                            final subSensePathStr = _convertPathToString(
+                              subSensePath,
+                            );
+                            return Container(
+                              key: _getElementKey(subSensePathStr),
+                              child: _buildSenseWidget(
+                                context,
+                                subEntry.value as Map<String, dynamic>,
+                                subIndexStr,
+                              ),
                             );
                           },
                         ),
@@ -3000,13 +3257,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 key: '${entryData.key}',
                 child: Builder(
                   builder: (context) {
-                    return Column(
-                      key: _sectionKeys[entryData.key],
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSenseWidget(context, sense, indexStr),
-                        const SizedBox(height: 16),
-                      ],
+                    final sensePath = PathScope.of(context);
+                    final sensePathStr = _convertPathToString(sensePath);
+                    return Container(
+                      key: _getElementKey(sensePathStr),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSenseWidget(context, sense, indexStr),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -3073,16 +3334,23 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           key: '${senseEntry.key}',
                           child: Builder(
                             builder: (context) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildSenseWidget(
-                                    context,
-                                    sense as Map<String, dynamic>,
-                                    indexStr,
-                                  ),
-                                  const SizedBox(height: 16),
-                                ],
+                              final sensePath = PathScope.of(context);
+                              final sensePathStr = _convertPathToString(
+                                sensePath,
+                              );
+                              return Container(
+                                key: _getElementKey(sensePathStr),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSenseWidget(
+                                      context,
+                                      sense as Map<String, dynamic>,
+                                      indexStr,
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                ),
                               );
                             },
                           ),
@@ -3233,10 +3501,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
         return relevantHidden.join(',');
       },
       builder: (context, hiddenPathsStr, child) {
-        Logger.d(
-          '重建 BoardContent: path=${path.join('.')}, keys=$keys, hiddenPaths=$hiddenPathsStr',
-          tag: 'Rebuild',
-        );
+        // Logger.d(
+        //   '重建 BoardContent: path=${path.join('.')}, keys=$keys, hiddenPaths=$hiddenPathsStr',
+        //   tag: 'Rebuild',
+        // );
         final widgets = <Widget>[];
         final hiddenLanguages = _hiddenLanguagesNotifier.value;
 
@@ -3363,10 +3631,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return HiddenLanguagesSelector<bool>(
       selector: (hiddenLanguages) => hiddenLanguages.contains(hiddenPath),
       builder: (context, hidden, child) {
-        Logger.d(
-          '重建 PlainTextItem: path=${path.join('.')}, hidden=$hidden',
-          tag: 'Rebuild',
-        );
+        // Logger.d(
+        //   '重建 PlainTextItem: path=${path.join('.')}, hidden=$hidden',
+        //   tag: 'Rebuild',
+        // );
         return _buildTappableWidget(
           context: context,
           pathData: _PathData(path, 'Plain Text Item'),
@@ -3547,6 +3815,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       player = Player();
       _currentPlayer = player;
+
+      // 注册到管理器以便热重启时清理
+      MediaKitManager().registerPlayer(player);
 
       Logger.d('播放音频: ${isLocal ? "本地" : "在线"}', tag: '_playAudio');
       await player.open(Media(audioSource), play: true);
@@ -4228,11 +4499,6 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
         _selectedIndex = index;
       }
     });
-    // 触发点击回调，支持点击目标语言关闭显示
-    if (widget.onElementTap != null) {
-      final path = [...widget.path, key].join('.');
-      widget.onElementTap!(path, 'Language ($key)');
-    }
   }
 
   @override

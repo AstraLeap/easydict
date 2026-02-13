@@ -8,34 +8,38 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dictionary_search.dart';
 import 'theme_provider.dart';
+import 'theme/app_theme.dart';
 import 'word_bank_page.dart';
 import 'pages/dictionary_manager_page.dart';
 import 'pages/help_page.dart';
 import 'pages/llm_config_page.dart';
-import 'services/ai_chat_history_service.dart';
+import 'services/ai_chat_database_service.dart';
 import 'services/download_manager.dart';
-import 'services/dictionary_store_service.dart';
 import 'services/english_db_service.dart';
 import 'services/database_initializer.dart';
 import 'services/preferences_service.dart';
+import 'services/media_kit_manager.dart';
 import 'utils/toast_utils.dart';
 import 'utils/dpi_utils.dart';
 import 'logger.dart';
+import 'components/theme_mode_selector.dart';
+import 'components/window_buttons.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 检查是否是热重启，如果是则先清理资源
+  // 这可以避免 "Callback invoked after it has been deleted" 错误
+  if (WidgetsBinding.instance is WidgetsFlutterBinding) {
+    // 在热重启时，先清理所有 MediaKit 资源
+    await MediaKitManager().disposeAllPlayers();
+  }
 
   // 初始化 media_kit
   MediaKit.ensureInitialized();
 
   // 初始化数据库（只执行一次）
   DatabaseInitializer().initialize();
-
-  // 初始化 DownloadManager 并设置 DictionaryStoreService
-  final downloadManager = DownloadManager();
-  downloadManager.setStoreService(
-    DictionaryStoreService(baseUrl: 'https://dict.dxde.de'),
-  );
 
   // 打印用户配置文件目录
   try {
@@ -90,6 +94,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
+  /// 处理热重启前的清理工作
+  ///
+  /// 在热重启时，Flutter 会重新调用 main() 函数
+  /// 我们需要确保所有 MediaKit Player 实例被正确释放
+  /// 避免 "Callback invoked after it has been deleted" 错误
+  void _handleHotRestart() {
+    Logger.i('检测到热重启，开始清理 MediaKit 资源...', tag: 'MyApp');
+    MediaKitManager().disposeAllPlayers();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
@@ -97,56 +111,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return MaterialApp(
           title: 'EasyDict',
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.blue,
-              brightness: Brightness.light,
-            ),
-            useMaterial3: true,
-            fontFamily: 'Segoe UI',
-            fontFamilyFallback: const [
-              'SF Pro Text',
-              'Helvetica Neue',
-              'Roboto',
-              'Ubuntu',
-              'Arial',
-              'Microsoft YaHei',
-              'SimHei',
-              'SimSun',
-              'KaiTi',
-              'FangSong',
-              'Microsoft YaHei UI',
-              'PingFang SC',
-              'Noto Sans CJK SC',
-              'Noto Sans SC',
-            ],
-            splashFactory: NoSplash.splashFactory,
-          ),
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.blue,
-              brightness: Brightness.dark,
-            ),
-            useMaterial3: true,
-            fontFamily: 'Segoe UI',
-            fontFamilyFallback: const [
-              'SF Pro Text',
-              'Helvetica Neue',
-              'Roboto',
-              'Ubuntu',
-              'Arial',
-              'Microsoft YaHei',
-              'SimHei',
-              'SimSun',
-              'KaiTi',
-              'FangSong',
-              'Microsoft YaHei UI',
-              'PingFang SC',
-              'Noto Sans CJK SC',
-              'Noto Sans SC',
-            ],
-            splashFactory: NoSplash.splashFactory,
-          ),
+          theme: AppTheme.lightTheme(),
+          darkTheme: AppTheme.darkTheme(),
           themeMode: themeProvider.getThemeMode(),
           home: const MainScreen(),
         );
@@ -427,8 +393,57 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  final _preferencesService = PreferencesService();
+  String _clickAction = PreferencesService.actionAiTranslate;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final clickAction = await _preferencesService.getClickAction();
+    setState(() {
+      _clickAction = clickAction;
+      _isLoading = false;
+    });
+  }
+
+  String _getClickActionLabel(String action) {
+    final label = PreferencesService.getActionLabel(action);
+    return label == action ? '切换翻译' : label;
+  }
+
+  void _showClickActionDialog() async {
+    final currentOrder = await _preferencesService.getClickActionOrder();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _ClickActionOrderDialog(
+          initialOrder: currentOrder,
+          onSave: (newOrder) async {
+            await _preferencesService.setClickActionOrder(newOrder);
+            setState(() {
+              _clickAction = newOrder.first;
+            });
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -481,14 +496,21 @@ class SettingsPage extends StatelessWidget {
                 _buildSettingsGroup(
                   context,
                   children: [
-                    _buildSettingsTile(
+                    _buildThemeModeSelector(
                       context,
-                      title: '主题模式',
-                      icon: Icons.dark_mode_outlined,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () => _showThemeModeDialog(context),
+                      themeProvider,
+                      colorScheme,
                     ),
+                    if (!_isLoading)
+                      _buildSettingsTile(
+                        context,
+                        title: '点击动作设置',
+                        subtitle: _getClickActionLabel(_clickAction),
+                        icon: Icons.touch_app_outlined,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: _showClickActionDialog,
+                      ),
                     _buildSettingsTile(
                       context,
                       title: '其他设置',
@@ -588,6 +610,37 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
+  Widget _buildThemeModeSelector(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    ColorScheme colorScheme,
+  ) {
+    return ListTile(
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: DpiUtils.scale(context, 16),
+        vertical: DpiUtils.scale(context, 4),
+      ),
+      leading: Icon(
+        Icons.dark_mode_outlined,
+        color: colorScheme.primary,
+        size: DpiUtils.scaleIconSize(context, 18),
+      ),
+      title: Text(
+        '主题模式',
+        style: TextStyle(
+          fontSize: DpiUtils.scaleFontSize(context, 13),
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      trailing: ThemeModeSelector(
+        themeMode: themeProvider.themeMode,
+        onThemeChanged: (mode) {
+          themeProvider.setThemeMode(mode);
+        },
+      ),
+    );
+  }
+
   /// 构建设置分组卡片
   Widget _buildSettingsGroup(
     BuildContext context, {
@@ -681,132 +734,6 @@ class SettingsPage extends StatelessWidget {
       onTap: onTap,
     );
   }
-
-  void _showThemeModeDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('选择主题模式'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildThemeModeOption(
-                context,
-                ThemeModeOption.light,
-                Icons.light_mode,
-                '浅色',
-                '简洁明亮的界面',
-              ),
-              _buildThemeModeOption(
-                context,
-                ThemeModeOption.dark,
-                Icons.dark_mode,
-                '深色',
-                '护眼暗色界面',
-              ),
-              _buildThemeModeOption(
-                context,
-                ThemeModeOption.system,
-                Icons.brightness_auto,
-                '跟随系统',
-                '跟随设备设置',
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildThemeModeOption(
-    BuildContext context,
-    ThemeModeOption mode,
-    IconData icon,
-    String title,
-    String subtitle,
-  ) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    final isSelected = themeProvider.themeMode == mode;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          themeProvider.setThemeMode(mode);
-          Navigator.pop(context);
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.transparent,
-              width: 2,
-            ),
-            borderRadius: BorderRadius.circular(
-              DpiUtils.scaleBorderRadius(context, 12),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(DpiUtils.scale(context, 8)),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primaryContainer
-                      : Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(
-                    DpiUtils.scaleBorderRadius(context, 8),
-                  ),
-                ),
-                child: Icon(
-                  icon,
-                  size: DpiUtils.scaleIconSize(context, 24),
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.onPrimaryContainer
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              SizedBox(width: DpiUtils.scale(context, 12)),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: DpiUtils.scaleFontSize(context, 16),
-                        fontWeight: FontWeight.w500,
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: DpiUtils.scaleFontSize(context, 12),
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isSelected)
-                Icon(
-                  Icons.check_circle,
-                  size: DpiUtils.scaleIconSize(context, 24),
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// 其它设置页面
@@ -818,13 +745,11 @@ class MiscSettingsPage extends StatefulWidget {
 }
 
 class _MiscSettingsPageState extends State<MiscSettingsPage> {
-  final _chatService = AiChatHistoryService();
+  final _chatService = AiChatDatabaseService();
   final _englishDbService = EnglishDbService();
-  final _preferencesService = PreferencesService();
   int _recordCount = 0;
   int _autoCleanupDays = 0;
   bool _neverAskAgain = false;
-  String _clickAction = PreferencesService.actionAiTranslate;
   bool _isLoading = true;
 
   @override
@@ -837,12 +762,10 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final count = await _chatService.getRecordCount();
     final days = await _chatService.getAutoCleanupDays();
     final neverAsk = await _englishDbService.getNeverAskAgain();
-    final clickAction = await _preferencesService.getClickAction();
     setState(() {
       _recordCount = count;
       _autoCleanupDays = days;
       _neverAskAgain = neverAsk;
-      _clickAction = clickAction;
       _isLoading = false;
     });
   }
@@ -939,34 +862,6 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      // 交互设置
-                      _buildSectionTitle(context, '交互设置'),
-                      const SizedBox(height: 8),
-                      Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: colorScheme.outlineVariant.withOpacity(0.5),
-                            width: 1,
-                          ),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          leading: Icon(
-                            Icons.touch_app_outlined,
-                            color: colorScheme.primary,
-                          ),
-                          title: const Text('点击动作设置'),
-                          subtitle: Text(_getClickActionLabel(_clickAction)),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: _showClickActionDialog,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
                       // 英语词典数据库设置
                       _buildSectionTitle(context, '英语词典数据库设置'),
                       const SizedBox(height: 8),
@@ -1026,33 +921,6 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
           fontWeight: FontWeight.w600,
         ),
       ),
-    );
-  }
-
-  String _getClickActionLabel(String action) {
-    final label = PreferencesService.getActionLabel(action);
-    return label == action ? '切换翻译' : label;
-  }
-
-  void _showClickActionDialog() async {
-    final colorScheme = Theme.of(context).colorScheme;
-    final currentOrder = await _preferencesService.getClickActionOrder();
-
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return _ClickActionOrderDialog(
-          initialOrder: currentOrder,
-          onSave: (newOrder) async {
-            await _preferencesService.setClickActionOrder(newOrder);
-            setState(() {
-              _clickAction = newOrder.first;
-            });
-          },
-        );
-      },
     );
   }
 

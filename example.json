@@ -98,7 +98,7 @@
           "audios": [
             {
               "region": "UK",
-              "url": "https://cdn.dict.com/ex/fog_ex1_uk.mp3"
+              "audio_file": "fog_ex1_uk.mp3"
             }
           ]
         }

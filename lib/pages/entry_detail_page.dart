@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../database_service.dart';
 import '../models/dictionary_entry_group.dart';
 import '../models/dictionary_metadata.dart';
@@ -11,9 +12,10 @@ import '../component_renderer.dart';
 import '../word_bank_service.dart';
 import '../services/search_history_service.dart';
 import '../services/ai_service.dart';
-import '../services/ai_chat_history_service.dart';
+import '../services/ai_chat_database_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
+import '../services/entry_event_bus.dart';
 import '../logger.dart';
 import '../services/preferences_service.dart';
 import '../utils/toast_utils.dart';
@@ -46,9 +48,10 @@ class _DraggableNavPanel extends StatefulWidget {
   final VoidCallback onDictionaryChanged;
   final VoidCallback onPageChanged;
   final VoidCallback onSectionChanged;
-  final Function(DictionaryEntry) onNavigateToEntry;
-  final bool initialIsRight;
+  final Function(DictionaryEntry entry, {String? targetPath})?
+  onNavigateToEntry;
   final double initialDy;
+  final GlobalKey<DictionaryNavigationPanelState>? navPanelKey;
 
   const _DraggableNavPanel({
     required this.entryGroup,
@@ -56,8 +59,8 @@ class _DraggableNavPanel extends StatefulWidget {
     required this.onPageChanged,
     required this.onSectionChanged,
     required this.onNavigateToEntry,
-    required this.initialIsRight,
     required this.initialDy,
+    this.navPanelKey,
   });
 
   @override
@@ -65,14 +68,12 @@ class _DraggableNavPanel extends StatefulWidget {
 }
 
 class _DraggableNavPanelState extends State<_DraggableNavPanel> {
-  late bool _isRight;
   late double _dy;
-  Offset? _dragOffset;
+  double? _dragY;
 
   @override
   void initState() {
     super.initState();
-    _isRight = widget.initialIsRight;
     _dy = widget.initialDy;
   }
 
@@ -80,62 +81,49 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     double top;
-    double? left;
-    double? right;
 
-    if (_dragOffset != null) {
-      top = _dragOffset!.dy;
-      left = _dragOffset!.dx;
+    if (_dragY != null) {
+      top = _dragY!;
     } else {
       top = screenSize.height * _dy;
       // 确保不超出屏幕底部
       if (top > screenSize.height - 100) {
         top = screenSize.height - 100;
       }
-      if (_isRight) {
-        right = 16;
-      } else {
-        left = 16;
-      }
     }
 
+    // 固定在右边缘
     return Positioned(
       top: top,
-      left: left,
-      right: right,
+      right: 16,
       child: GestureDetector(
         onPanStart: (details) {
           setState(() {
-            // 初始化拖动位置
-            final currentLeft = _isRight ? (screenSize.width - 16 - 52) : 16.0;
-            _dragOffset = Offset(currentLeft, screenSize.height * _dy);
+            _dragY = screenSize.height * _dy;
           });
         },
         onPanUpdate: (details) {
           setState(() {
-            _dragOffset = _dragOffset! + details.delta;
+            _dragY = _dragY! + details.delta.dy;
           });
         },
         onPanEnd: (details) {
-          // 计算停靠
-          final centerX = _dragOffset!.dx + 52 / 2;
-          final isRight = centerX > screenSize.width / 2;
-          final newDy = (_dragOffset!.dy / screenSize.height).clamp(0.1, 0.8);
+          // 只保存垂直位置，固定在右侧
+          final newDy = (_dragY! / screenSize.height).clamp(0.1, 0.8);
 
           setState(() {
-            _isRight = isRight;
             _dy = newDy;
-            _dragOffset = null;
+            _dragY = null;
           });
-          PreferencesService().setNavPanelPosition(_isRight, _dy);
+          PreferencesService().setNavPanelPosition(true, _dy);
         },
         child: DictionaryNavigationPanel(
+          key: widget.navPanelKey,
           entryGroup: widget.entryGroup,
           onDictionaryChanged: widget.onDictionaryChanged,
           onPageChanged: widget.onPageChanged,
           onSectionChanged: widget.onSectionChanged,
           onNavigateToEntry: widget.onNavigateToEntry,
-          isRight: _isRight,
         ),
       ),
     );
@@ -159,7 +147,9 @@ class EntryDetailPage extends StatefulWidget {
 }
 
 class _EntryDetailPageState extends State<EntryDetailPage> {
-  final ScrollController _contentScrollController = ScrollController();
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
 
   /// 显示兼容夜间模式的SnackBar
   void _showSnackBar(
@@ -185,10 +175,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
-  final Map<String, GlobalKey> _entryKeys = {};
   final WordBankService _wordBankService = WordBankService();
   final AIService _aiService = AIService();
-  final AiChatHistoryService _aiChatHistoryService = AiChatHistoryService();
+  final AiChatDatabaseService _aiChatDatabaseService = AiChatDatabaseService();
   late DictionaryEntryGroup _entryGroup;
   bool _isFavorite = false;
 
@@ -205,17 +194,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   /// 当前正在加载的AI请求ID
   String? _currentLoadingId;
 
-  // 导航栏位置状态
-  bool _isNavPanelRight = true;
+  // 导航栏位置状态（固定在右侧，只保存垂直位置）
   double _navPanelDy = 0.7; // 相对屏幕高度的比例
   bool _isNavPanelLoaded = false;
 
-  // 非目标语言显示状态 - 延迟初始化
+  // 导航面板的 GlobalKey，用于访问其状态
+  final GlobalKey<DictionaryNavigationPanelState> _navPanelKey =
+      GlobalKey<DictionaryNavigationPanelState>();
+
   bool? _areNonTargetLanguagesVisible;
 
-  // 用于访问 ComponentRenderer 的状态
-  final GlobalKey<ComponentRendererState> _componentRendererKey =
-      GlobalKey<ComponentRendererState>();
+  DateTime? _lastScrollUpdateTime;
+  static const _scrollUpdateThrottle = Duration(milliseconds: 100);
+  bool _isProgrammaticScroll = false;
 
   @override
   void initState() {
@@ -224,6 +215,92 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _loadFavoriteStatus();
     _loadAiChatHistory();
     _loadNavPanelPosition();
+    _itemPositionsListener.itemPositions.addListener(_onScrollPositionChanged);
+  }
+
+  @override
+  void dispose() {
+    _itemPositionsListener.itemPositions.removeListener(
+      _onScrollPositionChanged,
+    );
+    super.dispose();
+  }
+
+  void _onScrollPositionChanged() {
+    if (_isProgrammaticScroll) return;
+
+    final now = DateTime.now();
+    if (_lastScrollUpdateTime != null &&
+        now.difference(_lastScrollUpdateTime!) < _scrollUpdateThrottle) {
+      return;
+    }
+    _lastScrollUpdateTime = now;
+    _updateCurrentSectionFromScroll();
+  }
+
+  void _updateCurrentSectionFromScroll() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+
+    final entries = _getAllEntriesInOrder();
+    if (entries.isEmpty) return;
+
+    final hasRelations =
+        widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
+
+    double maxVisibleHeight = 0;
+    int maxVisibleIndex = -1;
+    for (final pos in positions) {
+      double visibleHeight;
+      if (pos.itemLeadingEdge < 0 && pos.itemTrailingEdge > 1) {
+        visibleHeight = 1.0;
+      } else if (pos.itemLeadingEdge < 0) {
+        visibleHeight = pos.itemTrailingEdge;
+      } else if (pos.itemTrailingEdge > 1) {
+        visibleHeight = 1.0 - pos.itemLeadingEdge;
+      } else {
+        visibleHeight = pos.itemTrailingEdge - pos.itemLeadingEdge;
+      }
+
+      if (visibleHeight > maxVisibleHeight) {
+        maxVisibleHeight = visibleHeight;
+        maxVisibleIndex = pos.index;
+      }
+    }
+
+    if (maxVisibleIndex < 0) return;
+
+    int entryIndex = hasRelations ? maxVisibleIndex - 1 : maxVisibleIndex;
+    if (entryIndex < 0 || entryIndex >= entries.length) return;
+
+    final targetEntry = entries[entryIndex];
+    final currentDictIndex = _entryGroup.currentDictionaryIndex;
+
+    for (int i = 0; i < _entryGroup.dictionaryGroups.length; i++) {
+      final dict = _entryGroup.dictionaryGroups[i];
+      for (int j = 0; j < dict.pageGroups.length; j++) {
+        final page = dict.pageGroups[j];
+        for (int k = 0; k < page.sections.length; k++) {
+          if (page.sections[k].entry.id == targetEntry.id) {
+            if (i != currentDictIndex ||
+                j != dict.currentPageIndex ||
+                k != dict.currentSectionIndex) {
+              _entryGroup.setCurrentDictionaryIndex(i);
+              _entryGroup.dictionaryGroups[i].setCurrentPageIndex(j);
+              _entryGroup.dictionaryGroups[i].setCurrentSectionIndex(k);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() {});
+                  // 通知导航面板活跃section已改变
+                  _navPanelKey.currentState?.handleActiveSectionChanged();
+                }
+              });
+            }
+            return;
+          }
+        }
+      }
+    }
   }
 
   @override
@@ -279,12 +356,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
       }
 
-      // 根据全局状态设置显示/隐藏
       final pathsToHide = visible ? <String>[] : languagePaths.toList();
       final pathsToShow = visible ? languagePaths.toList() : <String>[];
-      _componentRendererKey.currentState?.batchToggleHiddenLanguages(
-        pathsToHide: pathsToHide,
-        pathsToShow: pathsToShow,
+
+      EntryEventBus().emitBatchToggleHiddenLanguages(
+        BatchToggleHiddenLanguagesEvent(
+          pathsToHide: pathsToHide,
+          pathsToShow: pathsToShow,
+        ),
       );
     } catch (e) {
       Logger.d(
@@ -298,8 +377,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final position = await PreferencesService().getNavPanelPosition();
     if (mounted) {
       setState(() {
-        _isNavPanelRight = position['isRight'] == 1.0;
-        _navPanelDy = position['dy']!;
+        // 导航栏固定在右侧，只读取垂直位置
+        _navPanelDy = position['dy'] ?? 0.7;
         _isNavPanelLoaded = true;
       });
     }
@@ -307,7 +386,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   /// 加载AI聊天记录
   Future<void> _loadAiChatHistory() async {
-    final records = await _aiChatHistoryService.getAllRecords();
+    final records = await _aiChatDatabaseService.getAllRecords();
     setState(() {
       _aiChatHistory.clear();
       _aiChatHistory.addAll(
@@ -357,12 +436,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         _isFavorite = isFavorite;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _contentScrollController.dispose();
-    super.dispose();
   }
 
   /// 构建搜索关系信息横幅
@@ -501,68 +574,100 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     return entries;
   }
 
-  void _scrollToEntry(DictionaryEntry entry) async {
-    final targetKey = _entryKeys[entry.id];
-    if (targetKey == null) return;
-
-    if (targetKey.currentContext != null) {
-      await _ensureVisible(targetKey.currentContext!);
-      return;
-    }
-
+  void _scrollToEntry(DictionaryEntry entry, {String? targetPath}) async {
     final entries = _getAllEntriesInOrder();
-    final index = entries.indexWhere((e) => e.id == entry.id);
+    int index = entries.indexWhere((e) => e.id == entry.id);
+
+    Logger.d(
+      'Scrolling to entry: ${entry.headword}, index: $index, total entries: ${entries.length}, targetPath: $targetPath',
+      tag: 'EntryDetail',
+    );
+
     if (index != -1) {
-      await _jumpToIndex(index, targetKey);
-    }
-  }
+      if (widget.searchRelations != null &&
+          widget.searchRelations!.isNotEmpty) {
+        index += 1;
+      }
 
-  Future<void> _jumpToIndex(int index, GlobalKey targetKey) async {
-    const itemHeight = 600.0;
-    var offset = index * itemHeight;
-
-    for (int i = 0; i < 5; i++) {
-      final maxExtent = _contentScrollController.position.maxScrollExtent;
-      _contentScrollController.jumpTo(offset.clamp(0.0, maxExtent));
-
-      await WidgetsBinding.instance.endOfFrame;
-      await Future.delayed(const Duration(milliseconds: 30));
-
-      if (targetKey.currentContext != null) {
-        await _ensureVisible(targetKey.currentContext!);
+      // 如果有 targetPath，直接滚动到精确位置，不再先滚动到 entry 顶部
+      if (targetPath != null) {
+        _scrollToElement(entry.id, targetPath);
         return;
       }
-      offset += itemHeight;
-    }
 
-    final maxExtent = _contentScrollController.position.maxScrollExtent;
-    if (maxExtent > 0) {
-      _contentScrollController.jumpTo(maxExtent);
-      await WidgetsBinding.instance.endOfFrame;
-      if (targetKey.currentContext != null) {
-        await _ensureVisible(targetKey.currentContext!);
+      if (_itemScrollController.isAttached) {
+        Logger.d('Controller attached, scrolling now', tag: 'EntryDetail');
+
+        _isProgrammaticScroll = true;
+        _itemScrollController
+            .scrollTo(
+              index: index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              alignment: 0.0,
+            )
+            .then((_) {
+              _isProgrammaticScroll = false;
+            });
+      } else {
+        Logger.d(
+          'Controller not attached, waiting for post frame',
+          tag: 'EntryDetail',
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+
+          if (_itemScrollController.isAttached) {
+            Logger.d(
+              'Controller attached in post frame, scrolling now',
+              tag: 'EntryDetail',
+            );
+
+            _isProgrammaticScroll = true;
+            _itemScrollController
+                .scrollTo(
+                  index: index,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  alignment: 0.0,
+                )
+                .then((_) {
+                  _isProgrammaticScroll = false;
+                });
+          } else {
+            Logger.w(
+              'Controller still not attached after post frame',
+              tag: 'EntryDetail',
+            );
+          }
+        });
       }
+    } else {
+      Logger.w('Entry not found in current list', tag: 'EntryDetail');
     }
   }
 
-  Future<void> _ensureVisible(BuildContext context) async {
-    await Scrollable.ensureVisible(
-      context,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      alignment: 0.0,
+  void _scrollToElement(String entryId, String path) {
+    Logger.d(
+      'Emitting scroll to element event: $path in entry: $entryId',
+      tag: 'EntryDetail',
+    );
+    EntryEventBus().emitScrollToElement(
+      ScrollToElementEvent(entryId: entryId, path: path),
     );
   }
 
   void _onDictionaryChanged() {
-    // 清空 entry keys，因为 entries 列表会改变
-    _entryKeys.clear();
+    Logger.d('Dictionary changed, rebuilding list', tag: 'EntryDetail');
     setState(() {});
   }
 
   void _onPageChanged() {
-    _entryKeys.clear();
+    Logger.d('Page changed, rebuilding list', tag: 'EntryDetail');
     setState(() {});
+    // 移除这里的自动滚动逻辑，因为 _onSectionTapped 已经处理了具体的跳转
+    // 如果这里保留，会导致每次切换 Page 都强制滚动到第一个 Section，覆盖用户的点击意图
+    /*
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentDict = _entryGroup.currentDictionaryGroup;
       if (currentDict.pageGroups.isNotEmpty &&
@@ -574,6 +679,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         }
       }
     });
+    */
   }
 
   void _onSectionChanged() {
@@ -646,10 +752,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Widget build(BuildContext context) {
     final entries = _getAllEntriesInOrder();
 
-    for (final entry in entries) {
-      _entryKeys.putIfAbsent(entry.id, () => GlobalKey());
-    }
-
     final mediaQuery = MediaQuery.of(context);
     final bottomPadding = mediaQuery.padding.bottom;
 
@@ -661,20 +763,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          ListView.builder(
-            controller: _contentScrollController,
+          ScrollablePositionedList.builder(
+            itemScrollController: _itemScrollController,
+            itemPositionsListener: _itemPositionsListener,
             padding: _getDynamicPadding(context).copyWith(bottom: 100),
             itemCount: totalCount,
+            // 增加 minCacheExtent，防止跳转后内容未及时渲染导致空白
+            minCacheExtent: 100,
             itemBuilder: (context, index) {
               if (hasRelations && index == 0) {
                 return _buildSearchRelationBanner();
               }
               final entryIndex = hasRelations ? index - 1 : index;
               final entry = entries[entryIndex];
-              return Container(
-                key: _entryKeys[entry.id],
-                child: _buildEntryContent(entry),
-              );
+              return Container(child: _buildEntryContent(entry));
             },
           ),
           if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
@@ -684,8 +786,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               onPageChanged: _onPageChanged,
               onSectionChanged: _onSectionChanged,
               onNavigateToEntry: _scrollToEntry,
-              initialIsRight: _isNavPanelRight,
               initialDy: _navPanelDy,
+              navPanelKey: _navPanelKey,
             ),
           // 浮动底部功能栏
           Positioned(
@@ -805,7 +907,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   /// 根据屏幕宽度动态计算边距
   EdgeInsets _getDynamicPadding(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    // 使用 MediaQuery.sizeOf(context) 替代 MediaQuery.of(context).size
+    // 这样可以避免不必要的重建，但在这个场景下，我们更需要确保在布局过程中不直接依赖可能变化的 MediaQuery
+    // 或者将 Padding 计算移到 build 方法外部，或者使用 LayoutBuilder
+    final screenWidth = MediaQuery.sizeOf(context).width;
 
     if (screenWidth < 600) {
       return const EdgeInsets.symmetric(horizontal: 4, vertical: 6);
@@ -817,6 +922,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   Widget _buildEntryContent(DictionaryEntry entry) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final EdgeInsets padding;
+    if (screenWidth < 600) {
+      padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 6);
+    } else if (screenWidth < 900) {
+      padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+    } else {
+      padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 6);
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -825,9 +940,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           Stack(
             children: [
               Padding(
-                padding: _getDynamicPadding(context),
+                padding: padding,
                 child: ComponentRenderer(
-                  key: _componentRendererKey,
+                  key: ValueKey(entry.id),
                   entry: entry,
                   onElementTap: (path, label) {
                     _handleTranslationTap(entry, path, label);
@@ -839,9 +954,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     _handleAiElementTap(entry, path, label);
                   },
                   onTranslationInsert: (path, newEntry) {
-                    _componentRendererKey.currentState?.handleTranslationInsert(
-                      path,
-                      newEntry,
+                    EntryEventBus().emitTranslationInsert(
+                      TranslationInsertEvent(
+                        entryId: entry.id,
+                        path: path,
+                        newEntry: newEntry.toJson(),
+                      ),
                     );
                   },
                 ),
@@ -1348,10 +1466,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final hiddenPath = targetPath.join('.');
         final hiddenKey = '$hiddenPath.$targetLang';
 
-        // 确保新翻译的内容显示出来（只更新本地状态，不保存到数据库的 hidden_languages）
-        _componentRendererKey.currentState?.handleTranslationInsert(
-          hiddenKey,
-          newEntry,
+        EntryEventBus().emitTranslationInsert(
+          TranslationInsertEvent(
+            entryId: entry.id,
+            path: hiddenKey,
+            newEntry: newEntry.toJson(),
+          ),
         );
       }
     } catch (e) {
@@ -1381,8 +1501,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       final hiddenPath = parentPath.join('.');
       final hiddenKey = '$hiddenPath.$targetLang';
 
-      // 通知 ComponentRenderer 更新本地隐藏状态
-      _componentRendererKey.currentState?.toggleHiddenLanguage(hiddenKey);
+      EntryEventBus().emitToggleHiddenLanguage(
+        ToggleHiddenLanguageEvent(entryId: entry.id, languageKey: hiddenKey),
+      );
     } catch (e) {
       Logger.d('Error in _toggleTranslationVisibility: $e', tag: 'Translation');
       if (mounted) {
@@ -1426,14 +1547,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
       // 保存到全局设置
       await PreferencesService().setGlobalTranslationVisibility(newVisibility);
-
-      // 更新 ComponentRenderer 的本地隐藏状态
-      final pathsToHide = newVisibility ? <String>[] : languagePaths.toList();
-      final pathsToShow = newVisibility ? languagePaths.toList() : <String>[];
-      _componentRendererKey.currentState?.batchToggleHiddenLanguages(
-        pathsToHide: pathsToHide,
-        pathsToShow: pathsToShow,
-      );
 
       _showSnackBar(newVisibility ? '已显示所有语言' : '已隐藏非目标语言');
     } catch (e) {
@@ -1812,7 +1925,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _currentLoadingId = requestId;
 
     // 保存到持久化存储
-    _aiChatHistoryService.addRecord(
+    _aiChatDatabaseService.addRecord(
       AiChatRecordModel(
         id: requestId,
         word: targetWord,
@@ -1856,7 +1969,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             );
           }
           // 更新持久化存储
-          _aiChatHistoryService.updateRecord(
+          _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: targetWord,
@@ -1906,7 +2019,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             );
           }
           // 更新持久化存储
-          _aiChatHistoryService.updateRecord(
+          _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: targetWord,
@@ -2453,7 +2566,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                       ),
                                                     );
                                                     if (confirm == true) {
-                                                      await _aiChatHistoryService
+                                                      await _aiChatDatabaseService
                                                           .deleteRecord(
                                                             record.id,
                                                           );
@@ -2655,7 +2768,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _currentLoadingId = requestId;
 
     // 保存到持久化存储
-    _aiChatHistoryService.addRecord(
+    _aiChatDatabaseService.addRecord(
       AiChatRecordModel(
         id: requestId,
         word: currentWord,
@@ -2696,7 +2809,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               elementJson: null,
             );
           }
-          _aiChatHistoryService.updateRecord(
+          _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
@@ -2728,7 +2841,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               elementJson: null,
             );
           }
-          _aiChatHistoryService.updateRecord(
+          _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
@@ -3014,7 +3127,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _currentLoadingId = requestId;
 
     // 保存到持久化存储
-    _aiChatHistoryService.addRecord(
+    _aiChatDatabaseService.addRecord(
       AiChatRecordModel(
         id: requestId,
         word: currentWord,
@@ -3058,7 +3171,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               elementJson: parentRecord.elementJson,
             );
           }
-          _aiChatHistoryService.updateRecord(
+          _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
@@ -3090,7 +3203,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               elementJson: parentRecord.elementJson,
             );
           }
-          _aiChatHistoryService.updateRecord(
+          _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
