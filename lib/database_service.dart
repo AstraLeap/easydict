@@ -437,14 +437,15 @@ class DatabaseService {
   ) {
     String entryId = jsonData['id']?.toString() ?? '';
     if (entryId.isEmpty) {
-      // entry_id 现在是整型，需要转换为字符串
       final rawEntryId = row['entry_id'];
       final entryIdStr = rawEntryId?.toString() ?? '';
       entryId = '${dictId}_$entryIdStr';
       jsonData['id'] = entryId;
+      jsonData['entry_id'] = entryId;
     } else if (!entryId.startsWith('${dictId}_')) {
       entryId = '${dictId}_$entryId';
       jsonData['id'] = entryId;
+      jsonData['entry_id'] = entryId;
     }
   }
 

@@ -1,41 +1,18 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../database_service.dart';
-import '../pages/llm_config_page.dart';
 import 'dictionary_manager.dart';
 import '../models/dictionary_metadata.dart';
 import '../logger.dart';
 import '../utils/language_utils.dart';
+import 'llm_client.dart';
+import 'preferences_service.dart';
 
 class TranslationService {
   static final TranslationService _instance = TranslationService._internal();
   factory TranslationService() => _instance;
   TranslationService._internal();
 
-  Future<String?> _getFastLLMConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    final providerIndex = prefs.getInt('fast_llm_provider');
-    if (providerIndex == null) return null;
-
-    final apiKey = prefs.getString('fast_llm_api_key') ?? '';
-    final baseUrl = prefs.getString('fast_llm_base_url') ?? '';
-    final model = prefs.getString('fast_llm_model') ?? '';
-
-    if (apiKey.isEmpty) return null;
-
-    final provider = LLMProvider.values[providerIndex];
-    final effectiveBaseUrl = baseUrl.isEmpty
-        ? provider.defaultBaseUrl
-        : baseUrl;
-
-    return jsonEncode({
-      'provider': provider.index,
-      'apiKey': apiKey,
-      'baseUrl': effectiveBaseUrl,
-      'model': model,
-    });
-  }
+  final _llmClient = LLMClient();
+  final _prefsService = PreferencesService();
 
   String _getTargetLanguage(DictionaryMetadata metadata) {
     final sourceLang = metadata.sourceLanguage;
@@ -56,18 +33,11 @@ class TranslationService {
     required String sourceText,
   }) async {
     try {
-      final configStr = await _getFastLLMConfig();
-      if (configStr == null) {
+      final config = await _prefsService.getLLMConfig(isFast: true);
+      if (config == null || !config.isValid) {
         Logger.e('快速模型未配置', tag: 'TranslationService');
         return false;
       }
-
-      final config = jsonDecode(configStr) as Map<String, dynamic>;
-      final apiKey = config['apiKey'] as String;
-      final baseUrl = config['baseUrl'] as String;
-      final model = config['model'] as String;
-      final providerIndex = config['provider'] as int;
-      final provider = LLMProvider.values[providerIndex];
 
       final dictManager = DictionaryManager();
       final metadata = await dictManager.getDictionaryMetadata(dictionaryId);
@@ -125,35 +95,14 @@ class TranslationService {
         targetLanguage,
       );
 
-      String translatedText = '';
-      switch (provider) {
-        case LLMProvider.openAI:
-        case LLMProvider.deepseek:
-        case LLMProvider.moonshot:
-        case LLMProvider.zhipu:
-        case LLMProvider.ali:
-        case LLMProvider.custom:
-          translatedText = await _callOpenAICompatibleApi(
-            baseUrl: baseUrl,
-            apiKey: apiKey,
-            model: model,
-            prompt: prompt,
-          );
-        case LLMProvider.anthropic:
-          translatedText = await _callAnthropicApi(
-            baseUrl: baseUrl,
-            apiKey: apiKey,
-            model: model,
-            prompt: prompt,
-          );
-        case LLMProvider.gemini:
-          translatedText = await _callGeminiApi(
-            baseUrl: baseUrl,
-            apiKey: apiKey,
-            model: model,
-            prompt: prompt,
-          );
-      }
+      final translatedText = await _llmClient.callApi(
+        provider: config.provider,
+        baseUrl: config.effectiveBaseUrl,
+        apiKey: config.apiKey,
+        model: config.model,
+        prompt: prompt,
+        temperature: 0.3,
+      );
 
       final translatedTextClean = translatedText.trim();
 
@@ -244,95 +193,5 @@ class TranslationService {
     }
 
     return updatedJson;
-  }
-
-  Future<String> _callOpenAICompatibleApi({
-    required String baseUrl,
-    required String apiKey,
-    required String model,
-    required String prompt,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/chat/completions'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode({
-        'model': model,
-        'messages': [
-          {'role': 'user', 'content': prompt},
-        ],
-        'temperature': 0.3,
-        'max_tokens': 1000,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['choices'][0]['message']['content'] as String;
-    } else {
-      throw Exception('翻译API调用失败: ${response.statusCode}');
-    }
-  }
-
-  Future<String> _callAnthropicApi({
-    required String baseUrl,
-    required String apiKey,
-    required String model,
-    required String prompt,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/messages'),
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: jsonEncode({
-        'model': model,
-        'messages': [
-          {'role': 'user', 'content': prompt},
-        ],
-        'max_tokens': 1000,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['content'][0]['text'] as String;
-    } else {
-      throw Exception('翻译API调用失败: ${response.statusCode}');
-    }
-  }
-
-  Future<String> _callGeminiApi({
-    required String baseUrl,
-    required String apiKey,
-    required String model,
-    required String prompt,
-  }) async {
-    final url = '$baseUrl/models/$model:generateContent?key=$apiKey';
-
-    final response = await http.post(
-      Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'contents': [
-          {
-            'parts': [
-              {'text': prompt},
-            ],
-          },
-        ],
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['candidates'][0]['content']['parts'][0]['text'] as String;
-    } else {
-      throw Exception('翻译API调用失败: ${response.statusCode}');
-    }
   }
 }
