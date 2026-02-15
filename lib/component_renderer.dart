@@ -2590,6 +2590,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               splashColor: audioFile.isNotEmpty
                                   ? colorScheme.primary.withValues(alpha: 0.1)
                                   : null,
+                              mouseCursor: audioFile.isNotEmpty
+                                  ? SystemMouseCursors.click
+                                  : SystemMouseCursors.basic,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
@@ -3647,11 +3650,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return const SizedBox.shrink();
     }
 
+    // 分离 datas key，它将在最后渲染
+    final hasDatas = keys.contains('datas');
+    final normalKeys = keys.where((k) => k != 'datas').toList();
+    final datasValue = hasDatas ? board['datas'] : null;
+
     // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
     return HiddenLanguagesSelector<String>(
       selector: (hiddenLanguages) {
         final relevantHidden = <String>[];
-        for (final key in keys) {
+        for (final key in normalKeys) {
           final isLanguageCode =
               LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
           if (isLanguageCode) {
@@ -3672,7 +3680,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final widgets = <Widget>[];
         final hiddenLanguages = _hiddenLanguagesNotifier.value;
 
-        for (final key in keys) {
+        for (final key in normalKeys) {
           final value = board[key];
           final keyPath = [...path, key];
 
@@ -3713,6 +3721,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
               widgets.add(_buildContentItem(context, text, keyPath));
             }
           }
+        }
+
+        // 在最后渲染 datas（如果存在）
+        if (datasValue is Map<String, dynamic> && datasValue.isNotEmpty) {
+          widgets.add(
+            _buildDatas(context, datasValue, path: [...path, 'datas']),
+          );
         }
 
         if (widgets.isEmpty) {
@@ -4692,8 +4707,10 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
             final key = entry.value;
             final isSelected = _selectedIndex == index;
 
-            return GestureDetector(
+            return InkWell(
               onTap: () => _selectTab(index, key),
+              borderRadius: BorderRadius.circular(4),
+              mouseCursor: SystemMouseCursors.click,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,

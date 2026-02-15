@@ -308,9 +308,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    Widget logoContent = GestureDetector(
+    Widget logoContent = InkWell(
       key: key,
       onTap: isCurrent ? _togglePageList : () => _onDictionarySelected(dict),
+      borderRadius: BorderRadius.circular(4),
+      mouseCursor: SystemMouseCursors.click,
       child: Container(
         width: 36,
         height: 40,
@@ -407,6 +409,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                   child: InkWell(
                     onTap: () => _onPageSelected(index),
                     borderRadius: BorderRadius.circular(6),
+                    mouseCursor: SystemMouseCursors.click,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -615,6 +618,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               targetPath: path,
             );
           },
+          mouseCursor: SystemMouseCursors.click,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(
@@ -685,6 +689,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                     targetPath: subPath,
                   );
                 },
+                mouseCursor: SystemMouseCursors.click,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(36, 4, 12, 4),
                   child: Row(
@@ -732,8 +737,10 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    Widget sectionWidget = GestureDetector(
+    Widget sectionWidget = InkWell(
       onTap: () => _onSectionTapped(section, dictId, index, isSelected),
+      borderRadius: BorderRadius.circular(6),
+      mouseCursor: SystemMouseCursors.click,
       child: Container(
         width: 40,
         height: 32, // 增加高度

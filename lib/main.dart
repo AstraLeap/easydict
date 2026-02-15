@@ -1024,10 +1024,10 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
 
     return AlertDialog(
       title: const Text('点击动作设置'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
+      content: SizedBox(
+        width: 400,
+        height: 300,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
@@ -1040,9 +1040,8 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
                 ),
               ),
             ),
-            Flexible(
+            Expanded(
               child: ReorderableListView(
-                shrinkWrap: true,
                 buildDefaultDragHandles: false,
                 children: [
                   for (int index = 0; index < _order.length; index++)

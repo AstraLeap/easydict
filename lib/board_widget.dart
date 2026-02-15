@@ -146,61 +146,56 @@ class _BoardWidgetState extends State<BoardWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Listener(
-            onPointerDown: (event) {
-              if (event.buttons == 2) {
-                _showPath();
-              }
-            },
-            child: GestureDetector(
-              onTap: _toggleCollapse,
-              onLongPress: _showPath,
-              child: Container(
-                width: double.infinity,
-                padding: EdgeInsets.symmetric(
-                  horizontal: DpiUtils.scale(context, 8),
-                  vertical: DpiUtils.scale(context, 6),
+          InkWell(
+            onTap: _toggleCollapse,
+            onLongPress: _showPath,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(DpiUtils.scaleBorderRadius(context, 5)),
+            ),
+            mouseCursor: SystemMouseCursors.click,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: DpiUtils.scale(context, 8),
+                vertical: DpiUtils.scale(context, 6),
+              ),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(DpiUtils.scaleBorderRadius(context, 5)),
                 ),
-                decoration: BoxDecoration(
-                  color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(
-                      DpiUtils.scaleBorderRadius(context, 5),
+              ),
+              child: Row(
+                children: [
+                  AnimatedRotation(
+                    turns: _isCollapsed ? -0.25 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      size: DpiUtils.scaleIconSize(context, 16),
+                      color: colorScheme.onSecondaryContainer.withValues(
+                        alpha: 0.8,
+                      ),
                     ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    AnimatedRotation(
-                      turns: _isCollapsed ? -0.25 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeInOut,
-                      child: Icon(
-                        Icons.keyboard_arrow_down,
-                        size: DpiUtils.scaleIconSize(context, 16),
-                        color: colorScheme.onSecondaryContainer.withValues(
-                          alpha: 0.8,
+                  SizedBox(width: DpiUtils.scale(context, 4)),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: DpiUtils.scaleFontSize(
+                          context,
+                          13 * _getBoardTitleFontScale(),
                         ),
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSecondaryContainer,
+                        letterSpacing: 0.2,
+                        fontFamily: _getBoardTitleFontFamily(),
                       ),
                     ),
-                    SizedBox(width: DpiUtils.scale(context, 4)),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: DpiUtils.scaleFontSize(
-                            context,
-                            13 * _getBoardTitleFontScale(),
-                          ),
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSecondaryContainer,
-                          letterSpacing: 0.2,
-                          fontFamily: _getBoardTitleFontFamily(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
