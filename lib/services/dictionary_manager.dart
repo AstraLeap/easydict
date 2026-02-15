@@ -26,6 +26,10 @@ class DictionaryManager {
 
   String? _baseDirectory;
   final Map<String, DictionaryMetadata> _metadataCache = {};
+  final Map<String, Database> _databasePool = {};
+  final Map<String, Database> _mediaDatabasePool = {};
+  final Map<String, Future<Database>> _pendingOpens = {};
+  final Map<String, Future<Database>> _pendingMediaOpens = {};
 
   Future<String> get baseDirectory async {
     if (_baseDirectory != null) return _baseDirectory!;
@@ -59,6 +63,7 @@ class DictionaryManager {
     Logger.i('保存词典目录: $directory', tag: 'DictionaryManager');
     _baseDirectory = directory;
     _metadataCache.clear();
+    await closeAllDatabases();
   }
 
   Future<String> get onlineSubscriptionUrl async {
@@ -91,6 +96,7 @@ class DictionaryManager {
   }
 
   Future<void> disableDictionary(String dictionaryId) async {
+    await closeDatabase(dictionaryId);
     final enabled = await getEnabledDictionaries();
     enabled.remove(dictionaryId);
     await setEnabledDictionaries(enabled);
@@ -310,7 +316,7 @@ class DictionaryManager {
       return null;
     }
 
-    return await _readBlobFromMediaDb(mediaDbPath, 'images', fileName);
+    return await _readBlobFromMediaDb(dictionaryId, 'images', fileName);
   }
 
   Future<Uint8List?> getAudioBytes(String dictionaryId, String fileName) async {
@@ -321,22 +327,64 @@ class DictionaryManager {
       return null;
     }
 
-    return _readBlobFromMediaDb(mediaDbPath, 'audios', fileName);
+    return _readBlobFromMediaDb(dictionaryId, 'audios', fileName);
+  }
+
+  Future<Database> openMediaDatabase(String dictionaryId) async {
+    if (_mediaDatabasePool.containsKey(dictionaryId)) {
+      final db = _mediaDatabasePool[dictionaryId]!;
+      if (db.isOpen) {
+        return db;
+      } else {
+        _mediaDatabasePool.remove(dictionaryId);
+      }
+    }
+
+    if (_pendingMediaOpens.containsKey(dictionaryId)) {
+      return _pendingMediaOpens[dictionaryId]!;
+    }
+
+    final future = _openMediaDatabaseInternal(dictionaryId);
+    _pendingMediaOpens[dictionaryId] = future;
+
+    try {
+      final db = await future;
+      _mediaDatabasePool[dictionaryId] = db;
+      return db;
+    } finally {
+      _pendingMediaOpens.remove(dictionaryId);
+    }
+  }
+
+  Future<Database> _openMediaDatabaseInternal(String dictionaryId) async {
+    final dbPath = await getMediaDbPath(dictionaryId);
+
+    if (!await File(dbPath).exists()) {
+      throw Exception('媒体数据库不存在: $dictionaryId');
+    }
+
+    return openDatabase(dbPath, readOnly: false);
+  }
+
+  Future<void> closeMediaDatabase(String dictionaryId) async {
+    final db = _mediaDatabasePool.remove(dictionaryId);
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
   }
 
   Future<Uint8List?> _readBlobFromMediaDb(
-    String dbPath,
+    String dictionaryId,
     String tableName,
     String fileName,
   ) async {
     try {
-      final db = await openDatabase(dbPath);
+      final db = await openMediaDatabase(dictionaryId);
       final result = await db.query(
         tableName,
         where: 'name = ?',
         whereArgs: [fileName],
       );
-      await db.close();
 
       if (result.isNotEmpty) {
         return result.first['blob'] as Uint8List;
@@ -585,13 +633,64 @@ class DictionaryManager {
   }
 
   Future<Database> openDictionaryDatabase(String dictionaryId) async {
+    if (_databasePool.containsKey(dictionaryId)) {
+      final db = _databasePool[dictionaryId]!;
+      if (db.isOpen) {
+        return db;
+      } else {
+        _databasePool.remove(dictionaryId);
+      }
+    }
+
+    if (_pendingOpens.containsKey(dictionaryId)) {
+      return _pendingOpens[dictionaryId]!;
+    }
+
+    final future = _openDatabaseInternal(dictionaryId);
+    _pendingOpens[dictionaryId] = future;
+
+    try {
+      final db = await future;
+      _databasePool[dictionaryId] = db;
+      return db;
+    } finally {
+      _pendingOpens.remove(dictionaryId);
+    }
+  }
+
+  Future<Database> _openDatabaseInternal(String dictionaryId) async {
     final dbPath = await getDictionaryDbPath(dictionaryId);
 
     if (!await File(dbPath).exists()) {
       throw Exception('词典数据库不存在: $dictionaryId');
     }
 
-    return openDatabase(dbPath, readOnly: true);
+    return openDatabase(dbPath, readOnly: false);
+  }
+
+  Future<void> closeDatabase(String dictionaryId) async {
+    final db = _databasePool.remove(dictionaryId);
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
+    await closeMediaDatabase(dictionaryId);
+  }
+
+  Future<void> closeAllDatabases() async {
+    final futures = <Future>[];
+    for (final entry in _databasePool.entries.toList()) {
+      if (entry.value.isOpen) {
+        futures.add(entry.value.close());
+      }
+    }
+    for (final entry in _mediaDatabasePool.entries.toList()) {
+      if (entry.value.isOpen) {
+        futures.add(entry.value.close());
+      }
+    }
+    await Future.wait(futures);
+    _databasePool.clear();
+    _mediaDatabasePool.clear();
   }
 
   Future<List<String>> getDictionaryEntries(
@@ -602,23 +701,19 @@ class DictionaryManager {
     try {
       final db = await openDictionaryDatabase(dictionaryId);
 
-      try {
-        final results = await db.query(
-          'entries',
-          columns: ['headword'],
-          orderBy: 'headword ASC',
-          offset: offset,
-          limit: limit,
-        );
+      final results = await db.query(
+        'entries',
+        columns: ['headword'],
+        orderBy: 'headword ASC',
+        offset: offset,
+        limit: limit,
+      );
 
-        return results
-            .map((row) => row['headword'] as String?)
-            .where((word) => word != null && word.isNotEmpty)
-            .cast<String>()
-            .toList();
-      } finally {
-        await db.close();
-      }
+      return results
+          .map((row) => row['headword'] as String?)
+          .where((word) => word != null && word.isNotEmpty)
+          .cast<String>()
+          .toList();
     } catch (e) {
       Logger.e('获取词典词条失败: $e', tag: 'DictionaryManager', error: e);
       return [];
@@ -629,15 +724,8 @@ class DictionaryManager {
     try {
       final db = await openDictionaryDatabase(dictionaryId);
 
-      try {
-        final results = await db.query(
-          'entries',
-          columns: ['COUNT(*) as count'],
-        );
-        return Sqflite.firstIntValue(results) ?? 0;
-      } finally {
-        await db.close();
-      }
+      final results = await db.query('entries', columns: ['COUNT(*) as count']);
+      return Sqflite.firstIntValue(results) ?? 0;
     } catch (e) {
       return 0;
     }
@@ -645,6 +733,8 @@ class DictionaryManager {
 
   Future<void> deleteDictionary(String dictionaryId) async {
     try {
+      await closeDatabase(dictionaryId);
+
       final dictDir = await getDictionaryDir(dictionaryId);
       final dir = Directory(dictDir);
 

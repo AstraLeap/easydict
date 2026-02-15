@@ -74,96 +74,55 @@ class EnglishSearchService {
     return db;
   }
 
-  /// 搜索简单表，返回映射词列表
   Future<List<String>> searchSimpleTables(String word) async {
     final db = await database;
     final results = <String>{};
 
-    // spelling_variant: (word1, word2) - 两个互为变体
-    await _searchTwoColumnTable(
-      db,
-      'spelling_variant',
-      'word1',
-      'word2',
-      word,
-      results,
-    );
+    final futures = [
+      _searchTwoColumnTable(db, 'spelling_variant', 'word1', 'word2', word),
+      _searchTwoColumnTable(db, 'abbreviation', 'base', 'full_form', word),
+      _searchTwoColumnTable(db, 'acronym', 'base', 'full_form', word),
+      _searchTwoColumnTable(db, 'nominalization', 'base', 'nominal', word),
+    ];
 
-    // abbreviation: (base, full_form)
-    await _searchTwoColumnTable(
-      db,
-      'abbreviation',
-      'base',
-      'full_form',
-      word,
-      results,
-    );
-
-    // acronym: (base, full_form)
-    await _searchTwoColumnTable(
-      db,
-      'acronym',
-      'base',
-      'full_form',
-      word,
-      results,
-    );
-
-    // nominalization: (base, nominal)
-    await _searchTwoColumnTable(
-      db,
-      'nominalization',
-      'base',
-      'nominal',
-      word,
-      results,
-    );
+    final allResults = await Future.wait(futures);
+    for (final list in allResults) {
+      results.addAll(list);
+    }
 
     return results.toList();
   }
 
-  Future<void> _searchTwoColumnTable(
+  Future<List<String>> _searchTwoColumnTable(
     Database db,
     String table,
     String col1,
     String col2,
     String word,
-    Set<String> results,
   ) async {
+    final results = <String>[];
     try {
-      // 正向查询：col1 -> col2
       final maps = await db.query(
         table,
-        columns: [col2],
-        where: '$col1 = ?',
-        whereArgs: [word],
+        columns: [col1, col2],
+        where: '$col1 = ? OR $col2 = ?',
+        whereArgs: [word, word],
       );
       for (final map in maps) {
-        if (map[col2] != null) {
-          results.add(map[col2] as String);
-        }
-      }
-
-      // 反向查询：col2 -> col1
-      final reverseMaps = await db.query(
-        table,
-        columns: [col1],
-        where: '$col2 = ?',
-        whereArgs: [word],
-      );
-      for (final map in reverseMaps) {
-        if (map[col1] != null) {
-          results.add(map[col1] as String);
+        final val1 = map[col1] as String?;
+        final val2 = map[col2] as String?;
+        if (val1 == word && val2 != null) {
+          results.add(val2);
+        } else if (val2 == word && val1 != null) {
+          results.add(val1);
         }
       }
     } catch (e) {
       // Error handling without debug output
     }
+    return results;
   }
 
-  /// 查找nominalization还原词
-  /// 如果word是nominal（名词化形式），则返回对应的base词
-  /// 返回 null 表示不是名词化形式
   Future<String?> searchNominalizationBase(String word) async {
     try {
       final db = await database;
@@ -182,38 +141,25 @@ class EnglishSearchService {
     return null;
   }
 
-  /// 搜索 inflection 表，返回映射词列表
   Future<List<String>> searchInflection(String word) async {
     final db = await database;
     final results = <String>{};
 
-    // inflection: (base, plural, past, past_part, pres_part, third_sing, comp, superl)
-    final cols = [
-      'plural',
-      'past',
-      'past_part',
-      'pres_part',
-      'third_sing',
-      'comp',
-      'superl',
-    ];
-
-    for (final col in cols) {
-      try {
-        final maps = await db.query(
-          'inflection',
-          columns: ['base'],
-          where: '$col = ?',
-          whereArgs: [word],
-        );
-        for (final map in maps) {
-          if (map['base'] != null) {
-            results.add(map['base'] as String);
-          }
+    try {
+      final maps = await db.query(
+        'inflection',
+        columns: ['base'],
+        where:
+            'plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
+        whereArgs: [word, word, word, word, word, word, word],
+      );
+      for (final map in maps) {
+        if (map['base'] != null) {
+          results.add(map['base'] as String);
         }
-      } catch (e) {
-        // Error handling without debug output
       }
+    } catch (e) {
+      // Error handling without debug output
     }
 
     return results.toList();
@@ -227,51 +173,107 @@ class EnglishSearchService {
     final db = await database;
     final results = <String, List<SearchRelation>>{};
 
-    // spelling_variant: (word1, word2) - 两个互为变体
-    await _searchTwoColumnTableWithRelations(
-      db,
-      'spelling_variant',
-      'word1',
-      'word2',
-      word,
-      results,
-      '拼写变体',
-    );
+    final futures = [
+      _searchTwoColumnTableWithRelations(
+        db,
+        'spelling_variant',
+        'word1',
+        'word2',
+        word,
+        '拼写变体',
+      ),
+      _searchTwoColumnTableWithRelations(
+        db,
+        'abbreviation',
+        'base',
+        'full_form',
+        word,
+        '缩写',
+      ),
+      _searchTwoColumnTableWithRelations(
+        db,
+        'acronym',
+        'base',
+        'full_form',
+        word,
+        '首字母缩写',
+      ),
+      _searchTwoColumnTableWithRelations(
+        db,
+        'nominalization',
+        'base',
+        'nominal',
+        word,
+        '名词化',
+      ),
+      _searchInflectionWithRelations(db, word),
+    ];
 
-    // abbreviation: (base, full_form)
-    await _searchTwoColumnTableWithRelations(
-      db,
-      'abbreviation',
-      'base',
-      'full_form',
-      word,
-      results,
-      '缩写',
-    );
+    final allResults = await Future.wait(futures);
+    for (final map in allResults) {
+      for (final entry in map.entries) {
+        results.putIfAbsent(entry.key, () => []).addAll(entry.value);
+      }
+    }
 
-    // acronym: (base, full_form)
-    await _searchTwoColumnTableWithRelations(
-      db,
-      'acronym',
-      'base',
-      'full_form',
-      word,
-      results,
-      '首字母缩写',
-    );
+    return results;
+  }
 
-    // nominalization: (base, nominal)
-    await _searchTwoColumnTableWithRelations(
-      db,
-      'nominalization',
-      'base',
-      'nominal',
-      word,
-      results,
-      '名词化',
-    );
+  Future<Map<String, List<SearchRelation>>> _searchTwoColumnTableWithRelations(
+    Database db,
+    String table,
+    String col1,
+    String col2,
+    String word,
+    String relationDesc,
+  ) async {
+    final results = <String, List<SearchRelation>>{};
+    try {
+      final maps = await db.query(
+        table,
+        columns: [col1, col2],
+        where: '$col1 = ? OR $col2 = ?',
+        whereArgs: [word, word],
+      );
 
-    // inflection: (base, plural, past, past_part, pres_part, third_sing, comp, superl)
+      for (final map in maps) {
+        final val1 = map[col1] as String?;
+        final val2 = map[col2] as String?;
+        if (val1 == word && val2 != null) {
+          results
+              .putIfAbsent(val2, () => [])
+              .add(
+                SearchRelation(
+                  originalWord: word,
+                  mappedWord: val2,
+                  relationType: table,
+                  description: relationDesc,
+                ),
+              );
+        } else if (val2 == word && val1 != null) {
+          results
+              .putIfAbsent(val1, () => [])
+              .add(
+                SearchRelation(
+                  originalWord: word,
+                  mappedWord: val1,
+                  relationType: table,
+                  description: relationDesc,
+                ),
+              );
+        }
+      }
+    } catch (e) {
+      // Error handling without debug output
+    }
+    return results;
+  }
+
+  Future<Map<String, List<SearchRelation>>> _searchInflectionWithRelations(
+    Database db,
+    String word,
+  ) async {
+    final results = <String, List<SearchRelation>>{};
     final inflectionCols = {
       'plural': '复数形式',
       'past': '过去式',
@@ -282,100 +284,48 @@ class EnglishSearchService {
       'superl': '最高级',
     };
 
-    for (final entry in inflectionCols.entries) {
-      final col = entry.key;
-      final desc = entry.value;
-
-      try {
-        final maps = await db.query(
-          'inflection',
-          columns: ['base'],
-          where: '$col = ?',
-          whereArgs: [word],
-        );
-
-        for (final map in maps) {
-          final baseWord = map['base'] as String?;
-          if (baseWord != null) {
-            results
-                .putIfAbsent(baseWord, () => [])
-                .add(
-                  SearchRelation(
-                    originalWord: word,
-                    mappedWord: baseWord,
-                    relationType: 'inflection',
-                    description: desc,
-                  ),
-                );
-          }
-        }
-      } catch (e) {
-        // Error handling without debug output
-      }
-    }
-
-    return results;
-  }
-
-  Future<void> _searchTwoColumnTableWithRelations(
-    Database db,
-    String table,
-    String col1,
-    String col2,
-    String word,
-    Map<String, List<SearchRelation>> results,
-    String relationDesc,
-  ) async {
     try {
-      // 正向查询：col1 -> col2
       final maps = await db.query(
-        table,
-        columns: [col2],
-        where: '$col1 = ?',
-        whereArgs: [word],
+        'inflection',
+        columns: [
+          'base',
+          'plural',
+          'past',
+          'past_part',
+          'pres_part',
+          'third_sing',
+          'comp',
+          'superl',
+        ],
+        where:
+            'plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
+        whereArgs: [word, word, word, word, word, word, word],
       );
 
       for (final map in maps) {
-        final mappedWord = map[col2] as String?;
-        if (mappedWord != null) {
-          results
-              .putIfAbsent(mappedWord, () => [])
-              .add(
-                SearchRelation(
-                  originalWord: word,
-                  mappedWord: mappedWord,
-                  relationType: table,
-                  description: relationDesc,
-                ),
-              );
-        }
-      }
-
-      // 反向查询：col2 -> col1
-      final reverseMaps = await db.query(
-        table,
-        columns: [col1],
-        where: '$col2 = ?',
-        whereArgs: [word],
-      );
-
-      for (final map in reverseMaps) {
-        final mappedWord = map[col1] as String?;
-        if (mappedWord != null) {
-          results
-              .putIfAbsent(mappedWord, () => [])
-              .add(
-                SearchRelation(
-                  originalWord: word,
-                  mappedWord: mappedWord,
-                  relationType: table,
-                  description: relationDesc,
-                ),
-              );
+        final baseWord = map['base'] as String?;
+        if (baseWord != null) {
+          for (final entry in inflectionCols.entries) {
+            final col = entry.key;
+            final desc = entry.value;
+            if (map[col] == word) {
+              results
+                  .putIfAbsent(baseWord, () => [])
+                  .add(
+                    SearchRelation(
+                      originalWord: word,
+                      mappedWord: baseWord,
+                      relationType: 'inflection',
+                      description: desc,
+                    ),
+                  );
+            }
+          }
         }
       }
     } catch (e) {
       // Error handling without debug output
     }
+    return results;
   }
 }

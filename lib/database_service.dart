@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
@@ -8,6 +9,50 @@ import 'services/dictionary_manager.dart';
 import 'services/english_search_service.dart';
 import 'services/database_initializer.dart';
 import 'logger.dart';
+
+Map<String, dynamic> _parseJsonInIsolate(String jsonStr) {
+  return Map<String, dynamic>.from(jsonDecode(jsonStr) as Map);
+}
+
+class JsonParseParams {
+  final String jsonStr;
+  final String dictId;
+  final Map<String, dynamic> row;
+  final bool exactMatch;
+  final String originalWord;
+
+  JsonParseParams({
+    required this.jsonStr,
+    required this.dictId,
+    required this.row,
+    required this.exactMatch,
+    required this.originalWord,
+  });
+}
+
+DictionaryEntry? _parseEntryInIsolate(JsonParseParams params) {
+  final jsonData = jsonDecode(params.jsonStr) as Map<String, dynamic>;
+
+  if (params.exactMatch) {
+    final headword = jsonData['headword'] as String? ?? '';
+    if (headword != params.originalWord) return null;
+  }
+
+  String entryId = jsonData['id']?.toString() ?? '';
+  if (entryId.isEmpty) {
+    final rawEntryId = params.row['entry_id'];
+    final entryIdStr = rawEntryId?.toString() ?? '';
+    entryId = '${params.dictId}_$entryIdStr';
+    jsonData['id'] = entryId;
+    jsonData['entry_id'] = entryId;
+  } else if (!entryId.startsWith('${params.dictId}_')) {
+    entryId = '${params.dictId}_$entryId';
+    jsonData['id'] = entryId;
+    jsonData['entry_id'] = entryId;
+  }
+
+  return DictionaryEntry.fromJson(jsonData);
+}
 
 /// 搜索结果，包含 entries 和关系信息
 class SearchResult {
@@ -45,6 +90,7 @@ class DictionaryEntry {
   final Map<String, dynamic>? theasaruses;
   final List<Map<String, dynamic>> senseGroups;
   final List<String> hiddenLanguages;
+  final Map<String, dynamic> _rawJson;
 
   DictionaryEntry({
     required this.id,
@@ -67,7 +113,8 @@ class DictionaryEntry {
     this.theasaruses,
     this.senseGroups = const [],
     this.hiddenLanguages = const [],
-  });
+    Map<String, dynamic>? rawJson,
+  }) : _rawJson = rawJson ?? {};
 
   factory DictionaryEntry.fromJson(Map<String, dynamic> json) {
     try {
@@ -146,6 +193,7 @@ class DictionaryEntry {
                   .where((e) => e.isNotEmpty)
                   .toList()
             : [],
+        rawJson: Map<String, dynamic>.from(json),
       );
     } catch (e) {
       rethrow;
@@ -153,6 +201,9 @@ class DictionaryEntry {
   }
 
   Map<String, dynamic> toJson() {
+    if (_rawJson.isNotEmpty) {
+      return Map<String, dynamic>.from(_rawJson);
+    }
     return {
       'entry_id': id,
       if (dictId != null) 'dict_id': dictId,
@@ -173,8 +224,6 @@ class DictionaryEntry {
       if (phrases != null) 'phrases': phrases,
       if (theasaruses != null) 'theasaruses': theasaruses,
       'sense_groups': senseGroups,
-      // 注意：hidden_languages 不保存到数据库，只在内存中使用
-      // 'hidden_languages': hiddenLanguages,
     };
   }
 }
@@ -307,13 +356,12 @@ class DatabaseService {
   Future<SearchResult> getAllEntries(
     String word, {
     bool useFuzzySearch = false,
-    bool exactMatch = false, // 对应"区分大小写"
+    bool exactMatch = false,
     String? sourceLanguage,
   }) async {
     var entries = <DictionaryEntry>[];
     var relations = <String, List<SearchRelation>>{};
 
-    // 1. 尝试直接搜索
     entries = await _searchEntriesInternal(
       word,
       useFuzzySearch: useFuzzySearch,
@@ -321,9 +369,7 @@ class DatabaseService {
       sourceLanguage: sourceLanguage,
     );
 
-    // 2. 如果没有结果，且未开启模糊搜索，且是英语环境，尝试辅助搜索
     if (entries.isEmpty && !useFuzzySearch) {
-      // 检查语言环境
       String? targetLang = sourceLanguage;
       if (targetLang == 'auto') {
         targetLang = _detectLanguage(word);
@@ -335,14 +381,19 @@ class DatabaseService {
         try {
           relations = await englishService.searchWithRelations(word);
 
-          for (final relatedWord in relations.keys) {
-            final relatedEntries = await _searchEntriesInternal(
+          final relatedWords = relations.keys.toList();
+          final futures = relatedWords.map((relatedWord) {
+            return _searchEntriesInternal(
               relatedWord,
               useFuzzySearch: false,
               exactMatch: exactMatch,
               sourceLanguage: sourceLanguage,
             );
-            entries.addAll(relatedEntries);
+          }).toList();
+
+          final results = await Future.wait(futures);
+          for (final result in results) {
+            entries.addAll(result);
           }
         } catch (e) {
           // Error handling without debug output
@@ -357,73 +408,110 @@ class DatabaseService {
     );
   }
 
-  /// 内部搜索方法：针对特定单词在所有启用词典中搜索
   Future<List<DictionaryEntry>> _searchEntriesInternal(
     String word, {
     required bool useFuzzySearch,
     required bool exactMatch,
     String? sourceLanguage,
   }) async {
-    final entries = <DictionaryEntry>[];
     final dictManager = DictionaryManager();
     final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
 
-    // 处理自动分组
     String? targetLang = sourceLanguage;
     if (targetLang == 'auto') {
       targetLang = _detectLanguage(word);
     }
 
-    for (final metadata in enabledDicts) {
-      // 过滤语言
+    final filteredDicts = enabledDicts.where((metadata) {
       if (targetLang != null && targetLang != metadata.sourceLanguage) {
-        continue;
+        return false;
+      }
+      return true;
+    }).toList();
+
+    final futures = filteredDicts.map((metadata) async {
+      return await _searchInDictionary(
+        metadata.id,
+        word,
+        useFuzzySearch: useFuzzySearch,
+        exactMatch: exactMatch,
+      );
+    }).toList();
+
+    final results = await Future.wait(futures);
+    return results.expand((list) => list).toList();
+  }
+
+  Future<List<DictionaryEntry>> _searchInDictionary(
+    String dictId,
+    String word, {
+    required bool useFuzzySearch,
+    required bool exactMatch,
+  }) async {
+    final entries = <DictionaryEntry>[];
+
+    try {
+      final db = await _dictManager.openDictionaryDatabase(dictId);
+
+      String whereClause;
+      List<dynamic> whereArgs;
+
+      if (useFuzzySearch) {
+        whereClause = 'headword_normalized LIKE ?';
+        whereArgs = ['%${_normalizeSearchWord(word)}%'];
+      } else {
+        whereClause = 'headword_normalized = ?';
+        whereArgs = [_normalizeSearchWord(word)];
       }
 
-      try {
-        final db = await dictManager.openDictionaryDatabase(metadata.id);
+      final results = await db.query(
+        'entries',
+        where: whereClause,
+        whereArgs: whereArgs,
+        orderBy: 'entry_id ASC',
+      );
 
-        // Step 1: 基础检索 (headword_normalized)
-        // 无论是否模糊搜索，都将搜索词小写化后匹配 headword_normalized
-        String whereClause;
-        List<dynamic> whereArgs;
+      for (final row in results) {
+        final jsonStr = row['json_data'] as String;
 
-        if (useFuzzySearch) {
-          // 模糊搜索
-          whereClause = 'headword_normalized LIKE ?';
-          whereArgs = ['%${_normalizeSearchWord(word)}%'];
-        } else {
-          // 直接搜索 (精确匹配 normalized 字段)
-          whereClause = 'headword_normalized = ?';
-          whereArgs = [_normalizeSearchWord(word)];
-        }
-
-        final results = await db.query(
-          'entries',
-          where: whereClause,
-          whereArgs: whereArgs,
-          orderBy: 'entry_id ASC',
-        );
-
-        for (final row in results) {
-          final jsonStr = row['json_data'] as String;
+        DictionaryEntry? entry;
+        if (kIsWeb) {
           final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-          // Step 2: 区分大小写过滤
           if (exactMatch) {
             final headword = jsonData['headword'] as String? ?? '';
-            // 如果开启区分大小写，则要求 headword 与原始搜索词完全一致
             if (headword != word) continue;
           }
-
-          _ensureEntryId(jsonData, row, metadata.id);
-          entries.add(DictionaryEntry.fromJson(jsonData));
+          _ensureEntryId(jsonData, row, dictId);
+          entry = DictionaryEntry.fromJson(jsonData);
+        } else {
+          try {
+            entry = await compute(
+              _parseEntryInIsolate,
+              JsonParseParams(
+                jsonStr: jsonStr,
+                dictId: dictId,
+                row: row,
+                exactMatch: exactMatch,
+                originalWord: word,
+              ),
+            );
+          } catch (e) {
+            final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
+            if (exactMatch) {
+              final headword = jsonData['headword'] as String? ?? '';
+              if (headword != word) continue;
+            }
+            _ensureEntryId(jsonData, row, dictId);
+            entry = DictionaryEntry.fromJson(jsonData);
+          }
         }
 
-        await db.close();
-      } catch (e) {
-        // Error handling without debug output
+        if (entry != null) {
+          entries.add(entry);
+        }
       }
+    } catch (e) {
+      // Error handling without debug output
     }
 
     return entries;
@@ -476,8 +564,6 @@ class DatabaseService {
     }
   }
 
-  /// 前缀搜索 - 用于边打边搜功能
-  /// 返回匹配前缀的单词列表（去重，限制数量）
   Future<List<String>> searchByPrefix(
     String prefix, {
     int limit = 10,
@@ -486,25 +572,24 @@ class DatabaseService {
     if (prefix.isEmpty) return [];
 
     final results = <String>{};
-    final dictManager = DictionaryManager();
-    final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
+    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
 
-    // 处理自动分组
     String? targetLang = sourceLanguage;
     if (targetLang == 'auto') {
       targetLang = _detectLanguage(prefix);
     }
 
-    for (final metadata in enabledDicts) {
-      // 过滤语言
+    final filteredDicts = enabledDicts.where((metadata) {
       if (targetLang != null && targetLang != metadata.sourceLanguage) {
-        continue;
+        return false;
       }
+      return true;
+    }).toList();
 
+    final futures = filteredDicts.map((metadata) async {
       try {
-        final db = await dictManager.openDictionaryDatabase(metadata.id);
+        final db = await _dictManager.openDictionaryDatabase(metadata.id);
 
-        // 前缀搜索始终使用 headword_normalized
         const whereClause = 'headword_normalized LIKE ?';
         final whereArgs = ['${_normalizeSearchWord(prefix)}%'];
 
@@ -517,19 +602,23 @@ class DatabaseService {
           limit: limit,
         );
 
-        for (final row in queryResults) {
-          final headword = row['headword'] as String?;
-          if (headword != null && headword.isNotEmpty) {
-            results.add(headword);
-            if (results.length >= limit) break;
-          }
-        }
-
-        await db.close();
-        if (results.length >= limit) break;
+        return queryResults
+            .map((row) => row['headword'] as String?)
+            .where((h) => h != null && h.isNotEmpty)
+            .cast<String>()
+            .toList();
       } catch (e) {
-        // Error handling without debug output
+        return <String>[];
       }
+    }).toList();
+
+    final allResults = await Future.wait(futures);
+    for (final dictResults in allResults) {
+      for (final headword in dictResults) {
+        results.add(headword);
+        if (results.length >= limit) break;
+      }
+      if (results.length >= limit) break;
     }
 
     return results.toList()..sort();
@@ -551,52 +640,39 @@ class DatabaseService {
       }
 
       final dictManager = DictionaryManager();
-      final dbPath = await dictManager.getDictionaryDbPath(dictId);
+      final db = await dictManager.openDictionaryDatabase(dictId);
 
-      if (!await File(dbPath).exists()) {
+      final json = entry.toJson();
+      json.remove('id');
+
+      final jsonStr = jsonEncode(json);
+
+      final String idStr = entry.id;
+      int? entryId;
+
+      entryId = int.tryParse(idStr);
+
+      if (entryId == null && idStr.contains('_')) {
+        final parts = idStr.split('_');
+        if (parts.length >= 2) {
+          entryId = int.tryParse(parts.last);
+        }
+      }
+
+      if (entryId == null) {
         return false;
       }
 
-      // 使用统一的数据库初始化器
-      DatabaseInitializer().initialize();
+      final result = await db.update(
+        'entries',
+        {'json_data': jsonStr},
+        where: 'entry_id = ?',
+        whereArgs: [entryId],
+      );
 
-      final db = await openDatabase(dbPath, readOnly: false);
-
-      try {
-        final jsonStr = jsonEncode(entry.toJson());
-
-        // 从 entry.id 中提取纯数字的 entry_id
-        // entry.id 格式可能是 "dictId_entryId" 或直接是 "entryId"
-        final String idStr = entry.id;
-        int? entryId;
-
-        // 尝试直接解析
-        entryId = int.tryParse(idStr);
-
-        // 如果失败，尝试从 "dictId_entryId" 格式中提取
-        if (entryId == null && idStr.contains('_')) {
-          final parts = idStr.split('_');
-          if (parts.length >= 2) {
-            entryId = int.tryParse(parts.last);
-          }
-        }
-
-        if (entryId == null) {
-          return false;
-        }
-
-        final result = await db.update(
-          'entries',
-          {'json_data': jsonStr},
-          where: 'entry_id = ?',
-          whereArgs: [entryId],
-        );
-
-        return result > 0;
-      } finally {
-        await db.close();
-      }
+      return result > 0;
     } catch (e) {
+      Logger.e('更新词条失败: $e', tag: 'DatabaseService', error: e);
       return false;
     }
   }

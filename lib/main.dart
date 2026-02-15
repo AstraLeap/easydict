@@ -1,47 +1,46 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dictionary_search.dart';
 import 'theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'word_bank_page.dart';
 import 'pages/dictionary_manager_page.dart';
+import 'pages/font_config_page.dart';
 import 'pages/help_page.dart';
 import 'pages/llm_config_page.dart';
+import 'pages/theme_color_page.dart';
 import 'services/ai_chat_database_service.dart';
 import 'services/download_manager.dart';
 import 'services/english_db_service.dart';
 import 'services/database_initializer.dart';
 import 'services/preferences_service.dart';
 import 'services/media_kit_manager.dart';
+import 'services/font_loader_service.dart';
 import 'utils/toast_utils.dart';
 import 'utils/dpi_utils.dart';
 import 'logger.dart';
-import 'components/theme_mode_selector.dart';
 import 'components/window_buttons.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 检查是否是热重启，如果是则先清理资源
-  // 这可以避免 "Callback invoked after it has been deleted" 错误
-  if (WidgetsBinding.instance is WidgetsFlutterBinding) {
-    // 在热重启时，先清理所有 MediaKit 资源
+  try {
     await MediaKitManager().disposeAllPlayers();
+  } catch (e) {
+    Logger.w('热重启清理 MediaKit 资源时出错: $e', tag: 'main');
   }
 
-  // 初始化 media_kit
+  await Future.delayed(const Duration(milliseconds: 100));
+
   MediaKit.ensureInitialized();
 
-  // 初始化数据库（只执行一次）
   DatabaseInitializer().initialize();
 
-  // 打印用户配置文件目录
   try {
     final appDir = await getApplicationSupportDirectory();
     Logger.i('======================================', tag: 'Config');
@@ -52,10 +51,14 @@ void main() async {
     Logger.e('获取配置目录失败: $e', tag: 'Config');
   }
 
+  final prefs = await SharedPreferences.getInstance();
+
+  await FontLoaderService().initialize();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => ThemeProvider()),
+        ChangeNotifierProvider(create: (context) => ThemeProvider(prefs)),
         ChangeNotifierProvider(create: (context) => DownloadManager()),
       ],
       child: const MyApp(),
@@ -111,8 +114,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return MaterialApp(
           title: 'EasyDict',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme(),
-          darkTheme: AppTheme.darkTheme(),
+          theme: AppTheme.lightTheme(seedColor: themeProvider.seedColor),
+          darkTheme: AppTheme.darkTheme(seedColor: themeProvider.seedColor),
           themeMode: themeProvider.getThemeMode(),
           home: const MainScreen(),
         );
@@ -131,11 +134,24 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = const [
-    DictionarySearchPage(),
-    WordBankPage(),
-    SettingsPage(),
+  final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
+
+  List<Widget> get _pages => [
+    const DictionarySearchPage(),
+    WordBankPage(key: _wordBankPageKey),
+    const SettingsPage(),
   ];
+
+  void _onTabSelected(int index) {
+    if (_selectedIndex != index) {
+      setState(() {
+        _selectedIndex = index;
+      });
+      if (index == 1) {
+        _wordBankPageKey.currentState?.loadWordsIfNeeded();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,11 +159,7 @@ class _MainScreenState extends State<MainScreen> {
       body: IndexedStack(index: _selectedIndex, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (int index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        onDestinationSelected: _onTabSelected,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.search_outlined),
@@ -424,6 +436,31 @@ class _SettingsPageState extends State<SettingsPage> {
     return label == action ? '切换翻译' : label;
   }
 
+  String _getThemeColorName(Color color) {
+    // 检查是否是系统主题色
+    if (color.toARGB32() == ThemeProvider.systemAccentColor.toARGB32()) {
+      return '系统主题色';
+    }
+    final colorNames = {
+      Colors.blue.toARGB32(): '蓝色',
+      Colors.indigo.toARGB32(): '靛蓝色',
+      Colors.purple.toARGB32(): '紫色',
+      Colors.deepPurple.toARGB32(): '深紫色',
+      Colors.pink.toARGB32(): '粉色',
+      Colors.red.toARGB32(): '红色',
+      Colors.deepOrange.toARGB32(): '深橙色',
+      Colors.orange.toARGB32(): '橙色',
+      Colors.amber.toARGB32(): '琥珀色',
+      Colors.yellow.toARGB32(): '黄色',
+      Colors.lime.toARGB32(): '青柠色',
+      Colors.lightGreen.toARGB32(): '浅绿色',
+      Colors.green.toARGB32(): '绿色',
+      Colors.teal.toARGB32(): '青色',
+      Colors.cyan.toARGB32(): '天蓝色',
+    };
+    return colorNames[color.toARGB32()] ?? '自定义';
+  }
+
   void _showClickActionDialog() async {
     final currentOrder = await _preferencesService.getClickActionOrder();
 
@@ -466,6 +503,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: '词典管理',
                       icon: Icons.folder_outlined,
                       iconColor: colorScheme.primary,
+                      showArrow: true,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -480,11 +518,27 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: 'AI 配置',
                       icon: Icons.auto_awesome,
                       iconColor: colorScheme.primary,
+                      showArrow: true,
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const LLMConfigPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildSettingsTile(
+                      context,
+                      title: '显示与字体',
+                      icon: Icons.font_download_outlined,
+                      iconColor: colorScheme.primary,
+                      showArrow: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const FontConfigPage(),
                           ),
                         );
                       },
@@ -496,10 +550,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 _buildSettingsGroup(
                   context,
                   children: [
-                    _buildThemeModeSelector(
+                    _buildSettingsTile(
                       context,
-                      themeProvider,
-                      colorScheme,
+                      title: '主题设置',
+                      subtitle: _getThemeColorName(themeProvider.seedColor),
+                      icon: Icons.palette_outlined,
+                      iconColor: colorScheme.primary,
+                      showArrow: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ThemeColorPage(),
+                          ),
+                        );
+                      },
                     ),
                     if (!_isLoading)
                       _buildSettingsTile(
@@ -508,7 +573,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         subtitle: _getClickActionLabel(_clickAction),
                         icon: Icons.touch_app_outlined,
                         iconColor: colorScheme.primary,
-                        showArrow: true,
                         onTap: _showClickActionDialog,
                       ),
                     _buildSettingsTile(
@@ -535,7 +599,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     _buildSettingsTile(
                       context,
-                      title: '使用帮助',
+                      title: '帮助与反馈',
                       icon: Icons.help_outline,
                       iconColor: colorScheme.primary,
                       showArrow: true,
@@ -548,95 +612,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         );
                       },
                     ),
-                    _buildSettingsTile(
-                      context,
-                      title: '词典反馈',
-                      icon: Icons.feedback,
-                      iconColor: colorScheme.primary,
-                      onTap: () async {},
-                    ),
-                    _buildSettingsTile(
-                      context,
-                      title: 'GitHub',
-                      icon: Icons.code,
-                      iconColor: colorScheme.primary,
-                      isExternal: true,
-                      onTap: () async {
-                        final url = Uri.parse(
-                          'https://github.com/AstraLeap/easydict',
-                        );
-                        if (await canLaunchUrl(url)) {
-                          await launchUrl(
-                            url,
-                            mode: LaunchMode.externalApplication,
-                          );
-                        }
-                      },
-                    ),
-                    _buildSettingsTile(
-                      context,
-                      title: '爱发电',
-                      icon: Icons.favorite,
-                      iconColor: colorScheme.primary,
-                      isExternal: true,
-                      onTap: () async {
-                        final url = Uri.parse('https://afdian.com/a/karx_');
-                        if (await canLaunchUrl(url)) {
-                          await launchUrl(
-                            url,
-                            mode: LaunchMode.externalApplication,
-                          );
-                        }
-                      },
-                    ),
                   ],
-                ),
-                const SizedBox(height: 32),
-                // 版本信息
-                Center(
-                  child: Text(
-                    'EasyDict v1.0.0',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
-                  ),
                 ),
                 const SizedBox(height: 40),
               ]),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildThemeModeSelector(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    ColorScheme colorScheme,
-  ) {
-    return ListTile(
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: DpiUtils.scale(context, 16),
-        vertical: DpiUtils.scale(context, 4),
-      ),
-      leading: Icon(
-        Icons.dark_mode_outlined,
-        color: colorScheme.primary,
-        size: DpiUtils.scaleIconSize(context, 18),
-      ),
-      title: Text(
-        '主题模式',
-        style: TextStyle(
-          fontSize: DpiUtils.scaleFontSize(context, 13),
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      trailing: ThemeModeSelector(
-        themeMode: themeProvider.themeMode,
-        onThemeChanged: (mode) {
-          themeProvider.setThemeMode(mode);
-        },
       ),
     );
   }
@@ -1042,8 +1024,8 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
 
     return AlertDialog(
       title: const Text('点击动作设置'),
-      content: SizedBox(
-        width: double.maxFinite,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,34 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ThemeModeOption {
-  light,
-  dark,
-  system,
-}
+enum ThemeModeOption { light, dark, system }
 
 class ThemeProvider with ChangeNotifier {
+  final SharedPreferences _prefs;
   ThemeModeOption _themeMode = ThemeModeOption.system;
   bool _notificationsEnabled = true;
+  Color _seedColor = Colors.blue;
 
   ThemeModeOption get themeMode => _themeMode;
   bool get notificationsEnabled => _notificationsEnabled;
+  Color get seedColor => _seedColor;
 
   static const String _prefKeyThemeMode = 'theme_mode';
   static const String _prefKeyNotifications = 'notifications_enabled';
+  static const String _prefKeySeedColor = 'seed_color';
 
-  ThemeProvider() {
+  static const List<Color> predefinedColors = [
+    Colors.blue,
+    Colors.indigo,
+    Colors.purple,
+    Colors.deepPurple,
+    Colors.pink,
+    Colors.red,
+    Colors.deepOrange,
+    Colors.orange,
+    Colors.amber,
+    Colors.yellow,
+    Colors.lime,
+    Colors.lightGreen,
+    Colors.green,
+    Colors.teal,
+    Colors.cyan,
+  ];
+
+  // 系统主题色（动态颜色）
+  static const Color systemAccentColor = Color(0xFF000001);
+
+  ThemeProvider(this._prefs) {
     _loadPreferences();
   }
 
-  Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    final themeModeIndex = prefs.getInt(_prefKeyThemeMode);
-    if (themeModeIndex != null && themeModeIndex >= 0 && themeModeIndex < ThemeModeOption.values.length) {
+  void _loadPreferences() {
+    final themeModeIndex = _prefs.getInt(_prefKeyThemeMode);
+    if (themeModeIndex != null &&
+        themeModeIndex >= 0 &&
+        themeModeIndex < ThemeModeOption.values.length) {
       _themeMode = ThemeModeOption.values[themeModeIndex];
     }
-    _notificationsEnabled = prefs.getBool(_prefKeyNotifications) ?? true;
-    notifyListeners();
+    _notificationsEnabled = _prefs.getBool(_prefKeyNotifications) ?? true;
+
+    final seedColorValue = _prefs.getInt(_prefKeySeedColor);
+    if (seedColorValue != null) {
+      _seedColor = Color(seedColorValue);
+    }
   }
 
   Future<void> setThemeMode(ThemeModeOption mode) async {
@@ -36,8 +62,15 @@ class ThemeProvider with ChangeNotifier {
     _themeMode = mode;
     notifyListeners();
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_prefKeyThemeMode, mode.index);
+    await _prefs.setInt(_prefKeyThemeMode, mode.index);
+  }
+
+  Future<void> setSeedColor(Color color) async {
+    if (_seedColor == color) return;
+    _seedColor = color;
+    notifyListeners();
+
+    await _prefs.setInt(_prefKeySeedColor, color.toARGB32());
   }
 
   Future<void> setNotificationsEnabled(bool enabled) async {
@@ -45,8 +78,7 @@ class ThemeProvider with ChangeNotifier {
     _notificationsEnabled = enabled;
     notifyListeners();
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefKeyNotifications, enabled);
+    await _prefs.setBool(_prefKeyNotifications, enabled);
   }
 
   ThemeMode getThemeMode() {

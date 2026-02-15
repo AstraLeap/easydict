@@ -47,6 +47,7 @@ class _WordBankPageState extends State<WordBankPage> {
   bool _isInitialLoading = true;
   bool _isLoadingWords = false;
   bool _isLoadingMore = false;
+  bool _wordsLoaded = false;
   String _searchQuery = '';
   SortMode _currentSortMode = SortMode.addTimeDesc;
   String? _selectedList; // 选中的词表筛选
@@ -60,13 +61,18 @@ class _WordBankPageState extends State<WordBankPage> {
   @override
   void initState() {
     super.initState();
-    _loadData();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> loadWordsIfNeeded() async {
+    if (_wordsLoaded) return;
+    _wordsLoaded = true;
+    await _loadData();
   }
 
   Future<void> _loadData() async {

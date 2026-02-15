@@ -12,6 +12,7 @@ import '../services/download_manager.dart';
 import '../models/dictionary_metadata.dart';
 import '../models/remote_dictionary.dart';
 import '../logger.dart';
+import '../utils/language_utils.dart';
 import '../utils/toast_utils.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
@@ -115,6 +116,28 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       _storeService?.dispose();
       _storeService = DictionaryStoreService(baseUrl: url);
       _loadOnlineDictionaries();
+    } else {
+      setState(() {
+        _onlineDictionaries = [];
+        _onlineError = null;
+      });
+    }
+
+    if (mounted) {
+      showToast(context, '在线订阅地址已保存');
+    }
+  }
+
+  Future<void> _saveAndRefreshOnlineDictionaries() async {
+    // 先保存URL
+    final url = _urlController.text.trim();
+    await _dictManager.setOnlineSubscriptionUrl(url);
+
+    if (url.isNotEmpty) {
+      _storeService?.dispose();
+      _storeService = DictionaryStoreService(baseUrl: url);
+      // 然后刷新列表
+      await _loadOnlineDictionaries();
     } else {
       setState(() {
         _onlineDictionaries = [];
@@ -258,7 +281,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               isScrollable: true,
               tabAlignment: TabAlignment.start,
               tabs: languages
-                  .map((lang) => Tab(text: lang.toUpperCase()))
+                  .map(
+                    (lang) =>
+                        Tab(text: LanguageUtils.getLanguageDisplayName(lang)),
+                  )
                   .toList(),
             ),
           ),
@@ -268,7 +294,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 final dicts = _allDictionaries
                     .where((d) => d.sourceLanguage == lang)
                     .toList();
-                return _buildLanguageDictionaryList(dicts);
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: _buildLanguageDictionaryList(dicts),
+                  ),
+                );
               }).toList(),
             ),
           ),
@@ -370,107 +401,122 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   /// Tab2: 在线订阅 - 包含本地目录设置、订阅网址、在线词典列表
   Widget _buildSettingsAndSubscriptionTab() {
-    return CustomScrollView(
-      slivers: [
-        // 本地目录设置
-        SliverToBoxAdapter(child: _buildCurrentDirectoryCard()),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: CustomScrollView(
+          slivers: [
+            // 本地目录设置
+            SliverToBoxAdapter(child: _buildCurrentDirectoryCard()),
 
-        // 在线订阅设置
-        SliverToBoxAdapter(child: _buildOnlineSubscriptionCard()),
+            // 在线订阅设置
+            SliverToBoxAdapter(child: _buildOnlineSubscriptionCard()),
 
-        // 在线词典列表标题
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Row(
-              children: [
-                const Icon(Icons.cloud, color: Colors.blue, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  '在线词典列表',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                if (_isLoadingOnline)
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else if (_onlineDictionaries.isNotEmpty)
-                  Text(
-                    '${_onlineDictionaries.length} 个',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-              ],
-            ),
-          ),
-        ),
-
-        // 错误提示
-        if (_onlineError != null)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Card(
-                color: Colors.red[50],
-                child: ListTile(
-                  leading: const Icon(Icons.error, color: Colors.red),
-                  title: Text('加载失败', style: TextStyle(color: Colors.red[700])),
-                  subtitle: Text(_onlineError!),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: _loadOnlineDictionaries,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-        // 在线词典列表
-        if (_onlineDictionaries.isEmpty && !_isLoadingOnline)
-          SliverToBoxAdapter(
-            child: Center(
+            // 在线词典列表标题
+            SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Column(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                child: Row(
                   children: [
-                    Icon(
-                      Icons.cloud_off,
-                      size: 48,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      '暂无在线词典',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '设置订阅地址后点击刷新按钮',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                    const Icon(Icons.cloud, color: Colors.blue, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '在线词典列表',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
+                    const Spacer(),
+                    if (_isLoadingOnline)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else if (_onlineDictionaries.isNotEmpty)
+                      Text(
+                        '${_onlineDictionaries.length} 个',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
                   ],
                 ),
               ),
             ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) =>
-                    _buildOnlineDictionaryCard(_onlineDictionaries[index]),
-                childCount: _onlineDictionaries.length,
-              ),
-            ),
-          ),
 
-        const SliverToBoxAdapter(child: SizedBox(height: 80)),
-      ],
+            // 错误提示
+            if (_onlineError != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Card(
+                    color: Colors.red[50],
+                    child: ListTile(
+                      leading: const Icon(Icons.error, color: Colors.red),
+                      title: Text(
+                        '加载失败',
+                        style: TextStyle(color: Colors.red[700]),
+                      ),
+                      subtitle: Text(_onlineError!),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _loadOnlineDictionaries,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // 在线词典列表
+            if (_onlineDictionaries.isEmpty && !_isLoadingOnline)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.cloud_off,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '暂无在线词典',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '设置订阅地址后点击刷新按钮',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) =>
+                        _buildOnlineDictionaryCard(_onlineDictionaries[index]),
+                    childCount: _onlineDictionaries.length,
+                  ),
+                ),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 80)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -524,25 +570,38 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               controller: _urlController,
               decoration: InputDecoration(
                 hintText: '请输入词典订阅网址',
-                prefixIcon: const Icon(Icons.language),
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.save),
-                      onPressed: _saveOnlineSubscriptionUrl,
-                      tooltip: '保存',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: _isLoadingOnline
-                          ? null
-                          : _loadOnlineDictionaries,
-                      tooltip: '刷新列表',
-                    ),
-                  ],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                border: const OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                prefixIcon: const Icon(Icons.language_outlined),
+                suffixIcon: IconButton(
+                  icon: _isLoadingOnline
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_outlined),
+                  onPressed: _isLoadingOnline
+                      ? null
+                      : _saveAndRefreshOnlineDictionaries,
+                  tooltip: '保存并刷新',
+                ),
               ),
             ),
             const SizedBox(height: 8),

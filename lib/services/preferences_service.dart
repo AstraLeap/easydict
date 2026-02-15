@@ -37,6 +37,7 @@ class PreferencesService {
   static const String _kClickActionOrder = 'click_action_order';
   static const String _kGlobalTranslationVisibility =
       'global_translation_visibility';
+  static const String _kDictionaryContentScale = 'dictionary_content_scale';
 
   static const String navPositionLeft = 'left';
   static const String navPositionRight = 'right';
@@ -46,10 +47,7 @@ class PreferencesService {
     final position = p.getString(_kNavPanelPosition);
     final dy = p.getDouble('${_kNavPanelPosition}_dy') ?? 0.7;
 
-    return {
-      'isRight': (position != navPositionLeft) ? 1.0 : 0.0,
-      'dy': dy,
-    };
+    return {'isRight': (position != navPositionLeft) ? 1.0 : 0.0, 'dy': dy};
   }
 
   Future<void> setNavPanelPosition(bool isRight, double dy) async {
@@ -126,6 +124,16 @@ class PreferencesService {
     await p.setBool(_kGlobalTranslationVisibility, visible);
   }
 
+  Future<double> getDictionaryContentScale() async {
+    final p = await prefs;
+    return p.getDouble(_kDictionaryContentScale) ?? 1.0;
+  }
+
+  Future<void> setDictionaryContentScale(double scale) async {
+    final p = await prefs;
+    await p.setDouble(_kDictionaryContentScale, scale);
+  }
+
   Future<LLMConfig?> getLLMConfig({bool isFast = false}) async {
     final p = await prefs;
     final prefix = isFast ? 'fast_llm' : 'standard_llm';
@@ -188,7 +196,8 @@ class PreferencesService {
 
     return {
       'provider': provider,
-      'baseUrl': p.getString('tts_base_url') ?? providers[providerIndex]['baseUrl'],
+      'baseUrl':
+          p.getString('tts_base_url') ?? providers[providerIndex]['baseUrl'],
       'apiKey': p.getString('tts_api_key') ?? '',
       'model': p.getString('tts_model') ?? '',
       'voice': voice,
@@ -208,5 +217,115 @@ class PreferencesService {
     await p.setString('tts_base_url', baseUrl);
     await p.setString('tts_model', model);
     await p.setString('tts_voice', voice);
+  }
+
+  static const String _kFontFolderPath = 'font_folder_path';
+
+  Future<String?> getFontFolderPath() async {
+    final p = await prefs;
+    return p.getString(_kFontFolderPath);
+  }
+
+  Future<void> setFontFolderPath(String path) async {
+    final p = await prefs;
+    await p.setString(_kFontFolderPath, path);
+  }
+
+  static const String _kFontConfigPrefix = 'font_config_';
+
+  Future<Map<String, Map<String, String>>> getFontConfigs() async {
+    final p = await prefs;
+    final fontConfigs = <String, Map<String, String>>{};
+    final languages = ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'];
+    final fontTypes = ['serif_regular', 'serif_bold', 'serif_italic', 'serif_bold_italic',
+                        'sans_regular', 'sans_bold', 'sans_italic', 'sans_bold_italic'];
+
+    for (final lang in languages) {
+      final langConfig = <String, String>{};
+      for (final fontType in fontTypes) {
+        final key = '$_kFontConfigPrefix${lang}_$fontType';
+        final value = p.getString(key);
+        if (value != null && value.isNotEmpty) {
+          langConfig[fontType] = value;
+        }
+      }
+      if (langConfig.isNotEmpty) {
+        fontConfigs[lang] = langConfig;
+      }
+    }
+    return fontConfigs;
+  }
+
+  Future<void> setFontConfig({
+    required String language,
+    required String fontType,
+    required String fontPath,
+  }) async {
+    final p = await prefs;
+    final key = '$_kFontConfigPrefix${language}_$fontType';
+    await p.setString(key, fontPath);
+  }
+
+  Future<void> clearFontConfig({
+    required String language,
+    required String fontType,
+  }) async {
+    final p = await prefs;
+    final key = '$_kFontConfigPrefix${language}_$fontType';
+    final existed = p.containsKey(key);
+    await p.remove(key);
+    final removed = !p.containsKey(key);
+    print('[PreferencesService] clearFontConfig: key=$key, existed=$existed, removed=$removed');
+  }
+
+  Future<void> clearAllFontConfigs() async {
+    final p = await prefs;
+    final languages = ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'];
+    final fontTypes = ['serif_regular', 'serif_bold', 'serif_italic', 'serif_bold_italic',
+                        'sans_regular', 'sans_bold', 'sans_italic', 'sans_bold_italic'];
+    for (final lang in languages) {
+      for (final fontType in fontTypes) {
+        final key = '$_kFontConfigPrefix${lang}_$fontType';
+        await p.remove(key);
+      }
+    }
+  }
+
+  static const String _kFontScalePrefix = 'font_scale_';
+
+  Future<double> getFontScale(String language, bool isSerif) async {
+    final p = await prefs;
+    final key = '$_kFontScalePrefix${language}_${isSerif ? 'serif' : 'sans'}';
+    return p.getDouble(key) ?? 1.0;
+  }
+
+  Future<void> setFontScale(String language, bool isSerif, double scale) async {
+    final p = await prefs;
+    final key = '$_kFontScalePrefix${language}_${isSerif ? 'serif' : 'sans'}';
+    await p.setDouble(key, scale);
+  }
+
+  Future<Map<String, Map<String, double>>> getAllFontScales() async {
+    final p = await prefs;
+    final fontScales = <String, Map<String, double>>{};
+    final languages = ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'];
+
+    for (final lang in languages) {
+      final langScales = <String, double>{};
+      final serifKey = '$_kFontScalePrefix${lang}_serif';
+      final sansKey = '$_kFontScalePrefix${lang}_sans';
+      final serifScale = p.getDouble(serifKey);
+      final sansScale = p.getDouble(sansKey);
+      if (serifScale != null) {
+        langScales['serif'] = serifScale;
+      }
+      if (sansScale != null) {
+        langScales['sans'] = sansScale;
+      }
+      if (langScales.isNotEmpty) {
+        fontScales[lang] = langScales;
+      }
+    }
+    return fontScales;
   }
 }
