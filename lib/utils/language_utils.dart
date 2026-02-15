@@ -14,6 +14,7 @@ class LanguageUtils {
       'ru': '俄语',
       'pt': '葡萄牙语',
       'ar': '阿拉伯语',
+      'text': '文本',
     };
     return languageNames[langCode.toLowerCase()] ?? langCode.toUpperCase();
   }

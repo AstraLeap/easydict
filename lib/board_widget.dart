@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'components/dictionary_interaction_scope.dart';
-import 'logger.dart';
 import 'utils/toast_utils.dart';
 import 'utils/dpi_utils.dart';
+import 'services/font_loader_service.dart';
 
 class BoardWidget extends StatefulWidget {
   final Map<String, dynamic> board;
@@ -10,6 +10,10 @@ class BoardWidget extends StatefulWidget {
   contentBuilder;
   final List<String> path;
   final void Function(String path, String label)? onElementTap;
+  final bool forceNested;
+  final bool hideTitle;
+  final Map<String, Map<String, double>>? fontScales;
+  final String? sourceLanguage;
 
   const BoardWidget({
     super.key,
@@ -17,6 +21,10 @@ class BoardWidget extends StatefulWidget {
     required this.contentBuilder,
     required this.path,
     this.onElementTap,
+    this.forceNested = false,
+    this.hideTitle = false,
+    this.fontScales,
+    this.sourceLanguage,
   });
 
   @override
@@ -25,6 +33,25 @@ class BoardWidget extends StatefulWidget {
 
 class _BoardWidgetState extends State<BoardWidget> {
   bool _isCollapsed = false;
+
+  double _getBoardTitleFontScale() {
+    if (widget.fontScales == null || widget.fontScales!.isEmpty) {
+      return 1.0;
+    }
+    final effectiveLang = widget.sourceLanguage ?? 'en';
+    return widget.fontScales?[effectiveLang]?['serif'] ?? 1.0;
+  }
+
+  String? _getBoardTitleFontFamily() {
+    final effectiveLang = widget.sourceLanguage ?? 'en';
+    final fontInfo = FontLoaderService().getFontInfo(
+      effectiveLang,
+      isSerif: true,
+      isBold: false,
+      isItalic: false,
+    );
+    return fontInfo?.fontFamily;
+  }
 
   void _toggleCollapse() {
     setState(() {
@@ -59,22 +86,42 @@ class _BoardWidgetState extends State<BoardWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // Logger.d('Rendering board at path: ${widget.path.join('/')}');
-
     final colorScheme = Theme.of(context).colorScheme;
     final title = widget.board['title'] as String? ?? '';
 
-    // 计算路径中包含多少个 "board"
     final boardCount = widget.path.where((p) => p == 'board').length;
-    final isNested = boardCount >= 2;
+    final inDatas = widget.path.contains('datas');
+    final isNested = boardCount >= 2 || inDatas || widget.forceNested;
 
     final contentBoard = Map<String, dynamic>.from(widget.board)
       ..remove('title')
       ..remove('display');
 
-    // 如果是嵌套的 board（路径中包含两个或更多 "board"），不设置样式，也不可折叠
     if (isNested) {
-      return widget.contentBuilder(contentBoard, widget.path);
+      final boardTitleFontScale = _getBoardTitleFontScale();
+      final boardTitleFontFamily = _getBoardTitleFontFamily();
+      return Container(
+        // margin: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title.isNotEmpty && !widget.hideTitle)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13 * boardTitleFontScale,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                    fontFamily: boardTitleFontFamily,
+                  ),
+                ),
+              ),
+            widget.contentBuilder(contentBoard, widget.path),
+          ],
+        ),
+      );
     }
 
     return Container(
@@ -141,10 +188,14 @@ class _BoardWidgetState extends State<BoardWidget> {
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontSize: DpiUtils.scaleFontSize(context, 13),
+                          fontSize: DpiUtils.scaleFontSize(
+                            context,
+                            13 * _getBoardTitleFontScale(),
+                          ),
                           fontWeight: FontWeight.w600,
                           color: colorScheme.onSecondaryContainer,
                           letterSpacing: 0.2,
+                          fontFamily: _getBoardTitleFontFamily(),
                         ),
                       ),
                     ),

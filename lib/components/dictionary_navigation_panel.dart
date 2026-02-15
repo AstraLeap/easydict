@@ -159,17 +159,21 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
   OverlayEntry _createOverlayEntry(DictionaryGroup dict) {
     // 导航栏固定在右侧，列表向左展开
-    // 宽度增加，从200变为300
-    const offset = Offset(-308, 0); // 向左偏移 (300宽度 + 8间距)
+    // 弹性宽度，包裹内部内容
+    // followerAnchor设置为右上角，targetAnchor设置为左上角，让列表右边缘靠近logo左边缘
+    const offset = Offset(-8, 0); // 向左偏移8像素间距
 
     return OverlayEntry(
       builder: (context) => Positioned(
-        width: 300, // 宽度增加
+        top: 0,
+        left: 0,
         child: CompositedTransformFollower(
           link: _layerLink,
           showWhenUnlinked: false,
+          targetAnchor: Alignment.centerLeft,
+          followerAnchor: Alignment.centerRight,
           offset: offset,
-          child: _buildPageList(context, dict),
+          child: IntrinsicWidth(child: _buildPageList(context, dict)),
         ),
       ),
     );
@@ -304,16 +308,12 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    Widget logoWidget = GestureDetector(
+    Widget logoContent = GestureDetector(
       key: key,
       onTap: isCurrent ? _togglePageList : () => _onDictionarySelected(dict),
       child: Container(
         width: 36,
-        height: 40, // 增加高度
-        margin: const EdgeInsets.symmetric(
-          vertical: 4,
-          horizontal: 8,
-        ), // 增加垂直间距
+        height: 40,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: Stack(
@@ -354,10 +354,19 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     );
 
     if (isCurrent) {
-      return CompositedTransformTarget(link: _layerLink, child: logoWidget);
+      // 将 CompositedTransformTarget 包裹在内容区域，不包含 margin
+      // 这样 page 列表的中心可以与 logo 内容的中心对齐
+      logoContent = CompositedTransformTarget(
+        link: _layerLink,
+        child: logoContent,
+      );
     }
 
-    return logoWidget;
+    // 在外层添加 margin
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      child: logoContent,
+    );
   }
 
   // 构建page列表（仅包含page选择器）
@@ -365,7 +374,6 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
         borderRadius: BorderRadius.circular(12),
@@ -385,49 +393,47 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         color: Colors.transparent,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            height: 40,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: List.generate(dict.pageGroups.length, (index) {
-                  final page = dict.pageGroups[index];
-                  final isSelected = index == dict.currentPageIndex;
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(dict.pageGroups.length, (index) {
+                final page = dict.pageGroups[index];
+                final isSelected = index == dict.currentPageIndex;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: InkWell(
-                      onTap: () => _onPageSelected(index),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: isSelected
-                            ? BoxDecoration(
-                                color: colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(6),
-                              )
-                            : null,
-                        child: Text(
-                          page.page.isNotEmpty ? page.page : '${index + 1}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: isSelected
-                                ? colorScheme.onPrimaryContainer
-                                : colorScheme.onSurfaceVariant,
-                          ),
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    onTap: () => _onPageSelected(index),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: isSelected
+                          ? BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(6),
+                            )
+                          : null,
+                      child: Text(
+                        page.page.isNotEmpty ? page.page : '${index + 1}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: isSelected
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
-                  );
-                }),
-              ),
+                  ),
+                );
+              }),
             ),
           ),
         ),
@@ -738,7 +744,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
           color: isSelected
-              ? colorScheme.primaryContainer
+              ? colorScheme.primaryContainer.withOpacity(0.75)
               : colorScheme.surfaceContainer,
           border: Border.all(
             color: isSelected

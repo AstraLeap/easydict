@@ -15,6 +15,7 @@ import 'components/dictionary_interaction_scope.dart';
 import 'logger.dart';
 import 'services/dictionary_manager.dart';
 import 'services/preferences_service.dart';
+import 'services/font_loader_service.dart';
 import 'services/ai_service.dart';
 import 'services/advanced_search_settings_service.dart';
 import 'services/media_kit_manager.dart';
@@ -348,6 +349,25 @@ void _handlePathTap(
   callback(pathStr, label);
 }
 
+String? _determineEffectiveLanguage({
+  String? language,
+  List<String>? path,
+  String? sourceLanguage,
+}) {
+  if (language != null && language.isNotEmpty) {
+    return language;
+  } else if (path != null && path.isNotEmpty) {
+    final firstKey = path.first;
+    if (firstKey.isNotEmpty) {
+      return firstKey;
+    } else {
+      return sourceLanguage;
+    }
+  } else {
+    return sourceLanguage;
+  }
+}
+
 FormattedTextResult parseFormattedText(
   String text,
   TextStyle baseStyle, {
@@ -358,14 +378,45 @@ FormattedTextResult parseFormattedText(
   void Function(String path, String label)? onElementSecondaryTap,
   GestureRecognizer? recognizer,
   bool hidden = false,
+  String? language,
+  String? sourceLanguage,
+  Map<String, Map<String, double>>? fontScales,
 }) {
   // 如果被隐藏，返回空的 spans
   if (hidden) {
     return FormattedTextResult([], [], hidden: true);
   }
 
+  // 应用自定义字体和缩放
+  TextStyle effectiveBaseStyle = baseStyle;
+
+  final effectiveLanguage = _determineEffectiveLanguage(
+    language: language,
+    path: path,
+    sourceLanguage: sourceLanguage,
+  );
+
+  if (effectiveLanguage != null) {
+    final fontService = FontLoaderService();
+    final fontInfo = fontService.getFontInfo(effectiveLanguage, isSerif: true);
+
+    final fontScale = fontScales?[effectiveLanguage]?['serif'] ?? 1.0;
+
+    if (fontInfo != null) {
+      effectiveBaseStyle = effectiveBaseStyle.copyWith(
+        fontFamily: fontInfo.fontFamily,
+      );
+    }
+
+    if (fontScale != 1.0 && effectiveBaseStyle.fontSize != null) {
+      effectiveBaseStyle = effectiveBaseStyle.copyWith(
+        fontSize: effectiveBaseStyle.fontSize! * fontScale,
+      );
+    }
+  }
+
   // 强制所有样式使用简体中文 Locale
-  final effectiveBaseStyle = baseStyle.copyWith(
+  effectiveBaseStyle = effectiveBaseStyle.copyWith(
     locale: const Locale('zh', 'CN'),
   );
 
@@ -840,6 +891,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _hiddenLanguagesNotifier = HiddenLanguagesNotifier([]);
     _loadSourceLanguage();
     _loadClickAction();
+    // 同步获取字体缩放配置，避免异步加载导致的闪烁问题
+    _fontScales = FontLoaderService().getFontScales();
     _listenToEvents();
   }
 
@@ -1056,7 +1109,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Logger.d('全局字符偏移量: $globalOffset', tag: 'DoubleTapWord');
 
     // 使用 parseFormattedText 解析文本，以获取纯文本内容
-    final result = parseFormattedText(text, textStyle, context: context);
+    final result = _parseFormattedText(text, textStyle, context: context);
     final plainText = result.spans.fold<String>(
       '',
       (prev, span) => prev + span.toPlainText(),
@@ -1200,35 +1253,64 @@ class ComponentRendererState extends State<ComponentRenderer> {
     required void Function(String path, String label) onElementTap,
     void Function(String path, String label, Offset position)?
     onElementSecondaryTapWithPosition,
+    Map<String, Map<String, double>>? fontScales,
+    String? sourceLanguage,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
     final spans = <InlineSpan>[];
     int currentTextOffset = 0;
 
+    final usageFontScale = fontScales?[sourceLanguage ?? 'en']?['serif'] ?? 1.0;
+    final usageFontSize = 12 * usageFontScale;
+
+    // 获取 usage 的自定义字体
+    final fontService = FontLoaderService();
+    final usageFontInfo = sourceLanguage != null
+        ? fontService.getFontInfo(sourceLanguage, isSerif: true)
+        : null;
+
     if (usage.isNotEmpty) {
+      final usagePath = [...basePath, 'usage'];
+      final usagePathData = _PathData(usagePath, 'Example Usage');
+
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              usage,
-              style: TextStyle(
-                fontSize: 12,
-                color: colorScheme.onSecondaryContainer,
-                height: 1.4,
-                fontWeight: FontWeight.w500,
+          child: GestureDetector(
+            onTap: () {
+              onElementTap(usagePath.join('.'), usagePathData.label);
+            },
+            onSecondaryTapUp: (details) {
+              if (onElementSecondaryTapWithPosition != null) {
+                onElementSecondaryTapWithPosition(
+                  usagePath.join('.'),
+                  usagePathData.label,
+                  details.globalPosition,
+                );
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                usage,
+                style: TextStyle(
+                  fontSize: usageFontSize,
+                  color: colorScheme.onSecondaryContainer,
+                  height: 1.4,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: usageFontInfo?.fontFamily,
+                ),
               ),
             ),
           ),
         ),
       );
-      currentTextOffset += 1; // WidgetSpan 占 1 个字符
+      currentTextOffset += 1;
     }
 
     final exampleTextKey = GlobalKey();
@@ -1257,9 +1339,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 使用 notifier 的当前值，这样当状态变化时会重建
       final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
-      // 创建文本样式
-      final exampleTextStyle = TextStyle(
-        fontSize: 14,
+      // 确定有效语言并应用字体倍率
+      final effectiveLanguageForExample = _determineEffectiveLanguage(
+        language: key.isEmpty ? null : key,
+        path: path,
+        sourceLanguage: _sourceLanguage,
+      );
+      final exampleFontScale =
+          fontScales?[effectiveLanguageForExample]?['serif'] ?? 1.0;
+      final exampleFontSize = 14 * exampleFontScale;
+
+      var exampleTextStyle = TextStyle(
+        fontSize: exampleFontSize,
         color: colorScheme.onSurface.withValues(alpha: 0.85),
         height: 1.5,
         fontStyle:
@@ -1270,6 +1361,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
             ? FontStyle.normal
             : FontStyle.italic,
       );
+
+      final fontService = FontLoaderService();
+      final fontInfo = effectiveLanguageForExample != null
+          ? fontService.getFontInfo(effectiveLanguageForExample, isSerif: true)
+          : null;
+      if (fontInfo != null) {
+        exampleTextStyle = exampleTextStyle.copyWith(
+          fontFamily: fontInfo.fontFamily,
+        );
+      }
 
       // 创建手势识别器以支持点击和右键菜单
       final tapRecognizer = TapGestureRecognizer()
@@ -1352,7 +1453,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           key.startsWith('zh_') ||
           key.startsWith('ja_');
 
-      final result = parseFormattedText(
+      final result = _parseFormattedText(
         text,
         exampleTextStyle,
         context: context,
@@ -1377,6 +1478,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   final Map<int, GlobalKey> _sectionKeys = {};
   String? _sourceLanguage;
+  Map<String, Map<String, double>> _fontScales = {};
   List<String> _targetLanguages = [];
   String _clickAction = PreferencesService.actionAiTranslate;
 
@@ -1419,6 +1521,34 @@ class ComponentRendererState extends State<ComponentRenderer> {
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  FormattedTextResult _parseFormattedText(
+    String text,
+    TextStyle baseStyle, {
+    BuildContext? context,
+    List<String>? path,
+    String? label,
+    void Function(String path, String label)? onElementTap,
+    void Function(String path, String label)? onElementSecondaryTap,
+    GestureRecognizer? recognizer,
+    bool hidden = false,
+    String? language,
+  }) {
+    return parseFormattedText(
+      text,
+      baseStyle,
+      context: context,
+      path: path,
+      label: label,
+      onElementTap: onElementTap,
+      onElementSecondaryTap: onElementSecondaryTap,
+      recognizer: recognizer,
+      hidden: hidden,
+      language: language,
+      sourceLanguage: _sourceLanguage,
+      fontScales: _fontScales,
+    );
   }
 
   dynamic _getValueByPath(dynamic json, List<String> pathParts) {
@@ -2066,7 +2196,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 pathData: _PathData(PathScope.of(context), 'Headword'),
                 child: RichText(
                   text: TextSpan(
-                    children: parseFormattedText(
+                    children: _parseFormattedText(
                       word,
                       TextStyle(
                         fontSize: 32,
@@ -2228,6 +2358,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onElementSecondaryTapWithPosition: (path, label, position) {
             _handleElementSecondaryTap(path, label, context, position);
           },
+          fontScales: _fontScales,
+          sourceLanguage: _sourceLanguage,
         );
       },
     );
@@ -2252,6 +2384,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       colorScheme: colorScheme,
       contentBuilder: (board, p) => _buildBoardContent(context, board, p),
       onElementTap: _handleElementTap,
+      sourceLanguage: _sourceLanguage,
+      fontScales: _fontScales,
     );
   }
 
@@ -2293,7 +2427,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             Expanded(
               child: RichText(
                 text: TextSpan(
-                  children: parseFormattedText(
+                  children: _parseFormattedText(
                     note,
                     TextStyle(
                       fontSize: 13,
@@ -2322,7 +2456,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       ),
       child: RichText(
         text: TextSpan(
-          children: parseFormattedText(
+          children: _parseFormattedText(
             page[0].toUpperCase() + page.substring(1),
             TextStyle(
               fontSize: 13,
@@ -2368,7 +2502,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 ),
                 child: RichText(
                   text: TextSpan(
-                    children: parseFormattedText(
+                    children: _parseFormattedText(
                       section,
                       TextStyle(
                         fontSize: 12,
@@ -2556,7 +2690,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           ),
           child: RichText(
             text: TextSpan(
-              children: parseFormattedText(
+              children: _parseFormattedText(
                 cert,
                 TextStyle(
                   fontSize: 10,
@@ -2583,7 +2717,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         padding: const EdgeInsets.only(top: 4),
         child: RichText(
           text: TextSpan(
-            children: parseFormattedText(
+            children: _parseFormattedText(
               indexStr,
               TextStyle(
                 fontSize: 14,
@@ -2608,7 +2742,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       pathData: _PathData(PathScope.of(context), 'Part of Speech'),
       child: RichText(
         text: TextSpan(
-          children: parseFormattedText(
+          children: _parseFormattedText(
             pos,
             TextStyle(
               fontSize: 14,
@@ -2647,7 +2781,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final text = RichText(
       text: TextSpan(
-        children: parseFormattedText(
+        children: _parseFormattedText(
           '$region ',
           TextStyle(
             fontSize: 11,
@@ -2677,7 +2811,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final text = RichText(
       text: TextSpan(
-        children: parseFormattedText(
+        children: _parseFormattedText(
           phonetic,
           TextStyle(
             fontSize: 13,
@@ -2707,6 +2841,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<MapEntry<String, String>>? definitions,
     String? sourceLanguage,
     required List<String> targetLanguages,
+    Map<String, Map<String, double>>? fontScales,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final spans = <InlineSpan>[];
@@ -2779,12 +2914,35 @@ class ComponentRendererState extends State<ComponentRenderer> {
           // 使用 notifier 的当前值，这样当状态变化时会重建
           final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
-          // 创建文本样式
-          final definitionTextStyle = TextStyle(
-            fontSize: 15,
+          // 确定有效语言并应用字体倍率
+          final defKey = definition.key;
+          final defLang = defKey.startsWith('definition.')
+              ? defKey.substring('definition.'.length)
+              : defKey;
+          final effectiveLanguageForDef = _determineEffectiveLanguage(
+            language: defLang.isEmpty ? null : defLang,
+            path: path,
+            sourceLanguage: _sourceLanguage,
+          );
+          final defFontScale =
+              fontScales?[effectiveLanguageForDef]?['serif'] ?? 1.0;
+          final defFontSize = 15 * defFontScale;
+
+          var definitionTextStyle = TextStyle(
+            fontSize: defFontSize,
             color: colorScheme.onSurface,
             height: 1.6,
           );
+
+          final fontService = FontLoaderService();
+          final fontInfo = effectiveLanguageForDef != null
+              ? fontService.getFontInfo(effectiveLanguageForDef, isSerif: true)
+              : null;
+          if (fontInfo != null) {
+            definitionTextStyle = definitionTextStyle.copyWith(
+              fontFamily: fontInfo.fontFamily,
+            );
+          }
 
           // 创建手势识别器以支持点击和右键菜单
           final tapRecognizer = TapGestureRecognizer()
@@ -2858,7 +3016,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             doubleTapRecognizer: null,
           );
 
-          final result = parseFormattedText(
+          final result = _parseFormattedText(
             definition.value,
             definitionTextStyle,
             context: context,
@@ -2973,7 +3131,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       );
     }
 
-    final result = parseFormattedText(text, textStyle, context: context);
+    final result = _parseFormattedText(text, textStyle, context: context);
     final richText = RichText(text: TextSpan(children: result.spans));
 
     Widget child;
@@ -3130,6 +3288,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           definitions: definitions,
                           sourceLanguage: _sourceLanguage,
                           targetLanguages: _targetLanguages,
+                          fontScales: _fontScales,
                         );
                       },
                     ),
@@ -3300,7 +3459,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: RichText(
                   text: TextSpan(
-                    children: parseFormattedText(
+                    children: _parseFormattedText(
                       groupName.toUpperCase(),
                       TextStyle(
                         fontSize: 13,
@@ -3368,6 +3527,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   // 已单独渲染的 key 列表，这些 key 不会出现在 _buildRemainingBoards 中
   static const List<String> _renderedKeys = [
+    'id',
     'entry_id',
     'dict_id',
     'version',
@@ -3441,6 +3601,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
             contentBuilder: (board, path) =>
                 _buildBoardContent(context, board, path),
             path: path,
+            fontScales: _fontScales,
+            sourceLanguage: _sourceLanguage,
           ),
         );
       } else if (value is List<dynamic>) {
@@ -3457,6 +3619,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
             contentBuilder: (board, path) =>
                 _buildBoardContent(context, board, path),
             path: path,
+            fontScales: _fontScales,
+            sourceLanguage: _sourceLanguage,
           ),
         );
       }
@@ -3530,6 +3694,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 contentBuilder: (board, path) =>
                     _buildBoardContent(context, board, path),
                 path: keyPath,
+                fontScales: _fontScales,
+                sourceLanguage: _sourceLanguage,
               ),
             );
           } else if (value is List<dynamic>) {
@@ -3663,7 +3829,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     GlobalKey? textKey,
     bool hidden = false,
   }) {
-    final result = parseFormattedText(
+    final result = _parseFormattedText(
       text,
       style,
       context: context,
@@ -3698,7 +3864,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ),
         child: RichText(
           text: TextSpan(
-            children: parseFormattedText(
+            children: _parseFormattedText(
               text,
               TextStyle(
                 fontSize: 13,
@@ -3923,6 +4089,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           }
         },
         path: path,
+        fontScales: _fontScales,
+        sourceLanguage: _sourceLanguage,
       );
     }
 
@@ -3956,6 +4124,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
               contentBuilder: (board, p) =>
                   _buildBoardContent(context, board, p),
               path: [...path, '[$index]'],
+              fontScales: _fontScales,
+              sourceLanguage: _sourceLanguage,
             );
           }).toList(),
         );
@@ -4060,6 +4230,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
               contentBuilder: (board, path) =>
                   _buildBoardContent(context, board, path),
               path: itemPath,
+              fontScales: _fontScales,
+              sourceLanguage: _sourceLanguage,
             ),
           );
         }
@@ -4084,6 +4256,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       board: value,
       contentBuilder: (board, path) => _buildBoardContent(context, board, path),
       path: path,
+      fontScales: _fontScales,
+      sourceLanguage: _sourceLanguage,
     );
   }
 
@@ -4474,6 +4648,8 @@ class _DatasTabWidget extends StatefulWidget {
   final Widget Function(Map<String, dynamic> board, List<String> path)
   contentBuilder;
   final void Function(String path, String label)? onElementTap;
+  final String? sourceLanguage;
+  final Map<String, Map<String, double>> fontScales;
 
   const _DatasTabWidget({
     required this.keys,
@@ -4482,6 +4658,8 @@ class _DatasTabWidget extends StatefulWidget {
     required this.colorScheme,
     required this.contentBuilder,
     this.onElementTap,
+    this.sourceLanguage,
+    required this.fontScales,
   });
 
   @override
@@ -4552,6 +4730,8 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                                 : widget.colorScheme.onSurface,
                           ),
                           context: context,
+                          sourceLanguage: widget.sourceLanguage,
+                          fontScales: widget.fontScales,
                         ).spans,
                       ),
                     ),
@@ -4579,6 +4759,7 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
         if (_selectedIndex != null)
           Container(
             margin: const EdgeInsets.only(top: 8),
+            width: double.infinity,
             decoration: BoxDecoration(
               border: Border.all(
                 color: widget.colorScheme.outlineVariant.withValues(alpha: 0.5),
@@ -4591,6 +4772,7 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                 final selectedValue = widget.value[selectedKey];
 
                 return Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   child: selectedValue is Map<String, dynamic>
                       ? widget.contentBuilder(selectedValue, [

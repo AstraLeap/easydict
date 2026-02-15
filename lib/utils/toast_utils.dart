@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-void showToast(BuildContext context, String message) {
+void showToast(BuildContext context, String message, {SnackBarAction? action}) {
   final colorScheme = Theme.of(context).colorScheme;
 
   // 检测是否在 EntryDetailPage 中，如果是，增加底部边距以避开浮动工具栏
@@ -29,6 +29,7 @@ void showToast(BuildContext context, String message) {
       backgroundColor: colorScheme.surfaceContainerHighest,
       behavior: SnackBarBehavior.floating,
       margin: EdgeInsets.fromLTRB(16, 0, 16, bottomMargin),
+      action: action,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
