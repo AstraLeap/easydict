@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -864,15 +865,58 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<LLMProvider>(
+          DropdownButtonFormField2<LLMProvider>(
             value: provider,
-            decoration: const InputDecoration(
+            isExpanded: true,
+            decoration: InputDecoration(
               labelText: '选择服务商',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.cloud),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.cloud_outlined),
+            ),
+            iconStyleData: IconStyleData(
+              icon: Icon(
+                Icons.arrow_drop_down,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            dropdownStyleData: DropdownStyleData(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Theme.of(context).colorScheme.surface,
+              ),
+              maxHeight: 300,
+              offset: const Offset(0, -4),
+            ),
+            menuItemStyleData: const MenuItemStyleData(
+              padding: EdgeInsets.symmetric(horizontal: 16),
             ),
             items: LLMProvider.values.map((p) {
-              return DropdownMenuItem(value: p, child: Text(p.displayName));
+              return DropdownMenuItem(
+                value: p,
+                child: Text(
+                  p.displayName,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              );
             }).toList(),
             onChanged: onProviderChanged,
           ),
@@ -882,11 +926,30 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             obscureText: obscureApiKey,
             decoration: InputDecoration(
               labelText: 'API Key',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.key),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.key_outlined),
               suffixIcon: IconButton(
                 icon: Icon(
-                  obscureApiKey ? Icons.visibility_off : Icons.visibility,
+                  obscureApiKey
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
                 ),
                 onPressed: onToggleObscure,
               ),
@@ -908,10 +971,27 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           const SizedBox(height: 16),
           TextFormField(
             controller: baseUrlController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Base URL (可选)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.link),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.link_outlined),
               hintText: '留空使用默认地址',
             ),
           ),
@@ -925,10 +1005,27 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           const SizedBox(height: 16),
           TextFormField(
             controller: modelController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: '模型',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.model_training),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.model_training_outlined),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -945,33 +1042,43 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
           ),
           const SizedBox(height: 32),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: onSave,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('保存配置'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: onSave,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('保存配置'),
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: isTesting ? null : onTestConnection,
-              icon: isTesting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.network_check),
-              label: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(isTesting ? '测试中...' : '测试连接'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: isTesting ? null : onTestConnection,
+                  icon: isTesting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.network_check_outlined),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(isTesting ? '测试中...' : '测试连接'),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
           if (testResult != null) ...[
             const SizedBox(height: 16),
@@ -1028,15 +1135,58 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<TTSProvider>(
+          DropdownButtonFormField2<TTSProvider>(
             value: _ttsProvider,
-            decoration: const InputDecoration(
+            isExpanded: true,
+            decoration: InputDecoration(
               labelText: '选择服务商',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.record_voice_over),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.record_voice_over_outlined),
+            ),
+            iconStyleData: IconStyleData(
+              icon: Icon(
+                Icons.arrow_drop_down,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            dropdownStyleData: DropdownStyleData(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Theme.of(context).colorScheme.surface,
+              ),
+              maxHeight: 300,
+              offset: const Offset(0, -4),
+            ),
+            menuItemStyleData: const MenuItemStyleData(
+              padding: EdgeInsets.symmetric(horizontal: 16),
             ),
             items: TTSProvider.values.map((p) {
-              return DropdownMenuItem(value: p, child: Text(p.displayName));
+              return DropdownMenuItem(
+                value: p,
+                child: Text(
+                  p.displayName,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              );
             }).toList(),
             onChanged: _onTtsProviderChanged,
           ),
@@ -1052,11 +1202,30 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               labelText: _ttsProvider == TTSProvider.google
                   ? 'Service Account JSON Key'
                   : 'API Key',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.key),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.key_outlined),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureTtsApiKey ? Icons.visibility_off : Icons.visibility,
+                  _obscureTtsApiKey
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
                 ),
                 onPressed: () {
                   setState(() {
@@ -1086,8 +1255,25 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             controller: _ttsBaseUrlController,
             decoration: InputDecoration(
               labelText: 'Base URL (可选)',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.link),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              prefixIcon: const Icon(Icons.link_outlined),
               hintText: _ttsProvider == TTSProvider.google
                   ? '留空使用: https://texttospeech.googleapis.com/v1'
                   : '留空使用默认地址',
@@ -1096,13 +1282,47 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           const SizedBox(height: 16),
           if (_ttsProvider == TTSProvider.google) ...[
             // Google TTS 音色选择（默认使用 Chirp 3 HD 模型）
-            DropdownButtonFormField<GoogleTTSVoice>(
+            DropdownButtonFormField2<GoogleTTSVoice>(
               value: _selectedGoogleVoice,
               isExpanded: true,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: '选择音色',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.record_voice_over),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                prefixIcon: const Icon(Icons.person_outline),
+              ),
+              iconStyleData: IconStyleData(
+                icon: Icon(
+                  Icons.arrow_drop_down,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              dropdownStyleData: DropdownStyleData(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Theme.of(context).colorScheme.surface,
+                ),
+                maxHeight: 300,
+                offset: const Offset(0, -4),
+              ),
+              menuItemStyleData: const MenuItemStyleData(
+                padding: EdgeInsets.symmetric(horizontal: 16),
               ),
               items: googleTTSVoices.where((v) => v.model == 'chirp3-hd').map((
                 voice,
@@ -1112,10 +1332,17 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   child: Text(
                     '${voice.name} (${voice.gender})',
                     overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                 );
               }).toList(),
-              onChanged: _onGoogleVoiceChanged,
+              onChanged: (voice) {
+                setState(() {
+                  _selectedGoogleVoice = voice;
+                });
+              },
             ),
             const SizedBox(height: 8),
             if (_selectedGoogleVoice != null)
@@ -1153,33 +1380,43 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             const SizedBox(height: 16),
           ],
           const SizedBox(height: 32),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _saveTtsConfig,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('保存配置'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: _saveTtsConfig,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('保存配置'),
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _isTestingTts ? null : _testTtsConnection,
-              icon: _isTestingTts
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.network_check),
-              label: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(_isTestingTts ? '测试中...' : '测试连接'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isTestingTts ? null : _testTtsConnection,
+                  icon: _isTestingTts
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.network_check_outlined),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(_isTestingTts ? '测试中...' : '测试连接'),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
           if (_testResultTts != null) ...[
             const SizedBox(height: 16),
@@ -1244,55 +1481,70 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               children: [
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: _buildTextModelConfig(
-                    title: '快速模型',
-                    subtitle: '适用于日常查询，速度优先',
-                    formKey: _fastFormKey,
-                    provider: _fastProvider,
-                    onProviderChanged: _onFastProviderChanged,
-                    apiKeyController: _fastApiKeyController,
-                    baseUrlController: _fastBaseUrlController,
-                    modelController: _fastModelController,
-                    obscureApiKey: _obscureFastApiKey,
-                    onToggleObscure: () {
-                      setState(() {
-                        _obscureFastApiKey = !_obscureFastApiKey;
-                      });
-                    },
-                    onSave: _saveFastConfig,
-                    isTesting: _isTestingFast,
-                    onTestConnection: _testFastConnection,
-                    testResult: _testResultFast,
-                    testSuccess: _testSuccessFast,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: _buildTextModelConfig(
+                        title: '快速模型',
+                        subtitle: '适用于日常查询，速度优先',
+                        formKey: _fastFormKey,
+                        provider: _fastProvider,
+                        onProviderChanged: _onFastProviderChanged,
+                        apiKeyController: _fastApiKeyController,
+                        baseUrlController: _fastBaseUrlController,
+                        modelController: _fastModelController,
+                        obscureApiKey: _obscureFastApiKey,
+                        onToggleObscure: () {
+                          setState(() {
+                            _obscureFastApiKey = !_obscureFastApiKey;
+                          });
+                        },
+                        onSave: _saveFastConfig,
+                        isTesting: _isTestingFast,
+                        onTestConnection: _testFastConnection,
+                        testResult: _testResultFast,
+                        testSuccess: _testSuccessFast,
+                      ),
+                    ),
                   ),
                 ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: _buildTextModelConfig(
-                    title: '标准模型',
-                    subtitle: '适用于高质量翻译和解释',
-                    formKey: _standardFormKey,
-                    provider: _standardProvider,
-                    onProviderChanged: _onStandardProviderChanged,
-                    apiKeyController: _standardApiKeyController,
-                    baseUrlController: _standardBaseUrlController,
-                    modelController: _standardModelController,
-                    obscureApiKey: _obscureStandardApiKey,
-                    onToggleObscure: () {
-                      setState(() {
-                        _obscureStandardApiKey = !_obscureStandardApiKey;
-                      });
-                    },
-                    onSave: _saveStandardConfig,
-                    isTesting: _isTestingStandard,
-                    onTestConnection: _testStandardConnection,
-                    testResult: _testResultStandard,
-                    testSuccess: _testSuccessStandard,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: _buildTextModelConfig(
+                        title: '标准模型',
+                        subtitle: '适用于高质量翻译和解释',
+                        formKey: _standardFormKey,
+                        provider: _standardProvider,
+                        onProviderChanged: _onStandardProviderChanged,
+                        apiKeyController: _standardApiKeyController,
+                        baseUrlController: _standardBaseUrlController,
+                        modelController: _standardModelController,
+                        obscureApiKey: _obscureStandardApiKey,
+                        onToggleObscure: () {
+                          setState(() {
+                            _obscureStandardApiKey = !_obscureStandardApiKey;
+                          });
+                        },
+                        onSave: _saveStandardConfig,
+                        isTesting: _isTestingStandard,
+                        onTestConnection: _testStandardConnection,
+                        testResult: _testResultStandard,
+                        testSuccess: _testSuccessStandard,
+                      ),
+                    ),
                   ),
                 ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: _buildTtsConfig(),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: _buildTtsConfig(),
+                    ),
+                  ),
                 ),
               ],
             ),

@@ -1,136 +1,291 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../utils/dpi_utils.dart';
 
-class HelpPage extends StatelessWidget {
+class HelpPage extends StatefulWidget {
   const HelpPage({super.key});
 
   @override
+  State<HelpPage> createState() => _HelpPageState();
+}
+
+class _HelpPageState extends State<HelpPage> {
+  PackageInfo? _packageInfo;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPackageInfo();
+  }
+
+  Future<void> _loadPackageInfo() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      setState(() {
+        _packageInfo = info;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('获取包信息失败: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('使用帮助'), centerTitle: true),
+      appBar: AppBar(title: const Text('帮助与反馈'), centerTitle: true),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildSection(context, '多词典同时显示', Icons.layers, [
-            '支持同时启用多个词典，在单词详情页查看不同词典的释义',
-            '在"设置 → 词典管理"中调整词典优先级顺序',
-          ]),
-          _buildSection(context, '词典跳转', Icons.link, [
-            '点击释义中的链接词可快速跳转查看该词的详细释义',
-            '支持跨词典跳转，探索更多相关词汇',
-          ]),
-          _buildSection(context, '单词本分组', Icons.folder_open, [
-            '支持创建多个词表，按主题或学习阶段组织单词',
-            '点击"管理词表"按钮创建、编辑或删除词表',
-            '单词可以同时属于多个词表',
-          ]),
-          _buildSection(context, '分页加载', Icons.unfold_more, [
-            '单词本采用分页加载，滑动到底部自动加载更多单词',
-            '避免一次性加载过多数据，提升性能',
-          ]),
-          _buildSection(context, '在线订阅', Icons.cloud_download, [
-            '支持在线词典源，自动下载和更新词典',
-            '在"设置 → 词典管理 → 词典来源"中添加订阅地址',
-            '下载后的词典无需网络即可查询',
-          ]),
-          _buildSection(context, 'AI 智能问答', Icons.psychology, [
-            '与 AI 探讨单词的用法、搭配、同义词等',
-            'AI 会结合词典释义给出详细解释',
-            '支持追问，深入探讨相关知识点',
-          ]),
-          _buildSection(context, '查词历史', Icons.history, [
-            '自动记录查词历史，方便回顾',
-            '点击历史记录可快速重新查词',
-            '支持删除单条或清空全部历史',
-          ]),
-          _buildSection(context, '音标与例句', Icons.record_voice_over, [
-            '部分词典提供英美音标，帮助掌握发音',
-            '丰富的例句展示单词的实际用法',
-          ]),
-          _buildSection(context, '词源信息', Icons.menu_book, [
-            '了解单词的历史演变和词根词缀',
-            '帮助记忆和理解单词的构成',
-          ]),
+          // 顶部 Logo 和版本信息
+          Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 24),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Icon(
+                    Icons.book,
+                    size: 48,
+                    color: colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'EasyDict',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (_isLoading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Text(
+                    _packageInfo?.version ?? 'v1.0.0',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.outline,
+                    ),
+                  ),
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
+
+          // 帮助与支持组
+          _buildSettingsGroup(
+            context,
+            children: [
+              _buildSettingsTile(
+                context,
+                title: '词典反馈',
+                icon: Icons.feedback_outlined,
+                iconColor: colorScheme.primary,
+                onTap: () async {
+                  // TODO: 实现反馈功能
+                },
+              ),
+              _buildSettingsTile(
+                context,
+                title: 'GitHub',
+                subtitle: '查看源码、提交 Issue',
+                icon: Icons.code,
+                iconColor: colorScheme.primary,
+                isExternal: true,
+                onTap: () async {
+                  final url = Uri.parse(
+                    'https://github.com/AstraLeap/easydict',
+                  );
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+              _buildSettingsTile(
+                context,
+                title: '爱发电',
+                subtitle: '支持开发者',
+                icon: Icons.favorite_border,
+                iconColor: colorScheme.primary,
+                isExternal: true,
+                onTap: () async {
+                  final url = Uri.parse('https://afdian.com/a/karx_');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            ],
+          ),
+
           const SizedBox(height: 24),
+
+          // 编译信息
+          _buildSettingsGroup(
+            context,
+            children: [
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                _buildInfoTile(context, '应用版本', _packageInfo?.version ?? '未知'),
+                _buildInfoTile(
+                  context,
+                  '构建版本',
+                  _packageInfo?.buildNumber ?? '未知',
+                ),
+                _buildInfoTile(
+                  context,
+                  '包名',
+                  _packageInfo?.packageName ?? '未知',
+                ),
+                _buildInfoTile(context, 'Flutter SDK', _getFlutterVersion()),
+                _buildInfoTile(context, 'Dart SDK', _getDartVersion()),
+              ],
+            ],
+          ),
+
+          const SizedBox(height: 40),
+
           Center(
             child: Text(
-              'EasyDict v1.0.0',
+              'Copyright © 2024 EasyDict Team',
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.outline,
+                color: colorScheme.outline.withOpacity(0.5),
               ),
             ),
           ),
-          const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-  Widget _buildSection(
-    BuildContext context,
-    String title,
-    IconData icon,
-    List<String> contents,
-  ) {
+  String _getFlutterVersion() {
+    return '3.19.0';
+  }
+
+  String _getDartVersion() {
+    return '3.3.0';
+  }
+
+  Widget _buildSettingsGroup(
+    BuildContext context, {
+    required List<Widget> children,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 16),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+          color: colorScheme.outlineVariant.withOpacity(0.5),
           width: 1,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Divider(
-              height: 24,
-              color: Theme.of(
-                context,
-              ).colorScheme.outlineVariant.withOpacity(0.3),
-            ),
-            ...contents.map(
-              (content) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  content,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(height: 1.6),
-                ),
-              ),
-            ),
-          ],
+      child: Column(
+        children: _addDividers(
+          children,
+          colorScheme.outlineVariant.withOpacity(0.3),
         ),
+      ),
+    );
+  }
+
+  List<Widget> _addDividers(List<Widget> children, Color dividerColor) {
+    final result = <Widget>[];
+    for (int i = 0; i < children.length; i++) {
+      result.add(children[i]);
+      if (i < children.length - 1) {
+        result.add(Divider(height: 1, indent: 56, color: dividerColor));
+      }
+    }
+    return result;
+  }
+
+  Widget _buildSettingsTile(
+    BuildContext context, {
+    required String title,
+    String? subtitle,
+    required IconData icon,
+    Color? iconColor,
+    bool isExternal = false,
+    VoidCallback? onTap,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
+
+    return ListTile(
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: DpiUtils.scale(context, 16),
+        vertical: DpiUtils.scale(context, 4),
+      ),
+      leading: Icon(
+        icon,
+        color: effectiveIconColor,
+        size: DpiUtils.scaleIconSize(context, 24),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: DpiUtils.scaleFontSize(context, 14),
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: DpiUtils.scaleFontSize(context, 12),
+                color: colorScheme.onSurfaceVariant,
+              ),
+            )
+          : null,
+      trailing: isExternal
+          ? Icon(
+              Icons.open_in_new,
+              color: colorScheme.outline,
+              size: DpiUtils.scaleIconSize(context, 18),
+            )
+          : const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildInfoTile(BuildContext context, String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+        ],
       ),
     );
   }

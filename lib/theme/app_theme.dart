@@ -20,10 +20,10 @@ class AppTheme {
     'Noto Sans SC',
   ];
 
-  static ThemeData lightTheme() {
+  static ThemeData lightTheme({Color? seedColor}) {
     return ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.blue,
+        seedColor: seedColor ?? Colors.blue,
         brightness: Brightness.light,
       ),
       useMaterial3: true,
@@ -33,10 +33,10 @@ class AppTheme {
     );
   }
 
-  static ThemeData darkTheme() {
+  static ThemeData darkTheme({Color? seedColor}) {
     return ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.blue,
+        seedColor: seedColor ?? Colors.blue,
         brightness: Brightness.dark,
       ),
       useMaterial3: true,

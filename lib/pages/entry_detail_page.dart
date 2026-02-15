@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../database_service.dart';
 import '../models/dictionary_entry_group.dart';
@@ -18,6 +19,7 @@ import '../services/english_search_service.dart';
 import '../services/entry_event_bus.dart';
 import '../logger.dart';
 import '../services/preferences_service.dart';
+import '../services/font_loader_service.dart';
 import '../utils/toast_utils.dart';
 import '../utils/word_list_dialog.dart';
 import '../utils/language_utils.dart';
@@ -150,30 +152,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
-
-  /// 显示兼容夜间模式的SnackBar
-  void _showSnackBar(
-    String message, {
-    Duration? duration,
-    SnackBarAction? action,
-  }) {
-    if (action != null) {
-      final colorScheme = Theme.of(context).colorScheme;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            message,
-            style: TextStyle(color: colorScheme.onSurface),
-          ),
-          backgroundColor: colorScheme.surfaceContainerHighest,
-          duration: duration ?? const Duration(seconds: 2),
-          action: action,
-        ),
-      );
-    } else {
-      showToast(context, message);
-    }
-  }
+  final _preferencesService = PreferencesService();
+  // 同步从 FontLoaderService 获取词典内容缩放，避免异步加载导致的闪烁问题
+  double _dictionaryContentScale = FontLoaderService()
+      .getDictionaryContentScale();
 
   final WordBankService _wordBankService = WordBankService();
   final AIService _aiService = AIService();
@@ -215,6 +197,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _loadFavoriteStatus();
     _loadAiChatHistory();
     _loadNavPanelPosition();
+    // 词典内容缩放已从 FontLoaderService 同步获取，无需异步加载
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionChanged);
   }
 
@@ -248,8 +231,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final hasRelations =
         widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
 
+    int lastFullyVisibleIndex = -1;
     double maxVisibleHeight = 0;
     int maxVisibleIndex = -1;
+
     for (final pos in positions) {
       double visibleHeight;
       if (pos.itemLeadingEdge < 0 && pos.itemTrailingEdge > 1) {
@@ -262,15 +247,24 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         visibleHeight = pos.itemTrailingEdge - pos.itemLeadingEdge;
       }
 
+      bool isFullyVisible =
+          pos.itemLeadingEdge >= 0 && pos.itemTrailingEdge <= 1;
+      if (isFullyVisible && pos.index > lastFullyVisibleIndex) {
+        lastFullyVisibleIndex = pos.index;
+      }
+
       if (visibleHeight > maxVisibleHeight) {
         maxVisibleHeight = visibleHeight;
         maxVisibleIndex = pos.index;
       }
     }
 
-    if (maxVisibleIndex < 0) return;
+    int targetIndex = lastFullyVisibleIndex >= 0
+        ? lastFullyVisibleIndex
+        : maxVisibleIndex;
+    if (targetIndex < 0) return;
 
-    int entryIndex = hasRelations ? maxVisibleIndex - 1 : maxVisibleIndex;
+    int entryIndex = hasRelations ? targetIndex - 1 : targetIndex;
     if (entryIndex < 0 || entryIndex >= entries.length) return;
 
     final targetEntry = entries[entryIndex];
@@ -705,7 +699,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     if (selectedLists.contains('__REMOVE__')) {
       await _wordBankService.removeWord(word, language);
       if (mounted) {
-        _showSnackBar('已将 "$word" 从单词本移除');
+        showToast(context, '已将 "$word" 从单词本移除');
         setState(() => _isFavorite = false);
       }
       return;
@@ -719,12 +713,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
       await _wordBankService.updateWordLists(word, language, listChanges);
       if (mounted) {
-        _showSnackBar('已更新 "$word" 的词表归属');
+        showToast(context, '已更新 "$word" 的词表归属');
       }
     } else {
       if (selectedLists.isEmpty) {
         if (mounted) {
-          _showSnackBar('请至少选择一个词表');
+          showToast(context, '请至少选择一个词表');
         }
       } else {
         final success = await _wordBankService.addWord(
@@ -734,10 +728,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         );
         if (mounted) {
           if (success) {
-            _showSnackBar('已将 "$word" 加入单词本');
+            showToast(context, '已将 "$word" 加入单词本');
             setState(() => _isFavorite = true);
           } else {
-            _showSnackBar('添加失败');
+            showToast(context, '添加失败');
           }
         }
       }
@@ -808,9 +802,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final bottomPadding = mediaQuery.padding.bottom;
 
     return Container(
-      margin: _getDynamicPadding(
-        context,
-      ).copyWith(top: 0, bottom: bottomPadding > 0 ? bottomPadding / 2 : 0),
+      margin: EdgeInsets.only(
+        top: 0,
+        bottom: bottomPadding > 0 ? bottomPadding / 2 : 0,
+      ),
       padding: EdgeInsets.zero,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
@@ -941,28 +936,54 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             children: [
               Padding(
                 padding: padding,
-                child: ComponentRenderer(
-                  key: ValueKey(entry.id),
-                  entry: entry,
-                  onElementTap: (path, label) {
-                    _handleTranslationTap(entry, path, label);
-                  },
-                  onEditElement: (path, label) {
-                    _showJsonElementEditorFromPath(entry, path);
-                  },
-                  onAiAsk: (path, label) {
-                    _handleAiElementTap(entry, path, label);
-                  },
-                  onTranslationInsert: (path, newEntry) {
-                    EntryEventBus().emitTranslationInsert(
-                      TranslationInsertEvent(
-                        entryId: entry.id,
-                        path: path,
-                        newEntry: newEntry.toJson(),
+                child: _dictionaryContentScale != 1.0
+                    ? ScaleLayoutWrapper(
+                        scale: _dictionaryContentScale,
+                        child: ComponentRenderer(
+                          key: ValueKey(entry.id),
+                          entry: entry,
+                          onElementTap: (path, label) {
+                            _handleTranslationTap(entry, path, label);
+                          },
+                          onEditElement: (path, label) {
+                            _showJsonElementEditorFromPath(entry, path);
+                          },
+                          onAiAsk: (path, label) {
+                            _handleAiElementTap(entry, path, label);
+                          },
+                          onTranslationInsert: (path, newEntry) {
+                            EntryEventBus().emitTranslationInsert(
+                              TranslationInsertEvent(
+                                entryId: entry.id,
+                                path: path,
+                                newEntry: newEntry.toJson(),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    : ComponentRenderer(
+                        key: ValueKey(entry.id),
+                        entry: entry,
+                        onElementTap: (path, label) {
+                          _handleTranslationTap(entry, path, label);
+                        },
+                        onEditElement: (path, label) {
+                          _showJsonElementEditorFromPath(entry, path);
+                        },
+                        onAiAsk: (path, label) {
+                          _handleAiElementTap(entry, path, label);
+                        },
+                        onTranslationInsert: (path, newEntry) {
+                          EntryEventBus().emitTranslationInsert(
+                            TranslationInsertEvent(
+                              entryId: entry.id,
+                              path: path,
+                              newEntry: newEntry.toJson(),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -1104,7 +1125,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         'Error in _showJsonElementEditorFromPath: $e',
         tag: 'EntryDetailPage',
       );
-      _showSnackBar('无法编辑此元素: $e');
+      showToast(context, '无法编辑此元素: $e');
     }
   }
 
@@ -1113,9 +1134,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     List<String> pathParts,
     dynamic initialValue, {
     bool isFromHistory = false,
-    List<String>? initialPath, // 新增：初始路径
+    List<String>? initialPath,
   }) async {
-    // 如果不是从历史记录导航过来的，添加新路径到历史
     if (!isFromHistory) {
       if (_historyIndex < _pathHistory.length - 1) {
         _pathHistory.removeRange(_historyIndex + 1, _pathHistory.length);
@@ -1124,41 +1144,79 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       _historyIndex = _pathHistory.length - 1;
     }
 
-    // 记录初始路径（如果是第一次打开）
     final startPath =
         initialPath ?? (isFromHistory ? null : List<String>.from(pathParts));
 
+    final currentEntry = _getEntryById(entry.id) ?? entry;
+
+    dynamic currentValue = initialValue;
+    if (pathParts.isEmpty) {
+      currentValue = currentEntry.toJson();
+    } else {
+      final json = currentEntry.toJson();
+      dynamic temp = json;
+      for (final part in pathParts) {
+        if (temp is Map) {
+          temp = temp[part];
+        } else if (temp is List) {
+          int? index;
+          if (part.startsWith('[') && part.endsWith(']')) {
+            index = int.tryParse(part.substring(1, part.length - 1));
+          } else {
+            index = int.tryParse(part);
+          }
+          if (index != null) {
+            temp = temp[index];
+          }
+        }
+      }
+      currentValue = temp;
+    }
+
     final initialText = const JsonEncoder.withIndent(
       '  ',
-    ).convert(initialValue);
+    ).convert(currentValue);
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => _JsonEditorBottomSheet(
-        entry: entry,
+        entry: currentEntry,
         pathParts: pathParts,
         initialText: initialText,
         historyIndex: _historyIndex,
         pathHistory: _pathHistory,
-        initialPath: startPath, // 传递初始路径
+        initialPath: startPath,
         onSave: (newValue) async {
-          await _saveElementChange(entry, pathParts, newValue);
+          await _saveElementChange(currentEntry, pathParts, newValue);
           if (mounted) {
             setState(() {});
           }
         },
         onNavigate: (newPathParts, newValue) {
           _showJsonElementEditor(
-            entry,
+            currentEntry,
             newPathParts,
             newValue,
             isFromHistory: true,
-            initialPath: startPath, // 传递初始路径
+            initialPath: startPath,
           );
         },
       ),
     );
+  }
+
+  DictionaryEntry? _getEntryById(String entryId) {
+    for (final dictGroup in _entryGroup.dictionaryGroups) {
+      for (final pageGroup in dictGroup.pageGroups) {
+        for (final section in pageGroup.sections) {
+          if (section.entry.id == entryId) {
+            return section.entry;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   Widget _buildPathNavigator(
@@ -1232,43 +1290,50 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
-  Future<void> _saveElementChange(
+  Future<DictionaryEntry?> _saveElementChange(
     DictionaryEntry entry,
     List<String> pathParts,
     dynamic newValue,
   ) async {
     try {
       final fullJson = entry.toJson();
-      dynamic current = fullJson;
 
-      // 遍历到倒数第二个节点
-      for (int i = 0; i < pathParts.length - 1; i++) {
-        final part = pathParts[i];
+      if (pathParts.isEmpty) {
+        if (newValue is! Map<String, dynamic>) {
+          throw Exception('根节点必须是对象类型');
+        }
+        fullJson.clear();
+        fullJson.addAll(newValue);
+      } else {
+        dynamic current = fullJson;
+
+        for (int i = 0; i < pathParts.length - 1; i++) {
+          final part = pathParts[i];
+          if (current is Map) {
+            current = current[part];
+          } else if (current is List) {
+            int? index;
+            if (part.startsWith('[') && part.endsWith(']')) {
+              index = int.tryParse(part.substring(1, part.length - 1));
+            } else {
+              index = int.tryParse(part);
+            }
+            current = current[index!];
+          }
+        }
+
+        final lastPart = pathParts.last;
         if (current is Map) {
-          current = current[part];
+          current[lastPart] = newValue;
         } else if (current is List) {
           int? index;
-          if (part.startsWith('[') && part.endsWith(']')) {
-            index = int.tryParse(part.substring(1, part.length - 1));
+          if (lastPart.startsWith('[') && lastPart.endsWith(']')) {
+            index = int.tryParse(lastPart.substring(1, lastPart.length - 1));
           } else {
-            index = int.tryParse(part);
+            index = int.tryParse(lastPart);
           }
-          current = current[index!];
+          current[index!] = newValue;
         }
-      }
-
-      // 更新最后一个节点
-      final lastPart = pathParts.last;
-      if (current is Map) {
-        current[lastPart] = newValue;
-      } else if (current is List) {
-        int? index;
-        if (lastPart.startsWith('[') && lastPart.endsWith(']')) {
-          index = int.tryParse(lastPart.substring(1, lastPart.length - 1));
-        } else {
-          index = int.tryParse(lastPart);
-        }
-        current[index!] = newValue;
       }
 
       final newEntry = DictionaryEntry.fromJson(fullJson);
@@ -1277,15 +1342,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       if (success) {
         _updateEntryInGroup(newEntry);
         if (mounted) {
-          _showSnackBar('保存成功');
+          showToast(context, '保存成功');
         }
+        return newEntry;
       } else {
         throw Exception('数据库更新失败');
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar('保存失败: $e');
+        showToast(context, '保存失败: $e');
       }
+      return null;
     }
   }
 
@@ -1424,7 +1491,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         );
       }
     } catch (e) {
-      _showSnackBar('处理失败: $e');
+      showToast(context, '处理失败: $e');
     }
   }
 
@@ -1435,7 +1502,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     String targetLang,
     String sourceLang,
   ) async {
-    _showSnackBar('正在翻译...', duration: const Duration(seconds: 1));
+    showToast(context, '正在翻译...');
 
     try {
       final translation = await AIService().translate(text, targetLang);
@@ -1476,7 +1543,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar('翻译失败: $e');
+        showToast(context, '翻译失败: $e');
       }
     }
   }
@@ -1507,7 +1574,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     } catch (e) {
       Logger.d('Error in _toggleTranslationVisibility: $e', tag: 'Translation');
       if (mounted) {
-        _showSnackBar('切换失败: $e');
+        showToast(context, '切换失败: $e');
       }
     }
   }
@@ -1548,11 +1615,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       // 保存到全局设置
       await PreferencesService().setGlobalTranslationVisibility(newVisibility);
 
-      _showSnackBar(newVisibility ? '已显示所有语言' : '已隐藏非目标语言');
+      // 应用全局状态到 ComponentRenderer，实现实时切换
+      await _applyGlobalTranslationVisibility(newVisibility);
+
+      showToast(context, newVisibility ? '已显示所有语言' : '已隐藏非目标语言');
     } catch (e) {
       Logger.d('Error in _toggleAllNonTargetLanguages: $e', tag: 'Translation');
       if (mounted) {
-        _showSnackBar('切换失败: $e');
+        showToast(context, '切换失败: $e');
       }
     }
   }
@@ -1949,7 +2019,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _pendingAiRequests[requestId] = requestFuture;
 
     // 显示一个简短的提示
-    _showSnackBar('AI正在思考中，您可以继续浏览...', duration: const Duration(seconds: 2));
+    showToast(context, 'AI正在思考中，您可以继续浏览...');
 
     // 处理请求完成
     requestFuture
@@ -1986,7 +2056,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           if (mounted) {
             setState(() {});
             // 显示完成提示
-            _showSnackBar(
+            showToast(
+              context,
               'AI回答已就绪',
               action: SnackBarAction(
                 label: '查看',
@@ -2035,7 +2106,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
           if (mounted) {
             setState(() {});
-            _showSnackBar('AI请求失败: $e');
+            showToast(context, 'AI请求失败: $e');
           }
         });
   }
@@ -2213,7 +2284,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               // 复制到剪贴板
               Clipboard.setData(ClipboardData(text: answer));
               Navigator.pop(context);
-              _showSnackBar('已复制到剪贴板');
+              showToast(context, '已复制到剪贴板');
             },
             child: const Text('复制'),
           ),
@@ -2231,33 +2302,57 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) {
+          final screenSize = MediaQuery.of(context).size;
           return DraggableScrollableSheet(
-            initialChildSize: isFullScreen ? 0.95 : 0.7,
-            minChildSize: isFullScreen ? 0.95 : 0.5,
-            maxChildSize: 0.95,
+            initialChildSize: isFullScreen ? 1.0 : 0.7,
+            minChildSize: isFullScreen ? 1.0 : 0.5,
+            maxChildSize: 1.0,
             expand: false,
             builder: (context, scrollController) {
-              return Container(
+              Widget content = Container(
+                width: isFullScreen ? screenSize.width : null,
                 padding: const EdgeInsets.all(16),
+                decoration: isFullScreen
+                    ? BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.zero,
+                      )
+                    : null,
                 child: Column(
                   children: [
                     // 标题栏
                     Row(
                       children: [
-                        FilledButton.icon(
+                        OutlinedButton.icon(
                           onPressed: () {
                             Navigator.pop(context);
                             _summarizeCurrentPage();
                           },
-                          icon: const Icon(Icons.auto_awesome, size: 18),
-                          label: const Text('总结当前页'),
-                          style: FilledButton.styleFrom(
+                          icon: Icon(
+                            Icons.auto_awesome,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          label: Text(
+                            '总结当前页',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
                               vertical: 8,
                             ),
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            backgroundColor: Colors.transparent,
                           ),
                         ),
                         const Spacer(),
@@ -2493,7 +2588,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                           text: record.answer,
                                                         ),
                                                       );
-                                                      _showSnackBar('已复制到剪贴板');
+                                                      showToast(
+                                                        context,
+                                                        '已复制到剪贴板',
+                                                      );
                                                     },
                                                     icon: const Icon(
                                                       Icons.copy,
@@ -2732,6 +2830,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   ],
                 ),
               );
+              // 全屏时使用 ClipRect 裁剪圆角
+              if (isFullScreen) {
+                return ClipRect(child: content);
+              }
+              return content;
             },
           );
         },
@@ -3250,7 +3353,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 获取当前词典当前页的所有entries
     if (currentDict.pageGroups.isEmpty ||
         currentPageIndex >= currentDict.pageGroups.length) {
-      _showSnackBar('当前页没有内容');
+      showToast(context, '当前页没有内容');
       return;
     }
 
@@ -3258,7 +3361,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final entries = currentPage.sections.map((s) => s.entry).toList();
 
     if (entries.isEmpty) {
-      _showSnackBar('当前页没有内容');
+      showToast(context, '当前页没有内容');
       return;
     }
 
@@ -3278,6 +3381,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _aiChatHistory.add(loadingRecord);
     _currentLoadingId = requestId;
 
+    // 保存到持久化存储
+    _aiChatDatabaseService.addRecord(
+      AiChatRecordModel(
+        id: requestId,
+        word: targetWord,
+        question: '请总结当前页的所有词典内容',
+        answer: '',
+        timestamp: loadingRecord.timestamp,
+        path: null,
+        elementJson: null,
+      ),
+    );
+
     setState(() {});
 
     // 构建当前页所有entries的JSON内容
@@ -3290,7 +3406,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final requestFuture = _aiService.summarizeDictionary(jsonContent);
     _pendingAiRequests[requestId] = requestFuture;
 
-    _showSnackBar('AI正在分析当前页内容...', duration: const Duration(seconds: 2));
+    showToast(context, 'AI正在分析当前页内容...');
 
     requestFuture
         .then((summary) {
@@ -3305,13 +3421,26 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               timestamp: _aiChatHistory[index].timestamp,
               path: null,
             );
+            // 更新持久化存储
+            _aiChatDatabaseService.updateRecord(
+              AiChatRecordModel(
+                id: requestId,
+                word: targetWord,
+                question: '当前页内容总结',
+                answer: summary,
+                timestamp: _aiChatHistory[index].timestamp,
+                path: null,
+                elementJson: null,
+              ),
+            );
           }
           if (_currentLoadingId == requestId) {
             _currentLoadingId = null;
           }
           if (mounted) {
             setState(() {});
-            _showSnackBar(
+            showToast(
+              context,
               'AI总结已就绪',
               action: SnackBarAction(
                 label: '查看',
@@ -3339,13 +3468,25 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               timestamp: _aiChatHistory[index].timestamp,
               path: null,
             );
+            // 更新持久化存储
+            _aiChatDatabaseService.updateRecord(
+              AiChatRecordModel(
+                id: requestId,
+                word: targetWord,
+                question: '当前页内容总结',
+                answer: '请求失败: $e',
+                timestamp: _aiChatHistory[index].timestamp,
+                path: null,
+                elementJson: null,
+              ),
+            );
           }
           if (_currentLoadingId == requestId) {
             _currentLoadingId = null;
           }
           if (mounted) {
             setState(() {});
-            _showSnackBar('AI总结失败: $e');
+            showToast(context, 'AI总结失败: $e');
           }
         });
   }
@@ -3742,5 +3883,94 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
         }),
       ],
     );
+  }
+}
+
+class ScaleLayoutWrapper extends SingleChildRenderObjectWidget {
+  final double scale;
+
+  const ScaleLayoutWrapper({
+    super.key,
+    required this.scale,
+    required Widget super.child,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return RenderScaleLayout(scale: scale);
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderScaleLayout renderObject,
+  ) {
+    renderObject.scale = scale;
+  }
+}
+
+class RenderScaleLayout extends RenderProxyBox {
+  double _scale;
+
+  RenderScaleLayout({required double scale, RenderBox? child})
+    : _scale = scale,
+      super(child);
+
+  set scale(double value) {
+    if (_scale != value) {
+      _scale = value;
+      markNeedsLayout();
+    }
+  }
+
+  @override
+  void performLayout() {
+    if (child != null) {
+      // 让子组件以 1/scale 的宽度进行布局
+      final BoxConstraints childConstraints = constraints.copyWith(
+        maxWidth: constraints.maxWidth / _scale,
+        minWidth: constraints.minWidth / _scale,
+      );
+      child!.layout(childConstraints, parentUsesSize: true);
+
+      // 自身的大小 = 子组件大小 * scale
+      size = child!.size * _scale;
+    } else {
+      size = constraints.smallest;
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child != null) {
+      // 缩放绘制
+      context.pushTransform(
+        needsCompositing,
+        offset,
+        Matrix4.diagonal3Values(_scale, _scale, 1.0),
+        (context, offset) {
+          context.paintChild(child!, offset);
+        },
+      );
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    if (child != null) {
+      // 转换点击坐标
+      // 逆变换：position / scale
+      final Matrix4 transform = Matrix4.diagonal3Values(_scale, _scale, 1.0);
+      final Matrix4 inverse = Matrix4.tryInvert(transform) ?? transform;
+
+      return result.addWithPaintTransform(
+        transform: transform,
+        position: position,
+        hitTest: (BoxHitTestResult result, Offset position) {
+          return child!.hitTest(result, position: position);
+        },
+      );
+    }
+    return false;
   }
 }
