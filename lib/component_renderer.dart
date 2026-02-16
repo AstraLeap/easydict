@@ -201,20 +201,16 @@ class _HighlightWrapperState extends State<_HighlightWrapper>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
     _animation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 3),
     ]).animate(_controller);
 
     if (widget.isHighlighting) {
-      _controller.repeat();
+      _controller.forward();
     }
   }
 
@@ -223,7 +219,7 @@ class _HighlightWrapperState extends State<_HighlightWrapper>
     super.didUpdateWidget(oldWidget);
     if (widget.isHighlighting != oldWidget.isHighlighting) {
       if (widget.isHighlighting) {
-        _controller.repeat();
+        _controller.forward(from: 0.0);
       } else {
         _controller.stop();
         _controller.reset();
@@ -240,7 +236,7 @@ class _HighlightWrapperState extends State<_HighlightWrapper>
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final highlightColor = colorScheme.primaryContainer.withValues(alpha: 0.6);
+    final highlightColor = colorScheme.primaryContainer.withValues(alpha: 0.4);
 
     return AnimatedBuilder(
       animation: _animation,
@@ -381,6 +377,7 @@ FormattedTextResult parseFormattedText(
   String? language,
   String? sourceLanguage,
   Map<String, Map<String, double>>? fontScales,
+  bool isSerif = false,
 }) {
   // 如果被隐藏，返回空的 spans
   if (hidden) {
@@ -398,11 +395,16 @@ FormattedTextResult parseFormattedText(
 
   if (effectiveLanguage != null) {
     final fontService = FontLoaderService();
-    final fontInfo = fontService.getFontInfo(effectiveLanguage, isSerif: true);
+    final fontInfo = fontService.getFontInfo(
+      effectiveLanguage,
+      isSerif: isSerif,
+    );
 
-    final fontScale = fontScales?[effectiveLanguage]?['serif'] ?? 1.0;
+    final fontScale =
+        fontScales?[effectiveLanguage]?[isSerif ? 'serif' : 'sans'] ?? 1.0;
 
-    if (fontInfo != null) {
+    // 只有当 baseStyle 没有指定 fontFamily 时，才应用自定义字体
+    if (fontInfo != null && baseStyle.fontFamily == null) {
       effectiveBaseStyle = effectiveBaseStyle.copyWith(
         fontFamily: fontInfo.fontFamily,
       );
@@ -1261,13 +1263,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final spans = <InlineSpan>[];
     int currentTextOffset = 0;
 
-    final usageFontScale = fontScales?[sourceLanguage ?? 'en']?['serif'] ?? 1.0;
+    final usageFontScale = fontScales?[sourceLanguage ?? 'en']?['sans'] ?? 1.0;
     final usageFontSize = 12 * usageFontScale;
 
-    // 获取 usage 的自定义字体
+    // 获取 usage 的自定义字体 (使用 sans)
     final fontService = FontLoaderService();
     final usageFontInfo = sourceLanguage != null
-        ? fontService.getFontInfo(sourceLanguage, isSerif: true)
+        ? fontService.getFontInfo(sourceLanguage, isSerif: false)
         : null;
 
     if (usage.isNotEmpty) {
@@ -1346,7 +1348,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         sourceLanguage: _sourceLanguage,
       );
       final exampleFontScale =
-          fontScales?[effectiveLanguageForExample]?['serif'] ?? 1.0;
+          fontScales?[effectiveLanguageForExample]?['sans'] ?? 1.0;
       final exampleFontSize = 14 * exampleFontScale;
 
       var exampleTextStyle = TextStyle(
@@ -1362,9 +1364,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
             : FontStyle.italic,
       );
 
+      // 获取 example 的自定义字体 (使用 sans)
       final fontService = FontLoaderService();
       final fontInfo = effectiveLanguageForExample != null
-          ? fontService.getFontInfo(effectiveLanguageForExample, isSerif: true)
+          ? fontService.getFontInfo(effectiveLanguageForExample, isSerif: false)
           : null;
       if (fontInfo != null) {
         exampleTextStyle = exampleTextStyle.copyWith(
@@ -1534,6 +1537,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     GestureRecognizer? recognizer,
     bool hidden = false,
     String? language,
+    bool isSerif = false,
   }) {
     return parseFormattedText(
       text,
@@ -1548,6 +1552,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       language: language,
       sourceLanguage: _sourceLanguage,
       fontScales: _fontScales,
+      isSerif: isSerif,
     );
   }
 
@@ -2205,6 +2210,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         height: 1.0,
                       ),
                       context: context,
+                      isSerif: true,
                     ).spans,
                   ),
                 ),
@@ -2928,7 +2934,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             sourceLanguage: _sourceLanguage,
           );
           final defFontScale =
-              fontScales?[effectiveLanguageForDef]?['serif'] ?? 1.0;
+              fontScales?[effectiveLanguageForDef]?['sans'] ?? 1.0;
           final defFontSize = 15 * defFontScale;
 
           var definitionTextStyle = TextStyle(
@@ -2937,9 +2943,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
             height: 1.6,
           );
 
+          // 获取 definition 的自定义字体 (使用 sans)
           final fontService = FontLoaderService();
           final fontInfo = effectiveLanguageForDef != null
-              ? fontService.getFontInfo(effectiveLanguageForDef, isSerif: true)
+              ? fontService.getFontInfo(effectiveLanguageForDef, isSerif: false)
               : null;
           if (fontInfo != null) {
             definitionTextStyle = definitionTextStyle.copyWith(
@@ -3371,12 +3378,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
                             final subSensePathStr = _convertPathToString(
                               subSensePath,
                             );
-                            return Container(
-                              key: _getElementKey(subSensePathStr),
-                              child: _buildSenseWidget(
-                                context,
-                                subEntry.value as Map<String, dynamic>,
-                                subIndexStr,
+                            final isHighlighting = _isHighlighting(
+                              subSensePathStr,
+                            );
+                            return _HighlightWrapper(
+                              isHighlighting: isHighlighting,
+                              child: Container(
+                                key: _getElementKey(subSensePathStr),
+                                child: _buildSenseWidget(
+                                  context,
+                                  subEntry.value as Map<String, dynamic>,
+                                  subIndexStr,
+                                ),
                               ),
                             );
                           },
@@ -3421,14 +3434,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   builder: (context) {
                     final sensePath = PathScope.of(context);
                     final sensePathStr = _convertPathToString(sensePath);
-                    return Container(
-                      key: _getElementKey(sensePathStr),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildSenseWidget(context, sense, indexStr),
-                          const SizedBox(height: 16),
-                        ],
+                    final isHighlighting = _isHighlighting(sensePathStr);
+                    return _HighlightWrapper(
+                      isHighlighting: isHighlighting,
+                      child: Container(
+                        key: _getElementKey(sensePathStr),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildSenseWidget(context, sense, indexStr),
+                            const SizedBox(height: 16),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -3500,18 +3517,25 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               final sensePathStr = _convertPathToString(
                                 sensePath,
                               );
-                              return Container(
-                                key: _getElementKey(sensePathStr),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildSenseWidget(
-                                      context,
-                                      sense as Map<String, dynamic>,
-                                      indexStr,
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
+                              final isHighlighting = _isHighlighting(
+                                sensePathStr,
+                              );
+                              return _HighlightWrapper(
+                                isHighlighting: isHighlighting,
+                                child: Container(
+                                  key: _getElementKey(sensePathStr),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildSenseWidget(
+                                        context,
+                                        sense as Map<String, dynamic>,
+                                        indexStr,
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+                                  ),
                                 ),
                               );
                             },
@@ -4749,6 +4773,7 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                           context: context,
                           sourceLanguage: widget.sourceLanguage,
                           fontScales: widget.fontScales,
+                          isSerif: true,
                         ).spans,
                       ),
                     ),

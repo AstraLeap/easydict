@@ -153,6 +153,22 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  Widget _buildNavigationDestination({
+    required IconData icon,
+    required IconData selectedIcon,
+    required String label,
+    required int index,
+  }) {
+    return NavigationDestination(
+      icon: MouseRegion(cursor: SystemMouseCursors.click, child: Icon(icon)),
+      selectedIcon: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Icon(selectedIcon),
+      ),
+      label: label,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,21 +176,24 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onTabSelected,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.search_outlined),
-            selectedIcon: Icon(Icons.search),
+        destinations: [
+          _buildNavigationDestination(
+            icon: Icons.search_outlined,
+            selectedIcon: Icons.search,
             label: '查词',
+            index: 0,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.style_outlined),
-            selectedIcon: Icon(Icons.style),
+          _buildNavigationDestination(
+            icon: Icons.style_outlined,
+            selectedIcon: Icons.style,
             label: '单词本',
+            index: 1,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+          _buildNavigationDestination(
+            icon: Icons.settings_outlined,
+            selectedIcon: Icons.settings,
             label: '设置',
+            index: 2,
           ),
         ],
       ),
