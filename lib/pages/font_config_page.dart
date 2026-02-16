@@ -772,7 +772,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              '${(currentScale * 100).toInt()}%',
+              '${(currentScale * 100).round()}%',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -796,7 +796,7 @@ class _FontConfigPageState extends State<FontConfigPage>
         return ScaleDialogWidget(
           title: '${isSerif ? '衬线字体' : '无衬线字体'}缩放倍率',
           subtitle: '仅用于调整不同字体的尺寸一致性',
-          currentValue: currentScale * 100,
+          currentValue: (currentScale * 100).round().toDouble(),
           min: 75,
           max: 150,
           divisions: 5,
@@ -826,7 +826,7 @@ class _FontConfigPageState extends State<FontConfigPage>
         return ScaleDialogWidget(
           title: '词典内容缩放',
           subtitle: '这是调整词典内容缩放的主要入口',
-          currentValue: _dictionaryContentScale * 100,
+          currentValue: (_dictionaryContentScale * 100).round().toDouble(),
           min: 50,
           max: 200,
           divisions: 5,
@@ -963,7 +963,9 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
   }
 
   double _parseValue(String text) {
-    final parsed = double.tryParse(text);
+    // 移除可能的 % 符号和空白字符
+    final cleanText = text.replaceAll('%', '').trim();
+    final parsed = double.tryParse(cleanText);
     if (parsed != null) {
       if (widget.unit == '%') {
         if (parsed >= widget.min && parsed <= widget.max) {
@@ -1052,6 +1054,15 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                   ),
                   keyboardType: TextInputType.number,
                   controller: _controller,
+                  onChanged: (value) {
+                    // 实时更新 _value，确保保存时能获取最新值
+                    final parsed = _parseValue(value);
+                    if (parsed != _value) {
+                      setState(() {
+                        _value = parsed;
+                      });
+                    }
+                  },
                   onSubmitted: (value) {
                     setState(() {
                       _value = _parseValue(value);
@@ -1071,7 +1082,9 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
         ),
         TextButton(
           onPressed: () async {
-            await widget.onSave(_value);
+            // 保存前先从控制器同步最新值（用户可能输入后未按回车）
+            final latestValue = _parseValue(_controller.text);
+            await widget.onSave(latestValue);
             if (context.mounted) {
               Navigator.pop(context);
             }
