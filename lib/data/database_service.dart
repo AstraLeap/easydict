@@ -81,9 +81,9 @@ class DictionaryEntry {
   final Map<String, dynamic> frequency;
   final dynamic etymology;
   final List<Map<String, dynamic>> pronunciations;
-  final List<Map<String, dynamic>> senses;
-  final List<String> phrases;
-  final List<Map<String, dynamic>> senseGroups;
+  final List<Map<String, dynamic>> sense;
+  final List<String> phrase;
+  final List<Map<String, dynamic>> senseGroup;
   final List<String> hiddenLanguages;
   final Map<String, dynamic> _rawJson;
 
@@ -100,9 +100,9 @@ class DictionaryEntry {
     required this.frequency,
     this.etymology,
     required this.pronunciations,
-    required this.senses,
-    this.phrases = const [],
-    this.senseGroups = const [],
+    required this.sense,
+    this.phrase = const [],
+    this.senseGroup = const [],
     this.hiddenLanguages = const [],
     Map<String, dynamic>? rawJson,
   }) : _rawJson = rawJson ?? {};
@@ -139,21 +139,21 @@ class DictionaryEntry {
                   .map((e) => e!)
                   .toList()
             : [],
-        senses: json['senses'] != null
-            ? (json['senses'] as List<dynamic>)
+        sense: json['sense'] != null
+            ? (json['sense'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)
                   .where((e) => e != null)
                   .map((e) => e!)
                   .toList()
             : [],
-        phrases: json['phrases'] != null
-            ? (json['phrases'] as List<dynamic>)
+        phrase: json['phrase'] != null
+            ? (json['phrase'] as List<dynamic>)
                   .map((e) => e?.toString() ?? '')
                   .where((e) => e.isNotEmpty)
                   .toList()
             : [],
-        senseGroups: json['sense_groups'] != null
-            ? (json['sense_groups'] as List<dynamic>)
+        senseGroup: json['sense_group'] != null
+            ? (json['sense_group'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)
                   .where((e) => e != null)
                   .map((e) => e!)
@@ -189,9 +189,9 @@ class DictionaryEntry {
       'frequency': frequency,
       'etymology': etymology,
       'pronunciation': pronunciations,
-      'senses': senses,
-      'phrases': phrases,
-      'sense_groups': senseGroups,
+      'sense': sense,
+      'phrase': phrase,
+      'sense_group': senseGroup,
     };
   }
 }
