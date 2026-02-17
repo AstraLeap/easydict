@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:easydict/pages/entry_detail_page.dart';
 import 'package:easydict/services/dictionary_manager.dart';
+import 'package:easydict/services/font_loader_service.dart';
 import 'package:easydict/models/dictionary_entry_group.dart';
 import 'package:easydict/database_service.dart';
+import 'package:easydict/components/scale_layout_wrapper.dart';
+import 'package:easydict/components/global_scale_wrapper.dart';
 
 class EntriesListSheet extends StatefulWidget {
   final String dictId;
@@ -14,6 +17,7 @@ class EntriesListSheet extends StatefulWidget {
 }
 
 class _EntriesListSheetState extends State<EntriesListSheet> {
+  final double _contentScale = FontLoaderService().getDictionaryContentScale();
   final TextEditingController searchController = TextEditingController();
   final ScrollController scrollController = ScrollController();
   final DictionaryManager dictManager = DictionaryManager();
@@ -105,11 +109,14 @@ class _EntriesListSheetState extends State<EntriesListSheet> {
         color: Theme.of(context).scaffoldBackgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      child: Column(
-        children: [
-          buildHeader(),
-          Expanded(child: buildEntryList()),
-        ],
+      child: PageScaleWrapper(
+        scale: _contentScale,
+        child: Column(
+          children: [
+            buildHeader(),
+            Expanded(child: buildEntryList()),
+          ],
+        ),
       ),
     );
   }

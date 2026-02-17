@@ -29,8 +29,13 @@ class FontLoaderService {
 
   // 缓存字体缩放配置，避免重复异步读取
   Map<String, Map<String, double>> _cachedFontScales = {};
-  // 缓存词典内容缩放，避免重复异步读取
+  // 缓存软件布局缩放，避免重复异步读取
   double _cachedDictionaryContentScale = 1.0;
+
+  /// 全局软件布局缩放通知器，用于通知所有监听者缩放值的变化
+  final ValueNotifier<double> dictionaryContentScaleNotifier = ValueNotifier(
+    1.0,
+  );
 
   static const List<String> _serifTypes = [
     'serif_regular',
@@ -71,19 +76,20 @@ class FontLoaderService {
     await _loadFontScales();
   }
 
-  /// 加载词典内容缩放到缓存
+  /// 加载软件布局缩放到缓存
   Future<void> _loadDictionaryContentScale() async {
     final prefs = PreferencesService();
     _cachedDictionaryContentScale = await prefs.getDictionaryContentScale();
-    Logger.i('词典内容缩放已加载: $_cachedDictionaryContentScale', tag: 'FontLoader');
+    dictionaryContentScaleNotifier.value = _cachedDictionaryContentScale;
+    Logger.i('软件布局缩放已加载: $_cachedDictionaryContentScale', tag: 'FontLoader');
   }
 
-  /// 同步获取词典内容缩放，避免异步加载导致的闪烁问题
+  /// 同步获取软件布局缩放，避免异步加载导致的闪烁问题
   double getDictionaryContentScale() {
     return _cachedDictionaryContentScale;
   }
 
-  /// 刷新词典内容缩放缓存
+  /// 刷新软件布局缩放缓存
   Future<void> reloadDictionaryContentScale() async {
     await _loadDictionaryContentScale();
   }
@@ -92,13 +98,13 @@ class FontLoaderService {
     try {
       final prefs = PreferencesService();
       final fontConfigs = await prefs.getFontConfigs();
-      
+
       Logger.i('开始加载自定义字体, 语言数量: ${fontConfigs.length}', tag: 'FontLoader');
-      
+
       if (fontConfigs.isEmpty) {
         Logger.w('没有找到任何字体配置', tag: 'FontLoader');
       }
-      
+
       for (final langEntry in fontConfigs.entries) {
         final language = langEntry.key;
         final configs = langEntry.value;
@@ -109,7 +115,10 @@ class FontLoaderService {
           final fontPath = fontTypeEntry.value;
 
           if (fontPath.isNotEmpty) {
-            Logger.i('准备加载字体: language=$language, fontType=$fontType, path=$fontPath', tag: 'FontLoader');
+            Logger.i(
+              '准备加载字体: language=$language, fontType=$fontType, path=$fontPath',
+              tag: 'FontLoader',
+            );
             await _loadFont(language, fontType, fontPath);
           }
         }
@@ -207,10 +216,7 @@ class FontLoaderService {
     final fallbackFontType = _findFallbackFontType(language, isSerif: isSerif);
     if (fallbackFontType != null) {
       final fallbackKey = '${language}_$fallbackFontType';
-      Logger.d(
-        '字体回退: 请求 $fontKey -> 使用 $fallbackKey',
-        tag: 'FontLoader',
-      );
+      Logger.d('字体回退: 请求 $fontKey -> 使用 $fallbackKey', tag: 'FontLoader');
       return FontInfo(
         fontFamily: _getFontFamilyName(language, fallbackFontType),
         fontWeight: _getFontWeight(fallbackFontType),

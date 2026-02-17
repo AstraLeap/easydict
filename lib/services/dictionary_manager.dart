@@ -31,6 +31,10 @@ class DictionaryManager {
   final Map<String, Future<Database>> _pendingOpens = {};
   final Map<String, Future<Database>> _pendingMediaOpens = {};
 
+  DictionaryMetadata? getCachedMetadata(String dictionaryId) {
+    return _metadataCache[dictionaryId];
+  }
+
   Future<String> get baseDirectory async {
     if (_baseDirectory != null) return _baseDirectory!;
 
@@ -625,6 +629,13 @@ class DictionaryManager {
     }
 
     return metadatas;
+  }
+
+  Future<void> preloadEnabledDictionariesMetadata() async {
+    final enabledIds = await getEnabledDictionaries();
+    for (final id in enabledIds) {
+      await getDictionaryMetadata(id);
+    }
   }
 
   Future<bool> dictionaryExists(String dictionaryId) async {

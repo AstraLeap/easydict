@@ -129,7 +129,7 @@ class _BoardWidgetState extends State<BoardWidget> {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(
-          DpiUtils.scaleBorderRadius(context, 6),
+          DpiUtils.scaleBorderRadius(context, 12),
         ),
         border: Border.all(
           color: colorScheme.outlineVariant.withValues(alpha: 0.6),
@@ -150,7 +150,7 @@ class _BoardWidgetState extends State<BoardWidget> {
             onTap: _toggleCollapse,
             onLongPress: _showPath,
             borderRadius: BorderRadius.vertical(
-              top: Radius.circular(DpiUtils.scaleBorderRadius(context, 5)),
+              top: Radius.circular(DpiUtils.scaleBorderRadius(context, 12)),
             ),
             mouseCursor: SystemMouseCursors.click,
             child: Container(
@@ -162,7 +162,7 @@ class _BoardWidgetState extends State<BoardWidget> {
               decoration: BoxDecoration(
                 color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(DpiUtils.scaleBorderRadius(context, 5)),
+                  top: Radius.circular(DpiUtils.scaleBorderRadius(context, 12)),
                 ),
               ),
               child: Row(

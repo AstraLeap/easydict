@@ -7,6 +7,8 @@ import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
 import '../utils/language_utils.dart';
 import '../utils/toast_utils.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 
 class FontConfigPage extends StatefulWidget {
   const FontConfigPage({super.key});
@@ -24,7 +26,6 @@ class _FontConfigPageState extends State<FontConfigPage>
   Map<String, Map<String, double>> _fontScales = {};
   List<String> _languages = [];
   bool _isLoading = true;
-  double _dictionaryContentScale = 1.0;
 
   @override
   void initState() {
@@ -56,7 +57,6 @@ class _FontConfigPageState extends State<FontConfigPage>
     final languages = await _getAvailableLanguages();
     final userConfigs = await prefs.getFontConfigs();
     final fontScales = await prefs.getAllFontScales();
-    final dictionaryContentScale = await prefs.getDictionaryContentScale();
 
     Map<String, DetectedFonts> detectedFonts = {};
     if (fontPath != null && fontPath.isNotEmpty) {
@@ -85,7 +85,6 @@ class _FontConfigPageState extends State<FontConfigPage>
         _userFontConfigs = _convertToUserFontConfigs(userConfigs);
         _fontScales = fontScales;
         _languages = languages;
-        _dictionaryContentScale = dictionaryContentScale;
         if (_languages.isNotEmpty) {
           _tabController = TabController(
             length: _languages.length,
@@ -498,113 +497,102 @@ class _FontConfigPageState extends State<FontConfigPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  title: const Text('显示与字体'),
+    final content = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                title: const Text('字体配置'),
+                pinned: true,
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                surfaceTintColor: Colors.transparent,
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: '刷新字体',
+                      onPressed: () async {
+                        setState(() => _isLoading = true);
+                        await PreferencesService().clearAllFontConfigs();
+                        await _loadData(forceRescan: true);
+                        await FontLoaderService().reloadFonts();
+                        if (mounted) {
+                          showToast(context, '字体已刷新');
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              SliverToBoxAdapter(
+                child: Card(
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.folder_outlined),
+                    title: const Text('字体文件夹'),
+                    subtitle: Text(
+                      _fontFolderPath ?? '未设置',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _fontFolderPath == null
+                            ? Theme.of(context).colorScheme.outline
+                            : null,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit),
+                      onPressed: _selectFolder,
+                      tooltip: _fontFolderPath == null ? '设置' : '修改',
+                    ),
+                  ),
+                ),
+              ),
+              if (_languages.isNotEmpty && _tabController != null) ...[
+                SliverPersistentHeader(
                   pinned: true,
-                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                  surfaceTintColor: Colors.transparent,
-                  actions: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: IconButton(
-                        icon: const Icon(Icons.refresh),
-                        tooltip: '刷新字体',
-                        onPressed: () async {
-                          setState(() => _isLoading = true);
-                          await PreferencesService().clearAllFontConfigs();
-                          await _loadData(forceRescan: true);
-                          await FontLoaderService().reloadFonts();
-                          if (mounted) {
-                            showToast(context, '字体已刷新');
-                          }
-                        },
-                      ),
+                  delegate: _SliverTabBarDelegate(
+                    TabBar(
+                      controller: _tabController,
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      tabs: _languages
+                          .map(
+                            (lang) => Tab(
+                              text: LanguageUtils.getLanguageDisplayName(lang),
+                            ),
+                          )
+                          .toList(),
                     ),
-                  ],
-                ),
-                SliverToBoxAdapter(
-                  child: Card(
-                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: ListTile(
-                      leading: const Icon(Icons.zoom_in),
-                      title: const Text('词典内容缩放'),
-                      subtitle: Text(
-                        '${(_dictionaryContentScale * 100).toInt()}%',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _showDictionaryContentScaleDialog,
-                    ),
+                    Theme.of(context).scaffoldBackgroundColor,
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: Card(
-                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: ListTile(
-                      leading: const Icon(Icons.folder_outlined),
-                      title: const Text('字体文件夹'),
-                      subtitle: Text(
-                        _fontFolderPath ?? '未设置',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: _fontFolderPath == null
-                              ? Theme.of(context).colorScheme.outline
-                              : null,
+                // 使用 SliverList 来显示当前选中的 tab 内容
+                SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 800),
+                        child: _buildLanguageTabContent(
+                          _languages[_tabController!.index],
                         ),
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: _selectFolder,
-                        tooltip: _fontFolderPath == null ? '设置' : '修改',
-                      ),
-                    ),
-                  ),
+                    );
+                  }, childCount: 1),
                 ),
-                if (_languages.isNotEmpty && _tabController != null) ...[
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _SliverTabBarDelegate(
-                      TabBar(
-                        controller: _tabController,
-                        isScrollable: true,
-                        tabAlignment: TabAlignment.start,
-                        tabs: _languages
-                            .map(
-                              (lang) => Tab(
-                                text: LanguageUtils.getLanguageDisplayName(
-                                  lang,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                      Theme.of(context).scaffoldBackgroundColor,
-                    ),
-                  ),
-                  // 使用 SliverList 来显示当前选中的 tab 内容
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 800),
-                          child: _buildLanguageTabContent(
-                            _languages[_tabController!.index],
-                          ),
-                        ),
-                      );
-                    }, childCount: 1),
-                  ),
-                ] else if (!_isLoading)
-                  const SliverFillRemaining(
-                    child: Center(child: Text('未找到包含语言信息的词典')),
-                  ),
-              ],
-            ),
+              ] else if (!_isLoading)
+                const SliverFillRemaining(
+                  child: Center(child: Text('未找到包含语言信息的词典')),
+                ),
+            ],
+          );
+
+    return Scaffold(
+      body: PageScaleWrapper(
+        scale: FontLoaderService().getDictionaryContentScale(),
+        child: content,
+      ),
     );
   }
 
@@ -819,34 +807,6 @@ class _FontConfigPageState extends State<FontConfigPage>
     );
   }
 
-  Future<void> _showDictionaryContentScaleDialog() async {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return ScaleDialogWidget(
-          title: '词典内容缩放',
-          subtitle: '这是调整词典内容缩放的主要入口',
-          currentValue: (_dictionaryContentScale * 100).round().toDouble(),
-          min: 50,
-          max: 200,
-          divisions: 5,
-          unit: '%',
-          onSave: (value) async {
-            final prefs = PreferencesService();
-            await prefs.setDictionaryContentScale(value / 100);
-            // 刷新 FontLoaderService 中的词典内容缩放缓存
-            await FontLoaderService().reloadDictionaryContentScale();
-            if (mounted) {
-              setState(() {
-                _dictionaryContentScale = value / 100;
-              });
-            }
-          },
-        );
-      },
-    );
-  }
-
   Widget _buildFontStatusRow(
     String type,
     String label,
@@ -1038,8 +998,18 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
           ),
           const SizedBox(height: 8),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _value = 100;
+                    _controller.text = _formatValue(100);
+                  });
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('重置'),
+              ),
+              const Spacer(),
               const Text('当前数值: '),
               SizedBox(
                 width: 80,
@@ -1055,7 +1025,6 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                   keyboardType: TextInputType.number,
                   controller: _controller,
                   onChanged: (value) {
-                    // 实时更新 _value，确保保存时能获取最新值
                     final parsed = _parseValue(value);
                     if (parsed != _value) {
                       setState(() {

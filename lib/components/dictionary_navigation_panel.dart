@@ -3,6 +3,7 @@ import '../models/dictionary_entry_group.dart';
 import '../database_service.dart';
 import 'dictionary_logo.dart';
 import '../logger.dart';
+import '../component_renderer.dart';
 
 class DictionaryNavigationPanel extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
@@ -240,23 +241,21 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     if (currentDict.pageGroups.isNotEmpty) {
       mixedItems.add(_buildDictionaryLogo(context, currentDict, true));
 
-      // 添加当前page的sections
+      // 添加当前page的sections（即使只有一个section也显示）
       if (currentPageIndex < currentDict.pageGroups.length) {
         final currentPage = currentDict.pageGroups[currentPageIndex];
-        if (currentPage.sections.length > 1) {
-          for (int i = 0; i < currentPage.sections.length; i++) {
-            final section = currentPage.sections[i];
-            final isSelected = i == currentDict.currentSectionIndex;
-            mixedItems.add(
-              _buildSectionItem(
-                context,
-                section,
-                isSelected,
-                i,
-                currentDict.dictionaryId,
-              ),
-            );
-          }
+        for (int i = 0; i < currentPage.sections.length; i++) {
+          final section = currentPage.sections[i];
+          final isSelected = i == currentDict.currentSectionIndex;
+          mixedItems.add(
+            _buildSectionItem(
+              context,
+              section,
+              isSelected,
+              i,
+              currentDict.dictionaryId,
+            ),
+          );
         }
       }
     }
@@ -272,13 +271,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
             ? dict.currentPageIndex
             : 0;
         final targetPage = dict.pageGroups[pageIndex];
-        if (targetPage.sections.length > 1) {
-          for (int j = 0; j < targetPage.sections.length; j++) {
-            final section = targetPage.sections[j];
-            mixedItems.add(
-              _buildSectionItem(context, section, false, j, dict.dictionaryId),
-            );
-          }
+        for (int j = 0; j < targetPage.sections.length; j++) {
+          final section = targetPage.sections[j];
+          mixedItems.add(
+            _buildSectionItem(context, section, false, j, dict.dictionaryId),
+          );
         }
       }
     }
@@ -527,12 +524,16 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         items.add(
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Text(
-              groupName,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
+            child: RichText(
+              text: TextSpan(
+                children: parseFormattedText(
+                  groupName,
+                  TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ).spans,
               ),
             ),
           ),
@@ -576,6 +577,125 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           true,
         );
       }
+    }
+
+    // 添加 phrases 章节（只显示标题，可点击跳转）
+    if (entry.phrases.isNotEmpty) {
+      items.add(
+        InkWell(
+          onTap: () {
+            _onSectionTapped(
+              section,
+              section.entry.dictId ?? '',
+              currentSectionIndex,
+              true,
+              targetPath: 'phrases',
+            );
+          },
+          mouseCursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.format_quote, size: 16, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'phrases',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 添加 boards 章节（从 entryJson 中获取，排除已渲染的key）
+    final entryJson = entry.toJson();
+    final renderedKeys = const [
+      'id',
+      'entry_id',
+      'dict_id',
+      'version',
+      'headword',
+      'entry_type',
+      'page',
+      'section',
+      'tags',
+      'certifications',
+      'frequency',
+      'etymology',
+      'pronunciations',
+      'senses',
+      'sense_groups',
+      'phrases',
+      'datas',
+      'hiddenLanguages',
+    ];
+
+    for (final jsonEntry in entryJson.entries) {
+      final key = jsonEntry.key;
+      final value = jsonEntry.value;
+
+      // 跳过已渲染的key
+      if (renderedKeys.contains(key)) continue;
+      // 跳过null值
+      if (value == null) continue;
+      // 跳过空列表
+      if (value is List && value.isEmpty) continue;
+      // 跳过空map
+      if (value is Map && value.isEmpty) continue;
+
+      final boardTitle = value is Map
+          ? (value['title'] as String? ?? key)
+          : key;
+      final path = key;
+
+      items.add(
+        InkWell(
+          onTap: () {
+            _onSectionTapped(
+              section,
+              section.entry.dictId ?? '',
+              currentSectionIndex,
+              true,
+              targetPath: path,
+            );
+          },
+          mouseCursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.dashboard_outlined,
+                  size: 16,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    boardTitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     return items;
@@ -642,11 +762,12 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    defText,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: colorScheme.onSurface,
+                  child: RichText(
+                    text: TextSpan(
+                      children: parseFormattedText(
+                        defText,
+                        TextStyle(fontSize: 13, color: colorScheme.onSurface),
+                      ).spans,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -706,11 +827,15 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          subDefText,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
+                        child: RichText(
+                          text: TextSpan(
+                            children: parseFormattedText(
+                              subDefText,
+                              TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ).spans,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
