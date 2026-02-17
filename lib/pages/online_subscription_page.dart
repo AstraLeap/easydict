@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/dictionary_store_service.dart';
+import '../services/font_loader_service.dart';
 import '../models/remote_dictionary.dart';
 import '../services/dictionary_manager.dart';
 import '../logger.dart';
 import '../utils/toast_utils.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 
 class OnlineSubscriptionPage extends StatefulWidget {
   const OnlineSubscriptionPage({super.key});
@@ -13,6 +16,7 @@ class OnlineSubscriptionPage extends StatefulWidget {
 }
 
 class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
+  final double _contentScale = FontLoaderService().getDictionaryContentScale();
   final DictionaryManager _dictManager = DictionaryManager();
   final TextEditingController _urlController = TextEditingController();
 
@@ -148,17 +152,20 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('在线词典订阅')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildSubscriptionSettings(),
-          const SizedBox(height: 24),
-          if (_service != null) ...[
-            _buildDictionariesList(),
-          ] else ...[
-            _buildEmptyState(),
+      body: PageScaleWrapper(
+        scale: _contentScale,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildSubscriptionSettings(),
+            const SizedBox(height: 24),
+            if (_service != null) ...[
+              _buildDictionariesList(),
+            ] else ...[
+              _buildEmptyState(),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

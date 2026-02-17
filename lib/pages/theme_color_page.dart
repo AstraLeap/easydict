@@ -2,14 +2,55 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme_provider.dart';
 import '../utils/dpi_utils.dart';
+import '../services/font_loader_service.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 
-class ThemeColorPage extends StatelessWidget {
+class ThemeColorPage extends StatefulWidget {
   const ThemeColorPage({super.key});
+
+  @override
+  State<ThemeColorPage> createState() => _ThemeColorPageState();
+}
+
+class _ThemeColorPageState extends State<ThemeColorPage> {
+  final double _dictionaryContentScale = FontLoaderService()
+      .getDictionaryContentScale();
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final colorScheme = Theme.of(context).colorScheme;
+
+    final body = LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = constraints.maxWidth > 800
+            ? 800.0
+            : constraints.maxWidth;
+        final horizontalPadding = (constraints.maxWidth - contentWidth) / 2;
+        return ListView(
+          padding: EdgeInsets.only(
+            left: horizontalPadding + DpiUtils.scale(context, 16),
+            right: horizontalPadding + DpiUtils.scale(context, 16),
+            top: DpiUtils.scale(context, 16),
+            bottom: DpiUtils.scale(context, 16),
+          ),
+          children: [
+            _buildSectionTitle(context, '外观模式'),
+            SizedBox(height: DpiUtils.scale(context, 8)),
+            _buildThemeModeSection(context, themeProvider),
+            SizedBox(height: DpiUtils.scale(context, 24)),
+            _buildSectionTitle(context, '主题颜色'),
+            SizedBox(height: DpiUtils.scale(context, 8)),
+            _buildColorGrid(context, themeProvider),
+            SizedBox(height: DpiUtils.scale(context, 24)),
+            _buildSectionTitle(context, '预览效果'),
+            SizedBox(height: DpiUtils.scale(context, 8)),
+            _buildPreviewCard(context, themeProvider),
+          ],
+        );
+      },
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -18,35 +59,7 @@ class ThemeColorPage extends StatelessWidget {
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final contentWidth = constraints.maxWidth > 800
-              ? 800.0
-              : constraints.maxWidth;
-          final horizontalPadding = (constraints.maxWidth - contentWidth) / 2;
-          return ListView(
-            padding: EdgeInsets.only(
-              left: horizontalPadding + DpiUtils.scale(context, 16),
-              right: horizontalPadding + DpiUtils.scale(context, 16),
-              top: DpiUtils.scale(context, 16),
-              bottom: DpiUtils.scale(context, 16),
-            ),
-            children: [
-              _buildSectionTitle(context, '外观模式'),
-              SizedBox(height: DpiUtils.scale(context, 8)),
-              _buildThemeModeSection(context, themeProvider),
-              SizedBox(height: DpiUtils.scale(context, 24)),
-              _buildSectionTitle(context, '主题颜色'),
-              SizedBox(height: DpiUtils.scale(context, 8)),
-              _buildColorGrid(context, themeProvider),
-              SizedBox(height: DpiUtils.scale(context, 24)),
-              _buildSectionTitle(context, '预览效果'),
-              SizedBox(height: DpiUtils.scale(context, 8)),
-              _buildPreviewCard(context, themeProvider),
-            ],
-          );
-        },
-      ),
+      body: PageScaleWrapper(scale: _dictionaryContentScale, child: body),
     );
   }
 

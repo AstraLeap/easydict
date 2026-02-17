@@ -7,6 +7,9 @@ import 'dart:convert';
 import 'dart:async';
 import '../logger.dart';
 import '../utils/toast_utils.dart';
+import '../services/font_loader_service.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 
 enum LLMProvider {
   openAI('OpenAI', 'https://api.openai.com/v1'),
@@ -366,6 +369,8 @@ class LLMConfigPage extends StatefulWidget {
 
 class _LLMConfigPageState extends State<LLMConfigPage>
     with SingleTickerProviderStateMixin {
+  final double _dictionaryContentScale = FontLoaderService()
+      .getDictionaryContentScale();
   late TabController _tabController;
 
   final _fastFormKey = GlobalKey<FormState>();
@@ -889,6 +894,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.cloud_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
             ),
             iconStyleData: IconStyleData(
               icon: Icon(
@@ -945,6 +954,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.key_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
               suffixIcon: IconButton(
                 icon: Icon(
                   obscureApiKey
@@ -992,6 +1005,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.link_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
               hintText: '留空使用默认地址',
             ),
           ),
@@ -1026,6 +1043,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.model_training_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -1159,6 +1180,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.record_voice_over_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
             ),
             iconStyleData: IconStyleData(
               icon: Icon(
@@ -1221,6 +1246,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.key_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureTtsApiKey
@@ -1274,6 +1303,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               prefixIcon: const Icon(Icons.link_outlined),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 48,
+              ),
               hintText: _ttsProvider == TTSProvider.google
                   ? '留空使用: https://texttospeech.googleapis.com/v1'
                   : '留空使用默认地址',
@@ -1306,6 +1339,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
                 prefixIcon: const Icon(Icons.person_outline),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 48,
+                  minHeight: 48,
+                ),
               ),
               iconStyleData: IconStyleData(
                 icon: Icon(
@@ -1361,6 +1398,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 labelText: '语音 (Voice)',
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.record_voice_over),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 48,
+                  minHeight: 48,
+                ),
                 hintText: '例如: zh-CN-XiaoxiaoNeural',
               ),
               validator: (value) {
@@ -1462,7 +1503,82 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final body = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : TabBarView(
+            controller: _tabController,
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: _buildTextModelConfig(
+                      title: '快速模型',
+                      subtitle: '适用于日常查询，速度优先',
+                      formKey: _fastFormKey,
+                      provider: _fastProvider,
+                      onProviderChanged: _onFastProviderChanged,
+                      apiKeyController: _fastApiKeyController,
+                      baseUrlController: _fastBaseUrlController,
+                      modelController: _fastModelController,
+                      obscureApiKey: _obscureFastApiKey,
+                      onToggleObscure: () {
+                        setState(() {
+                          _obscureFastApiKey = !_obscureFastApiKey;
+                        });
+                      },
+                      onSave: _saveFastConfig,
+                      isTesting: _isTestingFast,
+                      onTestConnection: _testFastConnection,
+                      testResult: _testResultFast,
+                      testSuccess: _testSuccessFast,
+                    ),
+                  ),
+                ),
+              ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: _buildTextModelConfig(
+                      title: '标准模型',
+                      subtitle: '适用于高质量翻译和解释',
+                      formKey: _standardFormKey,
+                      provider: _standardProvider,
+                      onProviderChanged: _onStandardProviderChanged,
+                      apiKeyController: _standardApiKeyController,
+                      baseUrlController: _standardBaseUrlController,
+                      modelController: _standardModelController,
+                      obscureApiKey: _obscureStandardApiKey,
+                      onToggleObscure: () {
+                        setState(() {
+                          _obscureStandardApiKey = !_obscureStandardApiKey;
+                        });
+                      },
+                      onSave: _saveStandardConfig,
+                      isTesting: _isTestingStandard,
+                      onTestConnection: _testStandardConnection,
+                      testResult: _testResultStandard,
+                      testSuccess: _testSuccessStandard,
+                    ),
+                  ),
+                ),
+              ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: _buildTtsConfig(),
+                  ),
+                ),
+              ),
+            ],
+          );
+
+    final content = Scaffold(
       appBar: AppBar(
         title: const Text('AI配置'),
         bottom: TabBar(
@@ -1474,80 +1590,13 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: _buildTextModelConfig(
-                        title: '快速模型',
-                        subtitle: '适用于日常查询，速度优先',
-                        formKey: _fastFormKey,
-                        provider: _fastProvider,
-                        onProviderChanged: _onFastProviderChanged,
-                        apiKeyController: _fastApiKeyController,
-                        baseUrlController: _fastBaseUrlController,
-                        modelController: _fastModelController,
-                        obscureApiKey: _obscureFastApiKey,
-                        onToggleObscure: () {
-                          setState(() {
-                            _obscureFastApiKey = !_obscureFastApiKey;
-                          });
-                        },
-                        onSave: _saveFastConfig,
-                        isTesting: _isTestingFast,
-                        onTestConnection: _testFastConnection,
-                        testResult: _testResultFast,
-                        testSuccess: _testSuccessFast,
-                      ),
-                    ),
-                  ),
-                ),
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: _buildTextModelConfig(
-                        title: '标准模型',
-                        subtitle: '适用于高质量翻译和解释',
-                        formKey: _standardFormKey,
-                        provider: _standardProvider,
-                        onProviderChanged: _onStandardProviderChanged,
-                        apiKeyController: _standardApiKeyController,
-                        baseUrlController: _standardBaseUrlController,
-                        modelController: _standardModelController,
-                        obscureApiKey: _obscureStandardApiKey,
-                        onToggleObscure: () {
-                          setState(() {
-                            _obscureStandardApiKey = !_obscureStandardApiKey;
-                          });
-                        },
-                        onSave: _saveStandardConfig,
-                        isTesting: _isTestingStandard,
-                        onTestConnection: _testStandardConnection,
-                        testResult: _testResultStandard,
-                        testSuccess: _testSuccessStandard,
-                      ),
-                    ),
-                  ),
-                ),
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: _buildTtsConfig(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+      body: body,
     );
+
+    if (_dictionaryContentScale == 1.0) {
+      return content;
+    }
+
+    return PageScaleWrapper(scale: _dictionaryContentScale, child: content);
   }
 }

@@ -15,6 +15,9 @@ import 'utils/language_dropdown.dart';
 import 'utils/dpi_utils.dart';
 import 'widgets/search_bar.dart';
 import 'services/advanced_search_settings_service.dart';
+import 'services/font_loader_service.dart';
+import 'components/scale_layout_wrapper.dart';
+import 'components/global_scale_wrapper.dart';
 import 'logger.dart';
 
 enum SortMode {
@@ -1320,139 +1323,152 @@ class _WordBankPageState extends State<WordBankPage> {
       return Scaffold(body: _buildEmptyState());
     }
 
+    final contentScale = FontLoaderService().getDictionaryContentScale();
+
     return Scaffold(
-      body: Column(
-        children: [
-          // 固定的搜索栏和词表筛选器
-          Container(
-            color: Theme.of(context).colorScheme.surface,
-            child: Column(
-              children: [
-                // 搜索栏
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  child: UnifiedSearchBar.withLanguageSelector(
-                    controller: _searchController,
-                    selectedLanguage: _selectedLanguage ?? 'ALL',
-                    availableLanguages: _languages,
-                    onLanguageSelected: (value) async {
-                      setState(() {
-                        _selectedLanguage = value == 'ALL' ? null : value;
-                        _selectedList = null;
-                      });
-                      if (value == null || value == 'ALL') {
-                        await _wordBankService.saveLastSelectedLanguage('ALL');
-                      } else {
-                        await _wordBankService.saveLastSelectedLanguage(value);
-                      }
-                      await _loadWords();
-                    },
-                    hintText: '搜索单词本',
-                    showAllOption: true,
-                    extraSuffixIcons: [
-                      if (_searchQuery.isNotEmpty)
-                        IconButton(
-                          icon: Icon(
-                            Icons.clear,
-                            size: DpiUtils.scaleIconSize(context, 18),
+      body: PageScaleWrapper(
+        scale: contentScale,
+        child: Column(
+          children: [
+            // 固定的搜索栏和词表筛选器
+            Container(
+              color: Theme.of(context).colorScheme.surface,
+              child: Column(
+                children: [
+                  // 搜索栏
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
+                    child: UnifiedSearchBar.withLanguageSelector(
+                      controller: _searchController,
+                      selectedLanguage: _selectedLanguage ?? 'ALL',
+                      availableLanguages: _languages,
+                      onLanguageSelected: (value) async {
+                        setState(() {
+                          _selectedLanguage = value == 'ALL' ? null : value;
+                          _selectedList = null;
+                        });
+                        if (value == null || value == 'ALL') {
+                          await _wordBankService.saveLastSelectedLanguage(
+                            'ALL',
+                          );
+                        } else {
+                          await _wordBankService.saveLastSelectedLanguage(
+                            value,
+                          );
+                        }
+                        await _loadWords();
+                      },
+                      hintText: '搜索单词本',
+                      showAllOption: true,
+                      extraSuffixIcons: [
+                        if (_searchQuery.isNotEmpty)
+                          IconButton(
+                            icon: Icon(
+                              Icons.clear,
+                              size: DpiUtils.scaleIconSize(context, 18),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = '';
+                                _searchController.clear();
+                              });
+                              _loadWords();
+                            },
                           ),
+                        PopupMenuButton<SortMode>(
+                          tooltip: '排序方式',
+                          icon: Icon(
+                            Icons.swap_vert,
+                            size: 20,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                          onSelected: (mode) => _changeSortMode(mode),
+                          itemBuilder: (context) => SortMode.values
+                              .map(
+                                (mode) => PopupMenuItem<SortMode>(
+                                  value: mode,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _currentSortMode == mode
+                                            ? Icons.check_circle
+                                            : Icons.circle_outlined,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(mode.label),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward, size: 20),
                           onPressed: () {
-                            setState(() {
-                              _searchQuery = '';
-                              _searchController.clear();
-                            });
                             _loadWords();
                           },
                         ),
-                      PopupMenuButton<SortMode>(
-                        tooltip: '排序方式',
-                        icon: Icon(
-                          Icons.swap_vert,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        onSelected: (mode) => _changeSortMode(mode),
-                        itemBuilder: (context) => SortMode.values
-                            .map(
-                              (mode) => PopupMenuItem<SortMode>(
-                                value: mode,
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      _currentSortMode == mode
-                                          ? Icons.check_circle
-                                          : Icons.circle_outlined,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(mode.label),
-                                  ],
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.arrow_forward, size: 20),
-                        onPressed: () {
-                          _loadWords();
-                        },
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                      });
-                    },
-                    onSubmitted: (value) {
-                      _loadWords();
-                    },
-                  ),
-                ),
-                // 词表筛选器
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 12),
-                  child: _buildListFilter(),
-                ),
-              ],
-            ),
-          ),
-          // 可滚动的单词列表
-          Expanded(
-            child: _isLoadingWords
-                ? const Center(child: CircularProgressIndicator())
-                : NotificationListener<ScrollNotification>(
-                    onNotification: (ScrollNotification scrollInfo) {
-                      if (!_isLoadingMore &&
-                          _hasMoreData &&
-                          scrollInfo.metrics.pixels >=
-                              scrollInfo.metrics.maxScrollExtent - 200) {
-                        _loadMoreWords();
-                      }
-                      return false;
-                    },
-                    child: CustomScrollView(
-                      slivers: [
-                        // 单词列表
-                        ..._buildWordList(),
-                        // 加载更多指示器
-                        if (_isLoadingMore)
-                          const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-                          ),
-                        // 底部留白
-                        const SliverToBoxAdapter(child: SizedBox(height: 32)),
                       ],
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                      onSubmitted: (value) {
+                        _loadWords();
+                      },
                     ),
                   ),
-          ),
-        ],
+                  // 词表筛选器
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 12),
+                    child: _buildListFilter(),
+                  ),
+                ],
+              ),
+            ),
+            // 可滚动的单词列表
+            Expanded(
+              child: _isLoadingWords
+                  ? const Center(child: CircularProgressIndicator())
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (ScrollNotification scrollInfo) {
+                        if (!_isLoadingMore &&
+                            _hasMoreData &&
+                            scrollInfo.metrics.pixels >=
+                                scrollInfo.metrics.maxScrollExtent - 200) {
+                          _loadMoreWords();
+                        }
+                        return false;
+                      },
+                      child: CustomScrollView(
+                        slivers: [
+                          // 单词列表
+                          ..._buildWordList(),
+                          // 加载更多指示器
+                          if (_isLoadingMore)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                            ),
+                          // 底部留白
+                          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
