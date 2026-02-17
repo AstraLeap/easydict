@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../utils/dpi_utils.dart';
+import '../services/font_loader_service.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 
 class HelpPage extends StatefulWidget {
   const HelpPage({super.key});
@@ -11,6 +14,7 @@ class HelpPage extends StatefulWidget {
 }
 
 class _HelpPageState extends State<HelpPage> {
+  final double _contentScale = FontLoaderService().getDictionaryContentScale();
   PackageInfo? _packageInfo;
   bool _isLoading = true;
 
@@ -41,141 +45,154 @@ class _HelpPageState extends State<HelpPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('帮助与反馈'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 顶部 Logo 和版本信息
-          Center(
-            child: Column(
-              children: [
-                const SizedBox(height: 24),
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Icon(
-                    Icons.book,
-                    size: 48,
-                    color: colorScheme.onPrimaryContainer,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'EasyDict',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (_isLoading)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Text(
-                    _packageInfo?.version ?? 'v1.0.0',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.outline,
+      body: PageScaleWrapper(
+        scale: _contentScale,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // 顶部 Logo 和版本信息
+            Center(
+              child: Column(
+                children: [
+                  const SizedBox(height: 24),
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Icon(
+                      Icons.book,
+                      size: 48,
+                      color: colorScheme.onPrimaryContainer,
                     ),
                   ),
-                const SizedBox(height: 32),
-              ],
-            ),
-          ),
-
-          // 帮助与支持组
-          _buildSettingsGroup(
-            context,
-            children: [
-              _buildSettingsTile(
-                context,
-                title: '词典反馈',
-                icon: Icons.feedback_outlined,
-                iconColor: colorScheme.primary,
-                onTap: () async {
-                  // TODO: 实现反馈功能
-                },
-              ),
-              _buildSettingsTile(
-                context,
-                title: 'GitHub',
-                subtitle: '查看源码、提交 Issue',
-                icon: Icons.code,
-                iconColor: colorScheme.primary,
-                isExternal: true,
-                onTap: () async {
-                  final url = Uri.parse(
-                    'https://github.com/AstraLeap/easydict',
-                  );
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  }
-                },
-              ),
-              _buildSettingsTile(
-                context,
-                title: '爱发电',
-                subtitle: '支持开发者',
-                icon: Icons.favorite_border,
-                iconColor: colorScheme.primary,
-                isExternal: true,
-                onTap: () async {
-                  final url = Uri.parse('https://afdian.com/a/karx_');
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  }
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // 编译信息
-          _buildSettingsGroup(
-            context,
-            children: [
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else ...[
-                _buildInfoTile(context, '应用版本', _packageInfo?.version ?? '未知'),
-                _buildInfoTile(
-                  context,
-                  '构建版本',
-                  _packageInfo?.buildNumber ?? '未知',
-                ),
-                _buildInfoTile(
-                  context,
-                  '包名',
-                  _packageInfo?.packageName ?? '未知',
-                ),
-                _buildInfoTile(context, 'Flutter SDK', _getFlutterVersion()),
-                _buildInfoTile(context, 'Dart SDK', _getDartVersion()),
-              ],
-            ],
-          ),
-
-          const SizedBox(height: 40),
-
-          Center(
-            child: Text(
-              'Copyright © 2024 EasyDict Team',
-              style: TextStyle(
-                fontSize: 12,
-                color: colorScheme.outline.withOpacity(0.5),
+                  const SizedBox(height: 16),
+                  Text(
+                    'EasyDict',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_isLoading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Text(
+                      _packageInfo?.version ?? 'v1.0.0',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                  const SizedBox(height: 32),
+                ],
               ),
             ),
-          ),
-        ],
+
+            // 帮助与支持组
+            _buildSettingsGroup(
+              context,
+              children: [
+                _buildSettingsTile(
+                  context,
+                  title: '词典反馈',
+                  icon: Icons.feedback_outlined,
+                  iconColor: colorScheme.primary,
+                  onTap: () async {
+                    // TODO: 实现反馈功能
+                  },
+                ),
+                _buildSettingsTile(
+                  context,
+                  title: 'GitHub',
+                  subtitle: '查看源码、提交 Issue',
+                  icon: Icons.code,
+                  iconColor: colorScheme.primary,
+                  isExternal: true,
+                  onTap: () async {
+                    final url = Uri.parse(
+                      'https://github.com/AstraLeap/easydict',
+                    );
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                ),
+                _buildSettingsTile(
+                  context,
+                  title: '爱发电',
+                  subtitle: '支持开发者',
+                  icon: Icons.favorite_border,
+                  iconColor: colorScheme.primary,
+                  isExternal: true,
+                  onTap: () async {
+                    final url = Uri.parse('https://afdian.com/a/karx_');
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // 编译信息
+            _buildSettingsGroup(
+              context,
+              children: [
+                if (_isLoading)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else ...[
+                  _buildInfoTile(
+                    context,
+                    '应用版本',
+                    _packageInfo?.version ?? '未知',
+                  ),
+                  _buildInfoTile(
+                    context,
+                    '构建版本',
+                    _packageInfo?.buildNumber ?? '未知',
+                  ),
+                  _buildInfoTile(
+                    context,
+                    '包名',
+                    _packageInfo?.packageName ?? '未知',
+                  ),
+                  _buildInfoTile(context, 'Flutter SDK', _getFlutterVersion()),
+                  _buildInfoTile(context, 'Dart SDK', _getDartVersion()),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 40),
+
+            Center(
+              child: Text(
+                'Copyright © 2024 EasyDict Team',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.outline.withOpacity(0.5),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'database_service.dart';
 import 'board_widget.dart';
 import 'components/dictionary_interaction_scope.dart';
@@ -25,6 +26,7 @@ import 'pages/entry_detail_page.dart';
 import 'services/search_history_service.dart';
 import 'utils/toast_utils.dart';
 import 'utils/language_utils.dart';
+import 'components/global_scale_wrapper.dart';
 
 class FormattedTextResult {
   final List<InlineSpan> spans;
@@ -55,6 +57,14 @@ class _PathData {
   final String label;
 
   _PathData(this.path, this.label);
+}
+
+/// 待处理的滚动请求
+class _PendingScrollRequest {
+  final String path;
+  final int retryCount;
+
+  _PendingScrollRequest(this.path, this.retryCount);
 }
 
 /// 支持多种手势的识别器，用于同时处理点击和右键事件
@@ -201,12 +211,12 @@ class _HighlightWrapperState extends State<_HighlightWrapper>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
     _animation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 3),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1.5),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 3.5),
     ]).animate(_controller);
 
     if (widget.isHighlighting) {
@@ -308,6 +318,8 @@ String _getDecorationType(String type) {
     case 'sub':
     case '下标':
       return 'sub';
+    case 'special':
+      return 'special';
     default:
       return '';
   }
@@ -378,6 +390,7 @@ FormattedTextResult parseFormattedText(
   String? sourceLanguage,
   Map<String, Map<String, double>>? fontScales,
   bool isSerif = false,
+  bool isBold = false,
 }) {
   // 如果被隐藏，返回空的 spans
   if (hidden) {
@@ -398,6 +411,7 @@ FormattedTextResult parseFormattedText(
     final fontInfo = fontService.getFontInfo(
       effectiveLanguage,
       isSerif: isSerif,
+      isBold: isBold,
     );
 
     final fontScale =
@@ -506,6 +520,14 @@ FormattedTextResult parseFormattedText(
           break;
         case 'sub':
           isSub = true;
+          break;
+        case 'special':
+          style = style.copyWith(
+            fontStyle: FontStyle.italic,
+            color: context != null
+                ? Theme.of(context).colorScheme.primary
+                : null,
+          );
           break;
       }
     }
@@ -874,8 +896,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
 
-  // 用于存储元素 Key 的 Map，用于精确滚动
+  // 用于存储元素 Key 的 Map，用于精确滚动 - 延迟加载，只在需要时才创建
   final Map<String, GlobalKey> _elementKeys = {};
+  // 标记是否需要创建 GlobalKey（只有在收到滚动请求时才创建）
+  bool _needElementKeys = false;
+  // 待处理的滚动请求队列
+  final List<_PendingScrollRequest> _pendingScrollRequests = [];
+
   StreamSubscription? _scrollSubscription;
   StreamSubscription? _translationInsertSubscription;
   StreamSubscription? _toggleHiddenSubscription;
@@ -886,16 +913,31 @@ class ComponentRendererState extends State<ComponentRenderer> {
   // 闪烁动画控制器
   final Map<String, AnimationController> _highlightControllers = {};
 
+  // 懒加载相关
+  bool _isVisible = false;
+  bool _hasBeenVisible = false;
+
   @override
   void initState() {
     super.initState();
     _localEntry = widget.entry;
     _hiddenLanguagesNotifier = HiddenLanguagesNotifier([]);
-    _loadSourceLanguage();
+    _initSourceLanguage();
     _loadClickAction();
-    // 同步获取字体缩放配置，避免异步加载导致的闪烁问题
     _fontScales = FontLoaderService().getFontScales();
     _listenToEvents();
+  }
+
+  void _initSourceLanguage() {
+    final dictId = _localEntry.dictId;
+    if (dictId != null && dictId.isNotEmpty) {
+      final cachedMetadata = DictionaryManager().getCachedMetadata(dictId);
+      if (cachedMetadata != null) {
+        _sourceLanguage = cachedMetadata.sourceLanguage;
+        _targetLanguages = cachedMetadata.targetLanguages;
+      }
+    }
+    _loadSourceLanguage();
   }
 
   void _listenToEvents() {
@@ -935,11 +977,45 @@ class ComponentRendererState extends State<ComponentRenderer> {
       _localEntry = widget.entry;
       _hiddenLanguagesNotifier.value = [];
       _elementKeys.clear();
+      _needElementKeys = false;
+      _pendingScrollRequests.clear();
+      _isVisible = false;
+      _hasBeenVisible = false;
+      _initSourceLanguage();
     }
   }
 
-  /// 滚动到指定路径的元素
+  /// 滚动到指定路径的元素 - 延迟加载版本
   void scrollToElement(String path, {int retryCount = 0}) {
+    // 如果组件还没有可见，将请求加入队列等待处理
+    if (!_hasBeenVisible) {
+      Logger.d(
+        'Component not visible yet, queuing scroll request for path: $path',
+        tag: 'ComponentRenderer',
+      );
+      _pendingScrollRequests.add(_PendingScrollRequest(path, retryCount));
+      return;
+    }
+
+    // 启用 GlobalKey 创建
+    if (!_needElementKeys) {
+      setState(() {
+        _needElementKeys = true;
+      });
+      // 等待重建完成后再尝试滚动
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _executeScrollToElement(path, retryCount: 0);
+        }
+      });
+      return;
+    }
+
+    _executeScrollToElement(path, retryCount: retryCount);
+  }
+
+  /// 执行实际的滚动操作
+  void _executeScrollToElement(String path, {int retryCount = 0}) {
     final key = _elementKeys[path];
     if (key != null && key.currentContext != null) {
       Scrollable.ensureVisible(
@@ -960,7 +1036,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       );
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
-          scrollToElement(path, retryCount: retryCount + 1);
+          _executeScrollToElement(path, retryCount: retryCount + 1);
         }
       });
     } else {
@@ -969,6 +1045,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
         tag: 'ComponentRenderer',
       );
     }
+  }
+
+  /// 处理待处理的滚动请求
+  void _processPendingScrollRequests() {
+    if (_pendingScrollRequests.isEmpty) return;
+
+    Logger.d(
+      'Processing ${_pendingScrollRequests.length} pending scroll requests',
+      tag: 'ComponentRenderer',
+    );
+
+    // 只处理最后一个请求（最新的）
+    final lastRequest = _pendingScrollRequests.last;
+    _pendingScrollRequests.clear();
+
+    scrollToElement(lastRequest.path, retryCount: lastRequest.retryCount);
   }
 
   /// 触发元素的闪烁效果
@@ -992,8 +1084,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _highlightingPaths.contains(path);
   }
 
-  /// 获取或创建元素的 GlobalKey
-  GlobalKey _getElementKey(String path) {
+  /// 获取或创建元素的 GlobalKey - 延迟加载版本
+  GlobalKey? _getElementKey(String path) {
+    // 只有在需要时才创建 GlobalKey
+    if (!_needElementKeys) {
+      return null;
+    }
     return _elementKeys.putIfAbsent(path, () => GlobalKey());
   }
 
@@ -1008,8 +1104,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final textKey = customTextKey ?? GlobalKey();
     final pathStr = _convertPathToString(pathData.path);
 
-    // 为每个可点击元素分配一个 GlobalKey，用于精确滚动
-    // 注意：这可能会导致大量的 GlobalKey，但对于精确跳转是必要的
+    // 延迟加载 GlobalKey：只有在需要精确滚动时才创建
     final elementKey = _getElementKey(pathStr);
 
     // 检查是否正在闪烁
@@ -1487,6 +1582,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   OverlayEntry? _currentOverlayEntry;
   OverlayEntry? _currentBarrierEntry;
+  OverlayEntry? _phraseOverlayEntry;
+  OverlayEntry? _phraseBarrierEntry;
 
   Future<void> _loadClickAction() async {
     final action = await PreferencesService().getClickAction();
@@ -1538,6 +1635,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     bool hidden = false,
     String? language,
     bool isSerif = false,
+    bool isBold = false,
   }) {
     return parseFormattedText(
       text,
@@ -1553,6 +1651,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       sourceLanguage: _sourceLanguage,
       fontScales: _fontScales,
       isSerif: isSerif,
+      isBold: isBold,
     );
   }
 
@@ -2035,6 +2134,259 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
   }
 
+  void _removePhraseOverlay() {
+    try {
+      _phraseOverlayEntry?.remove();
+      _phraseBarrierEntry?.remove();
+    } catch (e) {
+      // 忽略已经移除的entry
+    } finally {
+      _phraseOverlayEntry = null;
+      _phraseBarrierEntry = null;
+    }
+  }
+
+  void _handlePhraseTap(String phrase, Offset position) async {
+    _removePhraseOverlay();
+
+    final plainPhrase = _removeFormatting(phrase);
+    Logger.d('Phrase tapped: $plainPhrase', tag: 'PhraseTap');
+
+    final dbService = DatabaseService();
+    final searchResult = await dbService.getAllEntries(
+      plainPhrase,
+      useFuzzySearch: false,
+      exactMatch: true,
+      sourceLanguage: _sourceLanguage,
+    );
+
+    if (searchResult.entries.isEmpty) {
+      if (mounted) {
+        showToast(context, '未找到短语: $plainPhrase');
+      }
+      return;
+    }
+
+    final entryGroup = DictionaryEntryGroup.groupEntries(searchResult.entries);
+    if (mounted) {
+      _showPhraseOverlay(
+        entryGroup,
+        searchResult.entries,
+        plainPhrase,
+        position,
+      );
+    }
+  }
+
+  void _showPhraseOverlay(
+    DictionaryEntryGroup entryGroup,
+    List<DictionaryEntry> entries,
+    String phrase,
+    Offset position,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final overlay = Overlay.of(context);
+
+    final fontScale = _fontScales[_sourceLanguage ?? 'en']?['serif'] ?? 1.0;
+    final dictionaryContentScale = FontLoaderService()
+        .getDictionaryContentScale();
+    final titleFontSize = 15 * fontScale * dictionaryContentScale;
+    final iconSize = 18 * fontScale * dictionaryContentScale;
+
+    final screenSize = MediaQuery.of(context).size;
+    final overlayWidth = 420.0 * dictionaryContentScale.clamp(0.8, 1.2);
+    final maxHeight = screenSize.height * 0.6;
+
+    double dx = position.dx;
+    double dy = position.dy + 20;
+
+    if (dx + overlayWidth > screenSize.width) {
+      dx = screenSize.width - overlayWidth - 16;
+    }
+    if (dx < 16) {
+      dx = 16;
+    }
+    if (dy + maxHeight > screenSize.height) {
+      dy = position.dy - maxHeight - 10;
+    }
+
+    _phraseBarrierEntry = OverlayEntry(
+      builder: (context) => Positioned.fill(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            _removePhraseOverlay();
+          },
+          onSecondaryTapDown: (_) {
+            _removePhraseOverlay();
+          },
+          child: Container(color: Colors.transparent),
+        ),
+      ),
+    );
+
+    _phraseOverlayEntry = OverlayEntry(
+      builder: (context) {
+        return Positioned(
+          left: dx,
+          top: dy,
+          width: overlayWidth,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 24,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 8),
+                  ),
+                  BoxShadow(
+                    color: colorScheme.primary.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    spreadRadius: 0,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16 * fontScale * dictionaryContentScale,
+                        vertical: 10 * fontScale * dictionaryContentScale,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primaryContainer,
+                            colorScheme.primaryContainer.withValues(
+                              alpha: 0.85,
+                            ),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(
+                              6 * fontScale * dictionaryContentScale,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(
+                                alpha: 0.15,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.format_quote,
+                              size: iconSize,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 12 * fontScale * dictionaryContentScale,
+                          ),
+                          Expanded(
+                            child: RichText(
+                              text: TextSpan(
+                                children: parseFormattedText(
+                                  phrase,
+                                  TextStyle(
+                                    fontSize: titleFontSize,
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                  sourceLanguage: _sourceLanguage,
+                                  fontScales: _fontScales,
+                                  isSerif: true,
+                                  isBold: true,
+                                ).spans,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 8 * fontScale * dictionaryContentScale,
+                          ),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () {
+                                _removePhraseOverlay();
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => EntryDetailPage(
+                                      entryGroup: entryGroup,
+                                      initialWord: phrase,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: EdgeInsets.all(
+                                  8 * fontScale * dictionaryContentScale,
+                                ),
+                                child: Icon(
+                                  Icons.open_in_new,
+                                  size: iconSize,
+                                  color: colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.all(
+                          12 * fontScale * dictionaryContentScale,
+                        ),
+                        child: PageScaleWrapper(
+                          child: ComponentRenderer(
+                            entry: entryGroup.currentEntry ?? entries.first,
+                            onElementTap: (path, label) {
+                              Logger.d(
+                                'Phrase overlay element tapped: $path',
+                                tag: 'PhraseOverlay',
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_phraseBarrierEntry!);
+    overlay.insert(_phraseOverlayEntry!);
+  }
+
   @override
   void dispose() {
     _scrollSubscription?.cancel();
@@ -2051,6 +2403,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
     _streamSubscriptions.clear();
     _removeCurrentOverlay();
+    _removePhraseOverlay();
     _cleanupPlayer();
     // 清理闪烁动画控制器
     for (final controller in _highlightControllers.values) {
@@ -2121,62 +2474,90 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final page = _getPage();
     final sections = _getSections();
 
-    return HiddenLanguagesScope(
-      notifier: _hiddenLanguagesNotifier,
-      child: DictionaryInteractionScope(
-        onElementTap: widget.onElementTap,
-        onElementSecondaryTap: _handleElementSecondaryTap,
-        child: PathScope(
-          path: const ['entry'],
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (page.isNotEmpty) ...[
-                  _buildPageDisplay(context, page),
-                  const SizedBox(height: 16),
-                ],
-                if (sections.isNotEmpty) ...[
-                  _buildSectionNavigation(context, sections),
-                  const SizedBox(height: 12),
-                ],
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _buildWord(context),
-                    if (entry.frequency.isNotEmpty ||
-                        entry.pronunciations.isNotEmpty) ...[
-                      if (entry.frequency.isNotEmpty)
-                        _buildFrequencyStars(context),
-                      if (entry.pronunciations.isNotEmpty)
-                        _buildPronunciations(context),
-                    ],
-                    if (entry.certifications.isNotEmpty) ...[
-                      ..._buildCertificationsInline(context),
-                    ],
+    // 使用 VisibilityDetector 实现懒加载
+    return VisibilityDetector(
+      key: ValueKey('component_renderer_${entry.id}'),
+      onVisibilityChanged: (visibilityInfo) {
+        final visibleFraction = visibilityInfo.visibleFraction;
+        final wasVisible = _isVisible;
+        _isVisible = visibleFraction > 0;
+
+        // 当组件首次可见时
+        if (_isVisible && !wasVisible && !_hasBeenVisible) {
+          Logger.d(
+            'ComponentRenderer became visible for entry: ${entry.headword}',
+            tag: 'ComponentRenderer',
+          );
+          setState(() {
+            _hasBeenVisible = true;
+          });
+          // 处理待处理的滚动请求
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _processPendingScrollRequests();
+            }
+          });
+        }
+      },
+      child: HiddenLanguagesScope(
+        notifier: _hiddenLanguagesNotifier,
+        child: DictionaryInteractionScope(
+          onElementTap: widget.onElementTap,
+          onElementSecondaryTap: _handleElementSecondaryTap,
+          child: PathScope(
+            path: const ['entry'],
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (page.isNotEmpty) ...[
+                    _buildPageDisplay(context, page),
+                    const SizedBox(height: 16),
                   ],
-                ),
-                // 渲染 datas（在 senses 之前）
-                _buildDatasIfExist(context),
-                if (entry.senses.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildSenses(context),
+                  if (sections.isNotEmpty) ...[
+                    _buildSectionNavigation(context, sections),
+                    const SizedBox(height: 12),
+                  ],
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _buildWord(context),
+                      if (entry.frequency.isNotEmpty ||
+                          entry.pronunciations.isNotEmpty) ...[
+                        if (entry.frequency.isNotEmpty)
+                          _buildFrequencyStars(context),
+                        if (entry.pronunciations.isNotEmpty)
+                          _buildPronunciations(context),
+                      ],
+                      if (entry.certifications.isNotEmpty) ...[
+                        ..._buildCertificationsInline(context),
+                      ],
+                    ],
+                  ),
+                  // 渲染 datas（在 senses 之前）
+                  _buildDatasIfExist(context),
+                  if (entry.senses.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildSenses(context),
+                  ],
+                  if (entry.senseGroups.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildSenseGroups(context),
+                  ],
+                  // 渲染 phrases
+                  _buildPhrases(context),
+                  // 渲染所有未渲染的 key 为 board
+                  _buildRemainingBoards(context),
                 ],
-                if (entry.senseGroups.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildSenseGroups(context),
-                ],
-                // 渲染所有未渲染的 key 为 board
-                _buildRemainingBoards(context),
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ); // 注意这里：闭合 HiddenLanguagesScope 并以分号结束
+    ); // 注意这里：闭合 VisibilityDetector 和 HiddenLanguagesScope 并以分号结束
   }
 
   Widget _buildWord(BuildContext context) {
@@ -2205,12 +2586,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       word,
                       TextStyle(
                         fontSize: 32,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.bold,
                         color: colorScheme.onSurface,
                         height: 1.0,
                       ),
                       context: context,
                       isSerif: true,
+                      isBold: true,
                     ).spans,
                   ),
                 ),
@@ -3160,7 +3542,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         decoration: BoxDecoration(
           color: onSurface.withValues(alpha: 0.08),
           border: Border.all(
-            color: onSurfaceVariant.withValues(alpha: 0.3),
+            color: colorScheme.primary.withValues(alpha: 0.5),
             width: 0.7,
           ),
           borderRadius: BorderRadius.circular(4),
@@ -3480,7 +3862,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 child: RichText(
                   text: TextSpan(
                     children: _parseFormattedText(
-                      groupName.toUpperCase(),
+                      groupName,
                       TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -3565,12 +3947,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'tags',
     'certifications',
     'frequency',
-    'inflections',
     'pronunciation',
     'pronunciations',
     'senses',
-    'boards',
     'sense_groups',
+    'phrases',
     'datas', // datas 单独渲染
   ];
 
@@ -3590,7 +3971,130 @@ class ComponentRendererState extends State<ComponentRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        renderListWithKey(context, 'datas', value, ['datas'], 'datas'),
+        renderJsonElement(context, 'datas', value, ['datas']),
+      ],
+    );
+  }
+
+  Widget _buildPhrases(BuildContext context) {
+    final entry = _localEntry;
+    final phrases = entry.phrases;
+
+    if (phrases.isEmpty) return const SizedBox.shrink();
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final fontScale = _fontScales[_sourceLanguage ?? 'en']?['serif'] ?? 1.0;
+    final titleFontSize = 13 * fontScale;
+    final phraseFontSize = 14 * fontScale;
+
+    // 获取 phrases 的 GlobalKey 用于滚动定位
+    final phrasesKey = _getElementKey('phrases');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        PathScope.append(
+          context,
+          key: 'phrases',
+          child: Builder(
+            builder: (context) {
+              return Container(
+                key: phrasesKey, // 绑定 GlobalKey 用于滚动定位
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.format_quote,
+                          size: 16 * fontScale,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'phrases',
+                          style: TextStyle(
+                            fontSize: titleFontSize,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.primary,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ...phrases.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final phrase = entry.value;
+                      return PathScope.append(
+                        context,
+                        key: '$index',
+                        child: Builder(
+                          builder: (context) {
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTapDown: (details) {
+                                _handlePhraseTap(
+                                  phrase,
+                                  details.globalPosition,
+                                );
+                              },
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  margin: EdgeInsets.only(
+                                    bottom: index < phrases.length - 1 ? 6 : 0,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.surface,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant
+                                          .withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: RichText(
+                                    text: TextSpan(
+                                      children: parseFormattedText(
+                                        phrase,
+                                        TextStyle(
+                                          fontSize: phraseFontSize,
+                                          color: colorScheme.onSurface,
+                                        ),
+                                        sourceLanguage: _sourceLanguage,
+                                        fontScales: _fontScales,
+                                        isSerif: true,
+                                        isBold: true,
+                                      ).spans,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
@@ -3616,41 +4120,40 @@ class ComponentRendererState extends State<ComponentRenderer> {
       if (value is List && value.isEmpty) continue;
 
       final path = [key];
+      // 获取 board 的 GlobalKey 用于滚动定位
+      final boardKey = _getElementKey(key);
 
+      Widget boardWidget;
       if (value is Map<String, dynamic>) {
         final title = value['title'] as String? ?? key;
         final display = value['display'] as String? ?? '00';
         final boardData = {...value, 'title': title, 'display': display};
 
-        widgets.add(
-          BoardWidget(
-            board: boardData,
-            contentBuilder: (board, path) =>
-                _buildBoardContent(context, board, path),
-            path: path,
-            fontScales: _fontScales,
-            sourceLanguage: _sourceLanguage,
-          ),
+        boardWidget = BoardWidget(
+          board: boardData,
+          contentBuilder: (board, path) =>
+              _buildBoardContent(context, board, path),
+          path: path,
+          fontScales: _fontScales,
+          sourceLanguage: _sourceLanguage,
         );
       } else if (value is List<dynamic>) {
-        final renderer = predefinedRenderers.containsKey(key)
-            ? predefinedRenderers[key]
-            : null;
-        widgets.add(renderListWithKey(context, key, value, path, renderer));
+        boardWidget = renderJsonElement(context, key, value, path);
       } else {
         // 其他类型（字符串、数字等）也包装为 board
         final boardData = {'title': key, 'text': value.toString()};
-        widgets.add(
-          BoardWidget(
-            board: boardData,
-            contentBuilder: (board, path) =>
-                _buildBoardContent(context, board, path),
-            path: path,
-            fontScales: _fontScales,
-            sourceLanguage: _sourceLanguage,
-          ),
+        boardWidget = BoardWidget(
+          board: boardData,
+          contentBuilder: (board, path) =>
+              _buildBoardContent(context, board, path),
+          path: path,
+          fontScales: _fontScales,
+          sourceLanguage: _sourceLanguage,
         );
       }
+
+      // 使用 Container 包装并绑定 GlobalKey 用于滚动定位
+      widgets.add(Container(key: boardKey, child: boardWidget));
     }
 
     if (widgets.isEmpty) return const SizedBox.shrink();
@@ -3731,12 +4234,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               ),
             );
           } else if (value is List<dynamic>) {
-            final renderer = predefinedRenderers.containsKey(key)
-                ? predefinedRenderers[key]
-                : null;
-            widgets.add(
-              renderListWithKey(context, key, value, keyPath, renderer),
-            );
+            widgets.add(renderJsonElement(context, key, value, keyPath));
           } else {
             final text = value is String ? value : (value?.toString() ?? '');
             if (isLanguageCode) {
@@ -4069,111 +4567,165 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'image': 'image',
   };
 
+  Widget _buildStringListAsRow(
+    BuildContext context,
+    List<String> strings,
+    List<String> path,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.75),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: strings.asMap().entries.map((entry) {
+                final itemPath = [...path, '${entry.key}'];
+                return _buildTappableWidget(
+                  context: context,
+                  pathData: _PathData(itemPath, 'Inline Item'),
+                  child: RichText(
+                    text: TextSpan(
+                      children: _parseFormattedText(
+                        entry.value,
+                        TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurface,
+                          letterSpacing: 0.15,
+                        ),
+                        context: context,
+                      ).spans,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget renderJsonElement(
     BuildContext context,
     String key,
     dynamic value,
     List<String> path,
   ) {
-    // 1. String List 或 List of List
-    if (value is List &&
-        (value.isEmpty ||
-            value.every((element) => element is String) ||
-            value.every((element) => element is List))) {
-      // 判断当前 List 是否在另一个 List 内部
-      // 检查 path 的最后一个元素是否是索引格式 [123]
-      bool isNestedList =
-          path.isNotEmpty && RegExp(r'^\[\d+\]$').hasMatch(path.last);
+    final isNumericKey = RegExp(r'^\d+$').hasMatch(key);
 
-      final boardData = {'title': key, 'display': '1', 'content': value};
-      return BoardWidget(
-        board: boardData,
-        contentBuilder: (board, p) {
-          final content = board['content'] as List;
+    // 1. 如果key不是数字，表明是一个键值对
+    if (!isNumericKey) {
+      // 1.1 如果key在预定义列表中
+      if (predefinedRenderers.containsKey(key)) {
+        // 1.1.1 如果value不是list，使用预定义方法渲染
+        if (value is! List) {
+          return _renderWithPredefinedMethod(context, key, value, path);
+        }
+        // 1.1.2 如果value是list，渲染一个widget容器，对于list的每个元素，都使用key所定义的渲染函数渲染
+        if (value is List && value.isNotEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: value.asMap().entries.map((entry) {
+              final itemPath = [...path, '${entry.key}'];
+              return _renderWithPredefinedMethod(
+                context,
+                key,
+                entry.value,
+                itemPath,
+              );
+            }).toList(),
+          );
+        }
+        return const SizedBox.shrink();
+      }
 
-          if (isNestedList) {
-            // 行内渲染 (Wrap)
-            return Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: content.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                final itemPath = [...path, '[$index]'];
+      // 1.2 如果key不在预定义列表中，则渲染为一个board，标题为key
+      // 1.2.1 如果value是map，则按照board里的排序，调用renderJsonElement自身渲染各个map里的key1:value1
+      if (value is Map<String, dynamic>) {
+        return BoardWidget(
+          board: {'title': key, ...value},
+          contentBuilder: (board, p) => _buildBoardContent(context, board, p),
+          path: path,
+          fontScales: _fontScales,
+          sourceLanguage: _sourceLanguage,
+        );
+      }
 
-                if (item is String) {
-                  return _buildInlineContentItem(context, item, itemPath);
-                } else {
-                  // 递归渲染 List (List of List of List...)
-                  return renderJsonElement(context, key, item, itemPath);
-                }
-              }).toList(),
-            );
-          } else {
-            // 整行渲染 (Column)
+      // 1.2.2 如果value是一个list
+      if (value is List) {
+        if (value.isEmpty) return const SizedBox.shrink();
+        // 渲染为 BoardWidget（标题为 key）
+        return BoardWidget(
+          board: {'title': key, 'content': value},
+          contentBuilder: (board, p) {
+            final content = board['content'] as List;
+            // 1.2.2.1 如果value是一个list<string>，则使用_buildStringListAsRow渲染value
+            if (content.every((e) => e is String)) {
+              return _buildStringListAsRow(
+                context,
+                content.cast<String>(),
+                path,
+              );
+            }
+            // 1.2.2.2 其它情况，则迭代调用renderJsonElement自身渲染value中的每一个元素
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: content.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                final itemPath = [...path, '[$index]'];
-
-                if (item is String) {
-                  return _buildContentItem(context, item, itemPath);
-                } else {
-                  return renderJsonElement(context, key, item, itemPath);
-                }
+                final itemPath = [...path, '${entry.key}'];
+                return renderJsonElement(
+                  context,
+                  '${entry.key}',
+                  entry.value,
+                  itemPath,
+                );
               }).toList(),
             );
-          }
-        },
-        path: path,
-        fontScales: _fontScales,
-        sourceLanguage: _sourceLanguage,
-      );
-    }
-
-    // 2. String -> Text
-    if (value is String) {
-      return _buildContentItem(context, value, path);
-    }
-
-    // 3. Map
-    if (value is Map<String, dynamic>) {
-      if (predefinedRenderers.containsKey(key)) {
-        return _renderWithPredefinedMethod(context, key, value, path);
-      } else {
-        return _renderAsBoard(context, key, value, path);
-      }
-    }
-
-    // 4. Map List
-    if (value is List && value.every((element) => element is Map)) {
-      final list = value.cast<Map<String, dynamic>>();
-      if (predefinedRenderers.containsKey(key)) {
-        return renderListWithKey(context, key, list, path);
-      } else {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: list.asMap().entries.map((entry) {
-            final index = entry.key;
-            final item = entry.value;
-            return BoardWidget(
-              board: item,
-              contentBuilder: (board, p) =>
-                  _buildBoardContent(context, board, p),
-              path: [...path, '[$index]'],
-              fontScales: _fontScales,
-              sourceLanguage: _sourceLanguage,
-            );
-          }).toList(),
+          },
+          path: path,
+          fontScales: _fontScales,
+          sourceLanguage: _sourceLanguage,
         );
       }
     }
 
-    // Fallback for mixed lists or other types
-    if (value is List) {
-      return renderListWithKey(context, key, value, path);
+    // 2. 如果key是数字，表明value是list中的一个元素
+    if (isNumericKey) {
+      // 2.1 如果value是一个list<string>，则使用_buildStringListAsRow渲染value
+      if (value is List &&
+          value.isNotEmpty &&
+          value.every((e) => e is String)) {
+        return _buildStringListAsRow(context, value.cast<String>(), path);
+      }
+      // 2.2 如果value是一个list<list>，则迭代调用renderJsonElement自身渲染value中的每一个子list
+      if (value is List && value.isNotEmpty && value.every((e) => e is List)) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: value.asMap().entries.map((entry) {
+            final itemPath = [...path, '${entry.key}'];
+            return renderJsonElement(
+              context,
+              '${entry.key}',
+              entry.value,
+              itemPath,
+            );
+          }).toList(),
+        );
+      }
     }
 
     return const SizedBox.shrink();
@@ -4192,7 +4744,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     if (value is List<dynamic>) {
-      return renderListWithKey(context, key, value, path, renderer);
+      return renderJsonElement(context, key, value, path);
     }
 
     return const SizedBox.shrink();
@@ -4230,59 +4782,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       default:
         return const SizedBox.shrink();
     }
-  }
-
-  Widget renderListWithKey(
-    BuildContext context,
-    String key,
-    List<dynamic> value,
-    List<String> path, [
-    String? renderer,
-  ]) {
-    final widgets = <Widget>[];
-    final actualRenderer =
-        renderer ??
-        (predefinedRenderers.containsKey(key)
-            ? predefinedRenderers[key]
-            : null);
-    final hasPredefinedRenderer = actualRenderer != null;
-
-    for (int i = 0; i < value.length; i++) {
-      final item = value[i];
-      final itemPath = [...path, '$i'];
-
-      if (item is Map<String, dynamic>) {
-        if (hasPredefinedRenderer) {
-          widgets.add(
-            _renderMapWithPredefinedMethod(
-              context,
-              actualRenderer,
-              item,
-              itemPath,
-            ),
-          );
-        } else {
-          widgets.add(
-            BoardWidget(
-              key: ValueKey(itemPath.join('.')), // 添加 key 以检测数据变化
-              board: item,
-              contentBuilder: (board, path) =>
-                  _buildBoardContent(context, board, path),
-              path: itemPath,
-              fontScales: _fontScales,
-              sourceLanguage: _sourceLanguage,
-            ),
-          );
-        }
-      }
-    }
-
-    if (widgets.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets,
-    );
   }
 
   Widget _renderAsBoard(
@@ -4822,26 +5321,9 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                           selectedKey,
                         ])
                       : selectedValue is List<dynamic>
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: selectedValue.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final item = entry.value;
-                            if (item is Map<String, dynamic>) {
-                              return widget.contentBuilder(item, [
-                                ...widget.path,
-                                selectedKey,
-                                '[$index]',
-                              ]);
-                            }
-                            return Text(
-                              item.toString(),
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: widget.colorScheme.onSurfaceVariant,
-                              ),
-                            );
-                          }).toList(),
+                      ? widget.contentBuilder(
+                          {selectedKey: selectedValue},
+                          [...widget.path, selectedKey],
                         )
                       : Text(
                           selectedValue?.toString() ?? '',

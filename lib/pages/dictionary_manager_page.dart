@@ -9,11 +9,14 @@ import 'entries_list_sheet.dart';
 import '../services/dictionary_manager.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/download_manager.dart';
+import '../services/font_loader_service.dart';
 import '../models/dictionary_metadata.dart';
 import '../models/remote_dictionary.dart';
 import '../logger.dart';
 import '../utils/language_utils.dart';
 import '../utils/toast_utils.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
   const DictionaryManagerPage({super.key});
@@ -23,6 +26,7 @@ class DictionaryManagerPage extends StatefulWidget {
 }
 
 class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
+  final double _contentScale = FontLoaderService().getDictionaryContentScale();
   final DictionaryManager _dictManager = DictionaryManager();
   final TextEditingController _urlController = TextEditingController();
 
@@ -230,7 +234,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    final scale = FontLoaderService().getDictionaryContentScale();
+
+    final content = DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
@@ -251,6 +257,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         bottomSheet: const DownloadProgressPanel(),
       ),
     );
+
+    if (scale == 1.0) {
+      return content;
+    }
+
+    return PageScaleWrapper(child: content);
   }
 
   /// Tab1: 词典启用 - 按语言分组

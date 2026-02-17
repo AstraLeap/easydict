@@ -6,6 +6,7 @@ import 'services/search_history_service.dart';
 import 'services/advanced_search_settings_service.dart';
 import 'services/dictionary_manager.dart';
 import 'services/english_db_service.dart';
+import 'services/font_loader_service.dart';
 import 'pages/entry_detail_page.dart';
 import 'utils/toast_utils.dart';
 import 'utils/language_utils.dart';
@@ -13,6 +14,8 @@ import 'utils/language_dropdown.dart';
 import 'utils/dpi_utils.dart';
 import 'widgets/search_bar.dart';
 import 'components/english_db_download_dialog.dart';
+import 'components/scale_layout_wrapper.dart';
+import 'components/global_scale_wrapper.dart';
 import 'logger.dart';
 
 class DictionarySearchPage extends StatefulWidget {
@@ -55,6 +58,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   void initState() {
     super.initState();
     _initData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    FontLoaderService().reloadDictionaryContentScale();
   }
 
   Future<void> _initData() async {
@@ -340,160 +349,138 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final contentScale = FontLoaderService().getDictionaryContentScale();
+
     return Scaffold(
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: UnifiedSearchBar.withLanguageSelector(
-              controller: _searchController,
-              selectedLanguage: _selectedGroup,
-              availableLanguages: _availableGroups,
-              onLanguageSelected: (value) async {
-                if (value != null) {
-                  setState(() {
-                    _selectedGroup = value;
-                    if (value != 'en' && value != 'auto') {
-                      _useAuxiliarySearch = false;
-                      _exactMatch = false;
-                    }
-                  });
-                  await _advancedSettingsService.setLastSelectedGroup(value);
-                }
-              },
-              hintText: '输入单词',
-              extraSuffixIcons: [
-                IconButton(
-                  icon: Icon(
-                    Icons.tune,
-                    size: 18,
-                    color: _showAdvancedOptions
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: () {
+      body: PageScaleWrapper(
+        scale: contentScale,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: UnifiedSearchBar.withLanguageSelector(
+                controller: _searchController,
+                selectedLanguage: _selectedGroup,
+                availableLanguages: _availableGroups,
+                onLanguageSelected: (value) async {
+                  if (value != null) {
                     setState(() {
-                      _showAdvancedOptions = !_showAdvancedOptions;
+                      _selectedGroup = value;
+                      if (value != 'en' && value != 'auto') {
+                        _useAuxiliarySearch = false;
+                        _exactMatch = false;
+                      }
                     });
-                  },
-                  tooltip: '高级选项',
-                ),
-                if (_searchController.text.isNotEmpty)
+                    await _advancedSettingsService.setLastSelectedGroup(value);
+                  }
+                },
+                hintText: '输入单词',
+                extraSuffixIcons: [
+                  if (_searchController.text.isNotEmpty)
+                    IconButton(
+                      icon: Icon(
+                        Icons.clear,
+                        size: DpiUtils.scaleIconSize(context, 18),
+                      ),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                    ),
                   IconButton(
                     icon: Icon(
-                      Icons.clear,
-                      size: DpiUtils.scaleIconSize(context, 18),
+                      Icons.tune,
+                      size: 18,
+                      color: _showAdvancedOptions
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     onPressed: () {
-                      _searchController.clear();
-                      setState(() {});
+                      setState(() {
+                        _showAdvancedOptions = !_showAdvancedOptions;
+                      });
                     },
+                    tooltip: '高级选项',
                   ),
-                IconButton(
-                  icon: Icon(
-                    Icons.arrow_forward,
-                    size: 20,
-                    color: _isLoading
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant.withOpacity(0.38)
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  IconButton(
+                    icon: Icon(
+                      Icons.arrow_forward,
+                      size: 20,
+                      color: _isLoading
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant.withOpacity(0.38)
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    onPressed: _isLoading ? null : _searchWord,
+                    tooltip: '查询',
                   ),
-                  onPressed: _isLoading ? null : _searchWord,
-                  tooltip: '查询',
-                ),
-              ],
-              onChanged: (text) {
-                setState(() {});
-                _onSearchTextChanged(text);
-              },
-              onSubmitted: (_) {
-                if (_exactMatch) {
-                  _searchWord();
-                } else {
-                  if (_showSearchResults && _searchResults.isNotEmpty) {
-                    _onSearchResultTap(_searchResults.first);
-                  } else {
+                ],
+                onChanged: (text) {
+                  setState(() {});
+                  _onSearchTextChanged(text);
+                },
+                onSubmitted: (_) {
+                  if (_exactMatch) {
                     _searchWord();
+                  } else {
+                    if (_showSearchResults && _searchResults.isNotEmpty) {
+                      _onSearchResultTap(_searchResults.first);
+                    } else {
+                      _searchWord();
+                    }
                   }
-                }
-              },
+                },
+              ),
             ),
-          ),
-          // 高级搜索选项
-          AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            child: _showAdvancedOptions
-                ? Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
+            // 高级搜索选项
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              child: _showAdvancedOptions
+                  ? Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
                         color: Theme.of(
                           context,
-                        ).colorScheme.outlineVariant.withOpacity(0.5),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '搜索选项',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outlineVariant.withOpacity(0.5),
                         ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 16,
-                          runSpacing: 8,
-                          children: [
-                            // 通配符搜索 (LIKE)
-                            FilterChip(
-                              label: const Text('通配符搜索'),
-                              selected: _useFuzzySearch,
-                              onSelected: (selected) {
-                                setState(() {
-                                  _useFuzzySearch = selected;
-                                });
-                                _advancedSettingsService.setUseFuzzySearch(
-                                  selected,
-                                );
-                              },
-                              avatar: Icon(
-                                Icons.pattern,
-                                size: 16,
-                                color: _useFuzzySearch
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer
-                                    : Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            // 区分大小写 - 仅在英语或自动模式下显示
-                            if (_selectedGroup == 'en' ||
-                                _selectedGroup == 'auto')
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '搜索选项',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 16,
+                            runSpacing: 8,
+                            children: [
+                              // 通配符搜索 (LIKE)
                               FilterChip(
-                                label: const Text('区分大小写'),
-                                selected: _exactMatch,
+                                label: const Text('通配符搜索'),
+                                selected: _useFuzzySearch,
                                 onSelected: (selected) {
                                   setState(() {
-                                    _exactMatch = selected;
+                                    _useFuzzySearch = selected;
                                   });
-                                  _advancedSettingsService.setExactMatch(
+                                  _advancedSettingsService.setUseFuzzySearch(
                                     selected,
                                   );
                                 },
                                 avatar: Icon(
-                                  Icons.text_fields,
+                                  Icons.pattern,
                                   size: 16,
-                                  color: _exactMatch
+                                  color: _useFuzzySearch
                                       ? Theme.of(
                                           context,
                                         ).colorScheme.onPrimaryContainer
@@ -502,105 +489,137 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                         ).colorScheme.onSurfaceVariant,
                                 ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        // 提示文本
-                        Text(
-                          _getAdvancedSearchHint(),
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      ],
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-          // 搜索结果列表
-          if (_showSearchResults && _searchResults.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Text(
-                      '搜索结果',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _searchResults.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final word = _searchResults[index];
-                      final isFirst = index == 0;
-                      return ListTile(
-                        dense: true,
-                        leading: isFirst
-                            ? Icon(
-                                Icons.keyboard_return,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.primary,
-                              )
-                            : const SizedBox(width: 24),
-                        title: Text(word),
-                        subtitle: isFirst
-                            ? Text(
-                                '按回车进入',
-                                style: TextStyle(
-                                  fontSize: DpiUtils.scaleFontSize(context, 12),
+                              // 区分大小写 - 仅在英语或自动模式下显示
+                              if (_selectedGroup == 'en' ||
+                                  _selectedGroup == 'auto')
+                                FilterChip(
+                                  label: const Text('区分大小写'),
+                                  selected: _exactMatch,
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      _exactMatch = selected;
+                                    });
+                                    _advancedSettingsService.setExactMatch(
+                                      selected,
+                                    );
+                                  },
+                                  avatar: Icon(
+                                    Icons.text_fields,
+                                    size: 16,
+                                    color: _exactMatch
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimaryContainer
+                                        : Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // 提示文本
+                          Text(
+                            _getAdvancedSearchHint(),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
                                   color: Theme.of(context).colorScheme.outline,
                                 ),
-                              )
-                            : null,
-                        onTap: () => _onSearchResultTap(word),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
-          // 历史记录始终显示
-          Expanded(
-            child: _searchHistory.isNotEmpty
-                ? _buildHistoryView()
-                : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.search_off,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '输入单词开始查询',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
-                    ),
+            // 搜索结果列表
+            if (_showSearchResults && _searchResults.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
                   ),
-          ),
-        ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Text(
+                        '搜索结果',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _searchResults.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final word = _searchResults[index];
+                        final isFirst = index == 0;
+                        return ListTile(
+                          dense: true,
+                          leading: isFirst
+                              ? Icon(
+                                  Icons.keyboard_return,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.primary,
+                                )
+                              : const SizedBox(width: 24),
+                          title: Text(word),
+                          subtitle: isFirst
+                              ? Text(
+                                  '按回车进入',
+                                  style: TextStyle(
+                                    fontSize: DpiUtils.scaleFontSize(
+                                      context,
+                                      12,
+                                    ),
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
+                                  ),
+                                )
+                              : null,
+                          onTap: () => _onSearchResultTap(word),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            // 历史记录始终显示
+            Expanded(
+              child: _searchHistory.isNotEmpty
+                  ? _buildHistoryView()
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 64,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            '输入单词开始查询',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

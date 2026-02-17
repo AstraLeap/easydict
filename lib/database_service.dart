@@ -81,13 +81,9 @@ class DictionaryEntry {
   final List<String> certifications;
   final Map<String, dynamic> frequency;
   final dynamic etymology;
-  final List<Map<String, dynamic>> inflections;
   final List<Map<String, dynamic>> pronunciations;
   final List<Map<String, dynamic>> senses;
-  final List<Map<String, dynamic>> boards;
-  final Map<String, dynamic>? collocations;
-  final Map<String, dynamic>? phrases;
-  final Map<String, dynamic>? theasaruses;
+  final List<String> phrases;
   final List<Map<String, dynamic>> senseGroups;
   final List<String> hiddenLanguages;
   final Map<String, dynamic> _rawJson;
@@ -104,13 +100,9 @@ class DictionaryEntry {
     required this.certifications,
     required this.frequency,
     this.etymology,
-    required this.inflections,
     required this.pronunciations,
     required this.senses,
-    required this.boards,
-    this.collocations,
-    this.phrases,
-    this.theasaruses,
+    this.phrases = const [],
     this.senseGroups = const [],
     this.hiddenLanguages = const [],
     Map<String, dynamic>? rawJson,
@@ -141,13 +133,6 @@ class DictionaryEntry {
             : [],
         frequency: json['frequency'] as Map<String, dynamic>? ?? {},
         etymology: json['etymology'],
-        inflections: json['inflections'] != null
-            ? (json['inflections'] as List<dynamic>)
-                  .map((e) => e as Map<String, dynamic>?)
-                  .where((e) => e != null)
-                  .map((e) => e!)
-                  .toList()
-            : [],
         pronunciations:
             (json['pronunciation'] ?? json['pronunciations']) != null
             ? ((json['pronunciation'] ?? json['pronunciations'])
@@ -164,22 +149,12 @@ class DictionaryEntry {
                   .map((e) => e!)
                   .toList()
             : [],
-        boards: json['boards'] != null
-            ? (json['boards'] as List<dynamic>)
-                  .map((e) => e as Map<String, dynamic>?)
-                  .where((e) => e != null)
-                  .map((e) => e!)
+        phrases: json['phrases'] != null
+            ? (json['phrases'] as List<dynamic>)
+                  .map((e) => e?.toString() ?? '')
+                  .where((e) => e.isNotEmpty)
                   .toList()
             : [],
-        collocations: (json['collocations'] is Map<String, dynamic>)
-            ? json['collocations'] as Map<String, dynamic>?
-            : null,
-        phrases: (json['phrases'] is Map<String, dynamic>)
-            ? json['phrases'] as Map<String, dynamic>?
-            : null,
-        theasaruses: (json['theasaruses'] is Map<String, dynamic>)
-            ? json['theasaruses'] as Map<String, dynamic>?
-            : null,
         senseGroups: json['sense_groups'] != null
             ? (json['sense_groups'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)
@@ -216,13 +191,9 @@ class DictionaryEntry {
       'certifications': certifications,
       'frequency': frequency,
       'etymology': etymology,
-      'inflections': inflections,
       'pronunciation': pronunciations,
       'senses': senses,
-      'boards': boards,
-      if (collocations != null) 'collocations': collocations,
       if (phrases != null) 'phrases': phrases,
-      if (theasaruses != null) 'theasaruses': theasaruses,
       'sense_groups': senseGroups,
     };
   }

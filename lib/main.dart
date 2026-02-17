@@ -15,6 +15,7 @@ import 'pages/help_page.dart';
 import 'pages/llm_config_page.dart';
 import 'pages/theme_color_page.dart';
 import 'services/ai_chat_database_service.dart';
+import 'services/dictionary_manager.dart';
 import 'services/download_manager.dart';
 import 'services/english_db_service.dart';
 import 'services/database_initializer.dart';
@@ -25,6 +26,7 @@ import 'utils/toast_utils.dart';
 import 'utils/dpi_utils.dart';
 import 'logger.dart';
 import 'components/window_buttons.dart';
+import 'components/global_scale_wrapper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,6 +56,8 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
 
   await FontLoaderService().initialize();
+
+  await DictionaryManager().preloadEnabledDictionariesMetadata();
 
   runApp(
     MultiProvider(
@@ -136,11 +140,29 @@ class _MainScreenState extends State<MainScreen> {
 
   final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
 
+  // 使用 ValueNotifier 来通知页面重建
+  final ValueNotifier<double> _contentScaleNotifier = ValueNotifier<double>(
+    FontLoaderService().getDictionaryContentScale(),
+  );
+
   List<Widget> get _pages => [
     const DictionarySearchPage(),
     WordBankPage(key: _wordBankPageKey),
     const SettingsPage(),
   ];
+
+  @override
+  void dispose() {
+    _contentScaleNotifier.dispose();
+    super.dispose();
+  }
+
+  void _refreshContentScale() {
+    final newScale = FontLoaderService().getDictionaryContentScale();
+    if (_contentScaleNotifier.value != newScale) {
+      _contentScaleNotifier.value = newScale;
+    }
+  }
 
   void _onTabSelected(int index) {
     if (_selectedIndex != index) {
@@ -171,32 +193,46 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onTabSelected,
-        destinations: [
-          _buildNavigationDestination(
-            icon: Icons.search_outlined,
-            selectedIcon: Icons.search,
-            label: '查词',
-            index: 0,
-          ),
-          _buildNavigationDestination(
-            icon: Icons.style_outlined,
-            selectedIcon: Icons.style,
-            label: '单词本',
-            index: 1,
-          ),
-          _buildNavigationDestination(
-            icon: Icons.settings_outlined,
-            selectedIcon: Icons.settings,
-            label: '设置',
-            index: 2,
-          ),
-        ],
-      ),
+    final bottomNav = NavigationBar(
+      selectedIndex: _selectedIndex,
+      onDestinationSelected: _onTabSelected,
+      destinations: [
+        _buildNavigationDestination(
+          icon: Icons.search_outlined,
+          selectedIcon: Icons.search,
+          label: '查词',
+          index: 0,
+        ),
+        _buildNavigationDestination(
+          icon: Icons.style_outlined,
+          selectedIcon: Icons.style,
+          label: '单词本',
+          index: 1,
+        ),
+        _buildNavigationDestination(
+          icon: Icons.settings_outlined,
+          selectedIcon: Icons.settings,
+          label: '设置',
+          index: 2,
+        ),
+      ],
+    );
+
+    return ValueListenableBuilder<double>(
+      valueListenable: _contentScaleNotifier,
+      builder: (context, contentScale, child) {
+        return Scaffold(
+          body: IndexedStack(index: _selectedIndex, children: _pages),
+          bottomNavigationBar: contentScale == 1.0
+              ? bottomNav
+              : MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(textScaler: TextScaler.linear(contentScale)),
+                  child: bottomNav,
+                ),
+        );
+      },
     );
   }
 }
@@ -435,6 +471,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _preferencesService = PreferencesService();
   String _clickAction = PreferencesService.actionAiTranslate;
   bool _isLoading = true;
+  double _dictionaryContentScale = 1.0;
 
   @override
   void initState() {
@@ -442,10 +479,19 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadData();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    FontLoaderService().reloadDictionaryContentScale();
+  }
+
   Future<void> _loadData() async {
     final clickAction = await _preferencesService.getClickAction();
+    final dictionaryContentScale = FontLoaderService()
+        .getDictionaryContentScale();
     setState(() {
       _clickAction = clickAction;
+      _dictionaryContentScale = dictionaryContentScale;
       _isLoading = false;
     });
   }
@@ -501,143 +547,196 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  void _showDictionaryContentScaleDialog() async {
+    final contentScale = FontLoaderService().getDictionaryContentScale();
+    await showDialog(
+      context: context,
+      builder: (context) {
+        final dialog = ScaleDialogWidget(
+          title: '软件布局缩放',
+          subtitle: '调整词典内容显示的整体缩放比例',
+          currentValue: (_dictionaryContentScale * 100).round().toDouble(),
+          min: 50,
+          max: 200,
+          divisions: 5,
+          unit: '%',
+          onSave: (value) async {
+            final prefs = PreferencesService();
+            await prefs.setDictionaryContentScale(value / 100);
+            await FontLoaderService().reloadDictionaryContentScale();
+            if (mounted) {
+              setState(() {
+                _dictionaryContentScale = value / 100;
+              });
+            }
+          },
+        );
+
+        if (contentScale == 1.0) {
+          return dialog;
+        }
+
+        return PageScaleWrapper(scale: contentScale, child: dialog);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final contentScale = FontLoaderService().getDictionaryContentScale();
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.only(left: 16, right: 16, top: 24),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // 核心功能组
-                _buildSettingsGroup(
-                  context,
-                  children: [
-                    _buildSettingsTile(
-                      context,
-                      title: '词典管理',
-                      icon: Icons.folder_outlined,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DictionaryManagerPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildSettingsTile(
-                      context,
-                      title: 'AI 配置',
-                      icon: Icons.auto_awesome,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const LLMConfigPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildSettingsTile(
-                      context,
-                      title: '显示与字体',
-                      icon: Icons.font_download_outlined,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const FontConfigPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // 外观设置组
-                _buildSettingsGroup(
-                  context,
-                  children: [
-                    _buildSettingsTile(
-                      context,
-                      title: '主题设置',
-                      subtitle: _getThemeColorName(themeProvider.seedColor),
-                      icon: Icons.palette_outlined,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ThemeColorPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    if (!_isLoading)
+      body: PageScaleWrapper(
+        scale: contentScale,
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.only(left: 16, right: 16, top: 24),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  // 核心功能组
+                  _buildSettingsGroup(
+                    context,
+                    children: [
                       _buildSettingsTile(
                         context,
-                        title: '点击动作设置',
-                        subtitle: _getClickActionLabel(_clickAction),
-                        icon: Icons.touch_app_outlined,
+                        title: '词典管理',
+                        icon: Icons.folder_outlined,
                         iconColor: colorScheme.primary,
-                        onTap: _showClickActionDialog,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const DictionaryManagerPage(),
+                            ),
+                          );
+                        },
                       ),
-                    _buildSettingsTile(
-                      context,
-                      title: '其他设置',
-                      icon: Icons.settings_suggest_outlined,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
+                      _buildSettingsTile(
+                        context,
+                        title: 'AI 配置',
+                        icon: Icons.auto_awesome,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LLMConfigPage(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildSettingsTile(
+                        context,
+                        title: '字体配置',
+                        icon: Icons.font_download_outlined,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const FontConfigPage(),
+                            ),
+                          );
+                          // 从字体配置页返回后，刷新缩放值
+                          if (mounted) {
+                            final mainScreenState = context
+                                .findAncestorStateOfType<_MainScreenState>();
+                            mainScreenState?._refreshContentScale();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // 外观设置组
+                  _buildSettingsGroup(
+                    context,
+                    children: [
+                      _buildSettingsTile(
+                        context,
+                        title: '主题设置',
+                        subtitle: _getThemeColorName(themeProvider.seedColor),
+                        icon: Icons.palette_outlined,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ThemeColorPage(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildSettingsTile(
+                        context,
+                        title: '软件布局缩放',
+                        subtitle: '${(_dictionaryContentScale * 100).toInt()}%',
+                        icon: Icons.zoom_in,
+                        iconColor: colorScheme.primary,
+                        onTap: _showDictionaryContentScaleDialog,
+                      ),
+                      if (!_isLoading)
+                        _buildSettingsTile(
                           context,
-                          MaterialPageRoute(
-                            builder: (context) => const MiscSettingsPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // 帮助与支持组
-                _buildSettingsGroup(
-                  context,
-                  children: [
-                    _buildSettingsTile(
-                      context,
-                      title: '帮助与反馈',
-                      icon: Icons.help_outline,
-                      iconColor: colorScheme.primary,
-                      showArrow: true,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const HelpPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 40),
-              ]),
+                          title: '点击动作设置',
+                          subtitle: _getClickActionLabel(_clickAction),
+                          icon: Icons.touch_app_outlined,
+                          iconColor: colorScheme.primary,
+                          onTap: _showClickActionDialog,
+                        ),
+                      _buildSettingsTile(
+                        context,
+                        title: '其他设置',
+                        icon: Icons.settings_suggest_outlined,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const MiscSettingsPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // 帮助与支持组
+                  _buildSettingsGroup(
+                    context,
+                    children: [
+                      _buildSettingsTile(
+                        context,
+                        title: '帮助与反馈',
+                        icon: Icons.help_outline,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const HelpPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 40),
+                ]),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -746,6 +845,7 @@ class MiscSettingsPage extends StatefulWidget {
 }
 
 class _MiscSettingsPageState extends State<MiscSettingsPage> {
+  final double _contentScale = FontLoaderService().getDictionaryContentScale();
   final _chatService = AiChatDatabaseService();
   final _englishDbService = EnglishDbService();
   int _recordCount = 0;
@@ -779,135 +879,146 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
       appBar: AppBar(title: const Text('其它设置'), centerTitle: true),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.all(16),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      // AI聊天记录管理
-                      _buildSectionTitle(context, 'AI 聊天记录管理'),
-                      const SizedBox(height: 8),
-                      Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: colorScheme.outlineVariant.withOpacity(0.5),
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              leading: Icon(
-                                Icons.chat_bubble_outline,
-                                color: colorScheme.primary,
-                              ),
-                              title: const Text('聊天记录总数'),
-                              subtitle: Text('$_recordCount 条记录'),
-                            ),
-                            Divider(
-                              height: 1,
-                              indent: 56,
+          : PageScaleWrapper(
+              scale: _contentScale,
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.all(16),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        // AI聊天记录管理
+                        _buildSectionTitle(context, 'AI 聊天记录管理'),
+                        const SizedBox(height: 8),
+                        Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
                               color: colorScheme.outlineVariant.withOpacity(
-                                0.3,
+                                0.5,
                               ),
+                              width: 1,
                             ),
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
+                          ),
+                          child: Column(
+                            children: [
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                leading: Icon(
+                                  Icons.chat_bubble_outline,
+                                  color: colorScheme.primary,
+                                ),
+                                title: const Text('聊天记录总数'),
+                                subtitle: Text('$_recordCount 条记录'),
                               ),
-                              leading: Icon(
-                                Icons.auto_delete_outlined,
-                                color: colorScheme.primary,
+                              Divider(
+                                height: 1,
+                                indent: 56,
+                                color: colorScheme.outlineVariant.withOpacity(
+                                  0.3,
+                                ),
                               ),
-                              title: const Text('自动清理设置'),
-                              subtitle: Text(
-                                _autoCleanupDays == 0
-                                    ? '不自动清理'
-                                    : '保留最近 $_autoCleanupDays 天的记录',
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                leading: Icon(
+                                  Icons.auto_delete_outlined,
+                                  color: colorScheme.primary,
+                                ),
+                                title: const Text('自动清理设置'),
+                                subtitle: Text(
+                                  _autoCleanupDays == 0
+                                      ? '不自动清理'
+                                      : '保留最近 $_autoCleanupDays 天的记录',
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: _showAutoCleanupDialog,
                               ),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: _showAutoCleanupDialog,
-                            ),
-                            Divider(
-                              height: 1,
-                              indent: 56,
+                              Divider(
+                                height: 1,
+                                indent: 56,
+                                color: colorScheme.outlineVariant.withOpacity(
+                                  0.3,
+                                ),
+                              ),
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                leading: Icon(
+                                  Icons.delete_forever_outlined,
+                                  color: colorScheme.error,
+                                ),
+                                title: Text(
+                                  '清除所有聊天记录',
+                                  style: TextStyle(color: colorScheme.error),
+                                ),
+                                subtitle: const Text('此操作不可恢复'),
+                                onTap: _showClearAllConfirmDialog,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // 英语词典数据库设置
+                        _buildSectionTitle(context, '英语词典数据库设置'),
+                        const SizedBox(height: 8),
+                        Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
                               color: colorScheme.outlineVariant.withOpacity(
-                                0.3,
+                                0.5,
                               ),
+                              width: 1,
                             ),
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              leading: Icon(
-                                Icons.delete_forever_outlined,
-                                color: colorScheme.error,
-                              ),
-                              title: Text(
-                                '清除所有聊天记录',
-                                style: TextStyle(color: colorScheme.error),
-                              ),
-                              subtitle: const Text('此操作不可恢复'),
-                              onTap: _showClearAllConfirmDialog,
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // 英语词典数据库设置
-                      _buildSectionTitle(context, '英语词典数据库设置'),
-                      const SizedBox(height: 8),
-                      Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: colorScheme.outlineVariant.withOpacity(0.5),
-                            width: 1,
+                            leading: Icon(
+                              Icons.translate,
+                              color: colorScheme.primary,
+                            ),
+                            title: const Text('不询问查词重定向数据库'),
+                            subtitle: Text(
+                              _neverAskAgain ? '已选择不再询问' : '已恢复询问',
+                            ),
+                            trailing: Switch(
+                              value: _neverAskAgain,
+                              onChanged: (value) async {
+                                if (value) {
+                                  await _englishDbService.setNeverAskAgain(
+                                    true,
+                                  );
+                                  setState(() {
+                                    _neverAskAgain = true;
+                                  });
+                                } else {
+                                  await _englishDbService.resetNeverAskAgain();
+                                  setState(() {
+                                    _neverAskAgain = false;
+                                  });
+                                }
+                              },
+                            ),
                           ),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          leading: Icon(
-                            Icons.translate,
-                            color: colorScheme.primary,
-                          ),
-                          title: const Text('不询问查词重定向数据库'),
-                          subtitle: Text(_neverAskAgain ? '已选择不再询问' : '已恢复询问'),
-                          trailing: Switch(
-                            value: _neverAskAgain,
-                            onChanged: (value) async {
-                              if (value) {
-                                await _englishDbService.setNeverAskAgain(true);
-                                setState(() {
-                                  _neverAskAgain = true;
-                                });
-                              } else {
-                                await _englishDbService.resetNeverAskAgain();
-                                setState(() {
-                                  _neverAskAgain = false;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ]),
+                      ]),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }
@@ -1040,8 +1151,9 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final contentScale = FontLoaderService().getDictionaryContentScale();
 
-    return AlertDialog(
+    final dialog = AlertDialog(
       title: const Text('点击动作设置'),
       content: SizedBox(
         width: 400,
@@ -1121,5 +1233,11 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
         ),
       ],
     );
+
+    if (contentScale == 1.0) {
+      return dialog;
+    }
+
+    return PageScaleWrapper(scale: contentScale, child: dialog);
   }
 }

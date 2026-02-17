@@ -9,6 +9,8 @@ import '../database_service.dart';
 import '../models/dictionary_entry_group.dart';
 import '../models/dictionary_metadata.dart';
 import '../components/dictionary_navigation_panel.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
 import '../component_renderer.dart';
 import '../word_bank_service.dart';
 import '../services/search_history_service.dart';
@@ -153,7 +155,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
   final _preferencesService = PreferencesService();
-  // 同步从 FontLoaderService 获取词典内容缩放，避免异步加载导致的闪烁问题
+  // 同步从 FontLoaderService 获取软件布局缩放，避免异步加载导致的闪烁问题
   double _dictionaryContentScale = FontLoaderService()
       .getDictionaryContentScale();
 
@@ -197,7 +199,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _loadFavoriteStatus();
     _loadAiChatHistory();
     _loadNavPanelPosition();
-    // 词典内容缩放已从 FontLoaderService 同步获取，无需异步加载
+    // 软件布局缩放已从 FontLoaderService 同步获取，无需异步加载
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionChanged);
   }
 
@@ -753,7 +755,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
     final totalCount = entries.length + (hasRelations ? 1 : 0);
 
-    return Scaffold(
+    final content = Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -793,6 +795,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         ],
       ),
     );
+
+    // 应用软件布局缩放
+    final scale = FontLoaderService().getDictionaryContentScale();
+    if (scale == 1.0) {
+      return content;
+    }
+
+    return PageScaleWrapper(scale: scale, child: content);
   }
 
   // 构建底部功能栏（与主页面 NavigationBar 区分，使用卡片样式）
@@ -936,54 +946,28 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             children: [
               Padding(
                 padding: padding,
-                child: _dictionaryContentScale != 1.0
-                    ? ScaleLayoutWrapper(
-                        scale: _dictionaryContentScale,
-                        child: ComponentRenderer(
-                          key: ValueKey(entry.id),
-                          entry: entry,
-                          onElementTap: (path, label) {
-                            _handleTranslationTap(entry, path, label);
-                          },
-                          onEditElement: (path, label) {
-                            _showJsonElementEditorFromPath(entry, path);
-                          },
-                          onAiAsk: (path, label) {
-                            _handleAiElementTap(entry, path, label);
-                          },
-                          onTranslationInsert: (path, newEntry) {
-                            EntryEventBus().emitTranslationInsert(
-                              TranslationInsertEvent(
-                                entryId: entry.id,
-                                path: path,
-                                newEntry: newEntry.toJson(),
-                              ),
-                            );
-                          },
-                        ),
-                      )
-                    : ComponentRenderer(
-                        key: ValueKey(entry.id),
-                        entry: entry,
-                        onElementTap: (path, label) {
-                          _handleTranslationTap(entry, path, label);
-                        },
-                        onEditElement: (path, label) {
-                          _showJsonElementEditorFromPath(entry, path);
-                        },
-                        onAiAsk: (path, label) {
-                          _handleAiElementTap(entry, path, label);
-                        },
-                        onTranslationInsert: (path, newEntry) {
-                          EntryEventBus().emitTranslationInsert(
-                            TranslationInsertEvent(
-                              entryId: entry.id,
-                              path: path,
-                              newEntry: newEntry.toJson(),
-                            ),
-                          );
-                        },
+                child: ComponentRenderer(
+                  key: ValueKey(entry.id),
+                  entry: entry,
+                  onElementTap: (path, label) {
+                    _handleTranslationTap(entry, path, label);
+                  },
+                  onEditElement: (path, label) {
+                    _showJsonElementEditorFromPath(entry, path);
+                  },
+                  onAiAsk: (path, label) {
+                    _handleAiElementTap(entry, path, label);
+                  },
+                  onTranslationInsert: (path, newEntry) {
+                    EntryEventBus().emitTranslationInsert(
+                      TranslationInsertEvent(
+                        entryId: entry.id,
+                        path: path,
+                        newEntry: newEntry.toJson(),
                       ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -1617,8 +1601,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
       // 应用全局状态到 ComponentRenderer，实现实时切换
       await _applyGlobalTranslationVisibility(newVisibility);
-
-      showToast(context, newVisibility ? '已显示所有语言' : '已隐藏非目标语言');
     } catch (e) {
       Logger.d('Error in _toggleAllNonTargetLanguages: $e', tag: 'Translation');
       if (mounted) {
@@ -2532,48 +2514,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                 ),
                                               )
                                             else
-                                              // Markdown渲染回答
-                                              MarkdownBody(
+                                              // Markdown渲染回答 - 使用延迟加载避免卡顿
+                                              _LazyMarkdownBody(
                                                 data: record.answer,
-                                                selectable: true,
-                                                styleSheet: MarkdownStyleSheet(
-                                                  p: Theme.of(
-                                                    context,
-                                                  ).textTheme.bodyMedium,
-                                                  code: TextStyle(
-                                                    fontFamily: 'Consolas',
-                                                    backgroundColor:
-                                                        Theme.of(context)
-                                                            .colorScheme
-                                                            .surfaceContainerHighest,
-                                                  ),
-                                                  blockquote: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .onSurfaceVariant,
-                                                      ),
-                                                  blockquoteDecoration:
-                                                      BoxDecoration(
-                                                        border: Border(
-                                                          left: BorderSide(
-                                                            color:
-                                                                Theme.of(
-                                                                      context,
-                                                                    )
-                                                                    .colorScheme
-                                                                    .outline,
-                                                            width: 4,
-                                                          ),
-                                                        ),
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .surfaceContainerHighest
-                                                            .withOpacity(0.5),
-                                                      ),
-                                                ),
                                               ),
                                             const SizedBox(height: 8),
                                             Row(
@@ -3886,91 +3829,71 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
   }
 }
 
-class ScaleLayoutWrapper extends SingleChildRenderObjectWidget {
-  final double scale;
+class _LazyMarkdownBody extends StatefulWidget {
+  final String data;
 
-  const ScaleLayoutWrapper({
-    super.key,
-    required this.scale,
-    required Widget super.child,
-  });
+  const _LazyMarkdownBody({required this.data});
 
   @override
-  RenderObject createRenderObject(BuildContext context) {
-    return RenderScaleLayout(scale: scale);
-  }
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    RenderScaleLayout renderObject,
-  ) {
-    renderObject.scale = scale;
-  }
+  State<_LazyMarkdownBody> createState() => _LazyMarkdownBodyState();
 }
 
-class RenderScaleLayout extends RenderProxyBox {
-  double _scale;
+class _LazyMarkdownBodyState extends State<_LazyMarkdownBody> {
+  bool _isReady = false;
 
-  RenderScaleLayout({required double scale, RenderBox? child})
-    : _scale = scale,
-      super(child);
-
-  set scale(double value) {
-    if (_scale != value) {
-      _scale = value;
-      markNeedsLayout();
-    }
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (mounted) {
+        setState(() {
+          _isReady = true;
+        });
+      }
+    });
   }
 
   @override
-  void performLayout() {
-    if (child != null) {
-      // 让子组件以 1/scale 的宽度进行布局
-      final BoxConstraints childConstraints = constraints.copyWith(
-        maxWidth: constraints.maxWidth / _scale,
-        minWidth: constraints.minWidth / _scale,
-      );
-      child!.layout(childConstraints, parentUsesSize: true);
-
-      // 自身的大小 = 子组件大小 * scale
-      size = child!.size * _scale;
-    } else {
-      size = constraints.smallest;
-    }
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    if (child != null) {
-      // 缩放绘制
-      context.pushTransform(
-        needsCompositing,
-        offset,
-        Matrix4.diagonal3Values(_scale, _scale, 1.0),
-        (context, offset) {
-          context.paintChild(child!, offset);
-        },
+  Widget build(BuildContext context) {
+    if (!_isReady) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
       );
     }
-  }
 
-  @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    if (child != null) {
-      // 转换点击坐标
-      // 逆变换：position / scale
-      final Matrix4 transform = Matrix4.diagonal3Values(_scale, _scale, 1.0);
-      final Matrix4 inverse = Matrix4.tryInvert(transform) ?? transform;
-
-      return result.addWithPaintTransform(
-        transform: transform,
-        position: position,
-        hitTest: (BoxHitTestResult result, Offset position) {
-          return child!.hitTest(result, position: position);
-        },
-      );
-    }
-    return false;
+    return MarkdownBody(
+      data: widget.data,
+      selectable: true,
+      styleSheet: MarkdownStyleSheet(
+        p: Theme.of(context).textTheme.bodyMedium,
+        code: TextStyle(
+          fontFamily: 'Consolas',
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
+        ),
+        blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: Theme.of(context).colorScheme.outline,
+              width: 4,
+            ),
+          ),
+          color: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        ),
+      ),
+    );
   }
 }
