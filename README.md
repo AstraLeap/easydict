@@ -1,6 +1,6 @@
 # EasyDict
 
-一款基于 Flutter 的英汉词典应用，采用结构化 JSON 数据格式，支持多词典同时查询。
+一款多平台电子词典。
 
 ## 快速开始
 
@@ -58,7 +58,7 @@ flutter build apk
   }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。datas可以放在词典的任何地方
   "phrases": ["fog in", "fog of"], // 可选，短语部分
 
-  "senses": [
+  "sense": [
     {
       "index": 1, //必选
       "label": {
@@ -99,7 +99,7 @@ flutter build apk
         }, //必填，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
         {},
       ], //可选
-      "sub_senses": [
+      "subsense": [
         {
           "index": "a",
           "definition": {},
@@ -111,10 +111,10 @@ flutter build apk
       ], //释义的子释义，格式与释义的格式相同
     },
   ],
-  "sense_groups": [
+  "sense_group": [
     {
       "group_name": "noun", //释义组的组名
-      "senses": [{}, {}],
+      "sense": [{}, {}],
     },
     {},
   ], //释义组
@@ -122,7 +122,7 @@ flutter build apk
 ```
 
 **1.除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
-**2.pronunciation、senses、sense_groups、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
+**2.pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
 
 ### 文本修饰语法
 

@@ -661,7 +661,7 @@ Future<void> _handleLinkTap(BuildContext context, String word) async {
 }
 
 Future<void> _handleExactJump(BuildContext context, String target) async {
-  // target format: entry_id.path (e.g., 25153.senses.0)
+  // target format: entry_id.path (e.g., 25153.sense.0)
   final parts = target.split('.');
   if (parts.length < 2) return;
 
@@ -1075,12 +1075,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   /// 判断路径是否需要生成 GlobalKey（只有释义条目、phrase和board需要）
   bool _shouldGenerateGlobalKey(String path) {
-    // 释义条目路径: sense_groups.x.senses.y 或 senses.x
-    if (path.contains('sense_groups') && path.contains('senses')) return true;
-    if (RegExp(r'^senses\.\d+$').hasMatch(path)) return true;
+    // 释义条目路径: sense_group.x.sense.y 或 sense.x
+    if (path.contains('sense_group') && path.contains('sense')) return true;
+    if (RegExp(r'^sense\.\d+$').hasMatch(path)) return true;
 
-    // phrases
-    if (path == 'phrases') return true;
+    // phrase
+    if (path == 'phrase') return true;
 
     // board 元素（不在 _renderedKeys 中的顶层 key）
     // board 路径通常是直接的 key 名，如 "etymology", "notes" 等
@@ -2469,7 +2469,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   List<String> _getSections() {
     final entry = _localEntry;
-    final sections = entry.senses
+    final sections = entry.sense
         .map((sense) {
           final section = sense['section'] as String?;
           return section ?? '';
@@ -2556,17 +2556,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       ],
                     ],
                   ),
-                  // 渲染 datas（在 senses 之前）
+                  // 渲染 datas（在 sense 之前）
                   _buildDatasIfExist(context),
-                  if (entry.senses.isNotEmpty) ...[
+                  if (entry.sense.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _buildSenses(context),
                   ],
-                  if (entry.senseGroups.isNotEmpty) ...[
+                  if (entry.senseGroup.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _buildSenseGroups(context),
                   ],
-                  // 渲染 phrases
+                  // 渲染 phrase
                   _buildPhrases(context),
                   // 渲染所有未渲染的 key 为 board
                   _buildRemainingBoards(context),
@@ -2584,8 +2584,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final entry = _localEntry;
 
     final word = entry.headword;
-    final pos = entry.senses.isNotEmpty
-        ? (entry.senses[0]['pos'] as String? ?? '')
+    final pos = entry.sense.isNotEmpty
+        ? (entry.sense[0]['pos'] as String? ?? '')
         : '';
 
     return Row(
@@ -2891,7 +2891,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             context: context,
             pathData: _PathData([
               'entry',
-              'senses',
+              'sense',
               '$index',
               'section',
             ], 'Section'),
@@ -3596,7 +3596,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'definition',
     'label',
     'example',
-    'sub_senses',
+    'subsense',
     'note',
     'image',
   ];
@@ -3611,7 +3611,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final pos = senselabel?['pos'] as String? ?? '';
     final definitionObj = sense['definition'] as Map<String, dynamic>?;
     final example = sense['example'] as List<dynamic>?;
-    final subSenses = sense['sub_senses'] as List<dynamic>?;
+    final subSenses = sense['subsense'] as List<dynamic>?;
     final note = sense['note'] as String?;
     final image = sense['image'] as Map<String, dynamic>?;
 
@@ -3772,7 +3772,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     final widgets = <Widget>[
                       PathScope.append(
                         context,
-                        key: 'sub_senses.${subEntry.key}',
+                        key: 'subsense.${subEntry.key}',
                         child: Builder(
                           builder: (context) {
                             final subSensePath = PathScope.of(context);
@@ -3816,12 +3816,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     return PathScope.append(
       context,
-      key: 'senses',
+      key: 'sense',
       child: Builder(
         builder: (context) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: entry.senses.asMap().entries.map((entryData) {
+            children: entry.sense.asMap().entries.map((entryData) {
               final sense = entryData.value;
               final indexValue = sense['index'];
               final indexStr = indexValue is int
@@ -3865,11 +3865,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: entry.senseGroups.asMap().entries.map((groupEntry) {
+      children: entry.senseGroup.asMap().entries.map((groupEntry) {
         final groupIndex = groupEntry.key;
         final group = groupEntry.value;
         final groupName = group['group_name'] as String? ?? '';
-        final senses = group['senses'] as List<dynamic>? ?? [];
+        final senses = group['sense'] as List<dynamic>? ?? [];
 
         return Column(
           key: _sectionKeys[groupIndex],
@@ -3896,7 +3896,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             if (senses.isNotEmpty)
               PathScope.append(
                 context,
-                key: 'sense_groups.$groupIndex.senses',
+                key: 'sense_group.$groupIndex.sense',
                 child: Builder(
                   builder: (context) {
                     return Column(
@@ -3967,13 +3967,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'certifications',
     'frequency',
     'pronunciation',
-    'senses',
-    'sense_groups',
-    'phrases',
+    'sense',
+    'sense_group',
+    'phrase',
     'datas', // datas 单独渲染
   ];
 
-  /// 渲染 datas（如果存在），在 senses 之前显示
+  /// 渲染 datas（如果存在），在 sense 之前显示
   Widget _buildDatasIfExist(BuildContext context) {
     final entry = _localEntry;
     final entryJson = entry.toJson();
@@ -3996,7 +3996,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   Widget _buildPhrases(BuildContext context) {
     final entry = _localEntry;
-    final phrases = entry.phrases;
+    final phrases = entry.phrase;
 
     if (phrases.isEmpty) return const SizedBox.shrink();
 
@@ -4005,8 +4005,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final titleFontSize = 13 * fontScale;
     final phraseFontSize = 14 * fontScale;
 
-    // 获取 phrases 的 GlobalKey 用于滚动定位
-    final phrasesKey = _getElementKey('phrases');
+    // 获取 phrase 的 GlobalKey 用于滚动定位
+    final phrasesKey = _getElementKey('phrase');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4014,7 +4014,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         const SizedBox(height: 16),
         PathScope.append(
           context,
-          key: 'phrases',
+          key: 'phrase',
           child: Builder(
             builder: (context) {
               return Container(
@@ -4039,7 +4039,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'phrases',
+                          'phrase',
                           style: TextStyle(
                             fontSize: titleFontSize,
                             fontWeight: FontWeight.w600,
@@ -4578,7 +4578,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'frequency': 'frequency',
     'pronunciation': 'pronunciation',
     'certifications': 'certification',
-    'senses': 'sense',
+    'sense': 'sense',
     'example': 'example',
     'datas': 'datas',
     'note': 'note',

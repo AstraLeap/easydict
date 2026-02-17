@@ -538,10 +538,10 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     final section = page.sections[currentSectionIndex];
     final entry = section.entry;
 
-    // 1. 添加释义相关条目 (sense_groups/senses)
-    // 遍历 sense_groups
-    for (int i = 0; i < entry.senseGroups.length; i++) {
-      final group = entry.senseGroups[i];
+    // 1. 添加释义相关条目 (sense_group/sense)
+    // 遍历 sense_group
+    for (int i = 0; i < entry.senseGroup.length; i++) {
+      final group = entry.senseGroup[i];
       final groupName = group['group_name'] as String? ?? '';
       if (groupName.isNotEmpty) {
         items.add(
@@ -563,12 +563,12 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         );
       }
 
-      // 遍历该组下的 senses
-      final senses = group['senses'] as List<dynamic>? ?? [];
+      // 遍历该组下的 sense
+      final senses = group['sense'] as List<dynamic>? ?? [];
       for (int j = 0; j < senses.length; j++) {
         final sense = senses[j] as Map<String, dynamic>;
-        // 构建路径：sense_groups.[i].senses.[j]
-        final path = 'sense_groups.$i.senses.$j';
+        // 构建路径：sense_group.[i].sense.[j]
+        final path = 'sense_group.$i.sense.$j';
         _addSenseItem(
           context,
           items,
@@ -583,11 +583,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       }
     }
 
-    // 如果没有 sense_groups，直接显示 senses
-    if (entry.senseGroups.isEmpty && entry.senses.isNotEmpty) {
-      for (int i = 0; i < entry.senses.length; i++) {
-        final sense = entry.senses[i];
-        final path = 'senses.$i';
+    // 如果没有 sense_group，直接显示 sense
+    if (entry.senseGroup.isEmpty && entry.sense.isNotEmpty) {
+      for (int i = 0; i < entry.sense.length; i++) {
+        final sense = entry.sense[i];
+        final path = 'sense.$i';
         _addSenseItem(
           context,
           items,
@@ -602,8 +602,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       }
     }
 
-    // 2. 添加 phrases 章节（只显示标题，可点击跳转）
-    if (entry.phrases.isNotEmpty) {
+    // 2. 添加 phrase 章节（只显示标题，可点击跳转）
+    if (entry.phrase.isNotEmpty) {
       items.add(
         InkWell(
           onTap: () {
@@ -612,7 +612,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               section.entry.dictId ?? '',
               currentSectionIndex,
               true,
-              targetPath: 'phrases',
+              targetPath: 'phrase',
             );
           },
           mouseCursor: SystemMouseCursors.click,
@@ -624,7 +624,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 Icon(Icons.format_quote, size: 16, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'phrases',
+                  'phrase',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -654,9 +654,9 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'frequency',
       'etymology',
       'pronunciation',
-      'senses',
-      'sense_groups',
-      'phrases',
+      'sense',
+      'sense_group',
+      'phrase',
       'datas',
       'hiddenLanguages',
       'hidden_languages',
@@ -857,7 +857,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     );
 
     // 处理子释义
-    final subSenses = sense['sub_senses'] as List<dynamic>?;
+    final subSenses = sense['subsense'] as List<dynamic>?;
     if (subSenses != null && subSenses.isNotEmpty) {
       for (int j = 0; j < subSenses.length; j++) {
         final subSense = subSenses[j];
@@ -870,7 +870,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         }
 
         final bool showSubDefinition = subDefText.isNotEmpty;
-        final subPath = '$path.sub_senses.$j';
+        final subPath = '$path.subsense.$j';
         items.add(
           InkWell(
             onTap: () {
