@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import '../services/font_loader_service.dart';
 
 /// 缩放布局包装器 - 用于统一应用软件布局缩放
 ///

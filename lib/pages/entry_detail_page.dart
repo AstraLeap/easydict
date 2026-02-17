@@ -5,26 +5,26 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import '../database_service.dart';
-import '../models/dictionary_entry_group.dart';
-import '../models/dictionary_metadata.dart';
+import '../data/database_service.dart';
+import '../data/models/dictionary_entry_group.dart';
+import '../data/models/dictionary_metadata.dart';
 import '../components/dictionary_navigation_panel.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
-import '../component_renderer.dart';
-import '../word_bank_service.dart';
+import '../components/component_renderer.dart';
+import '../data/word_bank_service.dart';
 import '../services/search_history_service.dart';
 import '../services/ai_service.dart';
-import '../services/ai_chat_database_service.dart';
+import '../data/services/ai_chat_database_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
 import '../services/entry_event_bus.dart';
-import '../logger.dart';
+import '../core/logger.dart';
 import '../services/preferences_service.dart';
 import '../services/font_loader_service.dart';
-import '../utils/toast_utils.dart';
-import '../utils/word_list_dialog.dart';
-import '../utils/language_utils.dart';
+import '../core/utils/toast_utils.dart';
+import '../core/utils/word_list_dialog.dart';
+import '../core/utils/language_utils.dart';
 
 /// AI聊天记录模型
 class AiChatRecord {
@@ -156,7 +156,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       ItemPositionsListener.create();
   final _preferencesService = PreferencesService();
   // 同步从 FontLoaderService 获取软件布局缩放，避免异步加载导致的闪烁问题
-  double _dictionaryContentScale = FontLoaderService()
+  final double _dictionaryContentScale = FontLoaderService()
       .getDictionaryContentScale();
 
   final WordBankService _wordBankService = WordBankService();
@@ -169,8 +169,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   final List<List<String>> _pathHistory = [];
   int _historyIndex = -1;
 
-  /// AI聊天记录
+  /// AI聊天记录 - 懒加载，首次打开AI面板时才加载
   final List<AiChatRecord> _aiChatHistory = [];
+  bool _isAiChatHistoryLoaded = false;
 
   /// 正在进行的AI请求
   final Map<String, Future<String>> _pendingAiRequests = {};
@@ -196,11 +197,21 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   void initState() {
     super.initState();
     _entryGroup = widget.entryGroup;
-    _loadFavoriteStatus();
-    _loadAiChatHistory();
+    // 关键数据：导航栏位置（影响UI布局）
     _loadNavPanelPosition();
+    // 非关键数据延迟加载
+    _loadDeferredData();
     // 软件布局缩放已从 FontLoaderService 同步获取，无需异步加载
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionChanged);
+  }
+
+  /// 延迟加载非关键数据，避免阻塞首屏渲染
+  void _loadDeferredData() {
+    // 使用微任务延迟执行，确保首帧渲染优先
+    Future.microtask(() async {
+      await _loadFavoriteStatus();
+    });
+    // AI聊天历史只在需要时加载，不在初始化时加载
   }
 
   @override
@@ -467,7 +478,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 color: colorScheme.onPrimaryContainer,
               ),
               Text(
-                '${widget.initialWord}',
+                widget.initialWord,
                 style: TextStyle(
                   fontSize: 14,
                   color: colorScheme.onPrimaryContainer,
@@ -485,7 +496,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 final relationList = entry.value;
                 return relationList.map((relation) {
                   return Text(
-                    '${mappedWord}（${relation.description ?? relation.relationType}）',
+                    '$mappedWord（${relation.description ?? relation.relationType}）',
                     style: TextStyle(
                       fontSize: 14,
                       color: colorScheme.onPrimaryContainer,
@@ -506,7 +517,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     DictionaryEntry updatedEntry, {
     bool shouldSetState = true,
   }) {
-    final updateLogic = () {
+    Null updateLogic() {
       for (final dictGroup in _entryGroup.dictionaryGroups) {
         for (final pageGroup in dictGroup.pageGroups) {
           for (int i = 0; i < pageGroup.sections.length; i++) {
@@ -521,7 +532,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
         }
       }
-    };
+    }
 
     if (shouldSetState) {
       setState(updateLogic);
@@ -648,9 +659,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       'Emitting scroll to element event: $path in entry: $entryId',
       tag: 'EntryDetail',
     );
+    // 设置标志位，表示这是程序触发的滚动，不应更新活跃section
+    _isProgrammaticScroll = true;
     EntryEventBus().emitScrollToElement(
       ScrollToElementEvent(entryId: entryId, path: path),
     );
+    // 延迟重置标志位，给滚动动画留出时间
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) {
+        _isProgrammaticScroll = false;
+      }
+    });
   }
 
   void _onDictionaryChanged() {
@@ -2276,7 +2295,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   /// 显示AI聊天记录
-  void _showAiChatHistory() {
+  void _showAiChatHistory() async {
+    // 首次打开时加载聊天记录
+    if (!_isAiChatHistoryLoaded) {
+      await _loadAiChatHistory();
+      _isAiChatHistoryLoaded = true;
+    }
+
     final freeChatController = TextEditingController();
     final freeChatFocusNode = FocusNode();
     bool isFullScreen = false;
@@ -3763,7 +3788,6 @@ class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
     BuildContext context,
     List<String> pathParts,
     Function(List<String>) onPathSelected, {
-    String? title,
     VoidCallback? onHomeTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;

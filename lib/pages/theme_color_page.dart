@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../theme_provider.dart';
-import '../utils/dpi_utils.dart';
+import '../core/theme_provider.dart';
+import '../core/utils/dpi_utils.dart';
 import '../services/font_loader_service.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';

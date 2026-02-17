@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import '../logger.dart';
+import '../core/logger.dart';
 import '../services/dictionary_manager.dart';
 import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
-import '../utils/language_utils.dart';
-import '../utils/toast_utils.dart';
+import '../core/utils/language_utils.dart';
+import '../core/utils/toast_utils.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
