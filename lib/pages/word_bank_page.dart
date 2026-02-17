@@ -4,21 +4,21 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:reorderables/reorderables.dart';
-import 'database_service.dart';
-import 'word_bank_service.dart';
-import 'models/dictionary_entry_group.dart';
-import 'pages/entry_detail_page.dart';
-import 'utils/toast_utils.dart';
-import 'utils/word_list_dialog.dart';
-import 'utils/language_utils.dart';
-import 'utils/language_dropdown.dart';
-import 'utils/dpi_utils.dart';
-import 'widgets/search_bar.dart';
-import 'services/advanced_search_settings_service.dart';
-import 'services/font_loader_service.dart';
-import 'components/scale_layout_wrapper.dart';
-import 'components/global_scale_wrapper.dart';
-import 'logger.dart';
+import '../data/database_service.dart';
+import '../data/word_bank_service.dart';
+import '../data/models/dictionary_entry_group.dart';
+import 'entry_detail_page.dart';
+import '../core/utils/toast_utils.dart';
+import '../core/utils/word_list_dialog.dart';
+import '../core/utils/language_utils.dart';
+import '../widgets/language_dropdown.dart';
+import '../core/utils/dpi_utils.dart';
+import '../widgets/search_bar.dart';
+import '../services/advanced_search_settings_service.dart';
+import '../services/font_loader_service.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
+import '../core/logger.dart';
 
 enum SortMode {
   addTimeDesc('添加顺序'),

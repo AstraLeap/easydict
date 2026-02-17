@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'language_utils.dart';
+import '../core/utils/language_utils.dart';
 
 class LanguageDropdown extends StatelessWidget {
   final String? selectedLanguage;

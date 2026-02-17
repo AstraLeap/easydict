@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/font_loader_service.dart';
-import '../models/remote_dictionary.dart';
+import '../data/models/remote_dictionary.dart';
 import '../services/dictionary_manager.dart';
-import '../logger.dart';
-import '../utils/toast_utils.dart';
+import '../core/logger.dart';
+import '../core/utils/toast_utils.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 

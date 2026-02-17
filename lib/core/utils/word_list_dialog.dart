@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../word_bank_service.dart';
+import '../../data/word_bank_service.dart';
 
 class WordListDialog {
   static Future<List<String>?> show(

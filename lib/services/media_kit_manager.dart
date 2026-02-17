@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:media_kit/media_kit.dart';
-import '../logger.dart';
+import '../core/logger.dart';
 
 class MediaKitManager {
   static final MediaKitManager _instance = MediaKitManager._internal();

@@ -1,31 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dictionary_search.dart';
-import 'theme_provider.dart';
-import 'theme/app_theme.dart';
-import 'word_bank_page.dart';
+import 'pages/dictionary_search.dart';
+import 'core/theme_provider.dart';
+import 'core/theme/app_theme.dart';
+import 'pages/word_bank_page.dart';
 import 'pages/dictionary_manager_page.dart';
 import 'pages/font_config_page.dart';
 import 'pages/help_page.dart';
 import 'pages/llm_config_page.dart';
 import 'pages/theme_color_page.dart';
-import 'services/ai_chat_database_service.dart';
+import 'data/services/ai_chat_database_service.dart';
 import 'services/dictionary_manager.dart';
 import 'services/download_manager.dart';
 import 'services/english_db_service.dart';
-import 'services/database_initializer.dart';
+import 'data/services/database_initializer.dart';
 import 'services/preferences_service.dart';
 import 'services/media_kit_manager.dart';
 import 'services/font_loader_service.dart';
-import 'utils/toast_utils.dart';
-import 'utils/dpi_utils.dart';
-import 'logger.dart';
-import 'components/window_buttons.dart';
+import 'core/utils/toast_utils.dart';
+import 'core/utils/dpi_utils.dart';
+import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
 
 void main() async {
@@ -58,6 +56,9 @@ void main() async {
   await FontLoaderService().initialize();
 
   await DictionaryManager().preloadEnabledDictionariesMetadata();
+
+  // 预连接活跃语言的词典数据库（不阻塞应用启动）
+  DictionaryManager().preloadActiveLanguageDatabases();
 
   runApp(
     MultiProvider(

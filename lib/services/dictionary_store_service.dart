@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
-import '../models/remote_dictionary.dart';
+import '../data/models/remote_dictionary.dart';
 import 'dictionary_manager.dart';
-import '../logger.dart';
+import '../core/logger.dart';
 
 /// 词典商店服务
 /// 用于从服务器获取词典列表、下载词典等
@@ -137,8 +137,9 @@ class DictionaryStoreService {
       int currentStep = 0;
 
       if (options.includeDatabase) totalSteps++;
-      if ((dict.hasAudios || dict.hasImages) && options.includeMedia)
+      if ((dict.hasAudios || dict.hasImages) && options.includeMedia) {
         totalSteps++;
+      }
 
       if (totalSteps == 0) {
         onError('没有选择要下载的内容');
