@@ -653,8 +653,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'certifications',
       'frequency',
       'etymology',
-      'pronunciation', // toJson() 返回的是单数形式
-      'pronunciations',
+      'pronunciation',
       'senses',
       'sense_groups',
       'phrases',

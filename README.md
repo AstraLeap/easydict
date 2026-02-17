@@ -1,257 +1,222 @@
 # EasyDict
 
-一款简洁的英汉词典 Flutter 应用。
+一款基于 Flutter 的英汉词典应用，采用结构化 JSON 数据格式，支持多词典同时查询。
 
-## 功能特性
+## 快速开始
 
-### 查词功能
+```bash
+# 安装依赖
+flutter pub get
 
-- 支持模糊搜索和精确匹配
-- 显示单词发音（支持点击播放）
-- 展示词性、定义、例句等信息
-- 词形变化和词源信息
+# 运行应用
+flutter run
 
-### 深色模式
+# 构建 Windows 版本
+flutter build windows
 
-- 三种模式：浅色、深色、跟随系统
-- 设置自动保存，切换页面保持状态
+# 构建 Android 版本
+flutter build apk
+```
 
-### 单词本
+## json数据格式
 
-- 收藏喜欢的单词
-- 支持搜索和管理收藏
-- 单词数据持久化存储
+### json结构
+
+```jsonc
+{
+  "dict_id": "my_dict", // 必填，词典id
+  "version": "1.0.0", // 必填，entry版本
+  "entry_id": 212, // 必填，不重复的entry标识符，整型
+  "headword": "fog", // 必填，词头，可重复
+  "headword_normalized": "fog", // 必填，小写且去音调符号的词头
+  "entry_type": "word", // 必填，word或phrase
+  "auxi_search": "fog", // 可选，辅助搜索词，主要用于中文、日文
+  "page": "medical", // 可选，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一批page相同的entry
+  "section": "noun", // 可选，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性
+  "certifications": ["IELTS", "TOEFL", "CET-4"], // 可选，还没想好怎么实现
+  "frequency": {
+    "level": "B1",
+    "stars": "3/5",
+    "source": "Oxford 3000",
+  }, // 可选，还没想好怎么实现
+  "topic": ["赛车", "时尚", "经济"], // 可选，还没想好怎么实现
+  "pronunciation": [
+    {
+      "region": "US",
+      "notation": "/fɔːɡ/",
+      "audio_file": "fog_us.mp3",
+    },
+    {
+      "region": "UK",
+      "notation": "/fɒɡ/",
+      "audio_file": "fog_uk.opus",
+    },
+  ], //可选，发音部分
+  "datas": {
+    "key1": {},
+    "key2": {},
+  }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。datas可以放在词典的任何地方
+  "phrases": ["fog in", "fog of"], // 可选，短语部分
+
+  "senses": [
+    {
+      "index": 1, //必选
+      "label": {
+        "pos": "n",
+        "pattern": ["in a ~", "mental ~"],
+        "grammar": ["U", "S"],
+        "region": "global",
+        "register": "informal",
+        "usage": ["figurative"],
+        "tone": "neutral",
+        "topic": ["psychology"],
+        "unclassified": "test",
+      }, //里面统统是可选
+      "definition": {
+        "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
+        "en": "A state of mental confusion or uncertainty.",
+      }, //必填，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
+      "images": {
+        "image_file": "fog.jpg",
+      }, //可选
+      "note": "常用于 'in a fog' 结构，描述因疲倦或震惊而无法正常思考。", //可选，批准部分
+      "example": [
+        {
+          "en": "He was walking around in a mental fog after the accident.",
+          "zh": "事故发生后，他整个人都陷入了意识模糊的状态中。",
+          "source": {
+            "author": "Robert Louis",
+            "title": "Mental States and Trauma",
+            "date": "2025-01",
+            "publisher": "Health Press",
+          }, //可选，例句来源
+          "audios": [
+            {
+              "region": "UK", // 可选，例句音频地区
+              "audio_file": "fog_ex1_uk.mp3",
+            },
+          ], //可选，例句音频
+        }, //必填，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
+        {},
+      ], //可选
+      "sub_senses": [
+        {
+          "index": "a",
+          "definition": {},
+        },
+        {
+          "index": "b",
+          "definition": {},
+        },
+      ], //释义的子释义，格式与释义的格式相同
+    },
+  ],
+  "sense_groups": [
+    {
+      "group_name": "noun", //释义组的组名
+      "senses": [{}, {}],
+    },
+    {},
+  ], //释义组
+}
+```
+
+**1.除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
+**2.pronunciation、senses、sense_groups、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
 
 ### 文本修饰语法
 
-支持在词条内容中使用特殊语法标记文本修饰效果：
+#### 基本语法
 
 ```
 [text](type1,type2)
 ```
 
-**支持的修饰类型：**
+#### type支持的类型
 
-| 效果       | 英文关键字       | 中文关键字 |
-| ---------- | ---------------- | ---------- |
-| ~~删除线~~ | strike           | 中划线     |
-| 下划线     | underline        | 下划线     |
-| 下双划线   | double_underline | 下双划线   |
-| ~~波浪线~~ | wavy             | 下波浪线   |
-| **加粗**   | bold             | 加粗       |
-| _斜体_     | italic           | 斜体       |
-| 上标       | sup              | 上标       |
-| 下标       | sub              | 下标       |
+| 语法               | 说明         |
+| ------------------ | ------------ |
+| `strike`           | 删除线       |
+| `underline`        | 下划线       |
+| `double_underline` | 双下划线     |
+| `wavy`             | 波浪线       |
+| `bold`             | 加粗         |
+| `italic`           | 斜体         |
+| `sup`              | 上标         |
+| `sub`              | 下标         |
+| `color`            | 主题色       |
+| `color`            | 主题色、斜体 |
+| `->dog`            | 查词dog链接  |
+| `==entry_id.path`  | 精确跳转     |
 
-### 链接与颜色规则
-
-| 语法                      | 说明     | 示例                             |
-| ------------------------- | -------- | -------------------------------- |
-| `[text](color)`           | 文本颜色 | `[红色文本](red)`                |
-| `[text](->word)`          | 查词链接 | `[查询apple](->apple)`           |
-| `[text](==entry_id.path)` | 精确跳转 | `[跳转到释义](==25153.senses.0)` |
-
-**精确跳转规则说明：**
-
-- `==` 右侧为跳转路径
-- 路径以 `.` 分隔
-- 第一部分为 `entry_id`，用于在当前词典中查找条目
-- 后续部分为 JSON 路径，用于定位条目内的具体元素
-- 例如：`25153.senses.0` 表示跳转到 ID 为 25153 的条目的 `senses` 数组的第 0 个元素
-
-**使用示例：**
+## 词典包结构
 
 ```
-基本修饰：[delete](strike) [underline](underline)
-字体样式：[bold](bold) [italic](italic) [bold,italic](bold,italic)
-上下标：E = mc[2](sup)，H[2](sub)O
-组合：[重要](bold,underline)
+dictionary_name/
+├── metadata.json      # 词典元数据
+├── dictionary.db      # 词条数据库
+├── media.db           # 媒体资源数据库（可选）
+└── logo.png           # 词典 Logo
 ```
 
-支持多个类型组合使用，用逗号分隔。
-
-## JSON 数据规范
-
-### 词条结构 (DictionaryEntry)
+### metadata.json
 
 ```json
 {
-  "entry_id": "fog_001",
-  "headword": "fog",
-  "entry_type": "word",
-  "page": "medical",
-  "section": "基本释义",
-  "tags": ["IELTS", "TOEFL"],
-  "frequency": {"level": "B1", "stars": 4},
-  "etymology": [...],
-  "inflections": [
-    {"type": "past", "value": "fogged"},
-    {"type": "present_participle", "value": "fogging"}
-  ],
-  "pronunciations": [
-    {"region": "US", "notation": "/fɔːɡ/", "audio_url": "..."}
-  ],
-  "certifications": ["IELTS", "TOEFL"],
-  "topics": ["赛车", "时尚"],
-  "collocations": {...},
-  "phrases": {...},
-  "theasaruses": [...],
-  "boards": [...],
-  "senses": [...]
+  "id": "example_dict",
+  "name": "Example Dictionary",
+  "version": "1.0.0",
+  "description": "An example dictionary for demonstration purposes",
+  "source_language": "en",
+  "target_language": ["en", "zh"],
+  "publisher": "Example Publisher",
+  "maintainer": "example_user",
+  "contact_maintainer": "example@example.com",
+  "repository": "https://github.com/example/dictionary",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
 }
 ```
 
-### 数据库表结构
-
-SQLite 表 `entries` 结构：
+### dictionary.db
 
 ```sql
-CREATE TABLE entries (
-  entry_id TEXT PRIMARY KEY,  -- 主键，唯一标识
-  headword TEXT,              -- 词目（用于搜索）
-  entry_type TEXT,            -- 词条类型（word/phrase）
-  page TEXT,                  -- 页面分类
-  section TEXT,               -- 区域分类
-  json_data TEXT              -- 完整JSON数据
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,--唯一键值为'zstd_dict'
+    value BLOB --这里储存zstd的字典，用于压缩和解压
 );
+
+CREATE TABLE entries (
+    entry_id INTEGER PRIMARY KEY,
+    headword TEXT,
+    headword_normalized TEXT,--只用给这个字段建立索引
+    entry_type TEXT,
+    page TEXT,
+    section TEXT,
+    version TEXT,
+    json_data BLOB--储存使用zstd压缩后的json数据
+);
+
+CREATE INDEX idx_headword_normalized ON entries(headword_normalized);
 ```
 
-**搜索方式：** 按 `headword` 字段进行模糊搜索和精确匹配。
+### media.db
 
-### 释义渲染规则
+```sql
+CREATE TABLE audios (
+    name TEXT PRIMARY KEY,--音频名，带文件后缀
+    blob BLOB NOT NULL--无压缩，二进制数据
+);
 
-**英文与中文释义：**
+CREATE TABLE images (
+    name TEXT PRIMARY KEY,--图片名，带文件后缀
+    blob BLOB NOT NULL--无压缩，二进制数据
+);
 
-- 英文释义（`definition.en`）和中文释义（`definition.zh`）分开渲染
-- 英文释义使用主字体颜色（`colorScheme.onSurface`）
-- 中文释义使用次级字体颜色（`colorScheme.outline`），与英文间距 4px
-- 两者都支持长按复制
-
-**例句渲染：**
-
-- 例句文本（`text`）和翻译（`translation`）都支持 `[text](type1,type2)` 格式
-- 支持的修饰类型：strike（中划线）、underline（下划线）、bold（加粗）、italic（斜体）等
-- 例句和翻译都支持长按复制
-
-**示例：**
-
-```json
-{
-  "definition": {
-    "en": "A sudden loud, sharp noise",
-    "zh": "（突发的）巨响，砰"
-  },
-  "examples": [
-    {
-      "text": "The door [banged](bold) [shut](bold)",
-      "translation": "门砰地关上了"
-    }
-  ]
-}
+CREATE INDEX idx_audios_name ON audios(name);
+CREATE INDEX idx_images_name ON images(name);
 ```
 
-渲染效果：
+### logo.png
 
-- 英文：A sudden loud, sharp noise
-- 中文：（突发的）巨响，砰（与英文间距 4px）
-- 例句：The door **banged** **shut**（banged 和 shut 显示为粗体）
-- 所有文本支持长按复制
-
-### Pages 与 Section（页面与区域）
-
-用于组织同一词条下的多个释义，支持区域跳转。
-
-**Pages（页面）：**
-
-- 用于分类不同来源的释义（如：英式发音、美式发音、药学词典、儿童词典、大学词典等）
-- 同一词条只能属于一个页面（字符串类型）
-- 在词条标题下方显示页面标签
-
-**Section（区域）：**
-
-- 用于区分同一页面下的不同词源或词性
-- 多个词条按 word 的 `id` 排序 sections
-- 区域导航栏显示所有区域，点击可滚动跳转
-
-```json
-{
-  "page": "medical",
-  "section": "基本释义"
-}
-```
-
-**UI 交互效果：**
-
-- 当 `page` 存在时，显示页面标签（在词条标题下方）
-- 当存在多个 section 时，显示区域导航栏（横向滚动 pill 样式）
-- 点击区域导航项，自动滚动到对应释义位置
-
-### Board 结构
-
-用于展示额外信息区块：
-
-```json
-{
-  "display": "210",
-  "title": "标题文字",
-  "content": ["内容1", "内容2", ...]
-}
-```
-
-### Sense 结构
-
-用于展示词义信息：
-
-```json
-{
-  "index": 1,
-  "pos": "n | v | adj | adv",
-  "grammar": {
-    "tags": ["U", "S", "C", "vi", "vt", "T", "often passive", ...],
-    "patterns": ["in a ~", "a ~ of N", "~ N", "be ~ged", ...]
-  },
-  "label": {
-    "unclassified": "value",
-    "region": "global | us | uk | au | ... (缺省为 global)",
-    "topic": ["psychology", "meteorology", "medicine", ...],
-    "register": "formal | informal | slang | literary | ... ",
-    "usage": ["figurative", "ironic", "archaic", ...],
-    "tone": "positive | negative | neutral"
-  },
-  "definition": {
-    "zh": "中文释义",
-    "en": "English definition"
-  },
-  "note": "使用说明",
-  "examples": [
-    {"text": "例句", "translation": "翻译"}
-  ],
-  "sub_senses": [
-    {
-      "index": "a | b | c | ...",
-      "pos": "n",
-      "grammar": {...},
-      "label": {...},
-      "definition": {"zh": "子义项", "en": "Sub-sense definition"},
-      "note": "子义项说明",
-      "examples": [...]
-    }
-  ]
-}
-```
-
-**index 格式：** 主义项用数字 (1, 2, 3...)，子义项用字母 (a, b, c...)
-
-## 技术栈
-
-- Flutter
-- SQLite (sqflite)
-- Provider (状态管理)
-- SharedPreferences (设置持久化)
-
-## 运行方式
-
-```bash
-flutter pub get
-flutter run
-```
+必须是png格式，方形

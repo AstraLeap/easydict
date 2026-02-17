@@ -3967,7 +3967,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'certifications',
     'frequency',
     'pronunciation',
-    'pronunciations',
     'senses',
     'sense_groups',
     'phrases',
@@ -3982,7 +3981,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (!entryJson.containsKey('datas')) return const SizedBox.shrink();
 
     final value = entryJson['datas'];
-    if (value is! List<dynamic> || value.isEmpty) {
+    if (value is! Map<String, dynamic> || value.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -3990,7 +3989,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        renderJsonElement(context, 'datas', value, ['datas']),
+        _buildDatas(context, value, path: ['datas']),
       ],
     );
   }

@@ -132,10 +132,8 @@ class DictionaryEntry {
             : [],
         frequency: json['frequency'] as Map<String, dynamic>? ?? {},
         etymology: json['etymology'],
-        pronunciations:
-            (json['pronunciation'] ?? json['pronunciations']) != null
-            ? ((json['pronunciation'] ?? json['pronunciations'])
-                      as List<dynamic>)
+        pronunciations: json['pronunciation'] != null
+            ? (json['pronunciation'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)
                   .where((e) => e != null)
                   .map((e) => e!)
