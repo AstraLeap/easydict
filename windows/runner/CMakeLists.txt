@@ -32,7 +32,31 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
-target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
+# Use /WHOLEARCHIVE to ensure all zstd symbols are linked (required for FFI dynamic lookup)
+if(MSVC)
+  target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
+  target_link_options(${BINARY_NAME} PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE_DIR:zstd>/zstd.lib")
+  
+  # Export zstd symbols so they can be found by Dart FFI
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_createDCtx")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_freeDCtx")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_getFrameContentSize")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_isError")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_getErrorName")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_createCCtx")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_freeCCtx")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_compressBound")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_createDDict")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_freeDDict")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_decompress_usingDDict")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_createCDict")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_freeCDict")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_compress_usingCDict")
+  
+  target_link_libraries(${BINARY_NAME} PRIVATE zstd)
+else()
+  target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app zstd)
+endif()
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 

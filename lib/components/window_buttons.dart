@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
-import '../utils/dpi_utils.dart';
+import '../core/utils/dpi_utils.dart';
 
 const Color windowBorderColor = Color(0xFFCCCCCC);
 const Color lightWindowBackground = Color(0xFFE5E5E5);
@@ -54,7 +54,7 @@ class WindowTitleBar extends StatelessWidget {
             ),
           ),
         ),
-        if (child != null) child!,
+        ?child,
       ],
     );
   }

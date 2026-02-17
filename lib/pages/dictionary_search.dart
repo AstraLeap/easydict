@@ -1,22 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'database_service.dart';
-import 'models/dictionary_entry_group.dart';
-import 'services/search_history_service.dart';
-import 'services/advanced_search_settings_service.dart';
-import 'services/dictionary_manager.dart';
-import 'services/english_db_service.dart';
-import 'services/font_loader_service.dart';
-import 'pages/entry_detail_page.dart';
-import 'utils/toast_utils.dart';
-import 'utils/language_utils.dart';
-import 'utils/language_dropdown.dart';
-import 'utils/dpi_utils.dart';
-import 'widgets/search_bar.dart';
-import 'components/english_db_download_dialog.dart';
-import 'components/scale_layout_wrapper.dart';
-import 'components/global_scale_wrapper.dart';
-import 'logger.dart';
+import '../data/database_service.dart';
+import '../data/models/dictionary_entry_group.dart';
+import '../services/search_history_service.dart';
+import '../services/advanced_search_settings_service.dart';
+import '../services/dictionary_manager.dart';
+import '../services/english_db_service.dart';
+import '../services/font_loader_service.dart';
+import 'entry_detail_page.dart';
+import '../core/utils/toast_utils.dart';
+import '../core/utils/language_utils.dart';
+import '../widgets/language_dropdown.dart';
+import '../core/utils/dpi_utils.dart';
+import '../widgets/search_bar.dart';
+import '../components/english_db_download_dialog.dart';
+import '../components/scale_layout_wrapper.dart';
+import '../components/global_scale_wrapper.dart';
+import '../core/logger.dart';
 
 class DictionarySearchPage extends StatefulWidget {
   const DictionarySearchPage({super.key});
@@ -190,7 +190,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   Future<void> _searchWordWithOptions({
     required bool useFuzzySearch,
     required bool exactMatch,
-    String? originalWord,
   }) async {
     final word = _searchController.text.trim();
     if (word.isEmpty) return;
@@ -561,7 +560,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _searchResults.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final word = _searchResults[index];
                         final isFirst = index == 0;

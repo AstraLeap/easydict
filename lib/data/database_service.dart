@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-import 'services/dictionary_manager.dart';
-import 'services/english_search_service.dart';
+import '../services/dictionary_manager.dart';
+import '../services/english_search_service.dart';
+import '../services/zstd_service.dart';
 import 'services/database_initializer.dart';
-import 'logger.dart';
+import '../core/logger.dart';
 
 Map<String, dynamic> _parseJsonInIsolate(String jsonStr) {
   return Map<String, dynamic>.from(jsonDecode(jsonStr) as Map);
@@ -193,10 +192,122 @@ class DictionaryEntry {
       'etymology': etymology,
       'pronunciation': pronunciations,
       'senses': senses,
-      if (phrases != null) 'phrases': phrases,
+      'phrases': phrases,
       'sense_groups': senseGroups,
     };
   }
+}
+
+/// 从数据库字段中提取JSON字符串（不使用字典）
+/// 支持普通字符串和zstd压缩的blob数据
+String? extractJsonFromField(dynamic fieldValue) {
+  if (fieldValue == null) {
+    return null;
+  }
+
+  // 如果已经是字符串，直接返回
+  if (fieldValue is String) {
+    return fieldValue;
+  }
+
+  // 如果是字节数组（blob），尝试zstd解压
+  if (fieldValue is Uint8List) {
+    try {
+      final zstdService = ZstdService();
+      final decompressed = zstdService.decompressWithoutDict(fieldValue);
+      return utf8.decode(decompressed);
+    } catch (e) {
+      Logger.e('Zstd解压失败: $e', tag: 'DatabaseService');
+      // 如果解压失败，尝试直接作为UTF8解码（可能是未压缩的blob）
+      try {
+        return utf8.decode(fieldValue);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  // 其他类型，尝试转字符串
+  try {
+    return fieldValue.toString();
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 使用指定字典从数据库字段中提取JSON字符串
+/// 支持普通字符串和zstd压缩的blob数据
+String? extractJsonFromFieldWithDict(dynamic fieldValue, Uint8List? dictBytes) {
+  if (fieldValue == null) {
+    return null;
+  }
+
+  // 如果已经是字符串，直接返回
+  if (fieldValue is String) {
+    return fieldValue;
+  }
+
+  // 如果是字节数组（blob），尝试zstd解压（使用字典）
+  if (fieldValue is Uint8List) {
+    try {
+      final zstdService = ZstdService();
+      final decompressed = zstdService.decompress(fieldValue, dictBytes);
+      return utf8.decode(decompressed);
+    } catch (e) {
+      Logger.e('Zstd解压失败: $e', tag: 'DatabaseService');
+      // 如果解压失败，尝试直接作为UTF8解码（可能是未压缩的blob）
+      try {
+        return utf8.decode(fieldValue);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  // 其他类型，尝试转字符串
+  try {
+    return fieldValue.toString();
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 将JSON对象压缩为zstd格式的blob数据（不使用字典）
+/// 使用压缩级别3，返回Uint8List
+Uint8List compressJsonToBlob(Map<String, dynamic> jsonData) {
+  // 1. 转换为紧凑JSON字符串（无换行、无多余空格）
+  final jsonString = jsonEncode(jsonData);
+
+  // 2. 转换为UTF8字节
+  final jsonBytes = utf8.encode(jsonString);
+
+  // 3. 使用zstd压缩，级别3
+  final zstdService = ZstdService();
+  return zstdService.compressWithoutDict(
+    Uint8List.fromList(jsonBytes),
+    level: 3,
+  );
+}
+
+/// 使用指定字典将JSON对象压缩为zstd格式的blob数据
+/// 使用压缩级别3，返回Uint8List
+Uint8List compressJsonToBlobWithDict(
+  Map<String, dynamic> jsonData,
+  Uint8List? dictBytes,
+) {
+  // 1. 转换为紧凑JSON字符串（无换行、无多余空格）
+  final jsonString = jsonEncode(jsonData);
+
+  // 2. 转换为UTF8字节
+  final jsonBytes = utf8.encode(jsonString);
+
+  // 3. 使用zstd压缩（使用字典），级别3
+  final zstdService = ZstdService();
+  return zstdService.compress(
+    Uint8List.fromList(jsonBytes),
+    dictBytes,
+    level: 3,
+  );
 }
 
 class DatabaseService {
@@ -228,6 +339,7 @@ class DatabaseService {
     await close();
     _currentDictionaryId = dictionaryId;
     _cachedDatabasePath = null;
+    // DictionaryManager 会在关闭数据库时自动清除 zstd 字典缓存
   }
 
   Future<String> get databasePath async {
@@ -424,6 +536,9 @@ class DatabaseService {
     try {
       final db = await _dictManager.openDictionaryDatabase(dictId);
 
+      // 获取该词典的 zstd 字典用于解压
+      final zstdDict = await _dictManager.getZstdDictionary(dictId);
+
       String whereClause;
       List<dynamic> whereArgs;
 
@@ -443,7 +558,15 @@ class DatabaseService {
       );
 
       for (final row in results) {
-        final jsonStr = row['json_data'] as String;
+        // 使用字典解压
+        final jsonStr = extractJsonFromFieldWithDict(
+          row['json_data'],
+          zstdDict,
+        );
+        if (jsonStr == null) {
+          Logger.w('无法解析行数据的json_data字段', tag: 'DatabaseService');
+          continue;
+        }
 
         DictionaryEntry? entry;
         if (kIsWeb) {
@@ -511,6 +634,10 @@ class DatabaseService {
   Future<DictionaryEntry?> getEntry(String word) async {
     try {
       final db = await database;
+      final dictId = await currentDictionaryId;
+
+      // 获取当前词典的 zstd 字典用于解压
+      final zstdDict = await _dictManager.getZstdDictionary(dictId);
 
       // 默认使用headword_normalized进行搜索（规范化匹配）
       final String whereClause = 'headword_normalized = ?';
@@ -526,11 +653,20 @@ class DatabaseService {
         return null;
       }
 
-      final jsonStr = results.first['json_data'] as String;
+      // 使用字典解压
+      final jsonStr = extractJsonFromFieldWithDict(
+        results.first['json_data'],
+        zstdDict,
+      );
+      if (jsonStr == null) {
+        Logger.e('无法解析json_data字段', tag: 'DatabaseService');
+        return null;
+      }
       final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
 
       return DictionaryEntry.fromJson(jsonData);
     } catch (e) {
+      Logger.e('getEntry错误: $e', tag: 'DatabaseService');
       return null;
     }
   }
@@ -616,7 +752,9 @@ class DatabaseService {
       final json = entry.toJson();
       json.remove('id');
 
-      final jsonStr = jsonEncode(json);
+      // 获取该词典的 zstd 字典并使用字典压缩
+      final zstdDict = await dictManager.getZstdDictionary(dictId);
+      final compressedBlob = compressJsonToBlobWithDict(json, zstdDict);
 
       final String idStr = entry.id;
       int? entryId;
@@ -636,7 +774,7 @@ class DatabaseService {
 
       final result = await db.update(
         'entries',
-        {'json_data': jsonStr},
+        {'json_data': compressedBlob},
         where: 'entry_id = ?',
         whereArgs: [entryId],
       );

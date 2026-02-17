@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'components/dictionary_interaction_scope.dart';
-import 'utils/toast_utils.dart';
-import 'utils/dpi_utils.dart';
-import 'services/font_loader_service.dart';
+import 'dictionary_interaction_scope.dart';
+import '../core/utils/toast_utils.dart';
+import '../core/utils/dpi_utils.dart';
+import '../services/font_loader_service.dart';
 
 class BoardWidget extends StatefulWidget {
   final Map<String, dynamic> board;

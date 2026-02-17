@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/remote_dictionary.dart';
+import '../data/models/remote_dictionary.dart';
 import '../services/dictionary_store_service.dart';
-import '../logger.dart';
+import '../core/logger.dart';
 
 class DownloadOptionsResult {
   final bool includeMetadata;
@@ -316,8 +316,9 @@ class DownloadManager with ChangeNotifier {
 
   String formatSpeed(int bytesPerSecond) {
     if (bytesPerSecond < 1024) return '$bytesPerSecond B/s';
-    if (bytesPerSecond < 1024 * 1024)
+    if (bytesPerSecond < 1024 * 1024) {
       return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    }
     return '${(bytesPerSecond / 1024 / 1024).toStringAsFixed(2)} MB/s';
   }
 }

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../models/dictionary_entry_group.dart';
-import '../database_service.dart';
+import '../data/models/dictionary_entry_group.dart';
+import '../data/database_service.dart';
 import 'dictionary_logo.dart';
-import '../logger.dart';
-import '../component_renderer.dart';
+import '../core/logger.dart';
+import 'component_renderer.dart';
+import '../services/dictionary_manager.dart';
 
 class DictionaryNavigationPanel extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
@@ -88,6 +89,27 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   void didUpdateWidget(DictionaryNavigationPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 导航栏固定在右侧，不需要处理位置变化
+
+    // 如果目录列表应该是打开状态但 OverlayEntry 为 null，重新打开它
+    // 这种情况发生在父组件重建时
+    if (_isDirectoryExpanded && _directoryOverlayEntry == null) {
+      final currentDict = widget.entryGroup.currentDictionaryGroup;
+      final currentPage = currentDict.currentPageGroup;
+      final sectionIndex =
+          _selectedSectionIndex ?? currentDict.currentSectionIndex;
+
+      if (sectionIndex >= 0 && sectionIndex < currentPage.sections.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _directoryOverlayEntry = _createDirectoryOverlayEntry(
+              currentPage,
+              sectionIndex,
+            );
+            Overlay.of(context).insert(_directoryOverlayEntry!);
+          }
+        });
+      }
+    }
   }
 
   void _removeOverlay() {
@@ -134,15 +156,15 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       });
     }
 
-    if (_isDirectoryExpanded && _selectedSectionIndex == sectionIndex) {
-      // 如果点击的是同一个section，则关闭目录
+    if (_isDirectoryExpanded) {
+      // 如果目录列表处于打开状态，关闭目录
       _removeDirectoryOverlay();
       setState(() {
         _isDirectoryExpanded = false;
         _selectedSectionIndex = null;
       });
     } else {
-      // 打开或切换到新的目录
+      // 打开目录
       _removeDirectoryOverlay();
       final currentDict = widget.entryGroup.currentDictionaryGroup;
       final currentPage = currentDict.currentPageGroup;
@@ -281,7 +303,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     }
 
     // 构建主导航栏
-    return Container(
+    return SizedBox(
       key: _navPanelKey,
       width: 52,
       child: ScrollConfiguration(
@@ -310,7 +332,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       onTap: isCurrent ? _togglePageList : () => _onDictionarySelected(dict),
       borderRadius: BorderRadius.circular(4),
       mouseCursor: SystemMouseCursors.click,
-      child: Container(
+      child: SizedBox(
         width: 36,
         height: 40,
         child: ClipRRect(
@@ -516,6 +538,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     final section = page.sections[currentSectionIndex];
     final entry = section.entry;
 
+    // 1. 添加释义相关条目 (sense_groups/senses)
     // 遍历 sense_groups
     for (int i = 0; i < entry.senseGroups.length; i++) {
       final group = entry.senseGroups[i];
@@ -579,7 +602,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       }
     }
 
-    // 添加 phrases 章节（只显示标题，可点击跳转）
+    // 2. 添加 phrases 章节（只显示标题，可点击跳转）
     if (entry.phrases.isNotEmpty) {
       items.add(
         InkWell(
@@ -615,7 +638,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       );
     }
 
-    // 添加 boards 章节（从 entryJson 中获取，排除已渲染的key）
+    // 3. 添加 boards 章节（从 entryJson 中获取，排除已渲染的key）
     final entryJson = entry.toJson();
     final renderedKeys = const [
       'id',
@@ -630,12 +653,14 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'certifications',
       'frequency',
       'etymology',
+      'pronunciation', // toJson() 返回的是单数形式
       'pronunciations',
       'senses',
       'sense_groups',
       'phrases',
       'datas',
       'hiddenLanguages',
+      'hidden_languages',
     ];
 
     for (final jsonEntry in entryJson.entries) {
@@ -701,6 +726,56 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     return items;
   }
 
+  /// 根据词典元数据获取释义文本
+  /// 优先级：目标语言列表中非源语言的语言 > 源语言 > 其他任意语言
+  String _getDefinitionText(dynamic definition, String dictId) {
+    if (definition is! Map) {
+      return definition?.toString() ?? '';
+    }
+    final defMap = Map<String, dynamic>.from(definition);
+
+    // 获取词典元数据
+    final metadata = DictionaryManager().getCachedMetadata(dictId);
+    if (metadata == null) {
+      // 如果没有元数据，返回第一个非空值
+      for (final value in defMap.values) {
+        if (value != null && value.toString().isNotEmpty) {
+          return value.toString();
+        }
+      }
+      return '';
+    }
+
+    final sourceLang = metadata.sourceLanguage;
+    final targetLangs = metadata.targetLanguages;
+
+    // 优先级1：目标语言列表中非源语言的语言
+    for (final lang in targetLangs) {
+      if (lang != sourceLang) {
+        final value = defMap[lang];
+        if (value != null && value.toString().isNotEmpty) {
+          return value.toString();
+        }
+      }
+    }
+
+    // 优先级2：源语言
+    final sourceValue = defMap[sourceLang];
+    if (sourceValue != null && sourceValue.toString().isNotEmpty) {
+      return sourceValue.toString();
+    }
+
+    // 优先级3：其他任意非空语言
+    for (final entry in defMap.entries) {
+      final value = entry.value;
+      if (value != null && value.toString().isNotEmpty) {
+        return value.toString();
+      }
+    }
+
+    return '';
+  }
+
   void _addSenseItem(
     BuildContext context,
     List<Widget> items,
@@ -716,50 +791,52 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     String defText = '';
 
     if (definition is Map) {
-      defText = definition['zh'] ?? definition['en'] ?? '';
+      defText = _getDefinitionText(definition, section.entry.dictId ?? '');
     } else if (definition is String) {
       defText = definition;
     }
 
-    if (defText.isNotEmpty) {
-      items.add(
-        InkWell(
-          onTap: () {
-            Logger.d(
-              'Directory item tapped: $defText, target section: ${section.section}, dictId: ${section.entry.dictId}, path: $path',
-              tag: 'NavPanel',
-            );
-            // 复用 _onSectionTapped 的逻辑，确保跳转行为一致且健壮
-            _onSectionTapped(
-              section,
-              section.entry.dictId ?? '',
-              sectionIndex,
-              isSelected,
-              targetPath: path,
-            );
-          },
-          mouseCursor: SystemMouseCursors.click,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$index',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+    // 显示序号，如果释义不为空则同时显示释义
+    final bool showDefinition = defText.isNotEmpty;
+    items.add(
+      InkWell(
+        onTap: () {
+          Logger.d(
+            'Directory item tapped: $defText, target section: ${section.section}, dictId: ${section.entry.dictId}, path: $path',
+            tag: 'NavPanel',
+          );
+          // 复用 _onSectionTapped 的逻辑，确保跳转行为一致且健壮
+          _onSectionTapped(
+            section,
+            section.entry.dictId ?? '',
+            sectionIndex,
+            isSelected,
+            targetPath: path,
+          );
+        },
+        mouseCursor: SystemMouseCursors.click,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '$index',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
+              ),
+              if (showDefinition) ...[
                 const SizedBox(width: 8),
                 Expanded(
                   child: RichText(
@@ -774,80 +851,81 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                   ),
                 ),
               ],
-            ),
+            ],
           ),
         ),
-      );
+      ),
+    );
 
-      // 处理子释义
-      final subSenses = sense['sub_senses'] as List<dynamic>?;
-      if (subSenses != null && subSenses.isNotEmpty) {
-        for (int j = 0; j < subSenses.length; j++) {
-          final subSense = subSenses[j];
-          final subDef = subSense['definition'];
-          String subDefText = '';
-          if (subDef is Map) {
-            subDefText = subDef['zh'] ?? subDef['en'] ?? '';
-          } else if (subDef is String) {
-            subDefText = subDef;
-          }
-
-          if (subDefText.isNotEmpty) {
-            final subPath = '$path.sub_senses.$j';
-            items.add(
-              InkWell(
-                onTap: () {
-                  Logger.d(
-                    'Directory sub-item tapped: $subDefText, target section: ${section.section}, dictId: ${section.entry.dictId}, path: $subPath',
-                    tag: 'NavPanel',
-                  );
-                  // 复用 _onSectionTapped 的逻辑，确保跳转行为一致且健壮
-                  _onSectionTapped(
-                    section,
-                    section.entry.dictId ?? '',
-                    sectionIndex,
-                    isSelected,
-                    targetPath: subPath,
-                  );
-                },
-                mouseCursor: SystemMouseCursors.click,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(36, 4, 12, 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 4,
-                        height: 4,
-                        margin: const EdgeInsets.only(top: 7),
-                        decoration: BoxDecoration(
-                          color: colorScheme.outline.withOpacity(0.5),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: RichText(
-                          text: TextSpan(
-                            children: parseFormattedText(
-                              subDefText,
-                              TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ).spans,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
+    // 处理子释义
+    final subSenses = sense['sub_senses'] as List<dynamic>?;
+    if (subSenses != null && subSenses.isNotEmpty) {
+      for (int j = 0; j < subSenses.length; j++) {
+        final subSense = subSenses[j];
+        final subDef = subSense['definition'];
+        String subDefText = '';
+        if (subDef is Map) {
+          subDefText = _getDefinitionText(subDef, section.entry.dictId ?? '');
+        } else if (subDef is String) {
+          subDefText = subDef;
         }
+
+        final bool showSubDefinition = subDefText.isNotEmpty;
+        final subPath = '$path.sub_senses.$j';
+        items.add(
+          InkWell(
+            onTap: () {
+              Logger.d(
+                'Directory sub-item tapped: $subDefText, target section: ${section.section}, dictId: ${section.entry.dictId}, path: $subPath',
+                tag: 'NavPanel',
+              );
+              // 复用 _onSectionTapped 的逻辑，确保跳转行为一致且健壮
+              _onSectionTapped(
+                section,
+                section.entry.dictId ?? '',
+                sectionIndex,
+                isSelected,
+                targetPath: subPath,
+              );
+            },
+            mouseCursor: SystemMouseCursors.click,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(36, 4, 12, 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 4,
+                    height: 4,
+                    margin: const EdgeInsets.only(top: 7),
+                    decoration: BoxDecoration(
+                      color: colorScheme.outline.withOpacity(0.5),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  if (showSubDefinition) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          children: parseFormattedText(
+                            subDefText,
+                            TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ).spans,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
       }
     }
   }
@@ -1018,20 +1096,15 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     }
 
     // 2. 如果点击的是非活跃section
-    // 先执行滚动操作
-    _navigateToSection(section, dictId, targetPath);
-
-    // 2.1 如果目录列表处于打开状态，关闭之前的目录列表，改为打开当前section的目录列表
-    if (_isDirectoryExpanded) {
-      _removeDirectoryOverlay();
-      // 延迟打开新section的目录列表，等待滚动完成
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _openDirectoryForCurrentSection();
-        }
-      });
+    // 如果有 targetPath，说明是目录项点击，只需滚动不需要更新状态
+    if (targetPath != null) {
+      // 目录项点击：只执行滚动，不触发状态更新，保持目录列表打开
+      widget.onNavigateToEntry?.call(section.entry, targetPath: targetPath);
+      return;
     }
-    // 2.2 如果目录列表处于关闭状态，仅进行滚动操作（已在上面完成）
+
+    // 没有 targetPath 的普通 section 切换
+    _navigateToSection(section, dictId, targetPath);
   }
 
   // 导航到指定section
@@ -1084,17 +1157,25 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 widget.onSectionChanged?.call();
               }
 
+              // 如果目录列表处于打开状态，切换到新section的目录列表
+              if (_isDirectoryExpanded) {
+                _removeDirectoryOverlay();
+              }
+
+              // 使用单次 addPostFrameCallback 处理所有后续操作
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (targetPath != null) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    widget.onNavigateToEntry?.call(
-                      section.entry,
-                      targetPath: targetPath,
-                    );
-                  });
-                } else {
-                  widget.onNavigateToEntry?.call(section.entry);
+                if (!mounted) return;
+
+                // 先打开目录列表（如果需要）
+                if (_isDirectoryExpanded) {
+                  _openDirectoryForCurrentSection();
                 }
+
+                // 然后执行导航
+                widget.onNavigateToEntry?.call(
+                  section.entry,
+                  targetPath: targetPath,
+                );
               });
               return;
             }

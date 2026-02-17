@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/english_db_service.dart';
 
 enum EnglishDbDownloadResult { downloaded, notNow, neverAskAgain }
@@ -72,7 +71,7 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withOpacity(0.5),
+              color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(

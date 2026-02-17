@@ -10,23 +10,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'database_service.dart';
+import '../data/database_service.dart';
 import 'board_widget.dart';
-import 'components/dictionary_interaction_scope.dart';
-import 'logger.dart';
-import 'services/dictionary_manager.dart';
-import 'services/preferences_service.dart';
-import 'services/font_loader_service.dart';
-import 'services/ai_service.dart';
-import 'services/advanced_search_settings_service.dart';
-import 'services/media_kit_manager.dart';
-import 'services/entry_event_bus.dart';
-import 'models/dictionary_entry_group.dart';
-import 'pages/entry_detail_page.dart';
-import 'services/search_history_service.dart';
-import 'utils/toast_utils.dart';
-import 'utils/language_utils.dart';
-import 'components/global_scale_wrapper.dart';
+import 'dictionary_interaction_scope.dart';
+import '../core/logger.dart';
+import '../services/dictionary_manager.dart';
+import '../services/preferences_service.dart';
+import '../services/font_loader_service.dart';
+import '../services/ai_service.dart';
+import '../services/advanced_search_settings_service.dart';
+import '../services/media_kit_manager.dart';
+import '../services/entry_event_bus.dart';
+import '../data/models/dictionary_entry_group.dart';
+import '../pages/entry_detail_page.dart';
+import '../services/search_history_service.dart';
+import '../core/utils/toast_utils.dart';
+import '../core/utils/language_utils.dart';
+import 'global_scale_wrapper.dart';
 
 class FormattedTextResult {
   final List<InlineSpan> spans;
@@ -696,7 +696,12 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
         );
 
         if (results.isNotEmpty) {
-          final jsonStr = results.first['json_data'] as String;
+          final jsonStr = extractJsonFromField(results.first['json_data']);
+          if (jsonStr == null) {
+            Logger.e('无法解析json_data字段', tag: 'ComponentRenderer');
+            await db.close();
+            continue;
+          }
           final jsonData = Map<String, dynamic>.from(
             // ignore: unnecessary_cast
             (jsonDecode(jsonStr) as Map<String, dynamic>),
@@ -755,7 +760,7 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
 
 /// 用于管理隐藏语言状态的通知器
 class HiddenLanguagesNotifier extends ValueNotifier<List<String>> {
-  HiddenLanguagesNotifier(List<String> initialValue) : super(initialValue);
+  HiddenLanguagesNotifier(super.initialValue);
 
   void toggle(String path) {
     if (value.contains(path)) {
@@ -896,10 +901,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
 
-  // 用于存储元素 Key 的 Map，用于精确滚动 - 延迟加载，只在需要时才创建
+  // 用于存储元素 Key 的 Map，用于精确滚动
   final Map<String, GlobalKey> _elementKeys = {};
-  // 标记是否需要创建 GlobalKey（只有在收到滚动请求时才创建）
-  bool _needElementKeys = false;
   // 待处理的滚动请求队列
   final List<_PendingScrollRequest> _pendingScrollRequests = [];
 
@@ -977,7 +980,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       _localEntry = widget.entry;
       _hiddenLanguagesNotifier.value = [];
       _elementKeys.clear();
-      _needElementKeys = false;
       _pendingScrollRequests.clear();
       _isVisible = false;
       _hasBeenVisible = false;
@@ -985,7 +987,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
   }
 
-  /// 滚动到指定路径的元素 - 延迟加载版本
+  /// 滚动到指定路径的元素
   void scrollToElement(String path, {int retryCount = 0}) {
     // 如果组件还没有可见，将请求加入队列等待处理
     if (!_hasBeenVisible) {
@@ -997,20 +999,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
-    // 启用 GlobalKey 创建
-    if (!_needElementKeys) {
-      setState(() {
-        _needElementKeys = true;
-      });
-      // 等待重建完成后再尝试滚动
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _executeScrollToElement(path, retryCount: 0);
-        }
-      });
-      return;
-    }
-
+    // 直接执行滚动，GlobalKey 会在 _getElementKey 中按需创建
     _executeScrollToElement(path, retryCount: retryCount);
   }
 
@@ -1084,12 +1073,41 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _highlightingPaths.contains(path);
   }
 
-  /// 获取或创建元素的 GlobalKey - 延迟加载版本
+  /// 判断路径是否需要生成 GlobalKey（只有释义条目、phrase和board需要）
+  bool _shouldGenerateGlobalKey(String path) {
+    // 释义条目路径: sense_groups.x.senses.y 或 senses.x
+    if (path.contains('sense_groups') && path.contains('senses')) return true;
+    if (RegExp(r'^senses\.\d+$').hasMatch(path)) return true;
+
+    // phrases
+    if (path == 'phrases') return true;
+
+    // board 元素（不在 _renderedKeys 中的顶层 key）
+    // board 路径通常是直接的 key 名，如 "etymology", "notes" 等
+    final parts = path.split('.');
+    if (parts.length == 1 && !_isRenderedKey(parts[0])) return true;
+
+    return false;
+  }
+
+  /// 检查 key 是否是已单独渲染的 key
+  bool _isRenderedKey(String key) {
+    return _renderedKeys.contains(key);
+  }
+
+  /// 获取或创建元素的 GlobalKey - 只为需要滚动的元素创建
+  /// 策略：组件可见后直接创建，无需状态控制
   GlobalKey? _getElementKey(String path) {
-    // 只有在需要时才创建 GlobalKey
-    if (!_needElementKeys) {
+    // 检查是否需要为此路径生成 GlobalKey
+    if (!_shouldGenerateGlobalKey(path)) {
       return null;
     }
+
+    // 组件可见后直接创建 GlobalKey，无需等待 setState
+    if (!_hasBeenVisible) {
+      return null;
+    }
+
     return _elementKeys.putIfAbsent(path, () => GlobalKey());
   }
 
@@ -2488,10 +2506,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
             'ComponentRenderer became visible for entry: ${entry.headword}',
             tag: 'ComponentRenderer',
           );
+          // 设置标志并触发重建，确保 GlobalKey 被创建
           setState(() {
             _hasBeenVisible = true;
           });
-          // 处理待处理的滚动请求
+          // 在下一帧处理待处理的滚动请求（等待 GlobalKey 创建完成）
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               _processPendingScrollRequests();
@@ -4637,7 +4656,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           return _renderWithPredefinedMethod(context, key, value, path);
         }
         // 1.1.2 如果value是list，渲染一个widget容器，对于list的每个元素，都使用key所定义的渲染函数渲染
-        if (value is List && value.isNotEmpty) {
+        if (value.isNotEmpty) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: value.asMap().entries.map((entry) {

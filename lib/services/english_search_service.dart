@@ -1,9 +1,8 @@
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
-import 'package:flutter/foundation.dart';
 import 'english_db_service.dart';
-import 'database_initializer.dart';
-import '../logger.dart';
+import '../data/services/database_initializer.dart';
+import '../core/logger.dart';
 
 /// 搜索结果与原始搜索词的关系信息
 class SearchRelation {

@@ -1,6 +1,6 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.13)
-project(runner LANGUAGES CXX)
+project(runner LANGUAGES C CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
@@ -45,6 +45,38 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_options(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-O3>")
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()
+
+# Build zstd library
+set(ZSTD_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/zstd")
+
+# Collect zstd source files
+file(GLOB ZSTD_COMMON_SOURCES ${ZSTD_SOURCE_DIR}/lib/common/*.c)
+file(GLOB ZSTD_COMPRESS_SOURCES ${ZSTD_SOURCE_DIR}/lib/compress/*.c)
+file(GLOB ZSTD_DECOMPRESS_SOURCES ${ZSTD_SOURCE_DIR}/lib/decompress/*.c)
+file(GLOB ZSTD_DICTBUILDER_SOURCES ${ZSTD_SOURCE_DIR}/lib/dictBuilder/*.c)
+file(GLOB ZSTD_DEPRECATED_SOURCES ${ZSTD_SOURCE_DIR}/lib/deprecated/*.c)
+
+set(ZSTD_SOURCES
+    ${ZSTD_COMMON_SOURCES}
+    ${ZSTD_COMPRESS_SOURCES}
+    ${ZSTD_DECOMPRESS_SOURCES}
+    ${ZSTD_DICTBUILDER_SOURCES}
+    ${ZSTD_DEPRECATED_SOURCES}
+)
+
+# Create zstd static library
+add_library(zstd STATIC ${ZSTD_SOURCES})
+
+target_include_directories(zstd PUBLIC
+    ${ZSTD_SOURCE_DIR}/lib
+    ${ZSTD_SOURCE_DIR}/lib/common
+)
+
+# Disable warnings for zstd
+target_compile_options(zstd PRIVATE -w)
+
+# Define ZSTD_STATIC_LINKING_ONLY for dictionary support
+target_compile_definitions(zstd PUBLIC ZSTD_STATIC_LINKING_ONLY)
 
 # Flutter library and tool build rules.
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")

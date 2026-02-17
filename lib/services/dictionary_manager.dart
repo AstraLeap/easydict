@@ -7,8 +7,10 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
-import '../models/dictionary_metadata.dart';
-import '../logger.dart';
+import '../data/models/dictionary_metadata.dart';
+import '../core/logger.dart';
+import 'advanced_search_settings_service.dart';
+import 'search_history_service.dart';
 
 class DictionaryManager {
   static final DictionaryManager _instance = DictionaryManager._internal();
@@ -30,6 +32,8 @@ class DictionaryManager {
   final Map<String, Database> _mediaDatabasePool = {};
   final Map<String, Future<Database>> _pendingOpens = {};
   final Map<String, Future<Database>> _pendingMediaOpens = {};
+  // zstd 字典缓存，与数据库生命周期保持一致
+  final Map<String, Uint8List> _zstdDictCache = {};
 
   DictionaryMetadata? getCachedMetadata(String dictionaryId) {
     return _metadataCache[dictionaryId];
@@ -638,9 +642,253 @@ class DictionaryManager {
     }
   }
 
+  /// 预连接活跃语言的词典数据库
+  ///
+  /// 逻辑：
+  /// 1. 获取搜索框当前活跃语言（如果没有，则使用上次查词的语言）
+  /// 2. 获取该语言下启用的词典（按用户在词典启用界面配置的顺序）
+  /// 3. 与前3本词典的 dictionary.db 和 media.db 建立连接
+  ///
+  /// 此方法应在应用加载完成后调用，以加速首次搜索
+  Future<void> preloadActiveLanguageDatabases() async {
+    try {
+      // 1. 确定活跃语言
+      String? activeLanguage = await _getActiveLanguage();
+      if (activeLanguage == null || activeLanguage == 'auto') {
+        Logger.i('没有确定的活跃语言，跳过预连接', tag: 'DictionaryManager');
+        return;
+      }
+
+      Logger.i('开始预连接语言 "$activeLanguage" 的词典数据库', tag: 'DictionaryManager');
+
+      // 2. 获取该语言下启用的词典（保持用户配置的顺序）
+      final enabledDicts = await getEnabledDictionariesMetadata();
+      final languageDicts = enabledDicts
+          .where((dict) => dict.sourceLanguage == activeLanguage)
+          .take(3) // 最多前3本
+          .toList();
+
+      if (languageDicts.isEmpty) {
+        Logger.i('语言 "$activeLanguage" 没有启用的词典', tag: 'DictionaryManager');
+        return;
+      }
+
+      Logger.i(
+        '将预连接 ${languageDicts.length} 本词典: ${languageDicts.map((d) => d.name).join(', ')}',
+        tag: 'DictionaryManager',
+      );
+
+      // 3. 并行连接 dictionary.db 和 media.db
+      final futures = <Future<void>>[];
+      for (final dict in languageDicts) {
+        futures.add(_preloadDictionaryDatabases(dict.id));
+      }
+
+      await Future.wait(futures);
+
+      Logger.i('预连接完成', tag: 'DictionaryManager');
+    } catch (e, stackTrace) {
+      Logger.e(
+        '预连接词典数据库失败',
+        tag: 'DictionaryManager',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// 获取当前活跃语言
+  ///
+  /// 优先级：
+  /// 1. 搜索框当前选择的语言（如果可用）
+  /// 2. 从搜索记录推断（最近搜索使用的语言）
+  /// 3. 返回 null
+  Future<String?> _getActiveLanguage() async {
+    // 1. 尝试获取上次选择的语言分组
+    final lastGroup = await AdvancedSearchSettingsService()
+        .getLastSelectedGroup();
+
+    if (lastGroup != null && lastGroup != 'auto') {
+      Logger.d('使用上次选择的语言: $lastGroup', tag: 'DictionaryManager');
+      return lastGroup;
+    }
+
+    // 2. 如果上次选择的是 auto，从搜索记录推断
+    if (lastGroup == 'auto') {
+      final languageFromHistory = await _inferLanguageFromSearchHistory();
+      if (languageFromHistory != null) {
+        Logger.d('从搜索记录推断语言: $languageFromHistory', tag: 'DictionaryManager');
+        return languageFromHistory;
+      }
+    }
+
+    Logger.d('无法确定活跃语言', tag: 'DictionaryManager');
+    return null;
+  }
+
+  /// 从搜索记录推断语言
+  ///
+  /// 策略：
+  /// 1. 获取最近5条搜索记录
+  /// 2. 统计每条记录使用的语言（group 字段）
+  /// 3. 返回出现次数最多的语言（需要至少出现2次或占40%以上）
+  /// 4. 如果没有明确倾向，返回最近一条记录的语言
+  Future<String?> _inferLanguageFromSearchHistory() async {
+    try {
+      final records = await SearchHistoryService().getSearchRecords();
+      if (records.isEmpty) {
+        return null;
+      }
+
+      // 只取最近5条记录
+      final recentRecords = records.take(5).toList();
+
+      // 统计各语言出现次数
+      final languageCounts = <String, int>{};
+      for (final record in recentRecords) {
+        final group = record.group;
+        if (group != null && group != 'auto') {
+          languageCounts[group] = (languageCounts[group] ?? 0) + 1;
+        }
+      }
+
+      if (languageCounts.isEmpty) {
+        // 如果没有明确的语言记录，尝试返回最近一条非auto的记录
+        final lastNonAutoRecord = recentRecords.firstWhere(
+          (r) => r.group != null && r.group != 'auto',
+          orElse: () => recentRecords.first,
+        );
+        if (lastNonAutoRecord.group != null &&
+            lastNonAutoRecord.group != 'auto') {
+          return lastNonAutoRecord.group;
+        }
+        return null;
+      }
+
+      // 找出出现次数最多的语言
+      final sortedLanguages = languageCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      final mostFrequent = sortedLanguages.first;
+      final totalRecordsWithLanguage = languageCounts.values.fold(
+        0,
+        (a, b) => a + b,
+      );
+
+      // 如果最频繁的语言出现次数 >= 2 或占比 >= 40%，则使用它
+      if (mostFrequent.value >= 2 ||
+          (totalRecordsWithLanguage > 0 &&
+              mostFrequent.value / totalRecordsWithLanguage >= 0.4)) {
+        return mostFrequent.key;
+      }
+
+      // 否则返回最近一条有语言信息的记录
+      final lastRecordWithLanguage = recentRecords.firstWhere(
+        (r) => r.group != null && r.group != 'auto',
+        orElse: () => recentRecords.first,
+      );
+
+      if (lastRecordWithLanguage.group != null &&
+          lastRecordWithLanguage.group != 'auto') {
+        return lastRecordWithLanguage.group;
+      }
+
+      return null;
+    } catch (e) {
+      Logger.w('从搜索记录推断语言失败: $e', tag: 'DictionaryManager');
+      return null;
+    }
+  }
+
+  /// 预加载指定词典的数据库连接
+  Future<void> _preloadDictionaryDatabases(String dictionaryId) async {
+    try {
+      // 预连接 dictionary.db
+      final dbPath = await getDictionaryDbPath(dictionaryId);
+      if (await File(dbPath).exists()) {
+        await openDictionaryDatabase(dictionaryId);
+        Logger.d('已预连接 dictionary.db: $dictionaryId', tag: 'DictionaryManager');
+      }
+
+      // 预连接 media.db
+      final mediaDbPath = await getMediaDbPath(dictionaryId);
+      if (await File(mediaDbPath).exists()) {
+        await openMediaDatabase(dictionaryId);
+        Logger.d('已预连接 media.db: $dictionaryId', tag: 'DictionaryManager');
+      }
+    } catch (e) {
+      Logger.w('预连接词典 $dictionaryId 失败: $e', tag: 'DictionaryManager');
+    }
+  }
+
   Future<bool> dictionaryExists(String dictionaryId) async {
     final dbPath = await getDictionaryDbPath(dictionaryId);
     return File(dbPath).exists();
+  }
+
+  /// 获取指定词典的 zstd 字典
+  /// 字典与数据库生命周期保持一致，首次获取时从 config 表读取并缓存
+  Future<Uint8List?> getZstdDictionary(
+    String dictionaryId, {
+    String key = 'zstd_dict',
+  }) async {
+    // 如果已缓存，直接返回
+    if (_zstdDictCache.containsKey(dictionaryId)) {
+      return _zstdDictCache[dictionaryId];
+    }
+
+    try {
+      final db = await openDictionaryDatabase(dictionaryId);
+      final results = await db.query(
+        'config',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+
+      if (results.isEmpty) {
+        Logger.d(
+          '词典 $dictionaryId 的 config 表中未找到 zstd 字典 (key: $key)',
+          tag: 'DictionaryManager',
+        );
+        return null;
+      }
+
+      final value = results.first['value'];
+      Uint8List? dictBytes;
+      if (value is Uint8List) {
+        dictBytes = value;
+      } else if (value is List<int>) {
+        dictBytes = Uint8List.fromList(value);
+      } else {
+        Logger.w(
+          '词典 $dictionaryId 的 zstd 字典类型不正确: ${value.runtimeType}',
+          tag: 'DictionaryManager',
+        );
+        return null;
+      }
+
+      // 缓存字典
+      _zstdDictCache[dictionaryId] = dictBytes;
+      Logger.d(
+        '已缓存词典 $dictionaryId 的 zstd 字典，大小: ${dictBytes.length} 字节',
+        tag: 'DictionaryManager',
+      );
+      return dictBytes;
+    } catch (e) {
+      Logger.e(
+        '获取词典 $dictionaryId 的 zstd 字典失败: $e',
+        tag: 'DictionaryManager',
+        error: e,
+      );
+      return null;
+    }
+  }
+
+  /// 获取指定词典的 zstd 字典（同步方法，可能返回 null 如果未缓存）
+  Uint8List? getCachedZstdDictionary(String dictionaryId) {
+    return _zstdDictCache[dictionaryId];
   }
 
   Future<Database> openDictionaryDatabase(String dictionaryId) async {
@@ -684,6 +932,9 @@ class DictionaryManager {
     if (db != null && db.isOpen) {
       await db.close();
     }
+    // 同时清除该词典的 zstd 字典缓存
+    _zstdDictCache.remove(dictionaryId);
+    Logger.d('已关闭词典 $dictionaryId 的数据库并清除 zstd 字典缓存', tag: 'DictionaryManager');
     await closeMediaDatabase(dictionaryId);
   }
 
@@ -702,6 +953,9 @@ class DictionaryManager {
     await Future.wait(futures);
     _databasePool.clear();
     _mediaDatabasePool.clear();
+    // 同时清除所有 zstd 字典缓存
+    _zstdDictCache.clear();
+    Logger.d('已关闭所有数据库并清除所有 zstd 字典缓存', tag: 'DictionaryManager');
   }
 
   Future<List<String>> getDictionaryEntries(

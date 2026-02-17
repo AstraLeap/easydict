@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import '../logger.dart';
+import '../../core/logger.dart';
 
 /// 数据库初始化管理器
 /// 确保 sqflite FFI 只初始化一次

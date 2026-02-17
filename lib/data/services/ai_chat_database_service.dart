@@ -4,7 +4,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../logger.dart';
+import '../../core/logger.dart';
 import 'database_initializer.dart';
 
 /// AI聊天记录模型

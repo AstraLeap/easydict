@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/preferences_service.dart';
-import '../logger.dart';
+import '../core/logger.dart';
 
 class FontInfo {
   final String fontFamily;

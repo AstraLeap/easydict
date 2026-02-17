@@ -10,11 +10,11 @@ import '../services/dictionary_manager.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/download_manager.dart';
 import '../services/font_loader_service.dart';
-import '../models/dictionary_metadata.dart';
-import '../models/remote_dictionary.dart';
-import '../logger.dart';
-import '../utils/language_utils.dart';
-import '../utils/toast_utils.dart';
+import '../data/models/dictionary_metadata.dart';
+import '../data/models/remote_dictionary.dart';
+import '../core/logger.dart';
+import '../core/utils/language_utils.dart';
+import '../core/utils/toast_utils.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
@@ -915,7 +915,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   void _scrollToBottomSheet() {
     final controller = PrimaryScrollController.of(context);
-    if (controller != null && controller.hasClients) {
+    if (controller.hasClients) {
       controller.animateTo(
         controller.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -1840,7 +1840,7 @@ class DownloadProgressPanel extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: currentTask.fileProgress.clamp(0.0, 1.0),
                         minHeight: 6,
-                        backgroundColor: colorScheme.surfaceVariant,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
                         valueColor: AlwaysStoppedAnimation<Color>(
                           isError ? colorScheme.error : colorScheme.primary,
                         ),
