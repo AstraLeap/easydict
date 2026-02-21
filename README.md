@@ -121,8 +121,9 @@ flutter build apk
 }
 ```
 
-**1.除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
-**2.pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
+**1. 除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
+
+**2. pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
 
 ### 文本修饰语法
 
