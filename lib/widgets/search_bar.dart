@@ -3,6 +3,7 @@ import 'language_dropdown.dart';
 
 class UnifiedSearchBar extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String? hintText;
   final Widget? prefixIcon;
   final List<Widget> suffixIcons;
@@ -10,11 +11,13 @@ class UnifiedSearchBar extends StatelessWidget {
   final BoxConstraints? suffixIconConstraints;
   final void Function(String)? onChanged;
   final void Function(String)? onSubmitted;
+  final VoidCallback? onTap;
   final bool enabled;
 
   const UnifiedSearchBar({
     super.key,
     required this.controller,
+    this.focusNode,
     this.hintText,
     this.prefixIcon,
     this.suffixIcons = const [],
@@ -22,12 +25,14 @@ class UnifiedSearchBar extends StatelessWidget {
     this.suffixIconConstraints,
     this.onChanged,
     this.onSubmitted,
+    this.onTap,
     this.enabled = true,
   });
 
   factory UnifiedSearchBar.withLanguageSelector({
     Key? key,
     required TextEditingController controller,
+    FocusNode? focusNode,
     required String selectedLanguage,
     required List<String> availableLanguages,
     required void Function(String?) onLanguageSelected,
@@ -36,11 +41,13 @@ class UnifiedSearchBar extends StatelessWidget {
     List<Widget> extraSuffixIcons = const [],
     void Function(String)? onChanged,
     void Function(String)? onSubmitted,
+    VoidCallback? onTap,
     bool enabled = true,
   }) {
     return UnifiedSearchBar(
       key: key,
       controller: controller,
+      focusNode: focusNode,
       hintText: hintText,
       prefixIcon: Container(
         margin: const EdgeInsets.fromLTRB(8, 4, 4, 4),
@@ -55,6 +62,7 @@ class UnifiedSearchBar extends StatelessWidget {
       suffixIcons: extraSuffixIcons,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
+      onTap: onTap,
       enabled: enabled,
     );
   }
@@ -63,6 +71,7 @@ class UnifiedSearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       enabled: enabled,
       decoration: InputDecoration(
         hintText: hintText,
@@ -87,6 +96,7 @@ class UnifiedSearchBar extends StatelessWidget {
       ),
       onChanged: onChanged,
       onSubmitted: onSubmitted,
+      onTap: onTap,
     );
   }
 }

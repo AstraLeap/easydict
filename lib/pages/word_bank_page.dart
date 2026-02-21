@@ -55,6 +55,8 @@ class _WordBankPageState extends State<WordBankPage> {
   SortMode _currentSortMode = SortMode.addTimeDesc;
   String? _selectedList; // 选中的词表筛选
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _wasFocused = false;
 
   // 分页相关
   static const int _pageSize = 50;
@@ -64,11 +66,20 @@ class _WordBankPageState extends State<WordBankPage> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!_searchFocusNode.hasFocus) {
+      _wasFocused = false;
+    }
   }
 
   @override
   void dispose() {
+    _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -1343,6 +1354,7 @@ class _WordBankPageState extends State<WordBankPage> {
                     ),
                     child: UnifiedSearchBar.withLanguageSelector(
                       controller: _searchController,
+                      focusNode: _searchFocusNode,
                       selectedLanguage: _selectedLanguage ?? 'ALL',
                       availableLanguages: _languages,
                       onLanguageSelected: (value) async {
@@ -1363,6 +1375,17 @@ class _WordBankPageState extends State<WordBankPage> {
                       },
                       hintText: '搜索单词本',
                       showAllOption: true,
+                      onTap: () {
+                        if (!_wasFocused && _searchController.text.isNotEmpty) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _searchController.selection = TextSelection(
+                              baseOffset: 0,
+                              extentOffset: _searchController.text.length,
+                            );
+                          });
+                        }
+                        _wasFocused = true;
+                      },
                       extraSuffixIcons: [
                         if (_searchQuery.isNotEmpty)
                           IconButton(

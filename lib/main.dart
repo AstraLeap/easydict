@@ -1,6 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +13,8 @@ import 'pages/font_config_page.dart';
 import 'pages/help_page.dart';
 import 'pages/llm_config_page.dart';
 import 'pages/theme_color_page.dart';
+import 'pages/cloud_service_page.dart';
+import 'pages/toolbar_config_page.dart';
 import 'data/services/ai_chat_database_service.dart';
 import 'services/dictionary_manager.dart';
 import 'services/download_manager.dart';
@@ -29,50 +31,157 @@ import 'components/global_scale_wrapper.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 添加全局错误捕获，便于调试 Release 模式问题
+  FlutterError.onError = (FlutterErrorDetails details) {
+    Logger.e(
+      'Flutter Error: ${details.exception}',
+      tag: 'FlutterError',
+      error: details.exception,
+      stackTrace: details.stack,
+    );
+    FlutterError.presentError(details);
+  };
+
+  // 捕获异步错误
+  PlatformDispatcher.instance.onError = (error, stack) {
+    Logger.e(
+      'Platform Error: $error',
+      tag: 'PlatformError',
+      error: error,
+      stackTrace: stack,
+    );
+    return true;
+  };
+
+  Logger.i('========== 应用启动 ==========', tag: 'Startup');
+
+  try {
+    final appDir = await getApplicationSupportDirectory();
+    Logger.i('用户配置文件夹: ${appDir.path}', tag: 'Startup');
+  } catch (e) {
+    Logger.w('获取用户配置文件夹失败: $e', tag: 'Startup');
+  }
+
   try {
     await MediaKitManager().disposeAllPlayers();
+    Logger.i('MediaKit 清理完成', tag: 'Startup');
   } catch (e) {
-    Logger.w('热重启清理 MediaKit 资源时出错: $e', tag: 'main');
+    Logger.w('MediaKit 清理失败: $e', tag: 'Startup');
   }
 
   await Future.delayed(const Duration(milliseconds: 100));
 
-  MediaKit.ensureInitialized();
-
-  DatabaseInitializer().initialize();
-
   try {
-    final appDir = await getApplicationSupportDirectory();
-    Logger.i('======================================', tag: 'Config');
-    Logger.i('用户配置文件目录: ${appDir.path}', tag: 'Config');
-    Logger.i('单词本数据库路径: ${appDir.path}\\word_list.db', tag: 'Config');
-    Logger.i('======================================', tag: 'Config');
+    MediaKit.ensureInitialized();
+    Logger.i('MediaKit 初始化完成', tag: 'Startup');
   } catch (e) {
-    Logger.e('获取配置目录失败: $e', tag: 'Config');
+    Logger.e('MediaKit 初始化失败: $e', tag: 'Startup');
   }
 
-  final prefs = await SharedPreferences.getInstance();
+  try {
+    DatabaseInitializer().initialize();
+    Logger.i('数据库初始化完成', tag: 'Startup');
+  } catch (e) {
+    Logger.e('数据库初始化失败: $e', tag: 'Startup');
+  }
 
-  await FontLoaderService().initialize();
+  SharedPreferences? prefs;
+  try {
+    prefs = await SharedPreferences.getInstance();
+    Logger.i('SharedPreferences 初始化完成', tag: 'Startup');
+  } catch (e) {
+    Logger.e('SharedPreferences 初始化失败: $e', tag: 'Startup');
+  }
 
-  await DictionaryManager().preloadEnabledDictionariesMetadata();
+  try {
+    await FontLoaderService().initialize();
+    Logger.i('字体服务初始化完成', tag: 'Startup');
+  } catch (e) {
+    Logger.e('字体服务初始化失败: $e', tag: 'Startup');
+  }
 
-  // 预连接活跃语言的词典数据库（不阻塞应用启动）
-  DictionaryManager().preloadActiveLanguageDatabases();
+  try {
+    await DictionaryManager().preloadEnabledDictionariesMetadata();
+    Logger.i('词典元数据预加载完成', tag: 'Startup');
+  } catch (e) {
+    Logger.e('词典元数据预加载失败: $e', tag: 'Startup');
+  }
+
+  try {
+    DictionaryManager().preloadActiveLanguageDatabases();
+    Logger.i('词典数据库预连接完成', tag: 'Startup');
+  } catch (e) {
+    Logger.e('词典数据库预连接失败: $e', tag: 'Startup');
+  }
+
+  Logger.i('========== 启动完成，准备运行应用 ==========', tag: 'Startup');
+  Logger.i('日志文件路径: ${Logger.getLogFilePath() ?? "未启用文件日志"}', tag: 'Startup');
+
+  if (prefs == null) {
+    Logger.e('SharedPreferences 初始化失败，无法启动应用', tag: 'Startup');
+    return;
+  }
 
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => ThemeProvider(prefs)),
+        ChangeNotifierProvider(create: (context) => ThemeProvider(prefs!)),
         ChangeNotifierProvider(create: (context) => DownloadManager()),
       ],
       child: const MyApp(),
     ),
   );
+}
 
-  doWhenWindowReady(() {
-    appWindow.show();
-  });
+class ErrorBoundary extends StatefulWidget {
+  final Widget child;
+  const ErrorBoundary({super.key, required this.child});
+
+  @override
+  State<ErrorBoundary> createState() => _ErrorBoundaryState();
+}
+
+class _ErrorBoundaryState extends State<ErrorBoundary> {
+  Object? _error;
+  StackTrace? _stackTrace;
+
+  @override
+  void initState() {
+    super.initState();
+    Logger.i('ErrorBoundary 初始化', tag: 'ErrorBoundary');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Material(
+        child: Container(
+          color: Colors.red.shade50,
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  '应用发生错误',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$_error',
+                  style: const TextStyle(fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return widget.child;
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -87,6 +196,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    Logger.i('MyApp initState', tag: 'MyApp');
   }
 
   @override
@@ -102,11 +212,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  /// 处理热重启前的清理工作
-  ///
-  /// 在热重启时，Flutter 会重新调用 main() 函数
-  /// 我们需要确保所有 MediaKit Player 实例被正确释放
-  /// 避免 "Callback invoked after it has been deleted" 错误
   void _handleHotRestart() {
     Logger.i('检测到热重启，开始清理 MediaKit 资源...', tag: 'MyApp');
     MediaKitManager().disposeAllPlayers();
@@ -114,18 +219,32 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
-        return MaterialApp(
-          title: 'EasyDict',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme(seedColor: themeProvider.seedColor),
-          darkTheme: AppTheme.darkTheme(seedColor: themeProvider.seedColor),
-          themeMode: themeProvider.getThemeMode(),
-          home: const MainScreen(),
-        );
-      },
-    );
+    Logger.i('MyApp build 开始', tag: 'MyApp');
+    try {
+      return Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          Logger.i(
+            'ThemeProvider Consumer build, themeMode: ${themeProvider.getThemeMode()}',
+            tag: 'MyApp',
+          );
+          return MaterialApp(
+            title: 'EasyDict',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme(seedColor: themeProvider.seedColor),
+            darkTheme: AppTheme.darkTheme(seedColor: themeProvider.seedColor),
+            themeMode: themeProvider.getThemeMode(),
+            home: const MainScreen(),
+            builder: (context, widget) {
+              Logger.i('MaterialApp builder 被调用', tag: 'MyApp');
+              return ErrorBoundary(child: widget ?? const SizedBox());
+            },
+          );
+        },
+      );
+    } catch (e, stack) {
+      Logger.e('MyApp build 错误: $e', tag: 'MyApp', error: e, stackTrace: stack);
+      rethrow;
+    }
   }
 }
 
@@ -141,7 +260,6 @@ class _MainScreenState extends State<MainScreen> {
 
   final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
 
-  // 使用 ValueNotifier 来通知页面重建
   final ValueNotifier<double> _contentScaleNotifier = ValueNotifier<double>(
     FontLoaderService().getDictionaryContentScale(),
   );
@@ -151,6 +269,12 @@ class _MainScreenState extends State<MainScreen> {
     WordBankPage(key: _wordBankPageKey),
     const SettingsPage(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    Logger.i('MainScreen initState', tag: 'MainScreen');
+  }
 
   @override
   void dispose() {
@@ -170,6 +294,8 @@ class _MainScreenState extends State<MainScreen> {
       setState(() {
         _selectedIndex = index;
       });
+      // 切换页面时清除所有 toast，避免位置错乱
+      clearAllToasts(context);
       if (index == 1) {
         _wordBankPageKey.currentState?.loadWordsIfNeeded();
       }
@@ -194,6 +320,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Logger.i('MainScreen build 开始', tag: 'MainScreen');
     final bottomNav = NavigationBar(
       selectedIndex: _selectedIndex,
       onDestinationSelected: _onTabSelected,
@@ -597,6 +724,28 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.only(left: 16, right: 16, top: 24),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
+                  // 云服务组
+                  _buildSettingsGroup(
+                    context,
+                    children: [
+                      _buildSettingsTile(
+                        context,
+                        title: '云服务',
+                        icon: Icons.cloud_outlined,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CloudServicePage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   // 核心功能组
                   _buildSettingsGroup(
                     context,
@@ -693,6 +842,21 @@ class _SettingsPageState extends State<SettingsPage> {
                           iconColor: colorScheme.primary,
                           onTap: _showClickActionDialog,
                         ),
+                      _buildSettingsTile(
+                        context,
+                        title: '底部工具栏',
+                        icon: Icons.apps,
+                        iconColor: colorScheme.primary,
+                        showArrow: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ToolbarConfigPage(),
+                            ),
+                          );
+                        },
+                      ),
                       _buildSettingsTile(
                         context,
                         title: '其他设置',
