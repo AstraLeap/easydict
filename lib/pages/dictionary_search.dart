@@ -36,6 +36,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   bool _isLoading = false;
   List<String> _searchHistory = [];
+  bool _wasFocused = false;
 
   // 分组设置
   String _selectedGroup = 'auto';
@@ -51,32 +52,58 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   List<String> _searchResults = [];
   bool _showSearchResults = false;
   Timer? _debounceTimer;
+  int _prefixSearchToken = 0;
+  bool _isSearchingWord = false;
 
   bool _isInitializing = true;
 
   @override
   void initState() {
     super.initState();
+    Logger.i('DictionarySearchPage initState', tag: 'DictionarySearch');
+    _searchFocusNode.addListener(_onFocusChange);
     _initData();
+  }
+
+  void _onFocusChange() {
+    if (!_searchFocusNode.hasFocus) {
+      _wasFocused = false;
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    Logger.i(
+      'DictionarySearchPage didChangeDependencies',
+      tag: 'DictionarySearch',
+    );
     FontLoaderService().reloadDictionaryContentScale();
   }
 
   Future<void> _initData() async {
-    await Future.wait([
-      _loadSearchHistory(),
-      _loadAdvancedSettings(),
-      _loadDictionaryGroups(),
-    ]);
+    Logger.i('DictionarySearchPage _initData 开始', tag: 'DictionarySearch');
+    try {
+      await Future.wait([
+        _loadSearchHistory(),
+        _loadAdvancedSettings(),
+        _loadDictionaryGroups(),
+      ]);
 
-    if (mounted) {
-      setState(() {
-        _isInitializing = false;
-      });
+      Logger.i('DictionarySearchPage _initData 完成', tag: 'DictionarySearch');
+
+      if (mounted) {
+        setState(() {
+          _isInitializing = false;
+        });
+      }
+    } catch (e, stack) {
+      Logger.e(
+        'DictionarySearchPage _initData 错误: $e',
+        tag: 'DictionarySearch',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -114,6 +141,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -121,11 +149,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 边打边搜 - 防抖搜索
   void _onSearchTextChanged(String text) {
-    // 取消之前的定时器
     _debounceTimer?.cancel();
+
+    if (_isSearchingWord) return;
 
     final trimmedText = text.trim();
     if (trimmedText.isEmpty) {
+      _debounceTimer?.cancel();
+      _prefixSearchToken++;
       setState(() {
         _searchResults = [];
         _showSearchResults = false;
@@ -133,25 +164,63 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       return;
     }
 
-    // 如果启用了模糊搜索，不进行边打边搜
-    if (_useFuzzySearch) {
-      setState(() {
-        _searchResults = [];
-        _showSearchResults = false;
-      });
-      return;
-    }
+    final currentToken = ++_prefixSearchToken;
+    _debounceTimer = Timer(const Duration(milliseconds: 100), () async {
+      if (currentToken != _prefixSearchToken) return;
 
-    // 设置新的定时器，延迟300ms执行搜索
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
-      final results = await _dbService.searchByPrefix(trimmedText, limit: 10);
-      if (mounted) {
-        setState(() {
-          _searchResults = results;
-          _showSearchResults = results.isNotEmpty;
-        });
+      List<String> results;
+      if (_useFuzzySearch) {
+        results = await _dbService.searchByWildcard(
+          trimmedText,
+          limit: 20,
+          sourceLanguage: _selectedGroup,
+        );
+      } else {
+        results = await _dbService.searchByPrefix(
+          trimmedText,
+          limit: 10,
+          sourceLanguage: _selectedGroup,
+        );
+        results = _sortPrefixResults(trimmedText, results);
       }
+
+      if (!mounted || currentToken != _prefixSearchToken) return;
+
+      setState(() {
+        _searchResults = results;
+        _showSearchResults = results.isNotEmpty;
+      });
     });
+  }
+
+  List<String> _sortPrefixResults(String prefix, List<String> results) {
+    if (results.isEmpty) return results;
+
+    final prefixLower = prefix.toLowerCase();
+    final prefixWithSpace = '${prefixLower} ';
+
+    int getPriority(String word) {
+      final wordLower = word.toLowerCase();
+      if (wordLower == prefixLower) return 0;
+      if (wordLower.startsWith(prefixWithSpace)) return 1;
+      if (wordLower.startsWith(prefixLower)) return 2;
+      return 3;
+    }
+
+    results.sort((a, b) {
+      final aPriority = getPriority(a);
+      final bPriority = getPriority(b);
+
+      if (aPriority != bPriority) return aPriority.compareTo(bPriority);
+
+      final aLen = a.length;
+      final bLen = b.length;
+      if (aLen != bLen) return aLen.compareTo(bLen);
+
+      return a.toLowerCase().compareTo(b.toLowerCase());
+    });
+
+    return results;
   }
 
   /// 点击搜索结果项
@@ -194,9 +263,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final word = _searchController.text.trim();
     if (word.isEmpty) return;
 
+    _isSearchingWord = true;
+    _debounceTimer?.cancel();
+    _prefixSearchToken++;
+
     setState(() {
       _isLoading = true;
-      // 历史记录始终显示，不隐藏
+      _showSearchResults = false;
+      _searchResults = [];
     });
 
     // 使用传入的高级选项进行查询，但不添加到历史记录
@@ -255,18 +329,26 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     }
 
-    setState(() => _isLoading = false);
+    setState(() {
+      _isLoading = false;
+      _isSearchingWord = false;
+    });
   }
 
   Future<void> _searchWord() async {
+    _debounceTimer?.cancel();
+    _prefixSearchToken++;
     final word = _searchController.text.trim();
     if (word.isEmpty) return;
+
+    _isSearchingWord = true;
 
     Logger.d('用户开始查词: $word', tag: 'DictionarySearch');
 
     setState(() {
       _isLoading = true;
-      // 历史记录始终显示，不隐藏
+      _showSearchResults = false;
+      _searchResults = [];
     });
 
     await _historyService.addSearchRecord(
@@ -339,11 +421,18 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     }
 
-    setState(() => _isLoading = false);
+    setState(() {
+      _isLoading = false;
+      _isSearchingWord = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    Logger.i(
+      'DictionarySearchPage build, _isInitializing: $_isInitializing',
+      tag: 'DictionarySearch',
+    );
     if (_isInitializing) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -359,6 +448,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               padding: const EdgeInsets.all(16),
               child: UnifiedSearchBar.withLanguageSelector(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
                 selectedLanguage: _selectedGroup,
                 availableLanguages: _availableGroups,
                 onLanguageSelected: (value) async {
@@ -374,6 +464,17 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   }
                 },
                 hintText: '输入单词',
+                onTap: () {
+                  if (!_wasFocused && _searchController.text.isNotEmpty) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _searchController.selection = TextSelection(
+                        baseOffset: 0,
+                        extentOffset: _searchController.text.length,
+                      );
+                    });
+                  }
+                  _wasFocused = true;
+                },
                 extraSuffixIcons: [
                   if (_searchController.text.isNotEmpty)
                     IconButton(
@@ -420,14 +521,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   _onSearchTextChanged(text);
                 },
                 onSubmitted: (_) {
-                  if (_exactMatch) {
-                    _searchWord();
+                  if (_useFuzzySearch && _searchResults.isNotEmpty) {
+                    _onSearchResultTap(_searchResults.first);
                   } else {
-                    if (_showSearchResults && _searchResults.isNotEmpty) {
-                      _onSearchResultTap(_searchResults.first);
-                    } else {
-                      _searchWord();
-                    }
+                    _searchWord();
                   }
                 },
               ),
@@ -533,7 +630,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             // 搜索结果列表
             if (_showSearchResults && _searchResults.isNotEmpty)
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(8),
@@ -563,31 +660,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final word = _searchResults[index];
-                        final isFirst = index == 0;
                         return ListTile(
                           dense: true,
-                          leading: isFirst
-                              ? Icon(
-                                  Icons.keyboard_return,
-                                  size: 18,
-                                  color: Theme.of(context).colorScheme.primary,
-                                )
-                              : const SizedBox(width: 24),
                           title: Text(word),
-                          subtitle: isFirst
-                              ? Text(
-                                  '按回车进入',
-                                  style: TextStyle(
-                                    fontSize: DpiUtils.scaleFontSize(
-                                      context,
-                                      12,
-                                    ),
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outline,
-                                  ),
-                                )
-                              : null,
                           onTap: () => _onSearchResultTap(word),
                         );
                       },
