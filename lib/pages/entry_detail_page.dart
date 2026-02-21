@@ -193,6 +193,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   static const _scrollUpdateThrottle = Duration(milliseconds: 100);
   bool _isProgrammaticScroll = false;
 
+  List<String> _toolbarActions = [];
+  List<String> _overflowActions = [];
+
   @override
   void initState() {
     super.initState();
@@ -210,8 +213,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 使用微任务延迟执行，确保首帧渲染优先
     Future.microtask(() async {
       await _loadFavoriteStatus();
+      await _loadToolbarConfig();
     });
     // AI聊天历史只在需要时加载，不在初始化时加载
+  }
+
+  Future<void> _loadToolbarConfig() async {
+    final (toolbarActions, overflowActions) = await _preferencesService
+        .getToolbarAndOverflowActions();
+    if (mounted) {
+      setState(() {
+        _toolbarActions = toolbarActions;
+        _overflowActions = overflowActions;
+      });
+    }
   }
 
   @override
@@ -824,11 +839,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     return PageScaleWrapper(scale: scale, child: content);
   }
 
-  // 构建底部功能栏（与主页面 NavigationBar 区分，使用卡片样式）
   Widget _buildBottomActionBar() {
     final colorScheme = Theme.of(context).colorScheme;
     final mediaQuery = MediaQuery.of(context);
     final bottomPadding = mediaQuery.padding.bottom;
+
+    final toolbarWidgets = _toolbarActions
+        .map(
+          (action) => Expanded(child: _buildToolbarAction(action, colorScheme)),
+        )
+        .toList();
 
     return Container(
       margin: EdgeInsets.only(
@@ -859,45 +879,145 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // 返回按钮（最左边）
-              Expanded(
-                child: _buildActionButton(
-                  icon: Icons.arrow_back,
-                  onPressed: () => Navigator.of(context).pop(),
-                  onLongPress: () =>
-                      Navigator.of(context).popUntil((route) => route.isFirst),
-                ),
-              ),
-              // 收藏按钮
-              Expanded(
-                child: _buildActionButton(
-                  icon: _isFavorite ? Icons.bookmark : Icons.bookmark_outline,
-                  isActive: _isFavorite,
-                  onPressed: _toggleFavorite,
-                ),
-              ),
-              // 一键显示/隐藏非目标语言
-              Expanded(
-                child: _buildActionButton(
-                  icon: _isNonTargetLanguagesVisible
-                      ? Icons.translate
-                      : Icons.translate_outlined,
-                  isActive: _isNonTargetLanguagesVisible,
-                  onPressed: _toggleAllNonTargetLanguages,
-                ),
-              ),
-              // 大模型历史记录
-              Expanded(
-                child: _buildActionButton(
-                  icon: Icons.auto_awesome,
-                  onPressed: _showAiChatHistory,
-                ),
-              ),
+              ...toolbarWidgets,
+              if (_overflowActions.isNotEmpty)
+                Expanded(child: _buildOverflowButton(colorScheme)),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildToolbarAction(String action, ColorScheme colorScheme) {
+    switch (action) {
+      case PreferencesService.actionBack:
+        return _buildActionButton(
+          icon: Icons.arrow_back,
+          onPressed: () {
+            clearAllToasts(context);
+            Navigator.of(context).pop();
+          },
+          onLongPress: () {
+            clearAllToasts(context);
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          },
+        );
+      case PreferencesService.actionFavorite:
+        return _buildActionButton(
+          icon: _isFavorite ? Icons.bookmark : Icons.bookmark_outline,
+          isActive: _isFavorite,
+          onPressed: _toggleFavorite,
+        );
+      case PreferencesService.actionToggleTranslate:
+        return _buildActionButton(
+          icon: _isNonTargetLanguagesVisible
+              ? Icons.translate
+              : Icons.translate_outlined,
+          isActive: _isNonTargetLanguagesVisible,
+          onPressed: _toggleAllNonTargetLanguages,
+        );
+      case PreferencesService.actionAiHistory:
+        return _buildActionButton(
+          icon: Icons.auto_awesome,
+          onPressed: _showAiChatHistory,
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildOverflowButton(ColorScheme colorScheme) {
+    return GestureDetector(
+      onTap: () => _showOverflowMenu(context, colorScheme),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+        child: Icon(
+          Icons.more_horiz,
+          size: 24,
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  void _showOverflowMenu(BuildContext context, ColorScheme colorScheme) {
+    final RenderBox overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final Size overlaySize = overlay.size;
+
+    // 获取底部安全区域高度
+    final mediaQuery = MediaQuery.of(context);
+    final bottomPadding = mediaQuery.padding.bottom;
+    final bottomInset = mediaQuery.viewInsets.bottom;
+
+    // 计算底部工具栏的高度（约56dp + 边距）
+    const toolbarHeight = 72.0;
+    const menuMargin = 8.0;
+
+    // 计算菜单应该显示的底部位置（在底部工具栏上方）
+    final menuBottom = bottomPadding > 0
+        ? bottomPadding + toolbarHeight + menuMargin
+        : 16.0 + toolbarHeight + menuMargin;
+
+    final menuPosition = RelativeRect.fromLTRB(
+      overlaySize.width - 200, // 右侧对齐，预留菜单宽度
+      overlaySize.height -
+          menuBottom -
+          (_overflowActions.length * 48), // 从底部向上计算
+      16, // 右边距
+      menuBottom, // 底部距离
+    );
+
+    showMenu<String>(
+      context: context,
+      position: menuPosition,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: _overflowActions
+          .map(
+            (action) => PopupMenuItem(
+              value: action,
+              child: Row(
+                children: [
+                  Icon(_getActionIcon(action), size: 20),
+                  const SizedBox(width: 12),
+                  Text(_getActionLabel(action)),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+    ).then((value) {
+      if (value != null) {
+        _handleOverflowAction(value);
+      }
+    });
+  }
+
+  IconData _getActionIcon(String action) {
+    return PreferencesService.getActionIcon(action);
+  }
+
+  String _getActionLabel(String action) {
+    return PreferencesService.getActionLabel(action);
+  }
+
+  void _handleOverflowAction(String action) {
+    switch (action) {
+      case PreferencesService.actionBack:
+        clearAllToasts(context);
+        Navigator.of(context).pop();
+        break;
+      case PreferencesService.actionFavorite:
+        _toggleFavorite();
+        break;
+      case PreferencesService.actionToggleTranslate:
+        _toggleAllNonTargetLanguages();
+        break;
+      case PreferencesService.actionAiHistory:
+        _showAiChatHistory();
+        break;
+    }
   }
 
   // 构建单个操作按钮
@@ -1509,6 +1629,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
     try {
       final translation = await AIService().translate(text, targetLang);
+      // 给AI翻译结果添加格式化标记
+      final formattedTranslation = '[$translation](ai)';
 
       final json = entry.toJson();
       dynamic current = json;
@@ -1528,7 +1650,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
 
       if (current is Map) {
-        current[targetLang] = translation;
+        current[targetLang] = formattedTranslation;
 
         final newEntry = DictionaryEntry.fromJson(json);
         await DatabaseService().updateEntry(newEntry);

@@ -15,7 +15,6 @@ import '../data/models/remote_dictionary.dart';
 import '../core/logger.dart';
 import '../core/utils/language_utils.dart';
 import '../core/utils/toast_utils.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
@@ -26,9 +25,7 @@ class DictionaryManagerPage extends StatefulWidget {
 }
 
 class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
-  final double _contentScale = FontLoaderService().getDictionaryContentScale();
   final DictionaryManager _dictManager = DictionaryManager();
-  final TextEditingController _urlController = TextEditingController();
 
   List<DictionaryMetadata> _allDictionaries = [];
   List<String> _enabledDictionaryIds = [];
@@ -46,7 +43,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   @override
   void dispose() {
-    _urlController.dispose();
     _storeService?.dispose();
     super.dispose();
   }
@@ -62,7 +58,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       // 加载在线订阅URL
       final url = await _dictManager.onlineSubscriptionUrl;
       if (url.isNotEmpty) {
-        _urlController.text = url;
         _storeService = DictionaryStoreService(baseUrl: url);
       }
 
@@ -109,48 +104,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         _onlineError = e.toString();
         _isLoadingOnline = false;
       });
-    }
-  }
-
-  Future<void> _saveOnlineSubscriptionUrl() async {
-    final url = _urlController.text.trim();
-    await _dictManager.setOnlineSubscriptionUrl(url);
-
-    if (url.isNotEmpty) {
-      _storeService?.dispose();
-      _storeService = DictionaryStoreService(baseUrl: url);
-      _loadOnlineDictionaries();
-    } else {
-      setState(() {
-        _onlineDictionaries = [];
-        _onlineError = null;
-      });
-    }
-
-    if (mounted) {
-      showToast(context, '在线订阅地址已保存');
-    }
-  }
-
-  Future<void> _saveAndRefreshOnlineDictionaries() async {
-    // 先保存URL
-    final url = _urlController.text.trim();
-    await _dictManager.setOnlineSubscriptionUrl(url);
-
-    if (url.isNotEmpty) {
-      _storeService?.dispose();
-      _storeService = DictionaryStoreService(baseUrl: url);
-      // 然后刷新列表
-      await _loadOnlineDictionaries();
-    } else {
-      setState(() {
-        _onlineDictionaries = [];
-        _onlineError = null;
-      });
-    }
-
-    if (mounted) {
-      showToast(context, '在线订阅地址已保存');
     }
   }
 
@@ -411,7 +364,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     );
   }
 
-  /// Tab2: 在线订阅 - 包含本地目录设置、订阅网址、在线词典列表
+  /// Tab2: 词典来源 - 包含本地目录设置、在线词典列表
   Widget _buildSettingsAndSubscriptionTab() {
     return Center(
       child: ConstrainedBox(
@@ -420,9 +373,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           slivers: [
             // 本地目录设置
             SliverToBoxAdapter(child: _buildCurrentDirectoryCard()),
-
-            // 在线订阅设置
-            SliverToBoxAdapter(child: _buildOnlineSubscriptionCard()),
 
             // 在线词典列表标题
             SliverToBoxAdapter(
@@ -446,11 +396,25 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    else if (_onlineDictionaries.isNotEmpty)
-                      Text(
-                        '${_onlineDictionaries.length} 个',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    else ...[
+                      if (_onlineDictionaries.isNotEmpty)
+                        Text(
+                          '${_onlineDictionaries.length} 个',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.refresh_outlined, size: 20),
+                        onPressed: _storeService != null
+                            ? _loadOnlineDictionaries
+                            : null,
+                        tooltip: '刷新',
+                        visualDensity: VisualDensity.compact,
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -502,7 +466,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '设置订阅地址后点击刷新按钮',
+                          '请先在"设置 - 云服务"中配置订阅地址',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.outline,
@@ -559,74 +523,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     );
   }
 
-  Widget _buildOnlineSubscriptionCard() {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.link, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  '在线订阅地址',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _urlController,
-              decoration: InputDecoration(
-                hintText: '请输入词典订阅网址',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: Theme.of(context).colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                prefixIcon: const Icon(Icons.language_outlined),
-                suffixIcon: IconButton(
-                  icon: _isLoadingOnline
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh_outlined),
-                  onPressed: _isLoadingOnline
-                      ? null
-                      : _saveAndRefreshOnlineDictionaries,
-                  tooltip: '保存并刷新',
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '设置订阅地址后可查看和下载在线词典',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -677,6 +573,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               builder: (context, snapshot) {
                 if (snapshot.hasData && snapshot.data != null) {
                   return CircleAvatar(
+                    backgroundColor: Colors.transparent,
                     backgroundImage: FileImage(File(snapshot.data!)),
                     child: null,
                   );
@@ -721,18 +618,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         onTap: () => _showDictionaryDetails(metadata),
       ),
     );
-  }
-
-  void _toggleDictionaryLink(String dictId) {
-    setState(() {
-      final index = _onlineDictionaries.indexWhere((d) => d.id == dictId);
-      if (index != -1) {
-        _onlineDictionaries[index] = _onlineDictionaries[index].copyWith(
-          isLinked: !_onlineDictionaries[index].isLinked,
-        );
-      }
-    });
-    // TODO: 保存链接状态到本地存储
   }
 
   Future<void> _toggleDictionaryLinkWithSave(String dictId) async {
@@ -925,7 +810,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   }
 
   Widget _buildOnlineDictionaryCard(RemoteDictionary dict) {
-    final baseUrl = _urlController.text.trim();
+    final baseUrl = _storeService?.baseUrl ?? '';
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -1059,7 +944,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   }
 
   void _showOnlineDictionaryDetails(RemoteDictionary dict) {
-    final baseUrl = _urlController.text.trim();
+    final baseUrl = _storeService?.baseUrl ?? '';
 
     showDialog(
       context: context,
@@ -1102,7 +987,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               _buildDetailItem('语言', dict.language),
               _buildDetailItem('作者', dict.author),
               _buildDetailItem('词条数', _formatLargeNumber(dict.entryCount)),
-              _buildDetailItem('数据库大小', dict.formattedDatabaseSize),
+              _buildDetailItem('数据库大小', dict.formattedDictSize),
               const SizedBox(height: 16),
               const Text('简介', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
@@ -1477,13 +1362,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 '联系维护者',
                 metadata.contactMaintainer!,
               ),
-            if (metadata.repository != null && metadata.repository!.isNotEmpty)
-              _buildInfoRow(Icons.link, '仓库', metadata.repository!),
-            _buildInfoRow(
-              Icons.calendar_today,
-              '创建时间',
-              _formatDate(metadata.createdAt),
-            ),
             _buildInfoRow(
               Icons.update,
               '更新时间',

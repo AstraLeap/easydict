@@ -115,10 +115,6 @@ class FontLoaderService {
           final fontPath = fontTypeEntry.value;
 
           if (fontPath.isNotEmpty) {
-            Logger.i(
-              '准备加载字体: language=$language, fontType=$fontType, path=$fontPath',
-              tag: 'FontLoader',
-            );
             await _loadFont(language, fontType, fontPath);
           }
         }
@@ -153,7 +149,6 @@ class FontLoaderService {
 
       _loadedFonts[fontKey] = true;
       _fontPaths[fontKey] = fontPath;
-      Logger.i('字体加载成功: $fontKey -> $fontPath', tag: 'FontLoader');
     } catch (e) {
       Logger.e('加载字体失败 $fontPath: $e', tag: 'FontLoader');
     }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../pages/llm_config_page.dart';
 
@@ -65,6 +67,11 @@ class PreferencesService {
   static const String actionEdit = 'edit';
   static const String actionSpeak = 'speak';
 
+  static const String actionBack = 'back';
+  static const String actionFavorite = 'favorite';
+  static const String actionToggleTranslate = 'toggle_translate';
+  static const String actionAiHistory = 'ai_history';
+
   static const List<String> defaultActionOrder = [
     actionAiTranslate,
     actionCopy,
@@ -109,9 +116,117 @@ class PreferencesService {
         return '编辑';
       case actionSpeak:
         return '朗读';
+      case actionBack:
+        return '返回';
+      case actionFavorite:
+        return '收藏';
+      case actionToggleTranslate:
+        return '显示/隐藏翻译';
+      case actionAiHistory:
+        return 'AI 历史记录';
       default:
         return action;
     }
+  }
+
+  static IconData getActionIcon(String action) {
+    switch (action) {
+      case actionAiTranslate:
+        return Icons.translate;
+      case actionCopy:
+        return Icons.copy;
+      case actionAskAi:
+        return Icons.auto_awesome;
+      case actionEdit:
+        return Icons.edit;
+      case actionSpeak:
+        return Icons.volume_up;
+      case actionBack:
+        return Icons.arrow_back;
+      case actionFavorite:
+        return Icons.bookmark_outline;
+      case actionToggleTranslate:
+        return Icons.translate_outlined;
+      case actionAiHistory:
+        return Icons.history;
+      default:
+        return Icons.more_horiz;
+    }
+  }
+
+  static const String _kToolbarActions = 'toolbar_actions';
+  static const String _kOverflowActions = 'overflow_actions';
+  static const int maxToolbarItems = 4;
+
+  static const List<String> defaultToolbarActions = [
+    actionBack,
+    actionFavorite,
+    actionToggleTranslate,
+    actionAiHistory,
+  ];
+
+  static const List<String> defaultOverflowActions = [];
+
+  static const List<String> validToolbarActions = [
+    actionBack,
+    actionFavorite,
+    actionToggleTranslate,
+    actionAiHistory,
+  ];
+
+  Future<void> setToolbarAndOverflowActions(
+    List<String> toolbarActions,
+    List<String> overflowActions,
+  ) async {
+    final p = await prefs;
+    await p.setStringList(_kToolbarActions, toolbarActions);
+    await p.setStringList(_kOverflowActions, overflowActions);
+  }
+
+  Future<(List<String>, List<String>)> getToolbarAndOverflowActions() async {
+    final p = await prefs;
+    final toolbarActions = p.getStringList(_kToolbarActions);
+    final overflowActions = p.getStringList(_kOverflowActions);
+
+    if ((toolbarActions == null || toolbarActions.isEmpty) &&
+        (overflowActions == null || overflowActions.isEmpty)) {
+      return (
+        List<String>.from(defaultToolbarActions),
+        List<String>.from(defaultOverflowActions),
+      );
+    }
+
+    final validToolbar = <String>[];
+    final validOverflow = <String>[];
+
+    if (toolbarActions != null) {
+      for (final action in toolbarActions) {
+        if (validToolbarActions.contains(action) &&
+            !validToolbar.contains(action)) {
+          validToolbar.add(action);
+        }
+      }
+    }
+    if (overflowActions != null) {
+      for (final action in overflowActions) {
+        if (validToolbarActions.contains(action) &&
+            !validOverflow.contains(action)) {
+          validOverflow.add(action);
+        }
+      }
+    }
+
+    for (final action in validToolbarActions) {
+      if (!validToolbar.contains(action) && !validOverflow.contains(action)) {
+        if (validToolbar.length < maxToolbarItems) {
+          validToolbar.add(action);
+        } else {
+          validOverflow.add(action);
+        }
+      }
+    }
+
+    return (validToolbar, validOverflow);
   }
 
   Future<bool> getGlobalTranslationVisibility() async {
@@ -236,9 +351,29 @@ class PreferencesService {
   Future<Map<String, Map<String, String>>> getFontConfigs() async {
     final p = await prefs;
     final fontConfigs = <String, Map<String, String>>{};
-    final languages = ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'];
-    final fontTypes = ['serif_regular', 'serif_bold', 'serif_italic', 'serif_bold_italic',
-                        'sans_regular', 'sans_bold', 'sans_italic', 'sans_bold_italic'];
+    final languages = [
+      'en',
+      'zh',
+      'ja',
+      'ko',
+      'fr',
+      'de',
+      'es',
+      'it',
+      'ru',
+      'pt',
+      'ar',
+    ];
+    final fontTypes = [
+      'serif_regular',
+      'serif_bold',
+      'serif_italic',
+      'serif_bold_italic',
+      'sans_regular',
+      'sans_bold',
+      'sans_italic',
+      'sans_bold_italic',
+    ];
 
     for (final lang in languages) {
       final langConfig = <String, String>{};
@@ -275,14 +410,36 @@ class PreferencesService {
     final existed = p.containsKey(key);
     await p.remove(key);
     final removed = !p.containsKey(key);
-    print('[PreferencesService] clearFontConfig: key=$key, existed=$existed, removed=$removed');
+    print(
+      '[PreferencesService] clearFontConfig: key=$key, existed=$existed, removed=$removed',
+    );
   }
 
   Future<void> clearAllFontConfigs() async {
     final p = await prefs;
-    final languages = ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'];
-    final fontTypes = ['serif_regular', 'serif_bold', 'serif_italic', 'serif_bold_italic',
-                        'sans_regular', 'sans_bold', 'sans_italic', 'sans_bold_italic'];
+    final languages = [
+      'en',
+      'zh',
+      'ja',
+      'ko',
+      'fr',
+      'de',
+      'es',
+      'it',
+      'ru',
+      'pt',
+      'ar',
+    ];
+    final fontTypes = [
+      'serif_regular',
+      'serif_bold',
+      'serif_italic',
+      'serif_bold_italic',
+      'sans_regular',
+      'sans_bold',
+      'sans_italic',
+      'sans_bold_italic',
+    ];
     for (final lang in languages) {
       for (final fontType in fontTypes) {
         final key = '$_kFontConfigPrefix${lang}_$fontType';
@@ -308,7 +465,19 @@ class PreferencesService {
   Future<Map<String, Map<String, double>>> getAllFontScales() async {
     final p = await prefs;
     final fontScales = <String, Map<String, double>>{};
-    final languages = ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'];
+    final languages = [
+      'en',
+      'zh',
+      'ja',
+      'ko',
+      'fr',
+      'de',
+      'es',
+      'it',
+      'ru',
+      'pt',
+      'ar',
+    ];
 
     for (final lang in languages) {
       final langScales = <String, double>{};
@@ -327,5 +496,52 @@ class PreferencesService {
       }
     }
     return fontScales;
+  }
+
+  static const String _kAuthToken = 'auth_token';
+  static const String _kAuthUserData = 'auth_user_data';
+
+  Future<String?> getAuthToken() async {
+    final p = await prefs;
+    return p.getString(_kAuthToken);
+  }
+
+  Future<void> setAuthToken(String? token) async {
+    final p = await prefs;
+    if (token != null && token.isNotEmpty) {
+      await p.setString(_kAuthToken, token);
+    } else {
+      await p.remove(_kAuthToken);
+    }
+  }
+
+  Future<Map<String, dynamic>?> getAuthUserData() async {
+    final p = await prefs;
+    final userData = p.getString(_kAuthUserData);
+    if (userData != null && userData.isNotEmpty) {
+      try {
+        return Map<String, dynamic>.from(
+          const JsonDecoder().convert(userData) as Map<dynamic, dynamic>,
+        );
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Future<void> setAuthUserData(Map<String, dynamic>? userData) async {
+    final p = await prefs;
+    if (userData != null) {
+      await p.setString(_kAuthUserData, const JsonEncoder().convert(userData));
+    } else {
+      await p.remove(_kAuthUserData);
+    }
+  }
+
+  Future<void> clearAuthData() async {
+    final p = await prefs;
+    await p.remove(_kAuthToken);
+    await p.remove(_kAuthUserData);
   }
 }

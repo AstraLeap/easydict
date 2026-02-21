@@ -37,15 +37,15 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
           ),
           children: [
             _buildSectionTitle(context, '外观模式'),
-            SizedBox(height: DpiUtils.scale(context, 8)),
+            SizedBox(height: DpiUtils.scale(context, 6)),
             _buildThemeModeSection(context, themeProvider),
-            SizedBox(height: DpiUtils.scale(context, 24)),
+            SizedBox(height: DpiUtils.scale(context, 16)),
             _buildSectionTitle(context, '主题颜色'),
-            SizedBox(height: DpiUtils.scale(context, 8)),
+            SizedBox(height: DpiUtils.scale(context, 6)),
             _buildColorGrid(context, themeProvider),
-            SizedBox(height: DpiUtils.scale(context, 24)),
+            SizedBox(height: DpiUtils.scale(context, 16)),
             _buildSectionTitle(context, '预览效果'),
-            SizedBox(height: DpiUtils.scale(context, 8)),
+            SizedBox(height: DpiUtils.scale(context, 6)),
             _buildPreviewCard(context, themeProvider),
           ],
         );
@@ -69,7 +69,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: DpiUtils.scaleFontSize(context, 14),
+          fontSize: DpiUtils.scaleFontSize(context, 12),
           fontWeight: FontWeight.w500,
           color: Theme.of(context).colorScheme.primary,
         ),
@@ -82,14 +82,14 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
           width: 1,
         ),
       ),
       child: Padding(
-        padding: EdgeInsets.all(DpiUtils.scale(context, 16)),
+        padding: EdgeInsets.all(DpiUtils.scale(context, 12)),
         child: child,
       ),
     );
@@ -112,7 +112,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               Icons.settings_suggest_outlined,
             ),
           ),
-          SizedBox(width: DpiUtils.scale(context, 12)),
+          SizedBox(width: DpiUtils.scale(context, 8)),
           Expanded(
             child: _buildThemeModeOption(
               context,
@@ -122,7 +122,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               Icons.light_mode_outlined,
             ),
           ),
-          SizedBox(width: DpiUtils.scale(context, 12)),
+          SizedBox(width: DpiUtils.scale(context, 8)),
           Expanded(
             child: _buildThemeModeOption(
               context,
@@ -151,15 +151,15 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       onTap: () {
         themeProvider.setThemeMode(mode);
       },
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(vertical: DpiUtils.scale(context, 12)),
+        padding: EdgeInsets.symmetric(vertical: DpiUtils.scale(context, 10)),
         decoration: BoxDecoration(
           color: isSelected
               ? colorScheme.primaryContainer
               : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected ? colorScheme.primary : Colors.transparent,
             width: 2,
@@ -172,13 +172,13 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               color: isSelected
                   ? colorScheme.onPrimaryContainer
                   : colorScheme.onSurfaceVariant,
-              size: DpiUtils.scaleIconSize(context, 20),
+              size: DpiUtils.scaleIconSize(context, 18),
             ),
-            SizedBox(height: DpiUtils.scale(context, 6)),
+            SizedBox(height: DpiUtils.scale(context, 4)),
             Text(
               label,
               style: TextStyle(
-                fontSize: DpiUtils.scaleFontSize(context, 12),
+                fontSize: DpiUtils.scaleFontSize(context, 11),
                 color: isSelected
                     ? colorScheme.onPrimaryContainer
                     : colorScheme.onSurfaceVariant,
@@ -198,8 +198,8 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            spacing: DpiUtils.scale(context, 12),
-            runSpacing: DpiUtils.scale(context, 12),
+            spacing: DpiUtils.scale(context, 10),
+            runSpacing: DpiUtils.scale(context, 10),
             children: [
               _buildSystemColorItem(context, themeProvider),
               ...ThemeProvider.predefinedColors.map((color) {
@@ -224,16 +224,16 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       onTap: () {
         themeProvider.setSeedColor(color);
       },
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: DpiUtils.scale(context, 40),
-        height: DpiUtils.scale(context, 40),
+        width: DpiUtils.scale(context, 32),
+        height: DpiUtils.scale(context, 32),
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
           border: isSelected
-              ? Border.all(color: colorScheme.onSurface, width: 2.5)
+              ? Border.all(color: colorScheme.onSurface, width: 2)
               : Border.all(
                   color: colorScheme.outline.withValues(alpha: 0.2),
                   width: 1,
@@ -242,7 +242,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             if (isSelected)
               BoxShadow(
                 color: color.withValues(alpha: 0.4),
-                blurRadius: 8,
+                blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
           ],
@@ -251,7 +251,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             ? Icon(
                 Icons.check,
                 color: _getContrastColor(color),
-                size: DpiUtils.scaleIconSize(context, 20),
+                size: DpiUtils.scaleIconSize(context, 16),
               )
             : null,
       ),
@@ -276,11 +276,11 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       onTap: () {
         themeProvider.setSeedColor(ThemeProvider.systemAccentColor);
       },
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: DpiUtils.scale(context, 40),
-        height: DpiUtils.scale(context, 40),
+        width: DpiUtils.scale(context, 32),
+        height: DpiUtils.scale(context, 32),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -289,20 +289,20 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
           ),
           shape: BoxShape.circle,
           border: isSelected
-              ? Border.all(color: colorScheme.onSurface, width: 2.5)
+              ? Border.all(color: colorScheme.onSurface, width: 2)
               : Border.all(color: Colors.transparent, width: 1),
           boxShadow: [
             if (isSelected)
               BoxShadow(
                 color: Colors.purple.withValues(alpha: 0.4),
-                blurRadius: 8,
+                blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
           ],
         ),
         child: isSelected
-            ? const Icon(Icons.check, color: Colors.white, size: 20)
-            : const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+            ? const Icon(Icons.check, color: Colors.white, size: 16)
+            : const Icon(Icons.auto_awesome, color: Colors.white, size: 14),
       ),
     );
   }
@@ -325,7 +325,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: previewScheme.outlineVariant.withValues(alpha: 0.5),
           width: 1,
@@ -334,167 +334,94 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       clipBehavior: Clip.antiAlias,
       child: Container(
         color: previewScheme.surface,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 模拟 AppBar
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: DpiUtils.scale(context, 16),
-                vertical: DpiUtils.scale(context, 10),
-              ),
-              color: previewScheme.surface,
-              child: Row(
+        child: Padding(
+          padding: EdgeInsets.all(DpiUtils.scale(context, 12)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Icon(
-                    Icons.menu,
-                    color: previewScheme.onSurface,
-                    size: DpiUtils.scaleIconSize(context, 20),
-                  ),
-                  SizedBox(width: DpiUtils.scale(context, 16)),
-                  Text(
-                    '预览界面',
-                    style: TextStyle(
-                      fontSize: DpiUtils.scaleFontSize(context, 16),
-                      fontWeight: FontWeight.w500,
-                      color: previewScheme.onSurface,
-                    ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    Icons.search,
-                    color: previewScheme.onSurface,
-                    size: DpiUtils.scaleIconSize(context, 20),
-                  ),
-                ],
-              ),
-            ),
-            Divider(
-              height: 1,
-              color: previewScheme.outlineVariant.withValues(alpha: 0.2),
-            ),
-            // 模拟内容
-            Padding(
-              padding: EdgeInsets.all(DpiUtils.scale(context, 16)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 模拟卡片
                   Container(
-                    padding: EdgeInsets.all(DpiUtils.scale(context, 12)),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: DpiUtils.scale(context, 8),
+                      vertical: DpiUtils.scale(context, 4),
+                    ),
                     decoration: BoxDecoration(
-                      color: previewScheme.surfaceContainerHighest.withValues(
-                        alpha: 0.5,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
+                      color: previewScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: DpiUtils.scale(context, 36),
-                          height: DpiUtils.scale(context, 36),
-                          decoration: BoxDecoration(
-                            color: previewScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            Icons.star,
-                            color: previewScheme.onPrimaryContainer,
-                            size: DpiUtils.scaleIconSize(context, 20),
-                          ),
-                        ),
-                        SizedBox(width: DpiUtils.scale(context, 12)),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '主要内容区域',
-                                style: TextStyle(
-                                  fontSize: DpiUtils.scaleFontSize(context, 13),
-                                  fontWeight: FontWeight.w600,
-                                  color: previewScheme.onSurface,
-                                ),
-                              ),
-                              SizedBox(height: DpiUtils.scale(context, 4)),
-                              Text(
-                                '这是主题色的应用效果预览',
-                                style: TextStyle(
-                                  fontSize: DpiUtils.scaleFontSize(context, 11),
-                                  color: previewScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      '标题',
+                      style: TextStyle(
+                        fontSize: DpiUtils.scaleFontSize(context, 12),
+                        fontWeight: FontWeight.w600,
+                        color: previewScheme.onPrimaryContainer,
+                      ),
                     ),
                   ),
-                  SizedBox(height: DpiUtils.scale(context, 16)),
-                  // 模拟按钮
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: DpiUtils.scale(context, 36),
-                          decoration: BoxDecoration(
-                            color: previewScheme.primary,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '主要按钮',
-                            style: TextStyle(
-                              color: previewScheme.onPrimary,
-                              fontWeight: FontWeight.w500,
-                              fontSize: DpiUtils.scaleFontSize(context, 13),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: DpiUtils.scale(context, 12)),
-                      Expanded(
-                        child: Container(
-                          height: DpiUtils.scale(context, 36),
-                          decoration: BoxDecoration(
-                            color: previewScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '次要按钮',
-                            style: TextStyle(
-                              color: previewScheme.onSecondaryContainer,
-                              fontWeight: FontWeight.w500,
-                              fontSize: DpiUtils.scaleFontSize(context, 13),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  SizedBox(width: DpiUtils.scale(context, 8)),
+                  Text(
+                    '普通文本示例',
+                    style: TextStyle(
+                      fontSize: DpiUtils.scaleFontSize(context, 12),
+                      color: previewScheme.onSurfaceVariant,
+                    ),
                   ),
-                  SizedBox(height: DpiUtils.scale(context, 16)),
-                  // 模拟 FloatingActionButton
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Container(
-                      width: DpiUtils.scale(context, 44),
-                      height: DpiUtils.scale(context, 44),
-                      decoration: BoxDecoration(
-                        color: previewScheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(14),
+                ],
+              ),
+              SizedBox(height: DpiUtils.scale(context, 10)),
+              Text(
+                '这是一段普通文本的显示效果，可以展示主题色在正文中的应用。文字颜色、背景色都会根据选择的主题进行适配。',
+                style: TextStyle(
+                  fontSize: DpiUtils.scaleFontSize(context, 12),
+                  color: previewScheme.onSurface,
+                  height: 1.5,
+                ),
+              ),
+              SizedBox(height: DpiUtils.scale(context, 10)),
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: DpiUtils.scale(context, 10),
+                      vertical: DpiUtils.scale(context, 6),
+                    ),
+                    decoration: BoxDecoration(
+                      color: previewScheme.primary,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      '主要按钮',
+                      style: TextStyle(
+                        fontSize: DpiUtils.scaleFontSize(context, 11),
+                        fontWeight: FontWeight.w500,
+                        color: previewScheme.onPrimary,
                       ),
-                      child: Icon(
-                        Icons.add,
-                        color: previewScheme.onTertiaryContainer,
-                        size: DpiUtils.scaleIconSize(context, 22),
+                    ),
+                  ),
+                  SizedBox(width: DpiUtils.scale(context, 8)),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: DpiUtils.scale(context, 10),
+                      vertical: DpiUtils.scale(context, 6),
+                    ),
+                    decoration: BoxDecoration(
+                      color: previewScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      '次要按钮',
+                      style: TextStyle(
+                        fontSize: DpiUtils.scaleFontSize(context, 11),
+                        fontWeight: FontWeight.w500,
+                        color: previewScheme.onSecondaryContainer,
                       ),
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -1,8 +1,4 @@
-# EasyDict
-
-一款多平台电子词典。
-
-## 快速开始
+# 快速开始
 
 ```bash
 # 安装依赖
@@ -18,9 +14,9 @@ flutter build windows
 flutter build apk
 ```
 
-## json数据格式
+# json数据格式
 
-### json结构
+## json结构
 
 ```jsonc
 {
@@ -125,15 +121,15 @@ flutter build apk
 
 **2. pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
 
-### 文本修饰语法
+## 文本修饰语法
 
-#### 基本语法
+### 基本语法
 
 ```
 [text](type1,type2)
 ```
 
-#### type支持的类型
+### type支持的类型
 
 | 语法               | 说明         |
 | ------------------ | ------------ |
@@ -150,7 +146,7 @@ flutter build apk
 | `->dog`            | 查词dog链接  |
 | `==entry_id.path`  | 精确跳转     |
 
-## 词典包结构
+# 词典包结构
 
 ```
 dictionary_name/
@@ -160,7 +156,7 @@ dictionary_name/
 └── logo.png           # 词典 Logo
 ```
 
-### metadata.json
+## metadata.json
 
 ```json
 {
@@ -179,7 +175,7 @@ dictionary_name/
 }
 ```
 
-### dictionary.db
+## dictionary.db
 
 ```sql
 CREATE TABLE config (
@@ -201,7 +197,7 @@ CREATE TABLE entries (
 CREATE INDEX idx_headword_normalized ON entries(headword_normalized);
 ```
 
-### media.db
+## media.db
 
 ```sql
 CREATE TABLE audios (
@@ -217,7 +213,3 @@ CREATE TABLE images (
 CREATE INDEX idx_audios_name ON audios(name);
 CREATE INDEX idx_images_name ON images(name);
 ```
-
-### logo.png
-
-必须是png格式，方形

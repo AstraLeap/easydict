@@ -729,10 +729,100 @@ class DatabaseService {
     return results.toList()..sort();
   }
 
+  Future<List<String>> searchByWildcard(
+    String pattern, {
+    int limit = 20,
+    String? sourceLanguage,
+  }) async {
+    if (pattern.isEmpty) return [];
+
+    final results = <String>{};
+    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
+
+    String? targetLang = sourceLanguage;
+    if (targetLang == 'auto') {
+      targetLang = _detectLanguage(pattern);
+    }
+
+    final filteredDicts = enabledDicts.where((metadata) {
+      if (targetLang != null && targetLang != metadata.sourceLanguage) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    final futures = filteredDicts.map((metadata) async {
+      try {
+        final db = await _dictManager.openDictionaryDatabase(metadata.id);
+
+        final whereClause = 'headword_normalized LIKE ?';
+        final whereArgs = ['%${_normalizeSearchWord(pattern)}%'];
+
+        final queryResults = await db.query(
+          'entries',
+          columns: ['headword'],
+          where: whereClause,
+          whereArgs: whereArgs,
+          orderBy: 'headword ASC',
+          limit: limit,
+        );
+
+        return queryResults
+            .map((row) => row['headword'] as String?)
+            .where((h) => h != null && h.isNotEmpty)
+            .cast<String>()
+            .toList();
+      } catch (e) {
+        return <String>[];
+      }
+    }).toList();
+
+    final allResults = await Future.wait(futures);
+    for (final dictResults in allResults) {
+      for (final headword in dictResults) {
+        results.add(headword);
+        if (results.length >= limit) break;
+      }
+      if (results.length >= limit) break;
+    }
+
+    return results.toList()..sort();
+  }
+
   Future<void> close() async {
     if (_database != null && _database!.isOpen) {
       await _database!.close();
       _database = null;
+    }
+  }
+
+  /// 创建 commits 表（如果不存在）
+  Future<void> _createCommitsTableIfNotExists(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS commits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id TEXT NOT NULL,
+        headword TEXT NOT NULL,
+        update_time INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  /// 在 commits 表中记录更新操作
+  Future<void> _recordUpdate(
+    Database db,
+    String entryId,
+    String headword,
+  ) async {
+    try {
+      await _createCommitsTableIfNotExists(db);
+      await db.insert('commits', {
+        'entry_id': entryId,
+        'headword': headword,
+        'update_time': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      Logger.e('记录更新操作失败: $e', tag: 'DatabaseService', error: e);
     }
   }
 
@@ -777,9 +867,114 @@ class DatabaseService {
         whereArgs: [entryId],
       );
 
+      // 如果更新成功，记录到 update 表
+      if (result > 0) {
+        await _recordUpdate(db, entry.id, entry.headword);
+      }
+
       return result > 0;
     } catch (e) {
       Logger.e('更新词条失败: $e', tag: 'DatabaseService', error: e);
+      return false;
+    }
+  }
+
+  /// 从 commits 表获取所有更新记录
+  Future<List<Map<String, dynamic>>> getUpdateRecords(String dictId) async {
+    try {
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+
+      // 检查表是否存在
+      final tableExists = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='commits'",
+      );
+      if (tableExists.isEmpty) {
+        return [];
+      }
+
+      final results = await db.query(
+        'commits',
+        columns: ['id', 'entry_id', 'headword', 'update_time'],
+        orderBy: 'update_time DESC',
+      );
+      return results;
+    } catch (e) {
+      Logger.e('获取更新记录失败: $e', tag: 'DatabaseService', error: e);
+      return [];
+    }
+  }
+
+  /// 根据 entry_id 获取完整的 entry JSON 数据
+  Future<Map<String, dynamic>?> getEntryJsonById(
+    String dictId,
+    String entryId,
+  ) async {
+    try {
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+
+      int? entryIdInt;
+      entryIdInt = int.tryParse(entryId);
+      if (entryIdInt == null && entryId.contains('_')) {
+        final parts = entryId.split('_');
+        if (parts.length >= 2) {
+          entryIdInt = int.tryParse(parts.last);
+        }
+      }
+
+      if (entryIdInt == null) {
+        return null;
+      }
+
+      final results = await db.query(
+        'entries',
+        columns: ['json_data'],
+        where: 'entry_id = ?',
+        whereArgs: [entryIdInt],
+      );
+
+      if (results.isEmpty) {
+        return null;
+      }
+
+      final jsonData = results.first['json_data'];
+      if (jsonData == null) {
+        return null;
+      }
+
+      // 获取 zstd 字典并解压
+      final zstdDict = await dictManager.getZstdDictionary(dictId);
+      final jsonStr = extractJsonFromFieldWithDict(jsonData, zstdDict);
+      if (jsonStr == null) {
+        return null;
+      }
+
+      return jsonDecode(jsonStr) as Map<String, dynamic>;
+    } catch (e) {
+      Logger.e('获取条目JSON失败: $e', tag: 'DatabaseService', error: e);
+      return null;
+    }
+  }
+
+  /// 清除 commits 表中的所有记录
+  Future<bool> clearUpdateRecords(String dictId) async {
+    try {
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+
+      // 检查表是否存在
+      final tableExists = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='commits'",
+      );
+      if (tableExists.isEmpty) {
+        return true;
+      }
+
+      await db.delete('commits');
+      return true;
+    } catch (e) {
+      Logger.e('清除更新记录失败: $e', tag: 'DatabaseService', error: e);
       return false;
     }
   }

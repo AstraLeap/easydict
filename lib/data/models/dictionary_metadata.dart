@@ -1,15 +1,13 @@
 class DictionaryMetadata {
   final String id;
   final String name;
-  final String version;
+  final int version;
   final String description;
   final String sourceLanguage;
   final List<String> targetLanguages;
   final String publisher;
   final String maintainer;
   final String? contactMaintainer;
-  final String? repository;
-  final DateTime createdAt;
   final DateTime updatedAt;
 
   DictionaryMetadata({
@@ -22,8 +20,6 @@ class DictionaryMetadata {
     required this.publisher,
     required this.maintainer,
     this.contactMaintainer,
-    this.repository,
-    required this.createdAt,
     required this.updatedAt,
   });
 
@@ -38,14 +34,11 @@ class DictionaryMetadata {
       'publisher': publisher,
       'maintainer': maintainer,
       if (contactMaintainer != null) 'contact_maintainer': contactMaintainer,
-      if (repository != null) 'repository': repository,
-      'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
   }
 
   factory DictionaryMetadata.fromJson(Map<String, dynamic> json) {
-    // 处理 target_language 可能是字符串或列表的情况
     List<String> parseTargetLanguage(dynamic value) {
       if (value == null) return ['en'];
       if (value is String) return [value];
@@ -55,18 +48,25 @@ class DictionaryMetadata {
       return ['en'];
     }
 
+    int parseVersion(dynamic value) {
+      if (value == null) return 1;
+      if (value is int) return value;
+      if (value is String) {
+        return int.tryParse(value) ?? 1;
+      }
+      return 1;
+    }
+
     return DictionaryMetadata(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      version: json['version'] as String? ?? '1.0.0',
+      version: parseVersion(json['version']),
       description: json['description'] as String? ?? '',
       sourceLanguage: json['source_language'] as String? ?? 'en',
       targetLanguages: parseTargetLanguage(json['target_language']),
       publisher: json['publisher'] as String? ?? '',
       maintainer: json['maintainer'] as String? ?? '',
       contactMaintainer: json['contact_maintainer'] as String?,
-      repository: json['repository'] as String?,
-      createdAt: _parseDateTime(json['createdAt']),
       updatedAt: _parseDateTime(json['updatedAt']),
     );
   }
@@ -87,15 +87,13 @@ class DictionaryMetadata {
   DictionaryMetadata copyWith({
     String? id,
     String? name,
-    String? version,
+    int? version,
     String? description,
     String? sourceLanguage,
     List<String>? targetLanguages,
     String? publisher,
     String? maintainer,
     String? contactMaintainer,
-    String? repository,
-    DateTime? createdAt,
     DateTime? updatedAt,
   }) {
     return DictionaryMetadata(
@@ -108,8 +106,6 @@ class DictionaryMetadata {
       publisher: publisher ?? this.publisher,
       maintainer: maintainer ?? this.maintainer,
       contactMaintainer: contactMaintainer ?? this.contactMaintainer,
-      repository: repository ?? this.repository,
-      createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

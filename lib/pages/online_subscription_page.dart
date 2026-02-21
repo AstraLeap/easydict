@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/font_loader_service.dart';
 import '../data/models/remote_dictionary.dart';
@@ -184,13 +185,28 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _urlController,
-              decoration: const InputDecoration(
-                labelText: '订阅源URL',
-                hintText: 'https://example.com/dictionaries',
-                suffixIcon: Icon(Icons.link),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _urlController,
+                    decoration: const InputDecoration(
+                      labelText: '订阅源URL',
+                      hintText: 'https://example.com/dictionaries',
+                      suffixIcon: Icon(Icons.link),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                if (_urlController.text.trim().isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _openContributorPage,
+                    icon: const Icon(Icons.favorite_outline, size: 18),
+                    label: const Text('贡献'),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 16),
             Row(
@@ -207,6 +223,34 @@ class _OnlineSubscriptionPageState extends State<OnlineSubscriptionPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _openContributorPage() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) return;
+
+    Uri contributorUrl;
+    try {
+      final uri = Uri.parse(url);
+      contributorUrl = uri.replace(path: '/contributor');
+    } catch (e) {
+      showToast(context, '无效的URL');
+      return;
+    }
+
+    try {
+      if (await canLaunchUrl(contributorUrl)) {
+        await launchUrl(contributorUrl, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          showToast(context, '无法打开链接');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        showToast(context, '打开链接失败: $e');
+      }
+    }
   }
 
   Widget _buildEmptyState() {
