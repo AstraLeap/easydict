@@ -2,7 +2,6 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
-import 'package:es_compression/zstd.dart';
 import '../core/logger.dart';
 
 /// 尝试查找符号，支持带下划线和不带下划线两种形式
@@ -19,8 +18,14 @@ String _resolveSymbolName(ffi.DynamicLibrary lib, String name) {
       // 如果失败，尝试不带下划线的名字
     }
   }
-  // 尝试原始名字
-  return name;
+  // 验证符号是否存在
+  try {
+    lib.lookup<ffi.NativeFunction<ffi.Pointer<ffi.Void> Function()>>(name);
+    return name;
+  } catch (e) {
+    Logger.w('Symbol $name not found in library: $e', tag: 'ZstdService');
+    rethrow;
+  }
 }
 
 /// zstd 库加载
@@ -28,6 +33,55 @@ String _resolveSymbolName(ffi.DynamicLibrary lib, String name) {
 /// 如果找不到，则尝试加载动态库
 ffi.DynamicLibrary _openZstdLibrary() {
   Logger.i('Attempting to load zstd library...', tag: 'ZstdService');
+
+  // Android 平台优先尝试加载 libzstd.so
+  if (Platform.isAndroid) {
+    Logger.i(
+      'Android platform detected, trying to load zstd library...',
+      tag: 'ZstdService',
+    );
+
+    // 首先尝试加载独立的 libzstd.so
+    try {
+      final lib = ffi.DynamicLibrary.open('libzstd.so');
+      // 验证符号存在
+      _resolveSymbolName(lib, 'ZSTD_createDCtx');
+      Logger.i('Successfully loaded libzstd.so', tag: 'ZstdService');
+      return lib;
+    } catch (e) {
+      Logger.w(
+        'Failed to load libzstd.so: $e, trying process library...',
+        tag: 'ZstdService',
+      );
+    }
+
+    // 尝试从进程库加载（静态链接的情况）
+    try {
+      final processLib = ffi.DynamicLibrary.process();
+      _resolveSymbolName(processLib, 'ZSTD_createDCtx');
+      Logger.i('Found zstd symbols in process library', tag: 'ZstdService');
+      return processLib;
+    } catch (e) {
+      Logger.e(
+        'Failed to find zstd in process library: $e',
+        tag: 'ZstdService',
+      );
+    }
+
+    // 最后尝试从可执行文件加载
+    try {
+      final execLib = ffi.DynamicLibrary.executable();
+      _resolveSymbolName(execLib, 'ZSTD_createDCtx');
+      Logger.i('Found zstd symbols in executable', tag: 'ZstdService');
+      return execLib;
+    } catch (e) {
+      Logger.e('Failed to find zstd in executable: $e', tag: 'ZstdService');
+    }
+
+    throw Exception(
+      'Could not load zstd library on Android. Please check if libzstd.so is properly built and included in the APK.',
+    );
+  }
 
   // 首先尝试从当前进程中查找（静态链接的情况）
   try {
@@ -99,12 +153,6 @@ ffi.DynamicLibrary _openZstdLibrary() {
         'Could not find libzstd.dylib. Please ensure zstd is statically linked or libzstd.dylib is available.',
       );
     }
-  } else if (Platform.isAndroid) {
-    try {
-      return ffi.DynamicLibrary.open('libzstd.so');
-    } catch (_) {
-      return ffi.DynamicLibrary.process();
-    }
   }
   throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
 }
@@ -140,7 +188,7 @@ void _tryInitializeBindings() {
   );
   if (!_isLibraryLoaded) {
     Logger.w(
-      'Zstd FFI library not available, dictionary compression disabled',
+      'Zstd FFI library not available, all compression disabled',
       tag: 'ZstdService',
     );
     _supportsDictCompression = false;
@@ -148,8 +196,17 @@ void _tryInitializeBindings() {
   }
   try {
     _initializeBindingsInternal();
-  } catch (e) {
-    Logger.w('Failed to initialize zstd FFI bindings: $e', tag: 'ZstdService');
+    Logger.i(
+      'Zstd FFI bindings initialized successfully, _supportsDictCompression=$_supportsDictCompression',
+      tag: 'ZstdService',
+    );
+  } catch (e, stackTrace) {
+    Logger.e(
+      'Failed to initialize zstd FFI bindings: $e',
+      tag: 'ZstdService',
+      error: e,
+      stackTrace: stackTrace,
+    );
     _supportsDictCompression = false;
   }
 }
@@ -268,6 +325,32 @@ typedef ZstdCompressBoundDart = int Function(int);
 
 late final ZstdCompressBoundDart _zstdCompressBound;
 
+// 不使用字典的压缩/解压函数
+typedef ZstdDecompressNative =
+    ffi.IntPtr Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.IntPtr,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.IntPtr,
+    );
+typedef ZstdDecompressDart =
+    int Function(ffi.Pointer<ffi.Uint8>, int, ffi.Pointer<ffi.Uint8>, int);
+
+late final ZstdDecompressDart _zstdDecompress;
+
+typedef ZstdCompressNative =
+    ffi.IntPtr Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.IntPtr,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.IntPtr,
+      ffi.Int32,
+    );
+typedef ZstdCompressDart =
+    int Function(ffi.Pointer<ffi.Uint8>, int, ffi.Pointer<ffi.Uint8>, int, int);
+
+late final ZstdCompressDart _zstdCompress;
+
 // 错误码常量
 const int zstdContentSizeError = -2;
 const int zstdContentSizeUnknown = -1;
@@ -280,38 +363,84 @@ bool _checkError(int code) => _zstdIsError(code) != 0;
 String _getErrorName(int code) => _zstdGetErrorName(code).toDartString();
 
 bool _initializeDictBindings() {
+  final symbols = [
+    'ZSTD_createDDict',
+    'ZSTD_freeDDict',
+    'ZSTD_decompress_usingDDict',
+    'ZSTD_createCDict',
+    'ZSTD_freeCDict',
+    'ZSTD_compress_usingCDict',
+  ];
+
+  for (final symbol in symbols) {
+    try {
+      final resolvedName = _resolveSymbolName(_zstdLib, symbol);
+      Logger.d(
+        'Looking up symbol: $symbol -> $resolvedName',
+        tag: 'ZstdService',
+      );
+      _zstdLib.lookup<ffi.NativeFunction<ffi.Pointer<ffi.Void> Function()>>(
+        resolvedName,
+      );
+      Logger.d('Symbol found: $resolvedName', tag: 'ZstdService');
+    } catch (e) {
+      Logger.w('Symbol not found: $symbol, error: $e', tag: 'ZstdService');
+    }
+  }
+
   try {
     _zstdCreateDDict = _zstdLib
         .lookupFunction<ZstdCreateDDictNative, ZstdCreateDDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_createDDict'),
         );
+    Logger.d('ZSTD_createDDict bound successfully', tag: 'ZstdService');
+
     _zstdFreeDDict = _zstdLib
         .lookupFunction<ZstdFreeDDictNative, ZstdFreeDDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_freeDDict'),
         );
+    Logger.d('ZSTD_freeDDict bound successfully', tag: 'ZstdService');
+
     _zstdDecompressUsingDDict = _zstdLib
         .lookupFunction<
           ZstdDecompressUsingDDictNative,
           ZstdDecompressUsingDDictDart
         >(_resolveSymbolName(_zstdLib, 'ZSTD_decompress_usingDDict'));
+    Logger.d(
+      'ZSTD_decompress_usingDDict bound successfully',
+      tag: 'ZstdService',
+    );
+
     _zstdCreateCDict = _zstdLib
         .lookupFunction<ZstdCreateCDictNative, ZstdCreateCDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_createCDict'),
         );
+    Logger.d('ZSTD_createCDict bound successfully', tag: 'ZstdService');
+
     _zstdFreeCDict = _zstdLib
         .lookupFunction<ZstdFreeCDictNative, ZstdFreeCDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_freeCDict'),
         );
+    Logger.d('ZSTD_freeCDict bound successfully', tag: 'ZstdService');
+
     _zstdCompressUsingCDict = _zstdLib
         .lookupFunction<
           ZstdCompressUsingCDictNative,
           ZstdCompressUsingCDictDart
         >(_resolveSymbolName(_zstdLib, 'ZSTD_compress_usingCDict'));
+    Logger.d('ZSTD_compress_usingCDict bound successfully', tag: 'ZstdService');
+
+    Logger.i(
+      'All dictionary bindings initialized successfully',
+      tag: 'ZstdService',
+    );
     return true;
-  } catch (e) {
-    Logger.w(
+  } catch (e, stackTrace) {
+    Logger.e(
       'Zstd dictionary compression not supported: $e',
       tag: 'ZstdService',
+      error: e,
+      stackTrace: stackTrace,
     );
     return false;
   }
@@ -348,6 +477,13 @@ void _initializeBindingsInternal() {
       .lookupFunction<ZstdCompressBoundNative, ZstdCompressBoundDart>(
         _resolveSymbolName(_zstdLib, 'ZSTD_compressBound'),
       );
+  _zstdDecompress = _zstdLib
+      .lookupFunction<ZstdDecompressNative, ZstdDecompressDart>(
+        _resolveSymbolName(_zstdLib, 'ZSTD_decompress'),
+      );
+  _zstdCompress = _zstdLib.lookupFunction<ZstdCompressNative, ZstdCompressDart>(
+    _resolveSymbolName(_zstdLib, 'ZSTD_compress'),
+  );
 
   _supportsDictCompression = _initializeDictBindings();
 }
@@ -518,36 +654,116 @@ class ZstdService {
     }
   }
 
-  /// 不使用字典解压（使用 es_compression 包）
+  /// 不使用字典解压（使用 FFI 调用静态链接的 zstd 库）
   Uint8List decompressWithoutDict(Uint8List compressedData) {
+    Logger.d(
+      'decompressWithoutDict called: compressedData.length=${compressedData.length}',
+      tag: 'ZstdService',
+    );
+    if (compressedData.isEmpty) {
+      throw ArgumentError('Compressed data is empty');
+    }
+
+    final compressedPtr = calloc<ffi.Uint8>(compressedData.length);
     try {
-      final decoder = ZstdDecoder();
-      return Uint8List.fromList(decoder.convert(compressedData));
-    } catch (e) {
-      Logger.e(
-        'Zstd decompression without dictionary failed: $e',
+      compressedPtr
+          .asTypedList(compressedData.length)
+          .setAll(0, compressedData);
+
+      final originalSize = _zstdGetFrameContentSize(
+        compressedPtr,
+        compressedData.length,
+      );
+      Logger.d(
+        'decompressWithoutDict: originalSize=$originalSize',
         tag: 'ZstdService',
       );
-      rethrow;
+
+      if (originalSize == zstdContentSizeError ||
+          originalSize == zstdContentSizeUnknown) {
+        throw Exception(
+          'Failed to get decompressed size: originalSize=$originalSize',
+        );
+      }
+
+      final decompressedPtr = calloc<ffi.Uint8>(originalSize);
+      try {
+        final result = _zstdDecompress(
+          decompressedPtr,
+          originalSize,
+          compressedPtr,
+          compressedData.length,
+        );
+        Logger.d(
+          'decompressWithoutDict: ZSTD_decompress result=$result',
+          tag: 'ZstdService',
+        );
+
+        if (_checkError(result)) {
+          throw Exception('Decompression failed: ${_getErrorName(result)}');
+        }
+
+        return Uint8List.fromList(decompressedPtr.asTypedList(result));
+      } finally {
+        calloc.free(decompressedPtr);
+      }
+    } finally {
+      calloc.free(compressedPtr);
     }
   }
 
-  /// 不使用字典压缩（使用 es_compression 包）
+  /// 不使用字典压缩（使用 FFI 调用静态链接的 zstd 库）
   Uint8List compressWithoutDict(Uint8List data, {int level = 3}) {
+    Logger.d(
+      'compressWithoutDict called: data.length=${data.length}, level=$level',
+      tag: 'ZstdService',
+    );
+    if (data.isEmpty) {
+      throw ArgumentError('Data is empty');
+    }
+
+    final srcPtr = calloc<ffi.Uint8>(data.length);
     try {
-      final encoder = ZstdEncoder(level: level);
-      return Uint8List.fromList(encoder.convert(data));
-    } catch (e) {
-      Logger.e(
-        'Zstd compression without dictionary failed: $e',
+      srcPtr.asTypedList(data.length).setAll(0, data);
+
+      final maxDstSize = _zstdCompressBound(data.length);
+      Logger.d(
+        'compressWithoutDict: maxDstSize=$maxDstSize',
         tag: 'ZstdService',
       );
-      rethrow;
+      final dstPtr = calloc<ffi.Uint8>(maxDstSize);
+      try {
+        final result = _zstdCompress(
+          dstPtr,
+          maxDstSize,
+          srcPtr,
+          data.length,
+          level,
+        );
+        Logger.d(
+          'compressWithoutDict: ZSTD_compress result=$result',
+          tag: 'ZstdService',
+        );
+
+        if (_checkError(result)) {
+          throw Exception('Compression failed: ${_getErrorName(result)}');
+        }
+
+        return Uint8List.fromList(dstPtr.asTypedList(result));
+      } finally {
+        calloc.free(dstPtr);
+      }
+    } finally {
+      calloc.free(srcPtr);
     }
   }
 
-  /// 使用字典解压数据，如果不支持字典则抛出异常
+  /// 解压数据，如果有字典则使用字典解压，否则不使用字典
   Uint8List decompress(Uint8List compressedData, Uint8List? dictBytes) {
+    Logger.d(
+      'decompress called: compressedData.length=${compressedData.length}, dictBytes=${dictBytes?.length ?? 'null'}, _supportsDictCompression=$_supportsDictCompression',
+      tag: 'ZstdService',
+    );
     if (dictBytes != null && dictBytes.isNotEmpty) {
       if (!_supportsDictCompression) {
         throw Exception(
@@ -555,14 +771,20 @@ class ZstdService {
           'Please ensure zstd library with dictionary support is properly linked.',
         );
       }
+      Logger.d('Using decompressWithDict', tag: 'ZstdService');
       return decompressWithDict(compressedData, dictBytes);
     } else {
-      throw Exception('Dictionary is required for decompression');
+      Logger.d('Using decompressWithoutDict', tag: 'ZstdService');
+      return decompressWithoutDict(compressedData);
     }
   }
 
-  /// 使用字典压缩数据，如果不支持字典则抛出异常
+  /// 压缩数据，如果有字典则使用字典压缩，否则不使用字典
   Uint8List compress(Uint8List data, Uint8List? dictBytes, {int level = 3}) {
+    Logger.d(
+      'compress called: data.length=${data.length}, dictBytes=${dictBytes?.length ?? 'null'}, _supportsDictCompression=$_supportsDictCompression',
+      tag: 'ZstdService',
+    );
     if (dictBytes != null && dictBytes.isNotEmpty) {
       if (!_supportsDictCompression) {
         throw Exception(
@@ -570,9 +792,11 @@ class ZstdService {
           'Please ensure zstd library with dictionary support is properly linked.',
         );
       }
+      Logger.d('Using compressWithDict', tag: 'ZstdService');
       return compressWithDict(data, dictBytes, level: level);
     } else {
-      throw Exception('Dictionary is required for compression');
+      Logger.d('Using compressWithoutDict', tag: 'ZstdService');
+      return compressWithoutDict(data, level: level);
     }
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:provider/provider.dart';
 import '../services/dictionary_manager.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/auth_service.dart';
@@ -12,12 +13,16 @@ import '../services/preferences_service.dart';
 import '../services/settings_sync_service.dart';
 import '../services/user_dicts_service.dart';
 import '../services/zstd_service.dart';
+import '../services/upload_manager.dart';
 import '../data/models/remote_dictionary.dart';
 import '../data/models/user.dart';
-import '../data/models/user_dictionary.dart';
+import '../data/models/user_dictionary.dart' hide DictionaryEntry;
+import '../data/models/dictionary_metadata.dart';
 import '../data/database_service.dart';
 import '../core/utils/toast_utils.dart';
+import '../core/logger.dart';
 import '../components/global_scale_wrapper.dart';
+import '../components/transfer_progress_panel.dart';
 
 class CloudServicePage extends StatefulWidget {
   const CloudServicePage({super.key});
@@ -33,6 +38,8 @@ class _CloudServicePageState extends State<CloudServicePage> {
   final PreferencesService _prefsService = PreferencesService();
   final SettingsSyncService _syncService = SettingsSyncService();
   final UserDictsService _userDictsService = UserDictsService();
+  final DatabaseService _databaseService = DatabaseService();
+  final ZstdService _zstdService = ZstdService();
 
   DictionaryStoreService? _service;
   List<RemoteDictionary> _availableDictionaries = [];
@@ -40,11 +47,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
   bool _isLoggedIn = false;
   User? _currentUser;
   bool _isSyncing = false;
-
-  // 创作者中心相关状态
-  List<UserDictionary> _userDictionaries = [];
-  bool _isLoadingUserDicts = false;
-  String? _userDictsError;
+  bool _isPushing = false;
 
   @override
   void initState() {
@@ -80,8 +83,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = _authService.currentUser;
       });
-      // 已登录状态下加载用户词典
-      _loadUserDictionaries();
       return;
     }
 
@@ -93,93 +94,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = _authService.isLoggedIn;
         _currentUser = _authService.currentUser;
       });
-      // 恢复登录后加载用户词典
-      if (_isLoggedIn) {
-        _loadUserDictionaries();
-      }
     }
-  }
-
-  Future<void> _loadUserDictionaries() async {
-    if (!_isLoggedIn) return;
-
-    setState(() {
-      _isLoadingUserDicts = true;
-      _userDictsError = null;
-    });
-
-    try {
-      final dicts = await _userDictsService.fetchUserDicts();
-      if (mounted) {
-        setState(() {
-          _userDictionaries = dicts;
-          _isLoadingUserDicts = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _userDictsError = e.toString();
-          _isLoadingUserDicts = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _deleteDictionary(UserDictionary dict) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除词典'),
-        content: Text('确定要删除词典"${dict.name}"吗？此操作不可恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await _userDictsService.deleteDictionary(dict.dictId);
-      if (mounted) {
-        showToast(context, '词典已删除');
-        _loadUserDictionaries();
-      }
-    } catch (e) {
-      if (mounted) {
-        showToast(context, '删除失败: $e');
-      }
-    }
-  }
-
-  void _showUploadDialog() {
-    showDialog(
-      context: context,
-      builder: (context) =>
-          UploadDictionaryDialog(onUploadSuccess: _loadUserDictionaries),
-    );
-  }
-
-  void _showEditFilesDialog(UserDictionary dict) {
-    showDialog(
-      context: context,
-      builder: (context) => EditDictionaryDialog(
-        dictId: dict.dictId,
-        dictName: dict.name,
-        onUpdateSuccess: _loadUserDictionaries,
-      ),
-    );
   }
 
   void _initializeService() {
@@ -193,10 +108,17 @@ class _CloudServicePageState extends State<CloudServicePage> {
   }
 
   Future<void> _saveSettings() async {
-    final url = _urlController.text.trim();
+    var url = _urlController.text.trim();
+
+    if (url.isNotEmpty &&
+        !url.startsWith('http://') &&
+        !url.startsWith('https://')) {
+      url = 'https://$url';
+      _urlController.text = url;
+    }
+
     final oldUrl = await _dictManager.onlineSubscriptionUrl;
 
-    // 如果 URL 发生变化且当前已登录，先退出登录
     if (oldUrl != url && _isLoggedIn) {
       _authService.logout();
       await _prefsService.clearAuthData();
@@ -224,7 +146,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
       _service = null;
     }
 
-    // 更新当前记录的 baseUrl
     _currentBaseUrl = url;
 
     if (mounted) {
@@ -432,8 +353,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = result.user;
       });
-      // 登录成功后加载用户词典
-      _loadUserDictionaries();
       showToast(context, '登录成功');
       return true;
     } else {
@@ -470,8 +389,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = result.user;
       });
-      // 注册成功后加载用户词典
-      _loadUserDictionaries();
       showToast(context, '注册成功');
       return true;
     } else {
@@ -487,7 +404,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
     setState(() {
       _isLoggedIn = false;
       _currentUser = null;
-      _userDictionaries = [];
     });
     showToast(context, '已退出登录');
   }
@@ -623,19 +539,49 @@ class _CloudServicePageState extends State<CloudServicePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('云服务'), centerTitle: true),
       body: PageScaleWrapper(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+        child: Stack(
           children: [
-            _buildSubscriptionCard(),
-            const SizedBox(height: 16),
-            _buildAccountCard(),
-            const SizedBox(height: 24),
-            if (_service != null && _availableDictionaries.isNotEmpty)
-              _buildDictionariesSummary(),
-            // 创作者中心放在页面底部
-            _buildCreatorCenterSection(),
+            CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  title: const Text('云服务'),
+                  centerTitle: true,
+                  pinned: true,
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                  surfaceTintColor: Colors.transparent,
+                ),
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildSubscriptionCard(),
+                            const SizedBox(height: 16),
+                            _buildAccountCard(),
+                            const SizedBox(height: 24),
+                            if (_service != null &&
+                                _availableDictionaries.isNotEmpty)
+                              _buildDictionariesSummary(),
+                            const SizedBox(height: 80),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: UploadProgressPanel(),
+            ),
           ],
         ),
       ),
@@ -899,289 +845,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
     );
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    final local = dateTime.toLocal();
-    final year = local.year.toString();
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
-    final hour = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '$year-$month-$day $hour:$minute';
-  }
-
-  Widget _buildCreatorCenterSection() {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-          child: Row(
-            children: [
-              Text(
-                '创作者中心',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              if (_isLoggedIn)
-                TextButton.icon(
-                  onPressed: _showUploadDialog,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('上传词典'),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (!_isLoggedIn)
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.lock_outline,
-                      size: 48,
-                      color: colorScheme.outline,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '请先登录后管理词典',
-                      style: TextStyle(color: colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
-        else if (_isLoadingUserDicts)
-          const Center(child: CircularProgressIndicator())
-        else if (_userDictsError != null)
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Icon(Icons.error_outline, color: colorScheme.error, size: 48),
-                  const SizedBox(height: 8),
-                  Text('加载失败', style: TextStyle(color: colorScheme.error)),
-                  const SizedBox(height: 8),
-                  Text(
-                    _userDictsError!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _loadUserDictionaries,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('重试'),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else if (_userDictionaries.isEmpty)
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.library_books_outlined,
-                      size: 48,
-                      color: colorScheme.outline,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '暂无上传的词典',
-                      style: TextStyle(color: colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '点击右上角 + 号上传新词典',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
-        else
-          ..._userDictionaries.map(
-            (dict) => _buildDictionaryCard(dict, colorScheme),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildDictionaryCard(UserDictionary dict, ColorScheme colorScheme) {
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: colorScheme.outlineVariant.withOpacity(0.5),
-          width: 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.book_outlined,
-                    color: colorScheme.onPrimaryContainer,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        dict.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          if (dict.sourceLanguage != null &&
-                              dict.targetLanguage != null)
-                            Text(
-                              '${dict.sourceLanguage} → ${dict.targetLanguage}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            )
-                          else
-                            Text(
-                              'ID: ${dict.dictId}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          if (dict.hasMedia) ...[
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.audiotrack_outlined,
-                              size: 14,
-                              color: colorScheme.primary,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Divider(
-              height: 1,
-              color: colorScheme.outlineVariant.withOpacity(0.3),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time,
-                  size: 14,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '更新于 ${_formatDateTime(dict.updatedAt)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _showEditFilesDialog(dict),
-                  icon: const Icon(Icons.folder_outlined, size: 18),
-                  label: const Text('编辑文件'),
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _showPushUpdatesDialog(dict),
-                  icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                  label: const Text('推送更新'),
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _deleteDictionary(dict),
-                  icon: Icon(
-                    Icons.delete_outline,
-                    size: 18,
-                    color: colorScheme.error,
-                  ),
-                  label: Text('删除', style: TextStyle(color: colorScheme.error)),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showPushUpdatesDialog(UserDictionary dict) {
     showDialog(
       context: context,
@@ -1260,6 +923,31 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
     }
   }
 
+  /// 递归删除包含 (ai) 的字段
+  void _removeAiFields(Map<String, dynamic> json) {
+    final keysToRemove = <String>[];
+
+    for (final entry in json.entries) {
+      final value = entry.value;
+
+      if (value is String && value.contains('(ai)')) {
+        keysToRemove.add(entry.key);
+      } else if (value is Map<String, dynamic>) {
+        _removeAiFields(value);
+      } else if (value is List) {
+        for (final item in value) {
+          if (item is Map<String, dynamic>) {
+            _removeAiFields(item);
+          }
+        }
+      }
+    }
+
+    for (final key in keysToRemove) {
+      json.remove(key);
+    }
+  }
+
   Future<void> _pushUpdates() async {
     if (_updateRecords.isEmpty) {
       showToast(context, '没有需要推送的更新');
@@ -1274,7 +962,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
       final jsonLines = <String>[];
 
       for (final record in _updateRecords) {
-        final entryId = record['entry_id'] as String;
+        final entryId = record['id'] as String;
 
         // 去重：如果同一个 entry 被更新多次，只取最新的一次
         if (processedEntryIds.contains(entryId)) {
@@ -1291,6 +979,9 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
         if (entryJson == null) {
           continue;
         }
+
+        // 过滤掉包含 (ai) 的字段
+        _removeAiFields(entryJson);
 
         // 将 json 转换为单行字符串（jsonl 格式）
         jsonLines.add(jsonEncode(entryJson));
@@ -1320,6 +1011,13 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
       final zstFile = File(zstPath);
       await zstFile.writeAsBytes(compressedData);
 
+      // 打印文件路径供调试
+      Logger.i('ZST file saved to: $zstPath', tag: 'PushUpdates');
+      Logger.i(
+        'ZST file size: ${await zstFile.length()} bytes',
+        tag: 'PushUpdates',
+      );
+
       // 5. 调用 API 推送更新
       final result = await _userDictsService.pushEntryUpdates(
         widget.dictId,
@@ -1333,7 +1031,31 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
         // 6. 清除 update 表
         await _databaseService.clearUpdateRecords(widget.dictId);
 
-        // 7. 清理临时文件
+        // 7. 更新 metadata.json 的 version
+        if (result.version != null) {
+          final metadataFile = await _dictManager.getMetadataFile(
+            widget.dictId,
+          );
+          if (await metadataFile.exists()) {
+            final metadataJson = jsonDecode(await metadataFile.readAsString());
+            final updatedMetadata = DictionaryMetadata.fromJson(metadataJson);
+            final newMetadata = DictionaryMetadata(
+              id: updatedMetadata.id,
+              name: updatedMetadata.name,
+              version: result.version!,
+              description: updatedMetadata.description,
+              sourceLanguage: updatedMetadata.sourceLanguage,
+              targetLanguages: updatedMetadata.targetLanguages,
+              publisher: updatedMetadata.publisher,
+              maintainer: updatedMetadata.maintainer,
+              contactMaintainer: updatedMetadata.contactMaintainer,
+              updatedAt: DateTime.now(),
+            );
+            await _dictManager.saveDictionaryMetadata(newMetadata);
+          }
+        }
+
+        // 8. 清理临时文件
         if (await zstFile.exists()) {
           await zstFile.delete();
         }
@@ -1350,6 +1072,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
     } catch (e) {
       if (mounted) {
         showToast(context, '推送失败: $e');
+        Logger.i('推送失败: $e', tag: 'PushUpdates');
       }
     } finally {
       if (mounted) {
@@ -1467,8 +1190,6 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
   File? _logoFile;
   File? _mediaFile;
 
-  bool _isUploading = false;
-
   @override
   void initState() {
     super.initState();
@@ -1529,35 +1250,43 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
       return;
     }
 
-    setState(() => _isUploading = true);
+    final uploadManager = context.read<UploadManager>();
+    final totalFiles = 3 + (_mediaFile != null ? 1 : 0);
+    final dictName = _metadataFile!.path
+        .split(Platform.pathSeparator)
+        .last
+        .replaceAll('.json', '');
 
-    try {
-      final result = await _userDictsService.uploadDictionary(
-        metadataFile: _metadataFile!,
-        dictionaryFile: _dictionaryFile!,
-        logoFile: _logoFile!,
-        mediaFile: _mediaFile,
-        message: '初始上传',
-      );
+    // 在关闭对话框前保存回调引用
+    final onUploadSuccess = widget.onUploadSuccess;
 
-      if (mounted) {
-        if (result.success) {
-          showToast(context, '上传成功: ${result.name}');
-          widget.onUploadSuccess();
-          Navigator.pop(context);
-        } else {
-          showToast(context, result.error ?? '上传失败');
+    Navigator.pop(context);
+
+    await uploadManager.startUpload(
+      'new_dict_$dictName',
+      dictName,
+      totalFiles,
+      (onProgress) async {
+        final result = await _userDictsService.uploadDictionary(
+          metadataFile: _metadataFile!,
+          dictionaryFile: _dictionaryFile!,
+          logoFile: _logoFile!,
+          mediaFile: _mediaFile,
+          message: '初始上传',
+          onProgress: onProgress,
+        );
+
+        if (!result.success) {
+          throw Exception(result.error ?? '上传失败');
         }
-      }
-    } catch (e) {
-      if (mounted) {
-        showToast(context, '上传失败: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
-    }
+      },
+      onComplete: () {
+        onUploadSuccess();
+      },
+      onError: (error) {
+        // 错误已在 UploadManager 中处理
+      },
+    );
   }
 
   Widget _buildFileSelector(
@@ -1565,11 +1294,12 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
     String type,
     File? file,
     bool required,
+    bool isUploading,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return InkWell(
-      onTap: _isUploading ? null : () => _pickFile(type),
+      onTap: isUploading ? null : () => _pickFile(type),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1617,7 +1347,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
             ),
             if (file != null)
               IconButton(
-                onPressed: _isUploading
+                onPressed: isUploading
                     ? null
                     : () {
                         setState(() {
@@ -1648,6 +1378,8 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final uploadManager = context.watch<UploadManager>();
+    final isUploading = uploadManager.isUploading;
 
     return AlertDialog(
       title: const Text('上传新词典'),
@@ -1661,6 +1393,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
               'metadata',
               _metadataFile,
               true,
+              isUploading,
             ),
             const SizedBox(height: 12),
             _buildFileSelector(
@@ -1668,35 +1401,35 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
               'dictionary',
               _dictionaryFile,
               true,
+              isUploading,
             ),
             const SizedBox(height: 12),
-            _buildFileSelector('logo.png', 'logo', _logoFile, true),
+            _buildFileSelector(
+              'logo.png',
+              'logo',
+              _logoFile,
+              true,
+              isUploading,
+            ),
             const SizedBox(height: 12),
-            _buildFileSelector('media.db', 'media', _mediaFile, false),
-            if (_isUploading) ...[
-              const SizedBox(height: 16),
-              const LinearProgressIndicator(),
-              const SizedBox(height: 8),
-              Text(
-                '上传中...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+            _buildFileSelector(
+              'media.db',
+              'media',
+              _mediaFile,
+              false,
+              isUploading,
+            ),
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _isUploading ? null : () => Navigator.pop(context),
+          onPressed: isUploading ? null : () => Navigator.pop(context),
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: _isUploading ? null : _upload,
-          child: _isUploading
+          onPressed: isUploading ? null : _upload,
+          child: isUploading
               ? const SizedBox(
                   width: 16,
                   height: 16,
@@ -1737,8 +1470,6 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
   File? _dictionaryFile;
   File? _logoFile;
   File? _mediaFile;
-
-  bool _isUploading = false;
 
   @override
   void initState() {
@@ -1801,7 +1532,6 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
       return;
     }
 
-    // 检查是否至少选择了一个文件
     if (_metadataFile == null &&
         _dictionaryFile == null &&
         _logoFile == null &&
@@ -1810,43 +1540,59 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
       return;
     }
 
-    setState(() => _isUploading = true);
+    final uploadManager = context.read<UploadManager>();
+    final totalFiles = [
+      _metadataFile,
+      _dictionaryFile,
+      _logoFile,
+      _mediaFile,
+    ].where((f) => f != null).length;
 
-    try {
-      final result = await _userDictsService.updateDictionary(
-        widget.dictId,
-        message: message,
-        metadataFile: _metadataFile,
-        dictionaryFile: _dictionaryFile,
-        logoFile: _logoFile,
-        mediaFile: _mediaFile,
-      );
+    final dictId = widget.dictId;
+    final dictName = widget.dictName;
+    final metadataFile = _metadataFile;
+    final dictionaryFile = _dictionaryFile;
+    final logoFile = _logoFile;
+    final mediaFile = _mediaFile;
 
-      if (mounted) {
-        if (result.success) {
-          showToast(context, '更新成功: ${widget.dictName}');
-          widget.onUpdateSuccess();
-          Navigator.pop(context);
-        } else {
-          showToast(context, result.error ?? '更新失败');
+    Navigator.pop(context);
+
+    await uploadManager.startUpload(
+      dictId,
+      dictName,
+      totalFiles,
+      (onProgress) async {
+        final result = await _userDictsService.updateDictionary(
+          dictId,
+          message: message,
+          metadataFile: metadataFile,
+          dictionaryFile: dictionaryFile,
+          logoFile: logoFile,
+          mediaFile: mediaFile,
+          onProgress: onProgress,
+        );
+
+        if (!result.success) {
+          throw Exception(result.error ?? '更新失败');
         }
-      }
-    } catch (e) {
-      if (mounted) {
-        showToast(context, '更新失败: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
-    }
+      },
+      onComplete: () {
+        widget.onUpdateSuccess();
+      },
+      onError: (error) {},
+    );
   }
 
-  Widget _buildFileSelector(String label, String type, File? file) {
+  Widget _buildFileSelector(
+    String label,
+    String type,
+    File? file,
+    bool isUploading,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return InkWell(
-      onTap: _isUploading ? null : () => _pickFile(type),
+      onTap: isUploading ? null : () => _pickFile(type),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1894,7 +1640,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
             ),
             if (file != null)
               IconButton(
-                onPressed: _isUploading
+                onPressed: isUploading
                     ? null
                     : () {
                         setState(() {
@@ -1925,21 +1671,33 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final uploadManager = context.watch<UploadManager>();
+    final isUploading = uploadManager.isUploading;
 
     return AlertDialog(
-      title: Text('编辑文件 - ${widget.dictName}'),
+      title: Text('替换文件 - ${widget.dictName}'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildFileSelector('metadata.json', 'metadata', _metadataFile),
+            _buildFileSelector(
+              'metadata.json',
+              'metadata',
+              _metadataFile,
+              isUploading,
+            ),
             const SizedBox(height: 12),
-            _buildFileSelector('dictionary.db', 'dictionary', _dictionaryFile),
+            _buildFileSelector(
+              'dictionary.db',
+              'dictionary',
+              _dictionaryFile,
+              isUploading,
+            ),
             const SizedBox(height: 12),
-            _buildFileSelector('logo.png', 'logo', _logoFile),
+            _buildFileSelector('logo.png', 'logo', _logoFile, isUploading),
             const SizedBox(height: 12),
-            _buildFileSelector('media.db', 'media', _mediaFile),
+            _buildFileSelector('media.db', 'media', _mediaFile, isUploading),
             const SizedBox(height: 16),
             TextField(
               controller: _messageController,
@@ -1950,7 +1708,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              enabled: !_isUploading,
+              enabled: !isUploading,
             ),
             const SizedBox(height: 8),
             Text(
@@ -1961,30 +1719,17 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
               ),
               textAlign: TextAlign.center,
             ),
-            if (_isUploading) ...[
-              const SizedBox(height: 16),
-              const LinearProgressIndicator(),
-              const SizedBox(height: 8),
-              Text(
-                '更新中...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _isUploading ? null : () => Navigator.pop(context),
+          onPressed: isUploading ? null : () => Navigator.pop(context),
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: _isUploading ? null : _update,
-          child: _isUploading
+          onPressed: isUploading ? null : _update,
+          child: isUploading
               ? const SizedBox(
                   width: 16,
                   height: 16,

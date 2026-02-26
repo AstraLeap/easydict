@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 import 'pages/dictionary_search.dart';
 import 'core/theme_provider.dart';
 import 'core/theme/app_theme.dart';
@@ -14,22 +17,28 @@ import 'pages/help_page.dart';
 import 'pages/llm_config_page.dart';
 import 'pages/theme_color_page.dart';
 import 'pages/cloud_service_page.dart';
-import 'pages/toolbar_config_page.dart';
 import 'data/services/ai_chat_database_service.dart';
 import 'services/dictionary_manager.dart';
 import 'services/download_manager.dart';
+import 'services/upload_manager.dart';
 import 'services/english_db_service.dart';
 import 'data/services/database_initializer.dart';
 import 'services/preferences_service.dart';
+import 'services/auth_service.dart';
 import 'services/media_kit_manager.dart';
 import 'services/font_loader_service.dart';
+import 'services/window_state_service.dart';
+import 'services/dict_update_check_service.dart';
 import 'core/utils/toast_utils.dart';
-import 'core/utils/dpi_utils.dart';
 import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+  SystemChrome.setSystemUIOverlayStyle(AppTheme.lightSystemUiOverlayStyle());
 
   // 添加全局错误捕获，便于调试 Release 模式问题
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -117,9 +126,58 @@ void main() async {
   Logger.i('========== 启动完成，准备运行应用 ==========', tag: 'Startup');
   Logger.i('日志文件路径: ${Logger.getLogFilePath() ?? "未启用文件日志"}', tag: 'Startup');
 
+  try {
+    final prefsService = PreferencesService();
+    final token = await prefsService.getAuthToken();
+    final userData = await prefsService.getAuthUserData();
+    if (token != null && userData != null) {
+      AuthService().restoreSession(token: token, userData: userData);
+      Logger.i('自动恢复登录状态成功', tag: 'Startup');
+    }
+  } catch (e) {
+    Logger.w('自动恢复登录状态失败: $e', tag: 'Startup');
+  }
+
   if (prefs == null) {
     Logger.e('SharedPreferences 初始化失败，无法启动应用', tag: 'Startup');
     return;
+  }
+
+  // 初始化窗口管理器（仅桌面平台）
+  if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+    try {
+      await windowManager.ensureInitialized();
+      final windowState = await WindowStateService().getWindowState();
+
+      WindowOptions windowOptions = WindowOptions(
+        size: Size(windowState['width']!, windowState['height']!),
+        center: windowState['posX'] == null || windowState['posY'] == null,
+        backgroundColor: Colors.transparent,
+        skipTaskbar: false,
+        titleBarStyle: TitleBarStyle.normal,
+      );
+
+      await windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.show();
+        await windowManager.focus();
+
+        // 恢复窗口位置
+        if (windowState['posX'] != null && windowState['posY'] != null) {
+          await windowManager.setPosition(
+            Offset(windowState['posX']!, windowState['posY']!),
+          );
+        }
+
+        // 恢复最大化状态
+        if (windowState['maximized'] == true) {
+          await windowManager.maximize();
+        }
+      });
+
+      Logger.i('窗口管理器初始化完成', tag: 'Startup');
+    } catch (e) {
+      Logger.e('窗口管理器初始化失败: $e', tag: 'Startup');
+    }
   }
 
   runApp(
@@ -127,6 +185,8 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (context) => ThemeProvider(prefs!)),
         ChangeNotifierProvider(create: (context) => DownloadManager()),
+        ChangeNotifierProvider(create: (context) => UploadManager()),
+        ChangeNotifierProvider(create: (context) => DictUpdateCheckService()),
       ],
       child: const MyApp(),
     ),
@@ -191,17 +251,20 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+class _MyAppState extends State<MyApp>
+    with WidgetsBindingObserver, WindowListener {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    windowManager.addListener(this);
     Logger.i('MyApp initState', tag: 'MyApp');
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    windowManager.removeListener(this);
     super.dispose();
   }
 
@@ -209,6 +272,38 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       MediaKit.ensureInitialized();
+    }
+  }
+
+  @override
+  void onWindowClose() async {
+    await _saveWindowState();
+    await windowManager.destroy();
+  }
+
+  @override
+  void onWindowResized() async {
+    await _saveWindowState();
+  }
+
+  @override
+  void onWindowMoved() async {
+    await _saveWindowState();
+  }
+
+  Future<void> _saveWindowState() async {
+    try {
+      final isMaximized = await windowManager.isMaximized();
+      final bounds = await windowManager.getBounds();
+      await WindowStateService().saveWindowState(
+        width: bounds.width,
+        height: bounds.height,
+        posX: bounds.left,
+        posY: bounds.top,
+        maximized: isMaximized,
+      );
+    } catch (e) {
+      Logger.e('保存窗口状态失败: $e', tag: 'MyApp');
     }
   }
 
@@ -227,16 +322,32 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             'ThemeProvider Consumer build, themeMode: ${themeProvider.getThemeMode()}',
             tag: 'MyApp',
           );
+
+          final themeMode = themeProvider.getThemeMode();
+          final theme = themeMode == ThemeMode.dark
+              ? AppTheme.darkTheme(seedColor: themeProvider.seedColor)
+              : AppTheme.lightTheme(seedColor: themeProvider.seedColor);
+
           return MaterialApp(
             title: 'EasyDict',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme(seedColor: themeProvider.seedColor),
+            theme: theme,
             darkTheme: AppTheme.darkTheme(seedColor: themeProvider.seedColor),
-            themeMode: themeProvider.getThemeMode(),
+            themeMode: themeMode,
             home: const MainScreen(),
             builder: (context, widget) {
               Logger.i('MaterialApp builder 被调用', tag: 'MyApp');
-              return ErrorBoundary(child: widget ?? const SizedBox());
+              final brightness = MediaQuery.of(context).platformBrightness;
+              final isDark =
+                  themeMode == ThemeMode.dark ||
+                  (themeMode == ThemeMode.system &&
+                      brightness == Brightness.dark);
+              return AnnotatedRegion<SystemUiOverlayStyle>(
+                value: isDark
+                    ? AppTheme.darkSystemUiOverlayStyle()
+                    : AppTheme.lightSystemUiOverlayStyle(),
+                child: ErrorBoundary(child: widget ?? const SizedBox()),
+              );
             },
           );
         },
@@ -274,6 +385,17 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     Logger.i('MainScreen initState', tag: 'MainScreen');
+    _initDictUpdateCheck();
+  }
+
+  Future<void> _initDictUpdateCheck() async {
+    final dictManager = DictionaryManager();
+    final baseUrl = await dictManager.onlineSubscriptionUrl;
+    if (baseUrl.isNotEmpty) {
+      final updateCheckService = context.read<DictUpdateCheckService>();
+      updateCheckService.setBaseUrl(baseUrl);
+      updateCheckService.startDailyCheck();
+    }
   }
 
   @override
@@ -295,7 +417,7 @@ class _MainScreenState extends State<MainScreen> {
         _selectedIndex = index;
       });
       // 切换页面时清除所有 toast，避免位置错乱
-      clearAllToasts(context);
+      clearAllToasts();
       if (index == 1) {
         _wordBankPageKey.currentState?.loadWordsIfNeeded();
       }
@@ -307,12 +429,29 @@ class _MainScreenState extends State<MainScreen> {
     required IconData selectedIcon,
     required String label,
     required int index,
+    int? badgeCount,
+    bool showBadgeDot = false,
   }) {
+    final showBadge = badgeCount != null && badgeCount > 0;
+
     return NavigationDestination(
-      icon: MouseRegion(cursor: SystemMouseCursors.click, child: Icon(icon)),
+      icon: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Badge(
+          isLabelVisible: showBadge && !showBadgeDot,
+          label: Text('$badgeCount'),
+          smallSize: showBadgeDot ? 8 : null,
+          child: Icon(icon),
+        ),
+      ),
       selectedIcon: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: Icon(selectedIcon),
+        child: Badge(
+          isLabelVisible: showBadge && !showBadgeDot,
+          label: Text('$badgeCount'),
+          smallSize: showBadgeDot ? 8 : null,
+          child: Icon(selectedIcon),
+        ),
       ),
       label: label,
     );
@@ -321,6 +460,9 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     Logger.i('MainScreen build 开始', tag: 'MainScreen');
+    final updateCheckService = context.watch<DictUpdateCheckService>();
+    final updateCount = updateCheckService.updatableCount;
+
     final bottomNav = NavigationBar(
       selectedIndex: _selectedIndex,
       onDestinationSelected: _onTabSelected,
@@ -338,10 +480,12 @@ class _MainScreenState extends State<MainScreen> {
           index: 1,
         ),
         _buildNavigationDestination(
-          icon: Icons.settings_outlined,
-          selectedIcon: Icons.settings,
+          icon: Icons.tune_outlined,
+          selectedIcon: Icons.tune,
           label: '设置',
           index: 2,
+          badgeCount: updateCount,
+          showBadgeDot: true,
         ),
       ],
     );
@@ -377,9 +521,11 @@ class HomePage extends StatelessWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 8,
+              padding: EdgeInsets.only(
+                left: 16.0,
+                right: 16.0,
+                top: 8,
+                bottom: 8,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -675,6 +821,13 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  void _showToolbarConfigDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => const _ToolbarConfigDialog(),
+    );
+  }
+
   void _showDictionaryContentScaleDialog() async {
     final contentScale = FontLoaderService().getDictionaryContentScale();
     await showDialog(
@@ -712,8 +865,10 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final updateCheckService = context.watch<DictUpdateCheckService>();
     final colorScheme = Theme.of(context).colorScheme;
     final contentScale = FontLoaderService().getDictionaryContentScale();
+    final topPadding = MediaQuery.of(context).viewPadding.top;
 
     return Scaffold(
       body: PageScaleWrapper(
@@ -721,7 +876,7 @@ class _SettingsPageState extends State<SettingsPage> {
         child: CustomScrollView(
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 24),
+              padding: EdgeInsets.only(left: 8, right: 8, top: topPadding + 6),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   // 云服务组
@@ -745,7 +900,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   // 核心功能组
                   _buildSettingsGroup(
                     context,
@@ -756,6 +911,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         icon: Icons.folder_outlined,
                         iconColor: colorScheme.primary,
                         showArrow: true,
+                        badgeCount: updateCheckService.updatableCount,
                         onTap: () {
                           Navigator.push(
                             context,
@@ -804,7 +960,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   // 外观设置组
                   _buildSettingsGroup(
                     context,
@@ -844,18 +1000,10 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       _buildSettingsTile(
                         context,
-                        title: '底部工具栏',
+                        title: '底部工具栏设置',
                         icon: Icons.apps,
                         iconColor: colorScheme.primary,
-                        showArrow: true,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const ToolbarConfigPage(),
-                            ),
-                          );
-                        },
+                        onTap: _showToolbarConfigDialog,
                       ),
                       _buildSettingsTile(
                         context,
@@ -874,7 +1022,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   // 帮助与支持组
                   _buildSettingsGroup(
                     context,
@@ -916,7 +1064,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: colorScheme.outlineVariant.withOpacity(0.5),
           width: 1,
@@ -937,7 +1085,7 @@ class _SettingsPageState extends State<SettingsPage> {
     for (int i = 0; i < children.length; i++) {
       result.add(children[i]);
       if (i < children.length - 1) {
-        result.add(Divider(height: 1, indent: 56, color: dividerColor));
+        result.add(Divider(height: 1, indent: 52, color: dividerColor));
       }
     }
     return result;
@@ -952,50 +1100,54 @@ class _SettingsPageState extends State<SettingsPage> {
     Color? iconColor,
     bool showArrow = false,
     bool isExternal = false,
+    int? badgeCount,
     VoidCallback? onTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
 
     return ListTile(
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: DpiUtils.scale(context, 16),
-        vertical: DpiUtils.scale(context, 4),
-      ),
-      leading: Icon(
-        icon,
-        color: effectiveIconColor,
-        size: DpiUtils.scaleIconSize(context, 18),
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      leading: Icon(icon, color: effectiveIconColor, size: 22),
       title: Text(
         title,
-        style: TextStyle(
-          fontSize: DpiUtils.scaleFontSize(context, 13),
-          fontWeight: FontWeight.w500,
-        ),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
       subtitle: subtitle != null
           ? Text(
               subtitle,
               style: TextStyle(
-                fontSize: DpiUtils.scaleFontSize(context, 11.5),
+                fontSize: 13,
                 color: colorScheme.onSurfaceVariant,
               ),
             )
           : null,
-      trailing: showArrow
-          ? Icon(
-              Icons.chevron_right,
-              color: colorScheme.outline,
-              size: DpiUtils.scaleIconSize(context, 20),
-            )
-          : isExternal
-          ? Icon(
-              Icons.open_in_new,
-              color: colorScheme.outline,
-              size: DpiUtils.scaleIconSize(context, 18),
-            )
-          : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (badgeCount != null && badgeCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.error,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$badgeCount',
+                style: TextStyle(
+                  color: colorScheme.onError,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          if (showArrow)
+            Icon(Icons.chevron_right, color: colorScheme.outline, size: 20)
+          else if (isExternal)
+            Icon(Icons.open_in_new, color: colorScheme.outline, size: 18),
+        ],
+      ),
       onTap: onTap,
     );
   }
@@ -1013,9 +1165,12 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   final double _contentScale = FontLoaderService().getDictionaryContentScale();
   final _chatService = AiChatDatabaseService();
   final _englishDbService = EnglishDbService();
+  final _preferencesService = PreferencesService();
   int _recordCount = 0;
   int _autoCleanupDays = 0;
   bool _neverAskAgain = false;
+  bool _autoCheckDictUpdate = true;
+  bool _skipUserSettings = false;
   bool _isLoading = true;
 
   @override
@@ -1028,10 +1183,14 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final count = await _chatService.getRecordCount();
     final days = await _chatService.getAutoCleanupDays();
     final neverAsk = await _englishDbService.getNeverAskAgain();
+    final autoCheck = await _preferencesService.getAutoCheckDictUpdate();
+    final skipSettings = await _preferencesService.getSkipUserSettings();
     setState(() {
       _recordCount = count;
       _autoCleanupDays = days;
       _neverAskAgain = neverAsk;
+      _autoCheckDictUpdate = autoCheck;
+      _skipUserSettings = skipSettings;
       _isLoading = false;
     });
   }
@@ -1179,6 +1338,91 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 24),
+                        // 调试设置
+                        _buildSectionTitle(context, '调试设置'),
+                        const SizedBox(height: 8),
+                        Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: colorScheme.outlineVariant.withOpacity(
+                                0.5,
+                              ),
+                              width: 1,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            leading: Icon(
+                              Icons.bug_report,
+                              color: colorScheme.primary,
+                            ),
+                            title: const Text('不加载用户设置'),
+                            subtitle: const Text('重新启动后生效，用于调试'),
+                            trailing: Switch(
+                              value: _skipUserSettings,
+                              onChanged: (value) async {
+                                await _preferencesService.setSkipUserSettings(
+                                  value,
+                                );
+                                setState(() {
+                                  _skipUserSettings = value;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // 词典更新设置
+                        _buildSectionTitle(context, '词典更新设置'),
+                        const SizedBox(height: 8),
+                        Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: colorScheme.outlineVariant.withOpacity(
+                                0.5,
+                              ),
+                              width: 1,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            leading: Icon(
+                              Icons.update,
+                              color: colorScheme.primary,
+                            ),
+                            title: const Text('自动检查词典更新'),
+                            subtitle: const Text('每天检查本地词典是否有更新'),
+                            trailing: Switch(
+                              value: _autoCheckDictUpdate,
+                              onChanged: (value) async {
+                                await _preferencesService
+                                    .setAutoCheckDictUpdate(value);
+                                setState(() {
+                                  _autoCheckDictUpdate = value;
+                                });
+                                final updateCheckService = context
+                                    .read<DictUpdateCheckService>();
+                                if (value) {
+                                  updateCheckService.startDailyCheck();
+                                } else {
+                                  updateCheckService.stopDailyCheck();
+                                  updateCheckService.clearAllUpdates();
+                                }
+                              },
+                            ),
+                          ),
+                        ),
                       ]),
                     ),
                   ),
@@ -1320,14 +1564,15 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
 
     final dialog = AlertDialog(
       title: const Text('点击动作设置'),
+      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       content: SizedBox(
-        width: 400,
-        height: 300,
+        width: 450,
+        height: 320,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 '拖动排序，列表第一项将作为点击时的默认动作',
                 style: TextStyle(
@@ -1341,33 +1586,45 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
                 buildDefaultDragHandles: false,
                 children: [
                   for (int index = 0; index < _order.length; index++)
-                    ListTile(
+                    ReorderableDragStartListener(
+                      index: index,
                       key: ValueKey(_order[index]),
-                      title: Text(_getActionLabel(_order[index])),
-                      leading: ReorderableDragStartListener(
-                        index: index,
-                        child: const Icon(Icons.drag_handle),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
+                        title: Text(_getActionLabel(_order[index])),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (index == 0)
+                              Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Container(
+                                    height: 1,
+                                    color: colorScheme.primary,
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                    color: colorScheme.surface,
+                                    child: Text(
+                                      '点击功能',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.drag_handle, size: 20),
+                          ],
+                        ),
                       ),
-                      trailing: index == 0
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '默认',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: colorScheme.onPrimaryContainer,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            )
-                          : null,
                     ),
                 ],
                 onReorder: (oldIndex, newIndex) {
@@ -1404,5 +1661,274 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
     }
 
     return PageScaleWrapper(scale: contentScale, child: dialog);
+  }
+}
+
+// 底部工具栏设置弹窗
+class _ToolbarConfigDialog extends StatefulWidget {
+  const _ToolbarConfigDialog();
+
+  @override
+  State<_ToolbarConfigDialog> createState() => _ToolbarConfigDialogState();
+}
+
+class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
+  final _preferencesService = PreferencesService();
+  List<String> _allActions = [];
+  int _dividerIndex = 4;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final (toolbarActions, overflowActions) = await _preferencesService
+        .getToolbarAndOverflowActions();
+    setState(() {
+      _allActions = [...toolbarActions, ...overflowActions];
+      _dividerIndex = toolbarActions.length;
+      _isLoading = false;
+    });
+  }
+
+  String _getActionLabel(String action) {
+    return PreferencesService.getActionLabel(action);
+  }
+
+  IconData _getActionIcon(String action) {
+    return PreferencesService.getActionIcon(action);
+  }
+
+  void _saveActions() {
+    final toolbarActions = _allActions.sublist(0, _dividerIndex);
+    final overflowActions = _allActions.sublist(_dividerIndex);
+    _preferencesService.setToolbarAndOverflowActions(
+      toolbarActions,
+      overflowActions,
+    );
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    final oldIsInToolbar = oldIndex < _dividerIndex;
+    final oldActualIndex = oldIndex > _dividerIndex ? oldIndex - 1 : oldIndex;
+
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+
+    final newIsInToolbar = newIndex < _dividerIndex;
+    final newActualIndex = newIndex > _dividerIndex ? newIndex - 1 : newIndex;
+
+    final movingToToolbar = !oldIsInToolbar && newIsInToolbar;
+
+    if (movingToToolbar &&
+        _dividerIndex >= PreferencesService.maxToolbarItems) {
+      _showMaxItemsError();
+      return;
+    }
+
+    setState(() {
+      final item = _allActions.removeAt(oldActualIndex);
+      _allActions.insert(newActualIndex, item);
+
+      if (oldIsInToolbar && !newIsInToolbar) {
+        _dividerIndex -= 1;
+      } else if (!oldIsInToolbar && newIsInToolbar) {
+        _dividerIndex += 1;
+      }
+    });
+    _saveActions();
+  }
+
+  void _onDividerReorder(int newIndex) {
+    if (newIndex > _dividerIndex) {
+      newIndex -= 1;
+    }
+
+    if (newIndex > PreferencesService.maxToolbarItems) {
+      _showMaxItemsError();
+      return;
+    }
+
+    setState(() {
+      _dividerIndex = newIndex;
+    });
+    _saveActions();
+  }
+
+  void _showMaxItemsError() {
+    showToast(context, '工具栏最多只能有 ${PreferencesService.maxToolbarItems} 个功能');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final contentScale = FontLoaderService().getDictionaryContentScale();
+
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final dialog = AlertDialog(
+      title: const Text('底部工具栏设置'),
+      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      content: SizedBox(
+        width: 450,
+        height: 420,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '拖动调整，分割线以下合并到菜单中，工具栏至多${PreferencesService.maxToolbarItems}个图标',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Expanded(
+              child: ReorderableListView.builder(
+                buildDefaultDragHandles: false,
+                padding: EdgeInsets.zero,
+                itemCount: _allActions.length + 1,
+                onReorder: (oldIndex, newIndex) {
+                  if (oldIndex == _dividerIndex) {
+                    _onDividerReorder(newIndex);
+                  } else {
+                    _onReorder(oldIndex, newIndex);
+                  }
+                },
+                itemBuilder: (context, index) {
+                  if (index == _dividerIndex) {
+                    return _buildDividerItem(index, colorScheme);
+                  }
+
+                  final actualIndex = index > _dividerIndex ? index - 1 : index;
+                  final action = _allActions[actualIndex];
+                  final isInToolbar = actualIndex < _dividerIndex;
+
+                  return _buildActionTile(
+                    action,
+                    actualIndex,
+                    index,
+                    colorScheme,
+                    isInToolbar: isInToolbar,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('完成'),
+        ),
+      ],
+    );
+
+    if (contentScale == 1.0) {
+      return dialog;
+    }
+
+    return PageScaleWrapper(scale: contentScale, child: dialog);
+  }
+
+  Widget _buildDividerItem(int index, ColorScheme colorScheme) {
+    return ReorderableDragStartListener(
+      index: index,
+      key: ValueKey('__divider__$index'),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+            border: Border.all(
+              color: colorScheme.primary.withValues(alpha: 0.5),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.drag_handle, color: colorScheme.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(child: Divider(color: colorScheme.primary)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        '分割线 (拖动调整)',
+                        style: TextStyle(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: colorScheme.primary)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionTile(
+    String action,
+    int actualIndex,
+    int listIndex,
+    ColorScheme colorScheme, {
+    required bool isInToolbar,
+  }) {
+    return ReorderableDragStartListener(
+      index: listIndex,
+      key: ValueKey('action_$action'),
+      child: Container(
+        color: isInToolbar
+            ? colorScheme.primaryContainer.withValues(alpha: 0.1)
+            : colorScheme.secondaryContainer.withValues(alpha: 0.1),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          minLeadingWidth: 32,
+          leading: Icon(
+            Icons.drag_handle,
+            color: colorScheme.onSurfaceVariant,
+            size: 18,
+          ),
+          title: Icon(_getActionIcon(action), size: 20),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: isInToolbar
+                  ? colorScheme.primaryContainer
+                  : colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              isInToolbar ? '工具栏' : '更多菜单',
+              style: TextStyle(
+                fontSize: 10,
+                color: isInToolbar
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSecondaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

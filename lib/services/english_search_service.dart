@@ -5,6 +5,7 @@ import '../data/services/database_initializer.dart';
 import '../core/logger.dart';
 
 /// 搜索结果与原始搜索词的关系信息
+
 class SearchRelation {
   /// 原始搜索词
   final String originalWord;
@@ -54,26 +55,33 @@ class EnglishSearchService {
   }
 
   Future<Database> _initDatabase() async {
+    Logger.d('EnglishSearchService: 初始化数据库...', tag: 'EnglishDB');
     // 使用统一的数据库初始化器
     DatabaseInitializer().initialize();
 
     final path = await EnglishDbService().getDbPath();
+    Logger.d('EnglishSearchService: 数据库路径: $path', tag: 'EnglishDB');
+
     final exists = await File(path).exists();
+    Logger.d('EnglishSearchService: 数据库是否存在: $exists', tag: 'EnglishDB');
 
     if (!exists) {
+      Logger.w('EnglishSearchService: 英语词典数据库不存在，请先下载。', tag: 'EnglishDB');
       return Future.error('英语词典数据库不存在，请先下载。');
     }
 
-    // 以只读方式打开，禁用WAL模式
+    // 以只读方式打开
     final db = await openDatabase(path, readOnly: true, singleInstance: true);
-
-    // 确保使用DELETE日志模式（禁用WAL）
-    await db.execute('PRAGMA journal_mode=DELETE');
+    Logger.i('EnglishSearchService: 数据库打开成功', tag: 'EnglishDB');
 
     return db;
   }
 
   Future<List<String>> searchSimpleTables(String word) async {
+    Logger.d(
+      'EnglishSearchService: searchSimpleTables 搜索词: $word',
+      tag: 'EnglishDB',
+    );
     final db = await database;
     final results = <String>{};
 
@@ -88,6 +96,10 @@ class EnglishSearchService {
     for (final list in allResults) {
       results.addAll(list);
     }
+    Logger.d(
+      'EnglishSearchService: searchSimpleTables 结果: ${results.toList()}',
+      tag: 'EnglishDB',
+    );
 
     return results.toList();
   }
@@ -123,6 +135,10 @@ class EnglishSearchService {
   }
 
   Future<String?> searchNominalizationBase(String word) async {
+    Logger.d(
+      'EnglishSearchService: searchNominalizationBase 搜索词: $word',
+      tag: 'EnglishDB',
+    );
     try {
       final db = await database;
       final maps = await db.query(
@@ -132,15 +148,31 @@ class EnglishSearchService {
         whereArgs: [word],
       );
       if (maps.isNotEmpty) {
-        return maps.first['base'] as String?;
+        final result = maps.first['base'] as String?;
+        Logger.d(
+          'EnglishSearchService: searchNominalizationBase 结果: $result',
+          tag: 'EnglishDB',
+        );
+        return result;
       }
     } catch (e) {
-      // Error handling without debug output
+      Logger.e(
+        'EnglishSearchService: searchNominalizationBase 错误: $e',
+        tag: 'EnglishDB',
+      );
     }
+    Logger.d(
+      'EnglishSearchService: searchNominalizationBase 结果: null',
+      tag: 'EnglishDB',
+    );
     return null;
   }
 
   Future<List<String>> searchInflection(String word) async {
+    Logger.d(
+      'EnglishSearchService: searchInflection 搜索词: $word',
+      tag: 'EnglishDB',
+    );
     final db = await database;
     final results = <String>{};
 
@@ -158,17 +190,32 @@ class EnglishSearchService {
         }
       }
     } catch (e) {
-      // Error handling without debug output
+      Logger.e(
+        'EnglishSearchService: searchInflection 错误: $e',
+        tag: 'EnglishDB',
+      );
     }
-
+    Logger.d(
+      'EnglishSearchService: searchInflection 结果: ${results.toList()}',
+      tag: 'EnglishDB',
+    );
     return results.toList();
   }
 
   /// 搜索并返回关系信息
   /// 返回 Map<映射词, List<关系信息>>
+  ///
+  /// [maxRelatedWords] 限制返回的最大关联词数量，默认 10
+  /// [maxRelationsPerWord] 限制每个词的最大关系数量，默认 3
   Future<Map<String, List<SearchRelation>>> searchWithRelations(
-    String word,
-  ) async {
+    String word, {
+    int maxRelatedWords = 10,
+    int maxRelationsPerWord = 3,
+  }) async {
+    Logger.d(
+      'EnglishSearchService: searchWithRelations 搜索词: $word',
+      tag: 'EnglishDB',
+    );
     final db = await database;
     final results = <String, List<SearchRelation>>{};
 
@@ -211,10 +258,17 @@ class EnglishSearchService {
     final allResults = await Future.wait(futures);
     for (final map in allResults) {
       for (final entry in map.entries) {
-        results.putIfAbsent(entry.key, () => []).addAll(entry.value);
+        if (results.length >= maxRelatedWords) break;
+        final relations = entry.value.take(maxRelationsPerWord).toList();
+        results.putIfAbsent(entry.key, () => []).addAll(relations);
       }
+      if (results.length >= maxRelatedWords) break;
     }
 
+    Logger.d(
+      'EnglishSearchService: searchWithRelations 结果: $results',
+      tag: 'EnglishDB',
+    );
     return results;
   }
 

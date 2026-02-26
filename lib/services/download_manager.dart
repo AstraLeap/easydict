@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/remote_dictionary.dart';
 import '../services/dictionary_store_service.dart';
@@ -240,6 +242,12 @@ class DownloadManager with ChangeNotifier {
               final bytesDiff = newReceivedBytes - task.receivedBytes;
               task.speedBytesPerSecond = (bytesDiff * 1000 / elapsedMs).round();
             }
+          } else {
+            final elapsedMs = now.difference(task.startTime).inMilliseconds;
+            if (elapsedMs > 0) {
+              task.speedBytesPerSecond = (newReceivedBytes * 1000 / elapsedMs)
+                  .round();
+            }
           }
 
           task.receivedBytes = newReceivedBytes;
@@ -320,5 +328,161 @@ class DownloadManager with ChangeNotifier {
       return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
     }
     return '${(bytesPerSecond / 1024 / 1024).toStringAsFixed(2)} MB/s';
+  }
+
+  Future<void> startUpdate(
+    String dictId,
+    String dictName,
+    Future<void> Function(void Function(String, int, int) onProgress)
+    updateTask, {
+    VoidCallback? onComplete,
+    void Function(String error)? onError,
+  }) async {
+    if (_currentDownloadId != null) {
+      Logger.w('已有下载任务进行中: $_currentDownloadId', tag: 'DownloadManager');
+      return;
+    }
+
+    final task = DownloadTask(
+      dictId: dictId,
+      dictName: dictName,
+      startTime: DateTime.now(),
+      state: DownloadState.downloading,
+      status: '准备更新...',
+      onComplete: onComplete,
+      onError: onError,
+    );
+    _downloads[dictId] = task;
+    _currentDownloadId = dictId;
+    notifyListeners();
+    _saveDownloads();
+
+    try {
+      await updateTask((status, current, total) {
+        task.status = status;
+        task.fileIndex = current;
+        task.totalFiles = total;
+        task.overallProgress = total > 0 ? current / total : 0;
+        _notifyIfNeeded();
+      });
+
+      task.state = DownloadState.completed;
+      task.status = '更新完成';
+      task.overallProgress = 1.0;
+      notifyListeners();
+      _saveDownloads();
+      task.onComplete?.call();
+    } catch (e) {
+      Logger.e('更新失败: $e', tag: 'DownloadManager');
+      task.state = DownloadState.error;
+      task.status = '更新失败';
+      task.error = e.toString();
+      notifyListeners();
+      _saveDownloads();
+      task.onError?.call(e.toString());
+    } finally {
+      _currentDownloadId = null;
+    }
+  }
+
+  Future<void> startFileDownload(
+    String fileId,
+    String fileName,
+    String url,
+    String savePath, {
+    VoidCallback? onComplete,
+    void Function(String error)? onError,
+  }) async {
+    if (_currentDownloadId != null) {
+      Logger.w('已有下载任务进行中: $_currentDownloadId', tag: 'DownloadManager');
+      return;
+    }
+
+    final task = DownloadTask(
+      dictId: fileId,
+      dictName: fileName,
+      startTime: DateTime.now(),
+      state: DownloadState.downloading,
+      status: '准备下载...',
+      totalFiles: 1,
+      onComplete: onComplete,
+      onError: onError,
+    );
+    _downloads[fileId] = task;
+    _currentDownloadId = fileId;
+    notifyListeners();
+    _saveDownloads();
+
+    try {
+      final file = File(savePath);
+      await file.parent.create(recursive: true);
+
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await http.Client().send(request);
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      final sink = file.openWrite();
+      var receivedBytes = 0;
+
+      task.totalBytes = contentLength;
+      task.currentFileName = fileName;
+      task.fileIndex = 1;
+      task.totalFiles = 1;
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+
+        final now = DateTime.now();
+        if (task.lastSpeedUpdate != null) {
+          final elapsedMs = now
+              .difference(task.lastSpeedUpdate!)
+              .inMilliseconds;
+          if (elapsedMs > 0) {
+            final bytesDiff = receivedBytes - task.receivedBytes;
+            task.speedBytesPerSecond = (bytesDiff * 1000 / elapsedMs).round();
+          }
+        } else {
+          final elapsedMs = now.difference(task.startTime).inMilliseconds;
+          if (elapsedMs > 0) {
+            task.speedBytesPerSecond = (receivedBytes * 1000 / elapsedMs)
+                .round();
+          }
+        }
+
+        task.receivedBytes = receivedBytes;
+        task.lastSpeedUpdate = now;
+        task.fileProgress = contentLength > 0
+            ? receivedBytes / contentLength
+            : 0.0;
+        task.overallProgress = task.fileProgress;
+        task.status = '[1/1] 下载 $fileName';
+        _notifyIfNeeded();
+      }
+
+      await sink.close();
+
+      task.state = DownloadState.completed;
+      task.status = '下载完成';
+      task.overallProgress = 1.0;
+      task.fileProgress = 1.0;
+      notifyListeners();
+      _saveDownloads();
+      task.onComplete?.call();
+    } catch (e) {
+      Logger.e('下载失败: $e', tag: 'DownloadManager');
+      task.state = DownloadState.error;
+      task.status = '下载失败';
+      task.error = e.toString();
+      notifyListeners();
+      _saveDownloads();
+      task.onError?.call(e.toString());
+    } finally {
+      _currentDownloadId = null;
+    }
   }
 }

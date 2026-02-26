@@ -50,6 +50,16 @@ class DictionaryManager {
       tag: 'DictionaryManager',
     );
 
+    if (savedDir != null && Directory(savedDir).existsSync()) {
+      if (Platform.isAndroid) {
+        final isWritable = await _checkDirectoryWritable(savedDir);
+        if (!isWritable) {
+          Logger.w('保存的目录不可写，重置为默认目录: $savedDir', tag: 'DictionaryManager');
+          savedDir = null;
+        }
+      }
+    }
+
     if (savedDir == null || !Directory(savedDir).existsSync()) {
       final defaultDir = await _getDefaultDirectory();
       savedDir = defaultDir;
@@ -58,6 +68,17 @@ class DictionaryManager {
 
     _baseDirectory = savedDir;
     return _baseDirectory!;
+  }
+
+  Future<bool> _checkDirectoryWritable(String dirPath) async {
+    try {
+      final testFile = File('$dirPath/.write_test');
+      await testFile.writeAsString('test');
+      await testFile.delete();
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<void> setBaseDirectory(String directory) async {
@@ -117,6 +138,17 @@ class DictionaryManager {
   Future<String> _getDefaultDirectory() async {
     if (kIsWeb) {
       return 'easydict';
+    }
+
+    if (Platform.isAndroid) {
+      try {
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          return path.join(extDir.path, 'dictionaries');
+        }
+      } catch (e) {
+        Logger.w('获取外部存储目录失败: $e', tag: 'DictionaryManager');
+      }
     }
 
     final appDir = await getApplicationDocumentsDirectory();
@@ -572,6 +604,10 @@ class DictionaryManager {
       Logger.e('保存词典元数据失败: $e', tag: 'DictionaryManager');
       rethrow;
     }
+  }
+
+  void clearMetadataCache(String dictionaryId) {
+    _metadataCache.remove(dictionaryId);
   }
 
   Future<List<String>> getInstalledDictionaries() async {

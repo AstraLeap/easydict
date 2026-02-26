@@ -21,7 +21,6 @@ flutter build apk
 ```jsonc
 {
   "dict_id": "my_dict", // 必填，词典id
-  "version": "1.0.0", // 必填，entry版本
   "entry_id": 212, // 必填，不重复的entry标识符，整型
   "headword": "fog", // 必填，词头，可重复
   "headword_normalized": "fog", // 必填，小写且去音调符号的词头
@@ -143,6 +142,7 @@ flutter build apk
 | `sub`              | 下标         |
 | `color`            | 主题色       |
 | `color`            | 主题色、斜体 |
+| `ai`               | AI生成的内容 |
 | `->dog`            | 查词dog链接  |
 | `==entry_id.path`  | 精确跳转     |
 
@@ -162,7 +162,7 @@ dictionary_name/
 {
   "id": "example_dict",
   "name": "Example Dictionary",
-  "version": "1.0.0",
+  "version": 13,
   "description": "An example dictionary for demonstration purposes",
   "source_language": "en",
   "target_language": ["en", "zh"],
@@ -190,7 +190,6 @@ CREATE TABLE entries (
     entry_type TEXT,
     page TEXT,
     section TEXT,
-    version TEXT,
     json_data BLOB--储存使用zstd压缩后的json数据
 );
 

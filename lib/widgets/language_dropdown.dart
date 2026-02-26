@@ -113,7 +113,7 @@ class LanguageDropdown extends StatelessWidget {
                   _getSelectedLabel(),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
