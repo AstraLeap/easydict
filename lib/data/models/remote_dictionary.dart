@@ -123,46 +123,6 @@ class RemoteDictionary {
     }
   }
 
-  /// 获取 Logo URL
-  String getLogoUrl(String baseUrl) {
-    final cleanBaseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    return '$cleanBaseUrl/download/$id/logo';
-  }
-
-  /// 获取 Metadata URL
-  String getMetadataUrl(String baseUrl) {
-    final cleanBaseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    return '$cleanBaseUrl/download/$id/metadata';
-  }
-
-  /// 获取 Database URL
-  String getDatabaseUrl(String baseUrl) {
-    final cleanBaseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    return '$cleanBaseUrl/download/$id/database';
-  }
-
-  /// 获取 Audios URL
-  String getAudiosUrl(String baseUrl) {
-    final cleanBaseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    return '$cleanBaseUrl/download/$id/media';
-  }
-
-  /// 获取 Images URL
-  String getImagesUrl(String baseUrl) {
-    final cleanBaseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    return '$cleanBaseUrl/download/$id/media';
-  }
-
   RemoteDictionary copyWith({
     String? id,
     String? name,

@@ -100,7 +100,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
       if (sectionIndex >= 0 && sectionIndex < currentPage.sections.length) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          // 再次检查状态，防止在回调执行前用户已关闭目录
+          if (mounted && _isDirectoryExpanded) {
             _directoryOverlayEntry = _createDirectoryOverlayEntry(
               currentPage,
               sectionIndex,
@@ -181,48 +182,103 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   }
 
   OverlayEntry _createOverlayEntry(DictionaryGroup dict) {
-    // 导航栏固定在右侧，列表向左展开
-    // 弹性宽度，包裹内部内容
-    // followerAnchor设置为右上角，targetAnchor设置为左上角，让列表右边缘靠近logo左边缘
-    const offset = Offset(-8, 0); // 向左偏移8像素间距
+    const offset = Offset(-8, 0);
+    const navBarWidth = 52.0;
 
     return OverlayEntry(
-      builder: (context) => Positioned(
-        top: 0,
-        left: 0,
-        child: CompositedTransformFollower(
-          link: _layerLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.centerLeft,
-          followerAnchor: Alignment.centerRight,
-          offset: offset,
-          child: IntrinsicWidth(child: _buildPageList(context, dict)),
-        ),
-      ),
+      builder: (context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              width: screenWidth - navBarWidth,
+              height: screenHeight,
+              child: GestureDetector(
+                onTap: _closePageList,
+                behavior: HitTestBehavior.opaque,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              child: CompositedTransformFollower(
+                link: _layerLink,
+                showWhenUnlinked: false,
+                targetAnchor: Alignment.centerLeft,
+                followerAnchor: Alignment.centerRight,
+                offset: offset,
+                child: IntrinsicWidth(child: _buildPageList(context, dict)),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
+  void _closePageList() {
+    if (_isPageListExpanded) {
+      _removeOverlay();
+      setState(() {
+        _isPageListExpanded = false;
+      });
+    }
+  }
+
   OverlayEntry _createDirectoryOverlayEntry(PageGroup page, int sectionIndex) {
-    // 目录列表位于 section 按钮的左侧
-    // 目录列表的右边缘与 section 按钮的左边缘有一小段距离
-    // targetAnchor: section 按钮的左边缘中心
-    // followerAnchor: 目录列表的右边缘中心
-    // offset: 水平方向上的间距
-    const offset = Offset(-12, 0); // 向左偏移12像素，让目录列表与section按钮左边缘有间距
+    const offset = Offset(-12, 0);
+    const navBarWidth = 52.0;
 
     return OverlayEntry(
-      builder: (context) => Positioned(
-        width: 300,
-        child: CompositedTransformFollower(
-          link: _directoryLayerLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.centerLeft,
-          followerAnchor: Alignment.centerRight,
-          offset: offset,
-          child: _buildDirectoryBubble(context, page, sectionIndex),
-        ),
-      ),
+      builder: (context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+        final isMobile = screenWidth < 600;
+        final directoryWidth = isMobile ? 260.0 : 300.0;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              width: screenWidth - navBarWidth,
+              height: screenHeight,
+              child: GestureDetector(
+                onTap: _closeDirectory,
+                behavior: HitTestBehavior.opaque,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned(
+              width: directoryWidth,
+              child: CompositedTransformFollower(
+                link: _directoryLayerLink,
+                showWhenUnlinked: false,
+                targetAnchor: Alignment.centerLeft,
+                followerAnchor: Alignment.centerRight,
+                offset: offset,
+                child: _buildDirectoryBubble(context, page, sectionIndex),
+              ),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  void _closeDirectory() {
+    if (_isDirectoryExpanded) {
+      _removeDirectoryOverlay();
+      setState(() {
+        _isDirectoryExpanded = false;
+        _selectedSectionIndex = null;
+      });
+    }
   }
 
   @override
@@ -390,7 +446,6 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     );
   }
 
-  // 构建page列表（仅包含page选择器）
   Widget _buildPageList(BuildContext context, DictionaryGroup dict) {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -463,8 +518,6 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     );
   }
 
-  // 构建目录气泡（单独显示，箭头与section按钮中心对齐）
-  // 目录列表的中心位置和section按钮的中心位置处于同一高度
   Widget _buildDirectoryBubble(
     BuildContext context,
     PageGroup page,
@@ -506,12 +559,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
             ),
           ),
         ),
-        // 箭头 - 位于目录列表右侧边缘的垂直中心，指向 section 按钮
         Positioned.fill(
           child: Align(
             alignment: Alignment.centerRight,
             child: Transform.translate(
-              offset: const Offset(8, 0), // 箭头向右偏移，指向 section 按钮
+              offset: const Offset(8, 0),
               child: CustomPaint(
                 painter: _ArrowPainter(
                   color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
@@ -1156,21 +1208,22 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 widget.onSectionChanged?.call();
               }
 
-              // 如果目录列表处于打开状态，切换到新section的目录列表
+              final shouldOpenDirectory = _isDirectoryExpanded;
               if (_isDirectoryExpanded) {
                 _removeDirectoryOverlay();
+                setState(() {
+                  _isDirectoryExpanded = false;
+                  _selectedSectionIndex = null;
+                });
               }
 
-              // 使用单次 addPostFrameCallback 处理所有后续操作
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
 
-                // 先打开目录列表（如果需要）
-                if (_isDirectoryExpanded) {
+                if (shouldOpenDirectory) {
                   _openDirectoryForCurrentSection();
                 }
 
-                // 然后执行导航
                 widget.onNavigateToEntry?.call(
                   section.entry,
                   targetPath: targetPath,
@@ -1207,13 +1260,18 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     });
   }
 
-  // 处理活跃section改变时的目录列表切换
-  // 当用户滚动界面导致活跃section改变时调用
   void handleActiveSectionChanged() {
-    // 如果目录列表处于打开状态，关闭之前的目录列表，改为打开当前section的目录列表
     if (_isDirectoryExpanded) {
       _removeDirectoryOverlay();
-      _openDirectoryForCurrentSection();
+      setState(() {
+        _isDirectoryExpanded = false;
+        _selectedSectionIndex = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openDirectoryForCurrentSection();
+        }
+      });
     }
   }
 }

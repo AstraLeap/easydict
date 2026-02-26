@@ -52,6 +52,9 @@ if(MSVC)
   target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_createCDict")
   target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_freeCDict")
   target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_compress_usingCDict")
+  # Export functions for decompressWithoutDict and compressWithoutDict
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_decompress")
+  target_link_options(${BINARY_NAME} PRIVATE "/EXPORT:ZSTD_compress")
   
   target_link_libraries(${BINARY_NAME} PRIVATE zstd)
 else()

@@ -259,7 +259,7 @@ class AuthService {
         return SettingsResult(success: false, error: '未登录');
       }
 
-      final url = Uri.parse(_buildUrl('settings'));
+      final url = Uri.parse(_buildUrl('user/settings'));
       Logger.i('下载设置: $url', tag: 'AuthService');
 
       final response = await _client
@@ -305,7 +305,7 @@ class AuthService {
         return SettingsResult(success: false, error: '设置文件不存在');
       }
 
-      final url = Uri.parse(_buildUrl('settings'));
+      final url = Uri.parse(_buildUrl('user/settings'));
       Logger.i('上传设置: $url', tag: 'AuthService');
 
       final request = http.MultipartRequest('POST', url);
@@ -355,7 +355,7 @@ class AuthService {
         return false;
       }
 
-      final url = Uri.parse(_buildUrl('settings'));
+      final url = Uri.parse(_buildUrl('user/settings'));
       Logger.i('删除设置: $url', tag: 'AuthService');
 
       final response = await _client

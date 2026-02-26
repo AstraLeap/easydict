@@ -639,7 +639,10 @@ class WordBankService {
   Future<List<String>> getSupportedLanguages() async {
     final db = await database;
     final tables = await db.rawQuery('''
-      SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
+      SELECT name FROM sqlite_master 
+      WHERE type='table' 
+      AND name NOT LIKE 'sqlite_%'
+      AND name NOT LIKE 'android_%'
     ''');
     return tables.map((t) => t['name'] as String).toList();
   }

@@ -172,14 +172,36 @@ class DictionaryEntry {
     }
   }
 
+  /// 从复合ID中提取纯数字entry_id（去掉dict_id前缀）
+  String get _pureEntryId {
+    if (id.contains('_')) {
+      final parts = id.split('_');
+      if (parts.length >= 2) {
+        final lastPart = parts.last;
+        if (int.tryParse(lastPart) != null) {
+          return lastPart;
+        }
+      }
+    }
+    return id;
+  }
+
+  /// 从复合ID中提取纯数字entry_id作为整型（去掉dict_id前缀）
+  int get _pureEntryIdAsInt {
+    final pureId = _pureEntryId;
+    return int.tryParse(pureId) ?? 0;
+  }
+
   Map<String, dynamic> toJson() {
     if (_rawJson.isNotEmpty) {
-      return Map<String, dynamic>.from(_rawJson);
+      final result = Map<String, dynamic>.from(_rawJson);
+      // 保存时使用纯数字的entry_id，去掉dict_id前缀，并转换为整型
+      result['entry_id'] = _pureEntryIdAsInt;
+      return result;
     }
     return {
-      'entry_id': id,
+      'entry_id': _pureEntryIdAsInt,
       if (dictId != null) 'dict_id': dictId,
-      if (version != null) 'version': version,
       'headword': headword,
       'entry_type': entryType,
       'page': page,
@@ -457,27 +479,58 @@ class DatabaseService {
       }
 
       if (targetLang == 'en' || targetLang == 'auto') {
+        Logger.d(
+          'DatabaseService: 检测到英语，调用 EnglishSearchService',
+          tag: 'EnglishDB',
+        );
         final englishService = EnglishSearchService();
 
         try {
-          relations = await englishService.searchWithRelations(word);
+          Logger.d('DatabaseService: 开始搜索关系: $word', tag: 'EnglishDB');
+          relations = await englishService
+              .searchWithRelations(
+                word,
+                maxRelatedWords: 10,
+                maxRelationsPerWord: 3,
+              )
+              .timeout(
+                const Duration(seconds: 3),
+                onTimeout: () {
+                  Logger.w('DatabaseService: 关系词搜索超时', tag: 'EnglishDB');
+                  return <String, List<SearchRelation>>{};
+                },
+              );
+          Logger.d('DatabaseService: 搜索结果: $relations', tag: 'EnglishDB');
 
           final relatedWords = relations.keys.toList();
-          final futures = relatedWords.map((relatedWord) {
+          final limitedWords = relatedWords.take(10).toList();
+          final futures = limitedWords.map((relatedWord) {
             return _searchEntriesInternal(
               relatedWord,
               useFuzzySearch: false,
               exactMatch: exactMatch,
               sourceLanguage: sourceLanguage,
+            ).timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => <DictionaryEntry>[],
             );
           }).toList();
 
-          final results = await Future.wait(futures);
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              Logger.w('DatabaseService: 关联词查询超时', tag: 'EnglishDB');
+              return <List<DictionaryEntry>>[];
+            },
+          );
           for (final result in results) {
             entries.addAll(result);
           }
         } catch (e) {
-          // Error handling without debug output
+          Logger.e(
+            'DatabaseService: EnglishSearchService 错误: $e',
+            tag: 'EnglishDB',
+          );
         }
       }
     }
@@ -498,17 +551,39 @@ class DatabaseService {
     final dictManager = DictionaryManager();
     final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
 
+    Logger.i(
+      '搜索单词: "$word", 启用的词典数量: ${enabledDicts.length}',
+      tag: 'DatabaseService',
+    );
+    for (final dict in enabledDicts) {
+      Logger.i(
+        '  - 启用的词典: ${dict.name} (${dict.id}), 语言: ${dict.sourceLanguage}',
+        tag: 'DatabaseService',
+      );
+    }
+
     String? targetLang = sourceLanguage;
     if (targetLang == 'auto') {
       targetLang = _detectLanguage(word);
     }
 
+    Logger.i('检测到的目标语言: $targetLang', tag: 'DatabaseService');
+
     final filteredDicts = enabledDicts.where((metadata) {
       if (targetLang != null && targetLang != metadata.sourceLanguage) {
+        Logger.i(
+          '  过滤掉词典 ${metadata.name}: 语言不匹配 (${metadata.sourceLanguage} != $targetLang)',
+          tag: 'DatabaseService',
+        );
         return false;
       }
       return true;
     }).toList();
+
+    Logger.i('将要搜索的词典数量: ${filteredDicts.length}', tag: 'DatabaseService');
+    for (final dict in filteredDicts) {
+      Logger.i('  - 将搜索: ${dict.name} (${dict.id})', tag: 'DatabaseService');
+    }
 
     final futures = filteredDicts.map((metadata) async {
       return await _searchInDictionary(
@@ -520,7 +595,9 @@ class DatabaseService {
     }).toList();
 
     final results = await Future.wait(futures);
-    return results.expand((list) => list).toList();
+    final allEntries = results.expand((list) => list).toList();
+    Logger.i('搜索完成，找到 ${allEntries.length} 条结果', tag: 'DatabaseService');
+    return allEntries;
   }
 
   Future<List<DictionaryEntry>> _searchInDictionary(
@@ -532,7 +609,9 @@ class DatabaseService {
     final entries = <DictionaryEntry>[];
 
     try {
+      Logger.i('正在搜索词典: $dictId', tag: 'DatabaseService');
       final db = await _dictManager.openDictionaryDatabase(dictId);
+      Logger.i('成功打开词典数据库: $dictId', tag: 'DatabaseService');
 
       // 获取该词典的 zstd 字典用于解压
       final zstdDict = await _dictManager.getZstdDictionary(dictId);
@@ -800,8 +879,7 @@ class DatabaseService {
   Future<void> _createCommitsTableIfNotExists(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS commits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entry_id TEXT NOT NULL,
+        id TEXT PRIMARY KEY,
         headword TEXT NOT NULL,
         update_time INTEGER NOT NULL
       )
@@ -817,10 +895,10 @@ class DatabaseService {
     try {
       await _createCommitsTableIfNotExists(db);
       await db.insert('commits', {
-        'entry_id': entryId,
+        'id': entryId,
         'headword': headword,
         'update_time': DateTime.now().millisecondsSinceEpoch,
-      });
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (e) {
       Logger.e('记录更新操作失败: $e', tag: 'DatabaseService', error: e);
     }
@@ -879,6 +957,60 @@ class DatabaseService {
     }
   }
 
+  /// 插入或更新词典条目
+  Future<bool> insertOrUpdateEntry(DictionaryEntry entry) async {
+    try {
+      final dictId = entry.dictId;
+      if (dictId == null) {
+        return false;
+      }
+
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+
+      final json = entry.toJson();
+      json.remove('id');
+
+      final zstdDict = await dictManager.getZstdDictionary(dictId);
+      final compressedBlob = compressJsonToBlobWithDict(json, zstdDict);
+
+      final String idStr = entry.id;
+      int? entryId;
+
+      entryId = int.tryParse(idStr);
+
+      if (entryId == null && idStr.contains('_')) {
+        final parts = idStr.split('_');
+        if (parts.length >= 2) {
+          entryId = int.tryParse(parts.last);
+        }
+      }
+
+      if (entryId == null) {
+        return false;
+      }
+
+      final headwordNormalized = _normalizeSearchWord(entry.headword);
+
+      await db.insert('entries', {
+        'entry_id': entryId,
+        'headword': entry.headword,
+        'headword_normalized': headwordNormalized,
+        'entry_type': entry.entryType,
+        'page': entry.page,
+        'section': entry.section,
+        'json_data': compressedBlob,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      await _recordUpdate(db, entry.id, entry.headword);
+
+      return true;
+    } catch (e) {
+      Logger.e('插入词条失败: $e', tag: 'DatabaseService', error: e);
+      return false;
+    }
+  }
+
   /// 从 commits 表获取所有更新记录
   Future<List<Map<String, dynamic>>> getUpdateRecords(String dictId) async {
     try {
@@ -895,7 +1027,7 @@ class DatabaseService {
 
       final results = await db.query(
         'commits',
-        columns: ['id', 'entry_id', 'headword', 'update_time'],
+        columns: ['id', 'headword', 'update_time'],
         orderBy: 'update_time DESC',
       );
       return results;

@@ -75,15 +75,38 @@ class RenderScaleLayout extends RenderProxyBox {
   @override
   void performLayout() {
     if (child != null) {
-      // 让子组件以 1/scale 的宽度进行布局
+      if (_scale == 0) {
+        _scale = 1.0;
+      }
+
+      double childMaxWidth = constraints.maxWidth;
+      double childMinWidth = constraints.minWidth;
+      double childMaxHeight = constraints.maxHeight;
+      double childMinHeight = constraints.minHeight;
+
+      if (constraints.maxWidth.isFinite) {
+        childMaxWidth = constraints.maxWidth / _scale;
+      }
+      if (constraints.minWidth.isFinite) {
+        childMinWidth = constraints.minWidth / _scale;
+      }
+      if (constraints.maxHeight.isFinite) {
+        childMaxHeight = constraints.maxHeight / _scale;
+      }
+      if (constraints.minHeight.isFinite) {
+        childMinHeight = constraints.minHeight / _scale;
+      }
+
       final BoxConstraints childConstraints = constraints.copyWith(
-        maxWidth: constraints.maxWidth / _scale,
-        minWidth: constraints.minWidth / _scale,
+        maxWidth: childMaxWidth,
+        minWidth: childMinWidth,
+        maxHeight: childMaxHeight,
+        minHeight: childMinHeight,
       );
       child!.layout(childConstraints, parentUsesSize: true);
 
-      // 自身的大小 = 子组件大小 * scale
-      size = child!.size * _scale;
+      final desiredSize = child!.size * _scale;
+      size = constraints.constrain(desiredSize);
     } else {
       size = constraints.smallest;
     }
