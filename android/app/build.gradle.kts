@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.easydict"
+    namespace = "com.keskai.easydict"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

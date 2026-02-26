@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AppTheme {
   static const String fontFamily = 'Segoe UI';
@@ -19,6 +20,30 @@ class AppTheme {
     'Noto Sans CJK SC',
     'Noto Sans SC',
   ];
+
+  static SystemUiOverlayStyle lightSystemUiOverlayStyle() {
+    return const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      systemNavigationBarContrastEnforced: false,
+    );
+  }
+
+  static SystemUiOverlayStyle darkSystemUiOverlayStyle() {
+    return const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarContrastEnforced: false,
+    );
+  }
 
   static ThemeData lightTheme({Color? seedColor}) {
     return ThemeData(

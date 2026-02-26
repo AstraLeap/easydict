@@ -22,6 +22,7 @@ import '../services/entry_event_bus.dart';
 import '../core/logger.dart';
 import '../services/preferences_service.dart';
 import '../services/font_loader_service.dart';
+import '../services/user_dicts_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
@@ -84,6 +85,7 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
+    final isMobile = screenSize.width < 600;
     double top;
 
     if (_dragY != null) {
@@ -96,10 +98,10 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
       }
     }
 
-    // 固定在右边缘
+    // 固定在右边缘，手机端更贴近边缘
     return Positioned(
       top: top,
-      right: 16,
+      right: isMobile ? 4 : 16,
       child: GestureDetector(
         onPanStart: (details) {
           setState(() {
@@ -774,6 +776,71 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
+  Future<void> _resetCurrentEntry() async {
+    final currentEntry = _entryGroup.currentDictionaryGroup.currentEntry;
+    if (currentEntry == null) {
+      showToast(context, '无法获取当前词条');
+      return;
+    }
+
+    final dictId = currentEntry.dictId;
+    var entryId = currentEntry.id;
+    if (dictId == null || entryId.isEmpty) {
+      showToast(context, '词条信息不完整');
+      return;
+    }
+
+    final prefix = '${dictId}_';
+    if (entryId.startsWith(prefix)) {
+      entryId = entryId.substring(prefix.length);
+    }
+
+    showToast(context, '正在重置词条...');
+
+    try {
+      final userDictsService = UserDictsService();
+      final entryData = await userDictsService.fetchEntry(dictId, entryId);
+
+      if (entryData == null) {
+        if (mounted) {
+          showToast(context, '服务器上未找到该词条');
+        }
+        return;
+      }
+
+      entryData['dict_id'] = dictId;
+      final newEntry = DictionaryEntry.fromJson(entryData);
+
+      final databaseService = DatabaseService();
+      final success = await databaseService.insertOrUpdateEntry(newEntry);
+
+      if (success && mounted) {
+        final currentDictGroup = _entryGroup.currentDictionaryGroup;
+        final currentPage = currentDictGroup.currentPageGroup;
+        final sectionIndex = currentDictGroup.currentSectionIndex;
+
+        if (sectionIndex >= 0 && sectionIndex < currentPage.sections.length) {
+          final section = currentPage.sections[sectionIndex];
+          currentPage.sections[sectionIndex] = DictionarySection(
+            section: section.section,
+            entry: newEntry,
+          );
+
+          setState(() {});
+
+          showToast(context, '词条已重置');
+        }
+      } else if (mounted) {
+        showToast(context, '重置失败');
+      }
+    } catch (e) {
+      Logger.e('重置词条失败: $e', tag: 'EntryDetailPage');
+      if (mounted) {
+        showToast(context, '重置失败: $e');
+      }
+    }
+  }
+
   void _showNewSearch() {
     Navigator.of(context).pop({'selectText': true});
   }
@@ -781,52 +848,62 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   @override
   Widget build(BuildContext context) {
     final entries = _getAllEntriesInOrder();
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = mediaQuery.padding.bottom;
+    final bottomPadding = mediaQuery.viewPadding.bottom;
 
     final hasRelations =
         widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
     final totalCount = entries.length + (hasRelations ? 1 : 0);
 
     final content = Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          ScrollablePositionedList.builder(
-            itemScrollController: _itemScrollController,
-            itemPositionsListener: _itemPositionsListener,
-            padding: _getDynamicPadding(context).copyWith(bottom: 100),
-            itemCount: totalCount,
-            // 增加 minCacheExtent，防止跳转后内容未及时渲染导致空白
-            minCacheExtent: 100,
-            itemBuilder: (context, index) {
-              if (hasRelations && index == 0) {
-                return _buildSearchRelationBanner();
-              }
-              final entryIndex = hasRelations ? index - 1 : index;
-              final entry = entries[entryIndex];
-              return Container(child: _buildEntryContent(entry));
-            },
-          ),
-          if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
-            _DraggableNavPanel(
-              entryGroup: _entryGroup,
-              onDictionaryChanged: _onDictionaryChanged,
-              onPageChanged: _onPageChanged,
-              onSectionChanged: _onSectionChanged,
-              onNavigateToEntry: _scrollToEntry,
-              initialDy: _navPanelDy,
-              navPanelKey: _navPanelKey,
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                return false;
+              },
+              child: ScrollablePositionedList.builder(
+                itemScrollController: _itemScrollController,
+                itemPositionsListener: _itemPositionsListener,
+                padding: _getDynamicPadding(
+                  context,
+                ).copyWith(top: 8, bottom: 100),
+                itemCount: totalCount,
+                minCacheExtent: 100,
+                itemBuilder: (context, index) {
+                  if (hasRelations && index == 0) {
+                    return _buildSearchRelationBanner();
+                  }
+                  final entryIndex = hasRelations ? index - 1 : index;
+                  final entry = entries[entryIndex];
+                  return Container(child: _buildEntryContent(entry));
+                },
+              ),
             ),
-          // 浮动底部功能栏
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: bottomPadding > 0 ? bottomPadding : 16,
-            child: _buildBottomActionBar(),
-          ),
-        ],
+            if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
+              _DraggableNavPanel(
+                entryGroup: _entryGroup,
+                onDictionaryChanged: _onDictionaryChanged,
+                onPageChanged: _onPageChanged,
+                onSectionChanged: _onSectionChanged,
+                onNavigateToEntry: _scrollToEntry,
+                initialDy: _navPanelDy,
+                navPanelKey: _navPanelKey,
+              ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: bottomPadding > 0 ? bottomPadding : 16,
+              child: _buildBottomActionBar(),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -895,11 +972,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         return _buildActionButton(
           icon: Icons.arrow_back,
           onPressed: () {
-            clearAllToasts(context);
+            clearAllToasts();
             Navigator.of(context).pop();
           },
           onLongPress: () {
-            clearAllToasts(context);
+            clearAllToasts();
             Navigator.of(context).popUntil((route) => route.isFirst);
           },
         );
@@ -922,20 +999,31 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           icon: Icons.auto_awesome,
           onPressed: _showAiChatHistory,
         );
+      case PreferencesService.actionResetEntry:
+        return _buildActionButton(
+          icon: Icons.refresh,
+          onPressed: _resetCurrentEntry,
+        );
       default:
         return const SizedBox.shrink();
     }
   }
 
   Widget _buildOverflowButton(ColorScheme colorScheme) {
-    return GestureDetector(
-      onTap: () => _showOverflowMenu(context, colorScheme),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        child: Icon(
-          Icons.more_horiz,
-          size: 24,
-          color: colorScheme.onSurfaceVariant,
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showOverflowMenu(context, colorScheme),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          child: Icon(
+            Icons.more_horiz,
+            size: 24,
+            color: colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );
@@ -1005,7 +1093,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   void _handleOverflowAction(String action) {
     switch (action) {
       case PreferencesService.actionBack:
-        clearAllToasts(context);
+        clearAllToasts();
         Navigator.of(context).pop();
         break;
       case PreferencesService.actionFavorite:
@@ -1016,6 +1104,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         break;
       case PreferencesService.actionAiHistory:
         _showAiChatHistory();
+        break;
+      case PreferencesService.actionResetEntry:
+        _resetCurrentEntry();
         break;
     }
   }
@@ -1057,7 +1148,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final screenWidth = MediaQuery.sizeOf(context).width;
 
     if (screenWidth < 600) {
-      return const EdgeInsets.symmetric(horizontal: 4, vertical: 6);
+      return const EdgeInsets.symmetric(horizontal: 2, vertical: 6);
     } else if (screenWidth < 900) {
       return const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
     } else {
@@ -1069,7 +1160,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final EdgeInsets padding;
     if (screenWidth < 600) {
-      padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 6);
+      padding = const EdgeInsets.symmetric(horizontal: 0, vertical: 6);
     } else if (screenWidth < 900) {
       padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
     } else {
@@ -1300,6 +1391,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       '  ',
     ).convert(currentValue);
 
+    final pageContext = context;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1311,7 +1404,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         pathHistory: _pathHistory,
         initialPath: startPath,
         onSave: (newValue) async {
-          await _saveElementChange(currentEntry, pathParts, newValue);
+          await _saveElementChange(
+            currentEntry,
+            pathParts,
+            newValue,
+            toastContext: pageContext,
+          );
           if (mounted) {
             setState(() {});
           }
@@ -1416,8 +1514,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Future<DictionaryEntry?> _saveElementChange(
     DictionaryEntry entry,
     List<String> pathParts,
-    dynamic newValue,
-  ) async {
+    dynamic newValue, {
+    BuildContext? toastContext,
+  }) async {
     try {
       final fullJson = entry.toJson();
 
@@ -1460,12 +1559,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
 
       final newEntry = DictionaryEntry.fromJson(fullJson);
-      final success = await DatabaseService().updateEntry(newEntry);
+      final success = await DatabaseService().insertOrUpdateEntry(newEntry);
 
       if (success) {
         _updateEntryInGroup(newEntry);
         if (mounted) {
-          showToast(context, '保存成功');
+          showToast(toastContext ?? context, '保存成功');
         }
         return newEntry;
       } else {
@@ -1473,7 +1572,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     } catch (e) {
       if (mounted) {
-        showToast(context, '保存失败: $e');
+        showToast(toastContext ?? context, '保存失败: $e');
       }
       return null;
     }
@@ -1653,7 +1752,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         current[targetLang] = formattedTranslation;
 
         final newEntry = DictionaryEntry.fromJson(json);
-        await DatabaseService().updateEntry(newEntry);
+        await DatabaseService().insertOrUpdateEntry(newEntry);
 
         final hiddenPath = targetPath.join('.');
         final hiddenKey = '$hiddenPath.$targetLang';

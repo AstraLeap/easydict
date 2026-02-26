@@ -1,10 +1,74 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme_provider.dart';
-import '../core/utils/dpi_utils.dart';
 import '../services/font_loader_service.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
+
+class _SuperEllipsePainter extends CustomPainter {
+  final Color color;
+
+  _SuperEllipsePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final shadowPaint = Paint()
+      ..color = color.withValues(alpha: 0.3)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    final path = _createRoundedPentagonPath(size, size.width * 0.08);
+
+    canvas.drawPath(path.shift(const Offset(0, 2)), shadowPaint);
+    canvas.drawPath(path, paint);
+  }
+
+  Path _createRoundedPentagonPath(Size size, double radius) {
+    final path = Path();
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+    final r = size.width / 2 * 0.85;
+
+    const sides = 5;
+    const angleOffset = -90.0;
+
+    final points = <Offset>[];
+    for (int i = 0; i < sides; i++) {
+      final angle = (angleOffset + i * 360 / sides) * math.pi / 180;
+      points.add(
+        Offset(centerX + r * math.cos(angle), centerY + r * math.sin(angle)),
+      );
+    }
+
+    for (int i = 0; i < sides; i++) {
+      final p0 = points[i];
+      final p1 = points[(i + 1) % sides];
+      final midX = (p0.dx + p1.dx) / 2;
+      final midY = (p0.dy + p1.dy) / 2;
+
+      if (i == 0) {
+        path.moveTo(midX, midY);
+      } else {
+        path.lineTo(midX, midY);
+      }
+      path.quadraticBezierTo(
+        p1.dx,
+        p1.dy,
+        (midX + points[(i + 2) % sides].dx) / 2,
+        (midY + points[(i + 2) % sides].dy) / 2,
+      );
+    }
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(covariant _SuperEllipsePainter oldDelegate) => false;
+}
 
 class ThemeColorPage extends StatefulWidget {
   const ThemeColorPage({super.key});
@@ -20,7 +84,6 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final colorScheme = Theme.of(context).colorScheme;
 
     final body = LayoutBuilder(
       builder: (context, constraints) {
@@ -30,22 +93,22 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
         final horizontalPadding = (constraints.maxWidth - contentWidth) / 2;
         return ListView(
           padding: EdgeInsets.only(
-            left: horizontalPadding + DpiUtils.scale(context, 16),
-            right: horizontalPadding + DpiUtils.scale(context, 16),
-            top: DpiUtils.scale(context, 16),
-            bottom: DpiUtils.scale(context, 16),
+            left: horizontalPadding + 16,
+            right: horizontalPadding + 16,
+            top: 16,
+            bottom: 16,
           ),
           children: [
             _buildSectionTitle(context, '外观模式'),
-            SizedBox(height: DpiUtils.scale(context, 6)),
+            const SizedBox(height: 8),
             _buildThemeModeSection(context, themeProvider),
-            SizedBox(height: DpiUtils.scale(context, 16)),
+            const SizedBox(height: 24),
             _buildSectionTitle(context, '主题颜色'),
-            SizedBox(height: DpiUtils.scale(context, 6)),
+            const SizedBox(height: 8),
             _buildColorGrid(context, themeProvider),
-            SizedBox(height: DpiUtils.scale(context, 16)),
+            const SizedBox(height: 24),
             _buildSectionTitle(context, '预览效果'),
-            SizedBox(height: DpiUtils.scale(context, 6)),
+            const SizedBox(height: 8),
             _buildPreviewCard(context, themeProvider),
           ],
         );
@@ -65,11 +128,11 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
 
   Widget _buildSectionTitle(BuildContext context, String title) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: DpiUtils.scale(context, 4)),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Text(
         title,
         style: TextStyle(
-          fontSize: DpiUtils.scaleFontSize(context, 12),
+          fontSize: 14,
           fontWeight: FontWeight.w500,
           color: Theme.of(context).colorScheme.primary,
         ),
@@ -79,19 +142,12 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
 
   Widget _buildSectionCard(BuildContext context, {required Widget child}) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          width: 1,
-        ),
       ),
-      child: Padding(
-        padding: EdgeInsets.all(DpiUtils.scale(context, 12)),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(12), child: child),
     );
   }
 
@@ -99,41 +155,38 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
     BuildContext context,
     ThemeProvider themeProvider,
   ) {
-    return _buildSectionCard(
-      context,
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildThemeModeOption(
-              context,
-              themeProvider,
-              ThemeModeOption.system,
-              '跟随系统',
-              Icons.settings_suggest_outlined,
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _buildThemeModeOption(
+            context,
+            themeProvider,
+            ThemeModeOption.system,
+            '跟随系统',
+            Icons.settings_suggest_outlined,
           ),
-          SizedBox(width: DpiUtils.scale(context, 8)),
-          Expanded(
-            child: _buildThemeModeOption(
-              context,
-              themeProvider,
-              ThemeModeOption.light,
-              '浅色模式',
-              Icons.light_mode_outlined,
-            ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildThemeModeOption(
+            context,
+            themeProvider,
+            ThemeModeOption.light,
+            '浅色模式',
+            Icons.light_mode_outlined,
           ),
-          SizedBox(width: DpiUtils.scale(context, 8)),
-          Expanded(
-            child: _buildThemeModeOption(
-              context,
-              themeProvider,
-              ThemeModeOption.dark,
-              '深色模式',
-              Icons.dark_mode_outlined,
-            ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildThemeModeOption(
+            context,
+            themeProvider,
+            ThemeModeOption.dark,
+            '深色模式',
+            Icons.dark_mode_outlined,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -154,7 +207,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(vertical: DpiUtils.scale(context, 10)),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
               ? colorScheme.primaryContainer
@@ -162,7 +215,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected ? colorScheme.primary : Colors.transparent,
-            width: 2,
+            width: 1.5,
           ),
         ),
         child: Column(
@@ -172,13 +225,13 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               color: isSelected
                   ? colorScheme.onPrimaryContainer
                   : colorScheme.onSurfaceVariant,
-              size: DpiUtils.scaleIconSize(context, 18),
+              size: 22,
             ),
-            SizedBox(height: DpiUtils.scale(context, 4)),
+            const SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: DpiUtils.scaleFontSize(context, 11),
+                fontSize: 13,
                 color: isSelected
                     ? colorScheme.onPrimaryContainer
                     : colorScheme.onSurfaceVariant,
@@ -198,8 +251,8 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            spacing: DpiUtils.scale(context, 10),
-            runSpacing: DpiUtils.scale(context, 10),
+            spacing: 12,
+            runSpacing: 12,
             children: [
               _buildSystemColorItem(context, themeProvider),
               ...ThemeProvider.predefinedColors.map((color) {
@@ -227,8 +280,8 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: DpiUtils.scale(context, 32),
-        height: DpiUtils.scale(context, 32),
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
@@ -248,11 +301,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
           ],
         ),
         child: isSelected
-            ? Icon(
-                Icons.check,
-                color: _getContrastColor(color),
-                size: DpiUtils.scaleIconSize(context, 16),
-              )
+            ? Icon(Icons.check, color: _getContrastColor(color), size: 20)
             : null,
       ),
     );
@@ -279,8 +328,8 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: DpiUtils.scale(context, 32),
-        height: DpiUtils.scale(context, 32),
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -301,8 +350,8 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
           ],
         ),
         child: isSelected
-            ? const Icon(Icons.check, color: Colors.white, size: 16)
-            : const Icon(Icons.auto_awesome, color: Colors.white, size: 14),
+            ? const Icon(Icons.check, color: Colors.white, size: 20)
+            : const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
       ),
     );
   }
@@ -315,114 +364,168 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
         : currentMode == ThemeMode.light
         ? Brightness.light
         : MediaQuery.platformBrightnessOf(context);
-    final isDark = brightness == Brightness.dark;
 
     final previewScheme = ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: brightness,
     );
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: previewScheme.outlineVariant.withValues(alpha: 0.5),
-          width: 1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildColorCircle(context, previewScheme.primary, '主色'),
+            _buildColorCircle(context, previewScheme.primaryContainer, '主容器'),
+            _buildColorCircle(context, previewScheme.secondary, '辅色'),
+            _buildColorCircle(context, previewScheme.tertiary, '强调'),
+          ],
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        color: previewScheme.surface,
-        child: Padding(
-          padding: EdgeInsets.all(DpiUtils.scale(context, 12)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: DpiUtils.scale(context, 8),
-                      vertical: DpiUtils.scale(context, 4),
-                    ),
-                    decoration: BoxDecoration(
-                      color: previewScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '标题',
-                      style: TextStyle(
-                        fontSize: DpiUtils.scaleFontSize(context, 12),
-                        fontWeight: FontWeight.w600,
-                        color: previewScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: DpiUtils.scale(context, 8)),
-                  Text(
-                    '普通文本示例',
-                    style: TextStyle(
-                      fontSize: DpiUtils.scaleFontSize(context, 12),
-                      color: previewScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildSmallColorDot(
+                previewScheme.surface,
+                previewScheme.onSurface,
+                '背景',
               ),
-              SizedBox(height: DpiUtils.scale(context, 10)),
-              Text(
-                '这是一段普通文本的显示效果，可以展示主题色在正文中的应用。文字颜色、背景色都会根据选择的主题进行适配。',
-                style: TextStyle(
-                  fontSize: DpiUtils.scaleFontSize(context, 12),
-                  color: previewScheme.onSurface,
-                  height: 1.5,
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSmallColorDot(
+                previewScheme.surfaceContainerHighest,
+                previewScheme.onSurface,
+                '卡片',
               ),
-              SizedBox(height: DpiUtils.scale(context, 10)),
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: DpiUtils.scale(context, 10),
-                      vertical: DpiUtils.scale(context, 6),
-                    ),
-                    decoration: BoxDecoration(
-                      color: previewScheme.primary,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      '主要按钮',
-                      style: TextStyle(
-                        fontSize: DpiUtils.scaleFontSize(context, 11),
-                        fontWeight: FontWeight.w500,
-                        color: previewScheme.onPrimary,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: DpiUtils.scale(context, 8)),
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: DpiUtils.scale(context, 10),
-                      vertical: DpiUtils.scale(context, 6),
-                    ),
-                    decoration: BoxDecoration(
-                      color: previewScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      '次要按钮',
-                      style: TextStyle(
-                        fontSize: DpiUtils.scaleFontSize(context, 11),
-                        fontWeight: FontWeight.w500,
-                        color: previewScheme.onSecondaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSmallColorDot(
+                previewScheme.error,
+                previewScheme.onError,
+                '错误',
               ),
-            ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildOutlineColorDot(
+                previewScheme.outline,
+                previewScheme.surface,
+                '边框',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: previewScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '这是一段示例文字，展示应用的主题效果预览。',
+            style: TextStyle(
+              fontSize: 14,
+              color: previewScheme.onSurface.withValues(alpha: 0.8),
+              height: 1.5,
+            ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildColorCircle(BuildContext context, Color bgColor, String label) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CustomPaint(
+          size: const Size(48, 48),
+          painter: _SuperEllipsePainter(color: bgColor),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSmallColorDot(Color bgColor, Color textColor, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: bgColor.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(8),
+        border: bgColor.computeLuminance() > 0.5
+            ? Border.all(color: Colors.grey.shade300)
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: textColor.withValues(alpha: 0.7),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: textColor.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutlineColorDot(
+    Color borderColor,
+    Color insideColor,
+    String label,
+  ) {
+    final dotColor = borderColor.withValues(alpha: 0.7);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: borderColor.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

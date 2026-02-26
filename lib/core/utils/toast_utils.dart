@@ -2,34 +2,57 @@ import 'package:flutter/material.dart';
 
 OverlayEntry? _currentOverlayEntry;
 
+void clearAllToasts() {
+  _currentOverlayEntry?.remove();
+  _currentOverlayEntry = null;
+}
+
 double _getBottomPosition(BuildContext context) {
   String? pageType;
+  bool hasJsonEditorBottomSheet = false;
 
-  context.visitAncestorElements((element) {
-    final widgetType = element.widget.runtimeType.toString();
-    if (widgetType == 'EntryDetailPage') {
-      pageType = 'EntryDetailPage';
-      return false;
-    }
-    if (widgetType == 'MainScreen' || widgetType == 'HomePage') {
-      pageType = widgetType;
-      return false;
-    }
-    return true;
-  });
+  final currentWidgetType = context.widget.runtimeType.toString();
+
+  if (currentWidgetType == 'EntryDetailPage') {
+    pageType = 'EntryDetailPage';
+  } else if (currentWidgetType == '_JsonEditorBottomSheet') {
+    hasJsonEditorBottomSheet = true;
+  }
+
+  if (pageType == null) {
+    context.visitAncestorElements((element) {
+      final widgetType = element.widget.runtimeType.toString();
+      if (widgetType == 'EntryDetailPage') {
+        pageType = 'EntryDetailPage';
+        return false;
+      }
+      if (widgetType == '_JsonEditorBottomSheet') {
+        hasJsonEditorBottomSheet = true;
+      }
+      if (widgetType == 'MainScreen' || widgetType == 'HomePage') {
+        pageType = widgetType;
+        return false;
+      }
+      return true;
+    });
+  }
 
   switch (pageType) {
     case 'EntryDetailPage':
-      return 80.0;
+      return 75.0;
     case 'MainScreen':
     case 'HomePage':
       return 90.0;
     default:
+      if (hasJsonEditorBottomSheet) {
+        return 75.0;
+      }
       return 10.0;
   }
 }
 
 void showToast(BuildContext context, String message, {SnackBarAction? action}) {
+  clearAllToasts();
   final colorScheme = Theme.of(context).colorScheme;
   final bottom = _getBottomPosition(context);
 
@@ -83,16 +106,9 @@ void showToast(BuildContext context, String message, {SnackBarAction? action}) {
   overlay.insert(overlayEntry);
 
   Future.delayed(const Duration(seconds: 3), () {
-    // 检查是否是当前显示的 Toast，避免重复移除
     if (_currentOverlayEntry == overlayEntry) {
       _currentOverlayEntry?.remove();
       _currentOverlayEntry = null;
     }
   });
-}
-
-void clearAllToasts(BuildContext context) {
-  _currentOverlayEntry?.remove();
-  _currentOverlayEntry = null;
-  ScaffoldMessenger.of(context).clearSnackBars();
 }

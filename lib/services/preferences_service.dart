@@ -71,6 +71,7 @@ class PreferencesService {
   static const String actionFavorite = 'favorite';
   static const String actionToggleTranslate = 'toggle_translate';
   static const String actionAiHistory = 'ai_history';
+  static const String actionResetEntry = 'reset_entry';
 
   static const List<String> defaultActionOrder = [
     actionAiTranslate,
@@ -124,6 +125,8 @@ class PreferencesService {
         return '显示/隐藏翻译';
       case actionAiHistory:
         return 'AI 历史记录';
+      case actionResetEntry:
+        return '重置词条';
       default:
         return action;
     }
@@ -148,7 +151,9 @@ class PreferencesService {
       case actionToggleTranslate:
         return Icons.translate_outlined;
       case actionAiHistory:
-        return Icons.history;
+        return Icons.auto_awesome;
+      case actionResetEntry:
+        return Icons.restore;
       default:
         return Icons.more_horiz;
     }
@@ -156,13 +161,14 @@ class PreferencesService {
 
   static const String _kToolbarActions = 'toolbar_actions';
   static const String _kOverflowActions = 'overflow_actions';
-  static const int maxToolbarItems = 4;
+  static const int maxToolbarItems = 5;
 
   static const List<String> defaultToolbarActions = [
     actionBack,
     actionFavorite,
     actionToggleTranslate,
     actionAiHistory,
+    actionResetEntry,
   ];
 
   static const List<String> defaultOverflowActions = [];
@@ -172,6 +178,7 @@ class PreferencesService {
     actionFavorite,
     actionToggleTranslate,
     actionAiHistory,
+    actionResetEntry,
   ];
 
   Future<void> setToolbarAndOverflowActions(
@@ -543,5 +550,47 @@ class PreferencesService {
     final p = await prefs;
     await p.remove(_kAuthToken);
     await p.remove(_kAuthUserData);
+  }
+
+  static const String _kAutoCheckDictUpdate = 'auto_check_dict_update';
+  static const String _kLastDictUpdateCheckTime = 'last_dict_update_check_time';
+  static const String _kSkipUserSettings = 'skip_user_settings';
+
+  Future<bool> getSkipUserSettings() async {
+    final p = await prefs;
+    return p.getBool(_kSkipUserSettings) ?? false;
+  }
+
+  Future<void> setSkipUserSettings(bool skip) async {
+    final p = await prefs;
+    await p.setBool(_kSkipUserSettings, skip);
+  }
+
+  Future<bool> getAutoCheckDictUpdate() async {
+    final p = await prefs;
+    return p.getBool(_kAutoCheckDictUpdate) ?? true;
+  }
+
+  Future<void> setAutoCheckDictUpdate(bool enabled) async {
+    final p = await prefs;
+    await p.setBool(_kAutoCheckDictUpdate, enabled);
+  }
+
+  Future<DateTime?> getLastDictUpdateCheckTime() async {
+    final p = await prefs;
+    final timeStr = p.getString(_kLastDictUpdateCheckTime);
+    if (timeStr != null) {
+      try {
+        return DateTime.parse(timeStr);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Future<void> setLastDictUpdateCheckTime(DateTime time) async {
+    final p = await prefs;
+    await p.setString(_kLastDictUpdateCheckTime, time.toIso8601String());
   }
 }

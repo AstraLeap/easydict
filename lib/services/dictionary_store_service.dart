@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../data/models/remote_dictionary.dart';
@@ -21,6 +22,25 @@ class DictionaryStoreService {
         : baseUrl;
     final cleanPath = path.startsWith('/') ? path.substring(1) : path;
     return '$cleanBaseUrl/$cleanPath';
+  }
+
+  static const List<int> _pngHeader = [
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,
+  ];
+
+  bool _isValidPng(Uint8List bytes) {
+    if (bytes.length < 8) return false;
+    for (int i = 0; i < 8; i++) {
+      if (bytes[i] != _pngHeader[i]) return false;
+    }
+    return true;
   }
 
   /// 获取服务器上的词典列表
@@ -88,16 +108,29 @@ class DictionaryStoreService {
   /// 下载词典 Logo
   Future<File?> downloadLogo(String dictId, String savePath) async {
     try {
-      final url = Uri.parse(_buildUrl('download/$dictId/logo'));
-      Logger.i('下载 Logo: $dictId', tag: 'DictionaryStore');
+      final url = Uri.parse(_buildUrl('download/$dictId/file/logo.png'));
+      Logger.i('下载 Logo: $url', tag: 'DictionaryStore');
 
       final response = await _client
           .get(url)
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
+        final bodyBytes = response.bodyBytes;
+        if (bodyBytes.isEmpty) {
+          Logger.w('Logo 下载失败: 响应内容为空', tag: 'DictionaryStore');
+          return null;
+        }
+        if (!_isValidPng(bodyBytes)) {
+          Logger.w('Logo 下载失败: 文件不是有效的 PNG 格式', tag: 'DictionaryStore');
+          return null;
+        }
         final file = File(savePath);
-        await file.writeAsBytes(response.bodyBytes);
+        await file.writeAsBytes(bodyBytes);
+        Logger.i(
+          'Logo 下载完成: ${formatBytes(bodyBytes.length)}',
+          tag: 'DictionaryStore',
+        );
         return file;
       } else {
         Logger.w(
@@ -150,7 +183,9 @@ class DictionaryStoreService {
         currentStep++;
         onProgress(0, 0, '[$currentStep/$totalSteps] 下载数据库...');
 
-        final url = Uri.parse(_buildUrl('download/${dict.id}/database'));
+        final url = Uri.parse(
+          _buildUrl('download/${dict.id}/file/dictionary.db'),
+        );
         Logger.i('下载数据库: $url', tag: 'DictionaryStore');
 
         final request = http.Request('GET', url);
@@ -186,7 +221,7 @@ class DictionaryStoreService {
         currentStep++;
         onProgress(0, 0, '[$currentStep/$totalSteps] 下载媒体数据库...');
 
-        final url = Uri.parse(_buildUrl('download/${dict.id}/media'));
+        final url = Uri.parse(_buildUrl('download/${dict.id}/file/media.db'));
         final request = http.Request('GET', url);
         final response = await _client.send(request);
 
@@ -306,7 +341,9 @@ class DictionaryStoreService {
           'status': '[$currentStep/$totalSteps] 下载元数据...',
         };
 
-        final url = Uri.parse(_buildUrl('download/${dict.id}/metadata'));
+        final url = Uri.parse(
+          _buildUrl('download/${dict.id}/file/metadata.json'),
+        );
         Logger.i('正在下载元数据: $url', tag: 'DictionaryStore');
         final response = await _client
             .get(url)
@@ -339,15 +376,26 @@ class DictionaryStoreService {
           'status': '[$currentStep/$totalSteps] 下载图标...',
         };
 
-        final url = Uri.parse(_buildUrl('download/${dict.id}/logo'));
+        final url = Uri.parse(_buildUrl('download/${dict.id}/file/logo.png'));
+        Logger.i('正在下载图标: $url', tag: 'DictionaryStore');
         final response = await _client
             .get(url)
             .timeout(const Duration(seconds: 30));
 
         if (response.statusCode == 200) {
-          final logoFile = File(path.join(dictDir, 'logo.png'));
-          await logoFile.writeAsBytes(response.bodyBytes);
-          Logger.i('图标下载完成', tag: 'DictionaryStore');
+          final bodyBytes = response.bodyBytes;
+          if (bodyBytes.isEmpty) {
+            Logger.w('图标下载失败: 响应内容为空', tag: 'DictionaryStore');
+          } else if (!_isValidPng(bodyBytes)) {
+            Logger.w('图标下载失败: 文件不是有效的 PNG 格式', tag: 'DictionaryStore');
+          } else {
+            final logoFile = File(path.join(dictDir, 'logo.png'));
+            await logoFile.writeAsBytes(bodyBytes);
+            Logger.i(
+              '图标下载完成: ${formatBytes(bodyBytes.length)}',
+              tag: 'DictionaryStore',
+            );
+          }
         } else {
           Logger.w(
             '图标下载失败: HTTP ${response.statusCode}',
@@ -372,7 +420,7 @@ class DictionaryStoreService {
 
         final dbPath = path.join(dictDir, 'dictionary.db');
         final existingSize = await _getExistingFileSize(dbPath);
-        final url = _buildUrl('download/${dict.id}/database');
+        final url = _buildUrl('download/${dict.id}/file/dictionary.db');
 
         http.BaseRequest request;
         if (existingSize > 0) {
@@ -436,7 +484,7 @@ class DictionaryStoreService {
 
         final mediaDbPath = path.join(dictDir, 'media.db');
         final existingSize = await _getExistingFileSize(mediaDbPath);
-        final url = _buildUrl('download/${dict.id}/media');
+        final url = _buildUrl('download/${dict.id}/file/media.db');
 
         http.BaseRequest request;
         if (existingSize > 0) {
@@ -508,6 +556,47 @@ class DictionaryStoreService {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
+  }
+
+  /// 下载词典文件（通用方法）
+  ///
+  /// [dictId] - 词典ID
+  /// [fileName] - 文件名（如 logo.png, metadata.json）
+  /// [savePath] - 本地保存路径
+  Future<File?> downloadDictFile(
+    String dictId,
+    String fileName,
+    String savePath,
+  ) async {
+    try {
+      final url = Uri.parse(_buildUrl('download/$dictId/file/$fileName'));
+      Logger.i('下载词典文件: $url', tag: 'DictionaryStore');
+
+      final response = await _client
+          .get(url)
+          .timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final bodyBytes = response.bodyBytes;
+        if (bodyBytes.isEmpty) {
+          Logger.w('文件下载失败: 响应内容为空 - $fileName', tag: 'DictionaryStore');
+          return null;
+        }
+        final file = File(savePath);
+        await file.writeAsBytes(bodyBytes);
+        Logger.i(
+          '文件下载完成: $fileName (${formatBytes(bodyBytes.length)})',
+          tag: 'DictionaryStore',
+        );
+        return file;
+      } else {
+        Logger.w('文件下载失败: HTTP ${response.statusCode}', tag: 'DictionaryStore');
+        return null;
+      }
+    } catch (e) {
+      Logger.e('文件下载异常: $e', tag: 'DictionaryStore');
+      return null;
+    }
   }
 
   void dispose() {

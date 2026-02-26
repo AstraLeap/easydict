@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/english_db_service.dart';
+import '../services/download_manager.dart';
+import '../core/logger.dart';
 
 enum EnglishDbDownloadResult { downloaded, notNow, neverAskAgain }
 
@@ -25,30 +28,40 @@ class EnglishDbDownloadDialog extends StatefulWidget {
 }
 
 class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
-  bool _isDownloading = false;
-  double _progress = 0.0;
-  String _statusText = '准备下载...';
-  String? _error;
+  static const String _englishDbId = 'english_db';
+  bool _downloadStarted = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final downloadManager = context.watch<DownloadManager>();
+    final task = downloadManager.getDownload(_englishDbId);
+    final isDownloading =
+        task != null && task.state == DownloadState.downloading;
+    final isError = task != null && task.state == DownloadState.error;
+    final isCompleted = task != null && task.state == DownloadState.completed;
+
+    if (isCompleted && !_downloadStarted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).pop(EnglishDbDownloadResult.downloaded);
+      });
+    }
 
     return AlertDialog(
       title: Row(
         children: [
           Icon(
-            _error != null ? Icons.error_outline : Icons.download,
-            color: _error != null ? Colors.orange : colorScheme.primary,
+            isError ? Icons.error_outline : Icons.download,
+            color: isError ? Colors.orange : colorScheme.primary,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              _error != null ? '下载失败' : '下载英语词典数据库',
+              isError ? '下载失败' : '下载英语词典数据库',
               style: TextStyle(
                 fontSize: 18,
-                color: _error != null ? Colors.orange : null,
+                color: isError ? Colors.orange : null,
               ),
             ),
           ),
@@ -94,50 +107,38 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
               ],
             ),
           ),
-          if (_isDownloading || _progress > 0) ...[
+          if (isDownloading || task != null) ...[
             const SizedBox(height: 16),
-            Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(_statusText),
-                    Text('${(_progress * 100).toInt()}%'),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: _progress,
-                  minHeight: 8,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ],
-            ),
+            _buildProgressSection(task!, colorScheme),
           ],
-          if (_error != null) ...[
+          if (isError && task?.error != null) ...[
             const SizedBox(height: 12),
             Text(
-              _error!,
+              task!.error!,
               style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
             ),
           ],
         ],
       ),
       actions: [
-        if (_isDownloading) ...[
+        if (isDownloading) ...[
           TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(EnglishDbDownloadResult.notNow),
+            onPressed: () {
+              downloadManager.cancelDownload(_englishDbId);
+              Navigator.of(context).pop(EnglishDbDownloadResult.notNow);
+            },
             child: const Text('取消'),
           ),
-        ] else if (_error != null) ...[
+        ] else if (isError) ...[
           TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(EnglishDbDownloadResult.notNow),
+            onPressed: () {
+              downloadManager.clearDownload(_englishDbId);
+              Navigator.of(context).pop(EnglishDbDownloadResult.notNow);
+            },
             child: const Text('暂不'),
           ),
           ElevatedButton.icon(
-            onPressed: _startDownload,
+            onPressed: () => _startDownload(downloadManager),
             icon: const Icon(Icons.refresh),
             label: const Text('重试'),
           ),
@@ -160,11 +161,51 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
             child: const Text('暂不'),
           ),
           ElevatedButton.icon(
-            onPressed: _startDownload,
+            onPressed: () => _startDownload(downloadManager),
             icon: const Icon(Icons.download),
             label: const Text('下载'),
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildProgressSection(DownloadTask task, ColorScheme colorScheme) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                task.status,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (task.speedBytesPerSecond > 0)
+              Text(
+                DownloadManager().formatSpeed(task.speedBytesPerSecond),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: task.fileProgress.clamp(0.0, 1.0),
+            minHeight: 8,
+            backgroundColor: colorScheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+          ),
+        ),
       ],
     );
   }
@@ -182,38 +223,41 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
     );
   }
 
-  Future<void> _startDownload() async {
+  Future<void> _startDownload(DownloadManager downloadManager) async {
+    Logger.i('EnglishDbDownloadDialog: 开始下载...', tag: 'EnglishDB');
     setState(() {
-      _isDownloading = true;
-      _progress = 0.0;
-      _statusText = '正在连接服务器...';
-      _error = null;
+      _downloadStarted = true;
     });
 
-    final success = await EnglishDbService().downloadDb(
-      downloadUrl: widget.downloadUrl,
-      onProgress: (progress) {
+    final dbPath = await EnglishDbService().getDbPath();
+    Logger.d('EnglishDbDownloadDialog: 目标路径: $dbPath', tag: 'EnglishDB');
+    final url =
+        widget.downloadUrl ?? await EnglishDbService().getDefaultDownloadUrl();
+    Logger.d('EnglishDbDownloadDialog: 下载URL: $url', tag: 'EnglishDB');
+
+    if (url.isEmpty) {
+      Logger.e('EnglishDbDownloadDialog: URL为空，取消下载', tag: 'EnglishDB');
+      downloadManager.clearDownload(_englishDbId);
+      return;
+    }
+
+    await downloadManager.startFileDownload(
+      _englishDbId,
+      'en.db',
+      url,
+      dbPath,
+      onComplete: () {
+        Logger.i('EnglishDbDownloadDialog: 下载完成!', tag: 'EnglishDB');
         if (mounted) {
-          setState(() {
-            _progress = progress;
-            _statusText = progress < 1.0 ? '下载中...' : '验证中...';
-          });
+          Navigator.of(context).pop(EnglishDbDownloadResult.downloaded);
         }
       },
       onError: (error) {
+        Logger.e('EnglishDbDownloadDialog: 下载错误: $error', tag: 'EnglishDB');
         if (mounted) {
-          setState(() {
-            _isDownloading = false;
-            _error = error;
-          });
+          setState(() {});
         }
       },
     );
-
-    if (mounted) {
-      if (success) {
-        Navigator.of(context).pop(EnglishDbDownloadResult.downloaded);
-      }
-    }
   }
 }

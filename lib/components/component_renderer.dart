@@ -67,8 +67,8 @@ class _PendingScrollRequest {
   _PendingScrollRequest(this.path, this.retryCount);
 }
 
-/// 支持多种手势的识别器，用于同时处理点击和右键事件
-class _MultiGestureRecognizer extends OneSequenceGestureRecognizer {
+/// 支持多种手势的识别器，继承自 TapGestureRecognizer 以兼容无障碍系统
+class _MultiGestureRecognizer extends TapGestureRecognizer {
   final TapGestureRecognizer tapRecognizer;
   final _SecondaryTapGestureRecognizer secondaryTapRecognizer;
   final LongPressGestureRecognizer? longPressRecognizer;
@@ -96,17 +96,12 @@ class _MultiGestureRecognizer extends OneSequenceGestureRecognizer {
   String get debugDescription => '_MultiGestureRecognizer';
 
   @override
-  void didStopTrackingLastPointer(int pointer) {}
-
-  @override
   void handleEvent(PointerEvent event) {
     if (event.buttons == kSecondaryMouseButton) {
       secondaryTapRecognizer.handleEvent(event);
     } else {
       tapRecognizer.handleEvent(event);
       longPressRecognizer?.handleEvent(event);
-      // DoubleTapGestureRecognizer 不需要在这里处理事件
-      // 它会在 addPointer 时自动开始跟踪
     }
   }
 }
@@ -292,39 +287,6 @@ class _RenderTappable extends RenderProxyBox {
   _RenderTappable(this.pathData);
 }
 
-String _getDecorationType(String type) {
-  switch (type.toLowerCase()) {
-    case 'strike':
-    case '中划线':
-      return 'strike';
-    case 'underline':
-    case '下划线':
-      return 'underline';
-    case 'double_underline':
-    case '下双划线':
-      return 'double_underline';
-    case 'wavy':
-    case '下波浪线':
-      return 'wavy';
-    case 'bold':
-    case '加粗':
-      return 'bold';
-    case 'italic':
-    case '斜体':
-      return 'italic';
-    case 'sup':
-    case '上标':
-      return 'sup';
-    case 'sub':
-    case '下标':
-      return 'sub';
-    case 'special':
-      return 'special';
-    default:
-      return '';
-  }
-}
-
 /// 去除文本格式，将 [text](style) 转换为 text
 String _removeFormatting(String text) {
   final RegExp pattern = RegExp(r'\[([^\]]*?)\]\([^\)]*?\)');
@@ -462,6 +424,7 @@ FormattedTextResult parseFormattedText(
     List<TextDecoration> decorations = [];
     bool isSup = false;
     bool isSub = false;
+    bool aiTextMark = false;
     Color? customColor;
     String? linkTarget;
     String? exactJumpTarget;
@@ -485,8 +448,7 @@ FormattedTextResult parseFormattedText(
         continue;
       }
 
-      final decorationType = _getDecorationType(type);
-      switch (decorationType) {
+      switch (type) {
         case 'strike':
           decorations.add(TextDecoration.lineThrough);
           break;
@@ -528,6 +490,9 @@ FormattedTextResult parseFormattedText(
                 ? Theme.of(context).colorScheme.primary
                 : null,
           );
+          break;
+        case 'ai':
+          aiTextMark = true;
           break;
       }
     }
@@ -610,6 +575,13 @@ FormattedTextResult parseFormattedText(
         ),
       );
     } else {
+      if (aiTextMark && context != null) {
+        style = style.copyWith(
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primary.withValues(alpha: 0.15),
+        );
+      }
       spans.add(
         TextSpan(text: formattedText, style: style, recognizer: recognizer),
       );
@@ -1554,8 +1526,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         longPressRecognizer,
       ]);
 
-      // 使用 MultiGestureRecognizer 来同时支持点击、右键和长按
-      final multiRecognizer = _MultiGestureRecognizer(
+      // 使用 MultiGestureRecognizer 同时支持点击、双击和长按
+      final recognizer = _MultiGestureRecognizer(
         tapRecognizer: tapRecognizer,
         secondaryTapRecognizer: secondaryTapRecognizer,
         longPressRecognizer: longPressRecognizer,
@@ -1575,7 +1547,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         context: context,
         path: path,
         label: 'Example Text ($key)',
-        recognizer: multiRecognizer,
+        recognizer: recognizer,
         hidden: hidden,
       );
 
@@ -2212,18 +2184,30 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final iconSize = 18 * fontScale * dictionaryContentScale;
 
     final screenSize = MediaQuery.of(context).size;
-    final overlayWidth = 420.0 * dictionaryContentScale.clamp(0.8, 1.2);
-    final maxHeight = screenSize.height * 0.6;
+    final isMobile = screenSize.width < 600;
 
-    double dx = position.dx;
-    double dy = position.dy + 20;
+    double overlayWidth;
+    double dx;
+    double dy;
 
-    if (dx + overlayWidth > screenSize.width) {
-      dx = screenSize.width - overlayWidth - 16;
-    }
-    if (dx < 16) {
+    if (isMobile) {
+      overlayWidth = screenSize.width - 32;
       dx = 16;
+      dy = position.dy + 20;
+    } else {
+      overlayWidth = 420.0 * dictionaryContentScale.clamp(0.8, 1.2);
+      dx = position.dx;
+      dy = position.dy + 20;
+
+      if (dx + overlayWidth > screenSize.width) {
+        dx = screenSize.width - overlayWidth - 16;
+      }
+      if (dx < 16) {
+        dx = 16;
+      }
     }
+
+    final maxHeight = screenSize.height * 0.6;
     if (dy + maxHeight > screenSize.height) {
       dy = position.dy - maxHeight - 10;
     }
@@ -3419,8 +3403,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
             longPressRecognizer,
           ]);
 
-          // 使用 MultiGestureRecognizer 来同时支持点击、右键和长按
-          final multiRecognizer = _MultiGestureRecognizer(
+          // 使用 MultiGestureRecognizer 同时支持点击、双击和长按
+          final recognizer = _MultiGestureRecognizer(
             tapRecognizer: tapRecognizer,
             secondaryTapRecognizer: secondaryTapRecognizer,
             longPressRecognizer: longPressRecognizer,
@@ -3433,7 +3417,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             context: context,
             path: path,
             label: 'Definition (${definition.key})',
-            recognizer: multiRecognizer,
+            recognizer: recognizer,
             hidden: hidden,
           );
 
@@ -3859,6 +3843,53 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
+  Widget _buildTappableGroupName(
+    String text,
+    String path,
+    String label,
+    TextStyle textStyle,
+  ) {
+    final pathStr = path;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTapDown: (details) {
+        _lastTapPosition = details.globalPosition;
+      },
+      onTap: () {
+        _handleElementTap(pathStr, label);
+      },
+      onSecondaryTapUp: (details) {
+        _handleElementSecondaryTap(
+          pathStr,
+          label,
+          context,
+          details.globalPosition,
+        );
+      },
+      onLongPressStart: (details) {
+        _handleElementSecondaryTap(
+          pathStr,
+          label,
+          context,
+          details.globalPosition,
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: RichText(
+          text: TextSpan(
+            children: _parseFormattedText(
+              text,
+              textStyle,
+              context: context,
+            ).spans,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSenseGroups(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final entry = _localEntry;
@@ -3869,28 +3900,45 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final groupIndex = groupEntry.key;
         final group = groupEntry.value;
         final groupName = group['group_name'] as String? ?? '';
+        final groupSubName = group['group_sub_name'] as String? ?? '';
         final senses = group['sense'] as List<dynamic>? ?? [];
+
+        final groupPath = 'sense_group.$groupIndex';
 
         return Column(
           key: _sectionKeys[groupIndex],
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (groupName.isNotEmpty)
+            if (groupName.isNotEmpty || groupSubName.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: RichText(
-                  text: TextSpan(
-                    children: _parseFormattedText(
-                      groupName,
-                      TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.primary,
-                        letterSpacing: 1.0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (groupName.isNotEmpty)
+                      _buildTappableGroupName(
+                        groupName,
+                        '${groupPath}.group_name',
+                        'Group Name',
+                        TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.primary,
+                          letterSpacing: 1.0,
+                        ),
                       ),
-                      context: context,
-                    ).spans,
-                  ),
+                    if (groupSubName.isNotEmpty)
+                      _buildTappableGroupName(
+                        groupSubName,
+                        '${groupPath}.group_sub_name',
+                        'Group Sub Name',
+                        TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             if (senses.isNotEmpty)

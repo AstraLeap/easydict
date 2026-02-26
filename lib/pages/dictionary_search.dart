@@ -9,12 +9,8 @@ import '../services/english_db_service.dart';
 import '../services/font_loader_service.dart';
 import 'entry_detail_page.dart';
 import '../core/utils/toast_utils.dart';
-import '../core/utils/language_utils.dart';
-import '../widgets/language_dropdown.dart';
-import '../core/utils/dpi_utils.dart';
 import '../widgets/search_bar.dart';
 import '../components/english_db_download_dialog.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
 
@@ -438,6 +434,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     }
 
     final contentScale = FontLoaderService().getDictionaryContentScale();
+    final topPadding = MediaQuery.of(context).viewPadding.top;
 
     return Scaffold(
       body: PageScaleWrapper(
@@ -445,8 +442,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
-              child: UnifiedSearchBar.withLanguageSelector(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: topPadding + 12,
+                bottom: 12,
+              }),
+              child: UnifiedSearchBarFactory.withLanguageSelector(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 selectedLanguage: _selectedGroup,
@@ -476,21 +478,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   _wasFocused = true;
                 },
                 extraSuffixIcons: [
-                  if (_searchController.text.isNotEmpty)
-                    IconButton(
-                      icon: Icon(
-                        Icons.clear,
-                        size: DpiUtils.scaleIconSize(context, 18),
-                      ),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {});
-                      },
-                    ),
                   IconButton(
                     icon: Icon(
                       Icons.tune,
-                      size: 18,
+                      size: 20,
                       color: _showAdvancedOptions
                           ? Theme.of(context).colorScheme.primary
                           : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -501,6 +492,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       });
                     },
                     tooltip: '高级选项',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                   ),
                   IconButton(
                     icon: Icon(
@@ -514,6 +511,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                     ),
                     onPressed: _isLoading ? null : _searchWord,
                     tooltip: '查询',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                   ),
                 ],
                 onChanged: (text) {
@@ -714,12 +717,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 4,
-            bottom: 12,
-          ),
+          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -731,10 +729,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               ),
               TextButton.icon(
                 onPressed: _clearHistory,
-                icon: Icon(
-                  Icons.delete_outline,
-                  size: DpiUtils.scaleIconSize(context, 18),
-                ),
+                icon: const Icon(Icons.delete_outline, size: 18),
                 label: const Text('清除'),
               ),
             ],
@@ -750,19 +745,20 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 margin: const EdgeInsets.only(bottom: 8),
                 elevation: 0,
                 child: ListTile(
+                  contentPadding: const EdgeInsets.only(left: 8, right: 16),
                   leading: const Icon(Icons.history),
                   title: Text(word),
-                  trailing: IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      size: DpiUtils.scaleIconSize(context, 18),
+                  trailing: Padding(
+                    padding: const EdgeInsets.only(right: 0),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () async {
+                        await _historyService.removeSearchRecord(word);
+                        await _loadSearchHistory();
+                      },
                     ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () async {
-                      await _historyService.removeSearchRecord(word);
-                      await _loadSearchHistory();
-                    },
                   ),
                   onTap: () => _onSearchFromHistory(word),
                 ),

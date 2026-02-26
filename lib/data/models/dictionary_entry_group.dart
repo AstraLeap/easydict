@@ -11,7 +11,8 @@ class PageGroup {
   final String page;
   final List<DictionarySection> sections;
 
-  PageGroup({required this.page, required this.sections});
+  PageGroup({required this.page, required List<DictionarySection> sections})
+      : sections = List.from(sections);
 }
 
 class DictionaryGroup {

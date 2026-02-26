@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import '../core/utils/dpi_utils.dart';
 import '../services/font_loader_service.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
 class HelpPage extends StatefulWidget {
@@ -50,7 +48,6 @@ class _HelpPageState extends State<HelpPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // 顶部 Logo 和版本信息
             Center(
               child: Column(
                 children: [
@@ -95,7 +92,6 @@ class _HelpPageState extends State<HelpPage> {
               ),
             ),
 
-            // 帮助与支持组
             _buildSettingsGroup(
               context,
               children: [
@@ -104,9 +100,7 @@ class _HelpPageState extends State<HelpPage> {
                   title: '词典反馈',
                   icon: Icons.feedback_outlined,
                   iconColor: colorScheme.primary,
-                  onTap: () async {
-                    // TODO: 实现反馈功能
-                  },
+                  onTap: () async {},
                 ),
                 _buildSettingsTile(
                   context,
@@ -149,7 +143,6 @@ class _HelpPageState extends State<HelpPage> {
 
             const SizedBox(height: 24),
 
-            // 编译信息
             _buildSettingsGroup(
               context,
               children: [
@@ -253,37 +246,23 @@ class _HelpPageState extends State<HelpPage> {
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
 
     return ListTile(
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: DpiUtils.scale(context, 16),
-        vertical: DpiUtils.scale(context, 4),
-      ),
-      leading: Icon(
-        icon,
-        color: effectiveIconColor,
-        size: DpiUtils.scaleIconSize(context, 24),
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(icon, color: effectiveIconColor, size: 24),
       title: Text(
         title,
-        style: TextStyle(
-          fontSize: DpiUtils.scaleFontSize(context, 14),
-          fontWeight: FontWeight.w500,
-        ),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
       ),
       subtitle: subtitle != null
           ? Text(
               subtitle,
               style: TextStyle(
-                fontSize: DpiUtils.scaleFontSize(context, 12),
+                fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
               ),
             )
           : null,
       trailing: isExternal
-          ? Icon(
-              Icons.open_in_new,
-              color: colorScheme.outline,
-              size: DpiUtils.scaleIconSize(context, 18),
-            )
+          ? Icon(Icons.open_in_new, color: colorScheme.outline, size: 18)
           : const Icon(Icons.chevron_right),
       onTap: onTap,
     );

@@ -3,7 +3,6 @@ import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:reorderables/reorderables.dart';
 import '../data/database_service.dart';
 import '../data/word_bank_service.dart';
 import '../data/models/dictionary_entry_group.dart';
@@ -11,12 +10,9 @@ import 'entry_detail_page.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
-import '../widgets/language_dropdown.dart';
-import '../core/utils/dpi_utils.dart';
 import '../widgets/search_bar.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../services/font_loader_service.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
 
@@ -597,10 +593,7 @@ class _WordBankPageState extends State<WordBankPage> {
                       const SizedBox(height: 4),
                       Text(
                         '共识别到 ${previewWords.length} 个单词预览',
-                        style: TextStyle(
-                          fontSize: DpiUtils.scaleFontSize(context, 12),
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                   ],
@@ -715,6 +708,7 @@ class _WordBankPageState extends State<WordBankPage> {
                   ),
                 ],
               ),
+              contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               content: SizedBox(
                 width: 550,
                 height: 450,
@@ -737,12 +731,16 @@ class _WordBankPageState extends State<WordBankPage> {
                           final list = editableLists[index];
                           return Card(
                             key: ValueKey(list.originalName),
-                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            margin: const EdgeInsets.symmetric(vertical: 2),
                             child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
                               leading: ReorderableDragStartListener(
                                 index: index,
                                 child: Icon(
                                   Icons.drag_handle,
+                                  size: 20,
                                   color: Theme.of(context).colorScheme.outline,
                                 ),
                               ),
@@ -974,7 +972,7 @@ class _WordBankPageState extends State<WordBankPage> {
           padding: const EdgeInsets.only(right: 8),
           child: FilterChip(
             selected: _selectedList == null,
-            label: const Text('全部'),
+            label: const Text('全部', style: TextStyle(fontSize: 13)),
             onSelected: (selected) {
               setState(() {
                 _selectedList = null;
@@ -1000,6 +998,7 @@ class _WordBankPageState extends State<WordBankPage> {
                   selected: isSelected,
                   label: Text(
                     '${LanguageUtils.getLanguageDisplayName(lang)}-${list.displayName}',
+                    style: const TextStyle(fontSize: 13),
                   ),
                   onSelected: (selected) {
                     setState(() {
@@ -1060,7 +1059,7 @@ class _WordBankPageState extends State<WordBankPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
                         selected: isSelected,
-                        label: const Text('全部'),
+                        label: const Text('全部', style: TextStyle(fontSize: 13)),
                         onSelected: (selected) {
                           setState(() {
                             _selectedList = null;
@@ -1077,7 +1076,10 @@ class _WordBankPageState extends State<WordBankPage> {
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
                       selected: isSelected,
-                      label: Text(list.displayName),
+                      label: Text(
+                        list.displayName,
+                        style: const TextStyle(fontSize: 13),
+                      ),
                       onSelected: (selected) {
                         setState(() {
                           _selectedList = selected ? list.name : null;
@@ -1131,7 +1133,7 @@ class _WordBankPageState extends State<WordBankPage> {
               child: Text(
                 word,
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1272,13 +1274,12 @@ class _WordBankPageState extends State<WordBankPage> {
       return const SizedBox.shrink();
     }
 
-    // 显示所有词表标签，超出部分自动省略
     return Container(
-      margin: EdgeInsets.only(right: DpiUtils.scale(context, 8)),
+      margin: const EdgeInsets.only(right: 8),
       child: Text(
         belongingLists.join(', '),
         style: TextStyle(
-          fontSize: DpiUtils.scaleFontSize(context, 11),
+          fontSize: 13,
           color: Theme.of(context).colorScheme.outline,
         ),
         overflow: TextOverflow.ellipsis,
@@ -1335,24 +1336,25 @@ class _WordBankPageState extends State<WordBankPage> {
     }
 
     final contentScale = FontLoaderService().getDictionaryContentScale();
+    final topPadding = MediaQuery.of(context).viewPadding.top;
 
     return Scaffold(
       body: PageScaleWrapper(
         scale: contentScale,
         child: Column(
           children: [
-            // 固定的搜索栏和词表筛选器
             Container(
               color: Theme.of(context).colorScheme.surface,
               child: Column(
                 children: [
-                  // 搜索栏
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: topPadding + 6,
+                      bottom: 12,
                     ),
-                    child: UnifiedSearchBar.withLanguageSelector(
+                    child: UnifiedSearchBarFactory.withLanguageSelector(
                       controller: _searchController,
                       focusNode: _searchFocusNode,
                       selectedLanguage: _selectedLanguage ?? 'ALL',
@@ -1387,22 +1389,9 @@ class _WordBankPageState extends State<WordBankPage> {
                         _wasFocused = true;
                       },
                       extraSuffixIcons: [
-                        if (_searchQuery.isNotEmpty)
-                          IconButton(
-                            icon: Icon(
-                              Icons.clear,
-                              size: DpiUtils.scaleIconSize(context, 18),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _searchQuery = '';
-                                _searchController.clear();
-                              });
-                              _loadWords();
-                            },
-                          ),
                         PopupMenuButton<SortMode>(
                           tooltip: '排序方式',
+                          offset: const Offset(0, 40),
                           icon: Icon(
                             Icons.swap_vert,
                             size: 20,
@@ -1436,6 +1425,12 @@ class _WordBankPageState extends State<WordBankPage> {
                           onPressed: () {
                             _loadWords();
                           },
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
                         ),
                       ],
                       onChanged: (value) {
@@ -1450,7 +1445,7 @@ class _WordBankPageState extends State<WordBankPage> {
                   ),
                   // 词表筛选器
                   Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 12),
+                    padding: const EdgeInsets.only(bottom: 12),
                     child: _buildListFilter(),
                   ),
                 ],

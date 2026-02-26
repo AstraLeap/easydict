@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dictionary_manager.dart';
+import '../core/logger.dart';
 
 class EnglishDbService {
   static final EnglishDbService _instance = EnglishDbService._internal();
@@ -15,13 +16,18 @@ class EnglishDbService {
   static const String _kNeverAskAgain = 'english_db_never_ask_again';
 
   Future<String> getDbPath() async {
+    Logger.d('EnglishDbService: 获取数据库路径...', tag: 'EnglishDB');
     final appDir = await getApplicationSupportDirectory();
-    return path.join(appDir.path, 'en.db');
+    final dbPath = path.join(appDir.path, 'en.db');
+    Logger.d('EnglishDbService: 数据库路径: $dbPath', tag: 'EnglishDB');
+    return dbPath;
   }
 
   Future<bool> dbExists() async {
     final dbPath = await getDbPath();
-    return File(dbPath).exists();
+    final exists = File(dbPath).existsSync();
+    Logger.d('EnglishDbService: 数据库是否存在: $exists', tag: 'EnglishDB');
+    return exists;
   }
 
   Future<bool> shouldShowDownloadDialog() async {
@@ -50,10 +56,13 @@ class EnglishDbService {
     required void Function(String error) onError,
     String? downloadUrl,
   }) async {
+    Logger.i('EnglishDbService: 开始下载数据库...', tag: 'EnglishDB');
     final dbPath = await getDbPath();
+    Logger.d('EnglishDbService: 下载目标路径: $dbPath', tag: 'EnglishDB');
     final dbFile = File(dbPath);
 
     if (await dbFile.exists()) {
+      Logger.d('EnglishDbService: 存在旧数据库，删除...', tag: 'EnglishDB');
       await dbFile.delete();
     }
 
@@ -61,7 +70,9 @@ class EnglishDbService {
 
     try {
       final url = downloadUrl ?? await _getDefaultDownloadUrl();
+      Logger.d('EnglishDbService: 下载URL: $url', tag: 'EnglishDB');
       if (url.isEmpty) {
+        Logger.e('EnglishDbService: 下载失败 - 无效的URL', tag: 'EnglishDB');
         onError('Download failed: Invalid download URL');
         return false;
       }
@@ -70,11 +81,19 @@ class EnglishDbService {
       final response = await http.Client().send(request);
 
       if (response.statusCode != 200) {
+        Logger.e(
+          'EnglishDbService: 下载失败 - HTTP ${response.statusCode}',
+          tag: 'EnglishDB',
+        );
         onError('下载失败: HTTP ${response.statusCode}');
         return false;
       }
 
       final contentLength = response.contentLength ?? 0;
+      Logger.d(
+        'EnglishDbService: 文件大小: $contentLength bytes',
+        tag: 'EnglishDB',
+      );
       final sink = dbFile.openWrite();
 
       int downloadedBytes = 0;
@@ -100,26 +119,24 @@ class EnglishDbService {
           .asFuture();
 
       onProgress(1.0);
+      Logger.i('EnglishDbService: 数据库下载完成!', tag: 'EnglishDB');
       return true;
     } catch (e) {
+      Logger.e('EnglishDbService: 下载失败: $e', tag: 'EnglishDB');
       onError('下载失败: $e');
       return false;
     }
   }
 
+  Future<String> getDefaultDownloadUrl() async {
+    final dictManager = DictionaryManager();
+    final subscriptionUrl = await dictManager.onlineSubscriptionUrl;
+
+    final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'/$'), '');
+    return '$cleanUrl/auxi/en.db';
+  }
+
   Future<String> _getDefaultDownloadUrl() async {
-    try {
-      final dictManager = DictionaryManager();
-      final subscriptionUrl = await dictManager.onlineSubscriptionUrl;
-
-      if (subscriptionUrl.isNotEmpty) {
-        final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'/$'), '');
-        return '$cleanUrl/auxi/en.db';
-      }
-    } catch (e) {
-      // 忽略错误，使用默认 URL
-    }
-
-    return 'https://github.com/tisfeng/Easydict/releases/download/v1.0.0/en.db';
+    return getDefaultDownloadUrl();
   }
 }

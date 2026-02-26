@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dictionary_interaction_scope.dart';
 import '../core/utils/toast_utils.dart';
-import '../core/utils/dpi_utils.dart';
 import '../services/font_loader_service.dart';
 
 class BoardWidget extends StatefulWidget {
@@ -101,7 +100,6 @@ class _BoardWidgetState extends State<BoardWidget> {
       final boardTitleFontScale = _getBoardTitleFontScale();
       final boardTitleFontFamily = _getBoardTitleFontFamily();
       return Container(
-        // margin: const EdgeInsets.only(bottom: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -125,12 +123,10 @@ class _BoardWidgetState extends State<BoardWidget> {
     }
 
     return Container(
-      margin: EdgeInsets.only(bottom: DpiUtils.scale(context, 8)),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(
-          DpiUtils.scaleBorderRadius(context, 12),
-        ),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: colorScheme.outlineVariant.withValues(alpha: 0.6),
           width: 1,
@@ -138,8 +134,8 @@ class _BoardWidgetState extends State<BoardWidget> {
         boxShadow: [
           BoxShadow(
             color: colorScheme.shadow.withValues(alpha: 0.05),
-            blurRadius: DpiUtils.scale(context, 3),
-            offset: Offset(0, DpiUtils.scale(context, 1)),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -149,20 +145,15 @@ class _BoardWidgetState extends State<BoardWidget> {
           InkWell(
             onTap: _toggleCollapse,
             onLongPress: _showPath,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(DpiUtils.scaleBorderRadius(context, 12)),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             mouseCursor: SystemMouseCursors.click,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                horizontal: DpiUtils.scale(context, 8),
-                vertical: DpiUtils.scale(context, 6),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
                 color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(DpiUtils.scaleBorderRadius(context, 12)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
                 ),
               ),
               child: Row(
@@ -173,21 +164,18 @@ class _BoardWidgetState extends State<BoardWidget> {
                     curve: Curves.easeInOut,
                     child: Icon(
                       Icons.keyboard_arrow_down,
-                      size: DpiUtils.scaleIconSize(context, 16),
+                      size: 16,
                       color: colorScheme.onSecondaryContainer.withValues(
                         alpha: 0.8,
                       ),
                     ),
                   ),
-                  SizedBox(width: DpiUtils.scale(context, 4)),
+                  const SizedBox(width: 4),
                   Expanded(
                     child: Text(
                       title,
                       style: TextStyle(
-                        fontSize: DpiUtils.scaleFontSize(
-                          context,
-                          13 * _getBoardTitleFontScale(),
-                        ),
+                        fontSize: 13 * _getBoardTitleFontScale(),
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSecondaryContainer,
                         letterSpacing: 0.2,
@@ -201,10 +189,7 @@ class _BoardWidgetState extends State<BoardWidget> {
           ),
           if (!_isCollapsed)
             Padding(
-              padding: DpiUtils.scaleEdgeInsets(
-                context,
-                const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              ),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               child: widget.contentBuilder(contentBoard, widget.path),
             ),
         ],
