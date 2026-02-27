@@ -190,8 +190,23 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         final screenWidth = MediaQuery.of(context).size.width;
         final screenHeight = MediaQuery.of(context).size.height;
 
+        // 获取导航栏的位置信息
+        double navTop = 0;
+        double navBottom = screenHeight;
+        try {
+          final renderBox = _navPanelKey.currentContext?.findRenderObject() as RenderBox?;
+          if (renderBox != null && renderBox.hasSize) {
+            final position = renderBox.localToGlobal(Offset.zero);
+            navTop = position.dy;
+            navBottom = navTop + renderBox.size.height;
+          }
+        } catch (e) {
+          // 如果获取失败，使用默认值
+        }
+
         return Stack(
           children: [
+            // 左侧主内容区域的遮罩
             Positioned(
               left: 0,
               top: 0,
@@ -203,6 +218,33 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 child: const SizedBox.expand(),
               ),
             ),
+            // 右侧导航栏上方区域的遮罩
+            if (navTop > 0)
+              Positioned(
+                right: 0,
+                top: 0,
+                width: navBarWidth,
+                height: navTop,
+                child: GestureDetector(
+                  onTap: _closePageList,
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            // 右侧导航栏下方区域的遮罩
+            if (navBottom < screenHeight)
+              Positioned(
+                right: 0,
+                top: navBottom,
+                width: navBarWidth,
+                height: screenHeight - navBottom,
+                child: GestureDetector(
+                  onTap: _closePageList,
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            // 页面列表
             Positioned(
               top: 0,
               left: 0,
@@ -241,8 +283,23 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         final isMobile = screenWidth < 600;
         final directoryWidth = isMobile ? 260.0 : 300.0;
 
+        // 获取导航栏的位置信息
+        double navTop = 0;
+        double navBottom = screenHeight;
+        try {
+          final renderBox = _navPanelKey.currentContext?.findRenderObject() as RenderBox?;
+          if (renderBox != null && renderBox.hasSize) {
+            final position = renderBox.localToGlobal(Offset.zero);
+            navTop = position.dy;
+            navBottom = navTop + renderBox.size.height;
+          }
+        } catch (e) {
+          // 如果获取失败，使用默认值
+        }
+
         return Stack(
           children: [
+            // 左侧主内容区域的遮罩
             Positioned(
               left: 0,
               top: 0,
@@ -254,6 +311,33 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 child: const SizedBox.expand(),
               ),
             ),
+            // 右侧导航栏上方区域的遮罩
+            if (navTop > 0)
+              Positioned(
+                right: 0,
+                top: 0,
+                width: navBarWidth,
+                height: navTop,
+                child: GestureDetector(
+                  onTap: _closeDirectory,
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            // 右侧导航栏下方区域的遮罩
+            if (navBottom < screenHeight)
+              Positioned(
+                right: 0,
+                top: navBottom,
+                width: navBarWidth,
+                height: screenHeight - navBottom,
+                child: GestureDetector(
+                  onTap: _closeDirectory,
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            // 目录列表
             Positioned(
               width: directoryWidth,
               child: CompositedTransformFollower(

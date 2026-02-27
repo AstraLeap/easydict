@@ -23,10 +23,10 @@ flutter build apk
   "dict_id": "my_dict", // 必填，词典id
   "entry_id": 212, // 必填，不重复的entry标识符，整型
   "headword": "fog", // 必填，词头，可重复
-  "headword_normalized": "fog", // 必填，小写且去音调符号的词头
+  "headword_normalized": "fog", // 表音文字必填，小写且去音调符号的词头
   "entry_type": "word", // 必填，word或phrase
-  "auxi_search": "fog", // 可选，辅助搜索词，主要用于中文、日文
-  "page": "medical", // 可选，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一批page相同的entry
+  "auxi_search": "pinyin", // 可选，辅助搜索词，主要用于表意文字
+  "page": "medical", // 可选，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry
   "section": "noun", // 可选，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性
   "certifications": ["IELTS", "TOEFL", "CET-4"], // 可选，还没想好怎么实现
   "frequency": {
@@ -34,7 +34,7 @@ flutter build apk
     "stars": "3/5",
     "source": "Oxford 3000",
   }, // 可选，还没想好怎么实现
-  "topic": ["赛车", "时尚", "经济"], // 可选，还没想好怎么实现
+  "topic": ["赛车", "时尚", "经济"], // 可选，还没想好怎么实现，感觉这个可以单独在dictionary.db中生成一个表，记录每个类中有哪些子类和哪些单词。
   "pronunciation": [
     {
       "region": "US",
@@ -116,9 +116,9 @@ flutter build apk
 }
 ```
 
-**1. 除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
+- **除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
 
-**2. pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表**
+- pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表
 
 ## 文本修饰语法
 
@@ -141,10 +141,16 @@ flutter build apk
 | `sup`              | 上标         |
 | `sub`              | 下标         |
 | `color`            | 主题色       |
-| `color`            | 主题色、斜体 |
+| `special`          | 主题色、斜体 |
 | `ai`               | AI生成的内容 |
 | `->dog`            | 查词dog链接  |
 | `==entry_id.path`  | 精确跳转     |
+
+### 示例
+```
+for more information, please [see here](->dog)
+Wow, so pretty[text](color,bold)!
+```
 
 # 词典包结构
 
@@ -162,7 +168,7 @@ dictionary_name/
 {
   "id": "example_dict",
   "name": "Example Dictionary",
-  "version": 13,
+  "version": 13, //一定要是整型！！！
   "description": "An example dictionary for demonstration purposes",
   "source_language": "en",
   "target_language": ["en", "zh"],
@@ -170,8 +176,7 @@ dictionary_name/
   "maintainer": "example_user",
   "contact_maintainer": "example@example.com",
   "repository": "https://github.com/example/dictionary",
-  "createdAt": "2024-01-01T00:00:00.000Z",
-  "updatedAt": "2024-01-01T00:00:00.000Z"
+  "updatedAt": "2024-01-01T00:00:00.000Z"//唯一指定的标准时间格式
 }
 ```
 
@@ -193,6 +198,7 @@ CREATE TABLE entries (
     json_data BLOB--储存使用zstd压缩后的json数据
 );
 
+CREATE INDEX idx_entry_id ON entries(entry_id);
 CREATE INDEX idx_headword_normalized ON entries(headword_normalized);
 ```
 

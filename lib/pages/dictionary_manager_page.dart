@@ -30,6 +30,8 @@ import '../core/utils/toast_utils.dart';
 import 'package:path/path.dart' as path;
 import '../components/global_scale_wrapper.dart';
 import '../components/transfer_progress_panel.dart';
+import '../services/external_storage_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
   const DictionaryManagerPage({super.key});
@@ -137,68 +139,343 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   }
 
   Future<void> _selectDictionaryDirectory() async {
-    if (Platform.isAndroid) {
-      final extDir = await getExternalStorageDirectory();
-      final defaultDir = extDir != null ? '${extDir.path}/dictionaries' : null;
-
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Android 存储限制'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('由于 Android 10+ 的存储权限限制，应用无法写入用户选择的外部目录。'),
-              const SizedBox(height: 12),
-              const Text('建议使用应用专属存储目录：'),
-              const SizedBox(height: 8),
-              Text(
-                defaultDir ?? '应用内部存储',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text('该目录在应用卸载时会被清除，但数据可以正常读写。'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('使用默认目录'),
-            ),
-          ],
-        ),
-      );
-
-      if (confirmed == true && defaultDir != null) {
-        await _dictManager.setBaseDirectory(defaultDir);
+    if (!Platform.isAndroid) {
+      // 非 Android 平台：直接打开目录选择器
+      final dir = await FilePicker.platform.getDirectoryPath();
+      if (dir != null) {
+        await _dictManager.setBaseDirectory(dir);
         _enabledDictionaryIds = [];
         await _loadSettings();
-        if (mounted) {
-          showToast(context, '词典目录已设置: $defaultDir');
-        }
+        if (mounted) showToast(context, '词典目录已设置: $dir');
       }
       return;
     }
 
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    // ── Android 平台 ──────────────────────────────────────────
+    final extService = ExternalStorageService();
+    final hasPermission = await extService.hasManageStoragePermission();
+    final extDir = await getExternalStorageDirectory();
+    final appSpecificDir = extDir != null
+        ? path.join(extDir.path, 'dictionaries')
+        : path.join((await getApplicationDocumentsDirectory()).path, 'easydict');
 
-    if (selectedDirectory != null) {
-      await _dictManager.setBaseDirectory(selectedDirectory);
-      _enabledDictionaryIds = [];
-      await _loadSettings();
+    if (!mounted) return;
 
-      if (mounted) {
-        showToast(context, '词典目录已设置: $selectedDirectory');
+    // 弹出 Android 专属选择对话框
+    final result = await _showAndroidDirPickerDialog(
+      appSpecificDir: appSpecificDir,
+      hasPermission: hasPermission,
+    );
+    if (result == null || !mounted) return; // 用户取消
+
+    final int choice = result['choice'] as int; // 0=应用专属, 1=外部持久, 2=自定义
+
+    // ── 需要权限时，先申请 ──────────────────────────────────
+    if (choice >= 1 && !hasPermission) {
+      // 显示权限说明对话框
+      final goRequest = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('需要文件访问权限'),
+          content: const Text(
+            '访问外部目录需要「所有文件访问」权限。\n\n'
+            '点击「去授权」后，系统将跳转到设置页面，'
+            '请在「管理所有文件」中找到本应用并开启权限，'
+            '然后返回应用即可生效。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('去授权'),
+            ),
+          ],
+        ),
+      );
+      if (goRequest != true || !mounted) return;
+
+      final status = await extService.requestManageStoragePermission();
+      if (!status.isGranted) {
+        if (mounted) {
+          showToast(context, '未获得文件访问权限，操作已取消');
+        }
+        return;
       }
     }
+
+    // ── 处理各选项 ──────────────────────────────────────────
+    switch (choice) {
+      case 0: // 应用专属目录
+        await _dictManager.setBaseDirectory(appSpecificDir);
+        _enabledDictionaryIds = [];
+        await _loadSettings();
+        if (mounted) showToast(context, '词典目录已设置: $appSpecificDir');
+
+      case 1: // 外部公共目录（默认持久路径）
+        final targetDir = ExternalStorageService.defaultPersistentDir;
+        final ok = await extService.isPathWritable(targetDir);
+        if (!ok) {
+          if (mounted) showToast(context, '无法写入 $targetDir，请检查权限');
+          return;
+        }
+        await _dictManager.setBaseDirectory(targetDir);
+        _enabledDictionaryIds = [];
+        await _loadSettings();
+        if (mounted) showToast(context, '词典目录已设置: $targetDir');
+
+      case 2: // 自定义路径
+        final picked = await FilePicker.platform.getDirectoryPath(
+          initialDirectory: ExternalStorageService.defaultPersistentDir,
+        );
+        if (picked == null || !mounted) return;
+        final ok = await extService.isPathWritable(picked);
+        if (!ok) {
+          if (mounted) showToast(context, '无法写入所选目录，请重新选择');
+          return;
+        }
+        await _dictManager.setBaseDirectory(picked);
+        _enabledDictionaryIds = [];
+        await _loadSettings();
+        if (mounted) showToast(context, '词典目录已设置: $picked');
+    }
+  }
+
+  /// Android 专属词典目录选择对话框。
+  /// 返回 `{'choice': int}` 或 `null`（取消）。
+  Future<Map<String, dynamic>?> _showAndroidDirPickerDialog({
+    required String appSpecificDir,
+    required bool hasPermission,
+  }) async {
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        int _selected = 1; // 默认推荐「外部持久目录」
+        final colorScheme = Theme.of(ctx).colorScheme;
+
+        return StatefulBuilder(
+          builder: (ctx, setLocalState) {
+            Widget _permBadge() {
+              if (hasPermission) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle, size: 14, color: Colors.green[700]),
+                    const SizedBox(width: 4),
+                    Text(
+                      '权限已授予',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 14,
+                    color: colorScheme.error,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '需申请「所有文件访问」权限',
+                    style: TextStyle(fontSize: 12, color: colorScheme.error),
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: const Text('词典存储位置'),
+              contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── 选项 0：应用专属目录 ───────────────────
+                    RadioListTile<int>(
+                      value: 0,
+                      groupValue: _selected,
+                      onChanged: (v) => setLocalState(() => _selected = v!),
+                      title: const Text('应用专属目录'),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            appSpecificDir,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                size: 13,
+                                color: colorScheme.error,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '卸载应用后词典数据将被删除',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+
+                    const Divider(height: 8),
+
+                    // ── 选项 1：外部持久目录（推荐）───────────────
+                    RadioListTile<int>(
+                      value: 1,
+                      groupValue: _selected,
+                      onChanged: (v) => setLocalState(() => _selected = v!),
+                      title: Row(
+                        children: [
+                          const Text('外部公共目录'),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '推荐',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ExternalStorageService.defaultPersistentDir,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline,
+                                size: 13,
+                                color: Colors.green[700],
+                              ),
+                              const SizedBox(width: 4),
+                              const Expanded(
+                                child: Text(
+                                  '卸载或更新应用后词典仍可保留',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          _permBadge(),
+                        ],
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+
+                    const Divider(height: 8),
+
+                    // ── 选项 2：自定义路径 ─────────────────────
+                    RadioListTile<int>(
+                      value: 2,
+                      groupValue: _selected,
+                      onChanged: (v) => setLocalState(() => _selected = v!),
+                      title: const Text('自定义路径'),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '手动选择任意外部目录',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                          const SizedBox(height: 2),
+                          _permBadge(),
+                        ],
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+
+                    if (_selected >= 1 && !hasPermission) ...
+                      [
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: colorScheme.errorContainer.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 16,
+                                color: colorScheme.onErrorContainer,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '点击「确定」后系统将跳转到设置页面，'
+                                  '请开启「管理所有文件」权限后返回应用。',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: colorScheme.onErrorContainer,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(ctx, {'choice': _selected}),
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _toggleDictionary(String dictionaryId) async {
@@ -477,8 +754,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.cloud, color: Colors.blue, size: 20),
-                    const SizedBox(width: 8),
+                    // const Icon(Icons.cloud, color: Colors.blue, size: 20),
+                    const SizedBox(width: 4),
                     const Text(
                       '在线词典列表',
                       style: TextStyle(
@@ -1090,7 +1367,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         ),
         title: Text(metadata.name),
         subtitle: Text(
-          '版本: ${metadata.version} | ${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
+          '${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         trailing: Switch(
           value: isEnabled,
@@ -1318,14 +1597,30 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           );
 
           final savePath = path.join(dictDir, fileName);
-          final file = await _storeService!.downloadDictFile(
+          bool downloadOk = false;
+          await for (final event in _storeService!.downloadDictFileStream(
             dict.id,
             fileName,
             savePath,
-          );
-          if (file == null) {
-            throw Exception('下载文件失败: $fileName');
+          )) {
+            if (event['type'] == 'progress') {
+              onProgress(
+                '[$currentStep/$totalSteps] 下载 $fileName',
+                currentStep,
+                totalSteps,
+                receivedBytes: (event['receivedBytes'] as num).toInt(),
+                totalBytes: (event['totalBytes'] as num).toInt(),
+                fileProgress: (event['progress'] as num).toDouble(),
+                speedBytesPerSecond:
+                    (event['speedBytesPerSecond'] as num).toInt(),
+              );
+            } else if (event['type'] == 'complete') {
+              downloadOk = true;
+            } else if (event['type'] == 'error') {
+              throw Exception('下载文件失败: $fileName — ${event['error']}');
+            }
           }
+          if (!downloadOk) throw Exception('下载文件失败: $fileName');
         }
 
         if (updateInfo.required.entries.isNotEmpty) {
@@ -1421,17 +1716,34 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       (onProgress) async {
         for (var i = 0; i < filesToDownload.length; i++) {
           final fileName = filesToDownload[i];
-          onProgress('[${i + 1}/$totalSteps] 下载 $fileName', i + 1, totalSteps);
+          final step = i + 1;
+          onProgress('[$step/$totalSteps] 下载 $fileName', step, totalSteps);
 
           final savePath = path.join(dictDir, fileName);
-          final file = await _storeService!.downloadDictFile(
+          bool downloadOk = false;
+          await for (final event in _storeService!.downloadDictFileStream(
             dict.id,
             fileName,
             savePath,
-          );
-          if (file == null) {
-            throw Exception('下载文件失败: $fileName');
+          )) {
+            if (event['type'] == 'progress') {
+              onProgress(
+                '[$step/$totalSteps] 下载 $fileName',
+                step,
+                totalSteps,
+                receivedBytes: (event['receivedBytes'] as num).toInt(),
+                totalBytes: (event['totalBytes'] as num).toInt(),
+                fileProgress: (event['progress'] as num).toDouble(),
+                speedBytesPerSecond:
+                    (event['speedBytesPerSecond'] as num).toInt(),
+              );
+            } else if (event['type'] == 'complete') {
+              downloadOk = true;
+            } else if (event['type'] == 'error') {
+              throw Exception('下载文件失败: $fileName — ${event['error']}');
+            }
           }
+          if (!downloadOk) throw Exception('下载文件失败: $fileName');
         }
       },
       onComplete: () async {
@@ -1712,22 +2024,41 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle, size: 48, color: Colors.green),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.45),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle_rounded,
+                size: 36,
+                color: colorScheme.primary,
+              ),
+            ),
             const SizedBox(height: 16),
             Text(
               '已是最新版本',
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 color: colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '当前词典没有可用的更新',
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '当前词典没有可用的更新',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -1741,22 +2072,42 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle, size: 48, color: Colors.green),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.45),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle_rounded,
+                size: 36,
+                color: colorScheme.primary,
+              ),
+            ),
             const SizedBox(height: 16),
             Text(
               '已是最新版本',
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 color: colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '当前版本: v${info.to}',
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.35),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '当前版本: v${info.to}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ],
@@ -1851,33 +2202,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: colorScheme.onSurfaceVariant,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '手动选择要更新的文件，适用于需要单独更新某些文件的场景',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               const Text(
                 '选择要更新的内容:',
                 style: TextStyle(fontWeight: FontWeight.bold),
@@ -2014,7 +2339,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(metadata.name),
+        title: const Text('词典详情'),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
@@ -2078,11 +2403,11 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 return Hero(
                   tag: 'dict_logo_${metadata.id}',
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(12),
                     child: Image.file(
                       File(snapshot.data!),
-                      width: 96,
-                      height: 96,
+                      width: 72,
+                      height: 72,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return _buildDefaultIcon(metadata);
@@ -2102,44 +2427,36 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 Text(
                   metadata.name,
                   style: const TextStyle(
-                    fontSize: 24,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    'v${metadata.version}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _buildLanguageChip(metadata.sourceLanguage, isSource: true),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4),
-                      child: Icon(Icons.arrow_forward, size: 14),
-                    ),
-                    ...metadata.targetLanguages.map(
-                      (lang) => _buildLanguageChip(lang, isSource: false),
+                if (metadata.publisher.isNotEmpty) ...
+                  [
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.person_outline,
+                          size: 13,
+                          color: colorScheme.outline,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            metadata.publisher,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colorScheme.outline,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
+                const SizedBox(height: 10),
               ],
             ),
           ),
@@ -2152,8 +2469,8 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      width: 96,
-      height: 96,
+      width: 72,
+      height: 72,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -2163,7 +2480,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
             colorScheme.secondaryContainer,
           ],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: colorScheme.primary.withValues(alpha: 0.2),
@@ -2176,7 +2493,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
         child: Text(
           metadata.name.isNotEmpty ? metadata.name[0].toUpperCase() : '?',
           style: TextStyle(
-            fontSize: 42,
+            fontSize: 32,
             fontWeight: FontWeight.bold,
             color: colorScheme.onPrimaryContainer,
           ),
@@ -2216,6 +2533,47 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
           color: isSource ? isSourceColor : isTargetColor,
           letterSpacing: 0.5,
         ),
+      ),
+    );
+  }
+
+  Widget _buildMetaChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required ColorScheme colorScheme,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11, color: colorScheme.outline),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2399,6 +2757,30 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
             ],
           ),
           const SizedBox(height: 20),
+          // 版本 + 更新时间: 简洁双列布局
+          Row(
+            children: [
+              Expanded(
+                child: _buildMetaChip(
+                  icon: Icons.tag,
+                  label: '版本',
+                  value: 'v${metadata.version}',
+                  colorScheme: colorScheme,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildMetaChip(
+                  icon: Icons.update,
+                  label: '更新',
+                  value: _formatDate(metadata.updatedAt),
+                  colorScheme: colorScheme,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 简介
           if (metadata.description.isNotEmpty) ...[
             Container(
               width: double.infinity,
@@ -2411,24 +2793,49 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 metadata.description,
                 style: TextStyle(
                   fontSize: 14,
-                  height: 1.5,
+                  height: 1.6,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
             const SizedBox(height: 16),
           ],
-          _buildInfoRow(Icons.fingerprint, 'ID', metadata.id),
-          _buildInfoRow(Icons.business, '发布者', metadata.publisher),
-          _buildInfoRow(Icons.person, '维护者', metadata.maintainer),
+          // 发布者 / 维护者 / 联系方式
+          if (metadata.publisher.isNotEmpty)
+            _buildInfoRow(Icons.business_outlined, '发布者', metadata.publisher),
+          if (metadata.maintainer.isNotEmpty &&
+              metadata.maintainer != metadata.publisher)
+            _buildInfoRow(Icons.person_outline, '维护者', metadata.maintainer),
           if (metadata.contactMaintainer != null &&
               metadata.contactMaintainer!.isNotEmpty)
             _buildInfoRow(
-              Icons.contact_mail,
-              '联系维护者',
+              Icons.contact_mail_outlined,
+              '联系方式',
               metadata.contactMaintainer!,
             ),
-          _buildInfoRow(Icons.update, '更新时间', _formatDate(metadata.updatedAt)),
+          // ID: 置于底部，次要样式
+          const Divider(height: 24),
+          Row(
+            children: [
+              Icon(Icons.fingerprint, size: 14, color: colorScheme.outline),
+              const SizedBox(width: 6),
+              Text(
+                'ID: ',
+                style: TextStyle(fontSize: 12, color: colorScheme.outline),
+              ),
+              Expanded(
+                child: Text(
+                  metadata.id,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.outline,
+                    fontFamily: 'monospace',
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2647,11 +3054,25 @@ class _BatchUpdateDialog extends StatefulWidget {
 
 class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
   final Set<String> _selectedDictIds = {};
+  bool _isRefreshing = false;
 
   @override
   void initState() {
     super.initState();
     _selectedDictIds.addAll(widget.updateCheckService.updatableDicts.keys);
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _isRefreshing = true);
+    try {
+      await widget.updateCheckService.checkForUpdates();
+      setState(() {
+        _selectedDictIds.clear();
+        _selectedDictIds.addAll(widget.updateCheckService.updatableDicts.keys);
+      });
+    } finally {
+      setState(() => _isRefreshing = false);
+    }
   }
 
   @override
@@ -2660,7 +3081,24 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
     final updatableDicts = widget.updateCheckService.updatableDicts;
 
     return AlertDialog(
-      title: const Text('批量更新词典'),
+      title: Row(
+        children: [
+          const Text('批量更新词典'),
+          const Spacer(),
+          if (_isRefreshing)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _refresh,
+              tooltip: '重新检查更新',
+            ),
+        ],
+      ),
       content: SizedBox(
         width: 450,
         height: 400,
@@ -2791,14 +3229,31 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
               onProgress('[$step/$totalSteps] 下载 $fileName', step, totalSteps);
 
               final savePath = path.join(dictDir, fileName);
-              final file = await widget.storeService!.downloadDictFile(
+              bool downloadOk = false;
+              await for (final event
+                  in widget.storeService!.downloadDictFileStream(
                 dictId,
                 fileName,
                 savePath,
-              );
-              if (file == null) {
-                throw Exception('下载文件失败: $fileName');
+              )) {
+                if (event['type'] == 'progress') {
+                  onProgress(
+                    '[$step/$totalSteps] 下载 $fileName',
+                    step,
+                    totalSteps,
+                    receivedBytes: (event['receivedBytes'] as num).toInt(),
+                    totalBytes: (event['totalBytes'] as num).toInt(),
+                    fileProgress: (event['progress'] as num).toDouble(),
+                    speedBytesPerSecond:
+                        (event['speedBytesPerSecond'] as num).toInt(),
+                  );
+                } else if (event['type'] == 'complete') {
+                  downloadOk = true;
+                } else if (event['type'] == 'error') {
+                  throw Exception('下载文件失败: $fileName — ${event['error']}');
+                }
               }
+              if (!downloadOk) throw Exception('下载文件失败: $fileName');
             }
 
             if (updateInfo.required.entries.isNotEmpty) {

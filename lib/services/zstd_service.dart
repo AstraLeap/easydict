@@ -174,18 +174,9 @@ void _ensureLibraryLoaded() {
 }
 
 void _tryInitializeBindings() {
-  Logger.i(
-    '_tryInitializeBindings called, _isLibraryLoaded=$_isLibraryLoaded',
-    tag: 'ZstdService',
-  );
   if (!_isLibraryLoaded) {
-    Logger.i('Calling _ensureLibraryLoaded()', tag: 'ZstdService');
     _ensureLibraryLoaded();
   }
-  Logger.i(
-    'After _ensureLibraryLoaded, _isLibraryLoaded=$_isLibraryLoaded',
-    tag: 'ZstdService',
-  );
   if (!_isLibraryLoaded) {
     Logger.w(
       'Zstd FFI library not available, all compression disabled',
@@ -197,7 +188,7 @@ void _tryInitializeBindings() {
   try {
     _initializeBindingsInternal();
     Logger.i(
-      'Zstd FFI bindings initialized successfully, _supportsDictCompression=$_supportsDictCompression',
+      'Zstd FFI bindings initialized, dict compression: $_supportsDictCompression',
       tag: 'ZstdService',
     );
   } catch (e, stackTrace) {
@@ -363,75 +354,42 @@ bool _checkError(int code) => _zstdIsError(code) != 0;
 String _getErrorName(int code) => _zstdGetErrorName(code).toDartString();
 
 bool _initializeDictBindings() {
-  final symbols = [
-    'ZSTD_createDDict',
-    'ZSTD_freeDDict',
-    'ZSTD_decompress_usingDDict',
-    'ZSTD_createCDict',
-    'ZSTD_freeCDict',
-    'ZSTD_compress_usingCDict',
-  ];
-
-  for (final symbol in symbols) {
-    try {
-      final resolvedName = _resolveSymbolName(_zstdLib, symbol);
-      Logger.d(
-        'Looking up symbol: $symbol -> $resolvedName',
-        tag: 'ZstdService',
-      );
-      _zstdLib.lookup<ffi.NativeFunction<ffi.Pointer<ffi.Void> Function()>>(
-        resolvedName,
-      );
-      Logger.d('Symbol found: $resolvedName', tag: 'ZstdService');
-    } catch (e) {
-      Logger.w('Symbol not found: $symbol, error: $e', tag: 'ZstdService');
-    }
-  }
-
+  // 移除符号查找时的详细日志，减少初始化时间
   try {
     _zstdCreateDDict = _zstdLib
         .lookupFunction<ZstdCreateDDictNative, ZstdCreateDDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_createDDict'),
         );
-    Logger.d('ZSTD_createDDict bound successfully', tag: 'ZstdService');
 
     _zstdFreeDDict = _zstdLib
         .lookupFunction<ZstdFreeDDictNative, ZstdFreeDDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_freeDDict'),
         );
-    Logger.d('ZSTD_freeDDict bound successfully', tag: 'ZstdService');
 
     _zstdDecompressUsingDDict = _zstdLib
         .lookupFunction<
           ZstdDecompressUsingDDictNative,
           ZstdDecompressUsingDDictDart
         >(_resolveSymbolName(_zstdLib, 'ZSTD_decompress_usingDDict'));
-    Logger.d(
-      'ZSTD_decompress_usingDDict bound successfully',
-      tag: 'ZstdService',
-    );
 
     _zstdCreateCDict = _zstdLib
         .lookupFunction<ZstdCreateCDictNative, ZstdCreateCDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_createCDict'),
         );
-    Logger.d('ZSTD_createCDict bound successfully', tag: 'ZstdService');
 
     _zstdFreeCDict = _zstdLib
         .lookupFunction<ZstdFreeCDictNative, ZstdFreeCDictDart>(
           _resolveSymbolName(_zstdLib, 'ZSTD_freeCDict'),
         );
-    Logger.d('ZSTD_freeCDict bound successfully', tag: 'ZstdService');
 
     _zstdCompressUsingCDict = _zstdLib
         .lookupFunction<
           ZstdCompressUsingCDictNative,
           ZstdCompressUsingCDictDart
         >(_resolveSymbolName(_zstdLib, 'ZSTD_compress_usingCDict'));
-    Logger.d('ZSTD_compress_usingCDict bound successfully', tag: 'ZstdService');
 
     Logger.i(
-      'All dictionary bindings initialized successfully',
+      'Dictionary bindings initialized successfully',
       tag: 'ZstdService',
     );
     return true;

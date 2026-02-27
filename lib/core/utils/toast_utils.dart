@@ -7,6 +7,20 @@ void clearAllToasts() {
   _currentOverlayEntry = null;
 }
 
+class ToastRouteObserver extends RouteObserver<PageRoute<dynamic>> {
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    clearAllToasts();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    clearAllToasts();
+  }
+}
+
+final toastRouteObserver = ToastRouteObserver();
+
 double _getBottomPosition(BuildContext context) {
   String? pageType;
   bool hasJsonEditorBottomSheet = false;
@@ -54,7 +68,9 @@ double _getBottomPosition(BuildContext context) {
 void showToast(BuildContext context, String message, {SnackBarAction? action}) {
   clearAllToasts();
   final colorScheme = Theme.of(context).colorScheme;
-  final bottom = _getBottomPosition(context);
+  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+  final keyboardHeight = viewInsets > 0 ? viewInsets + 16 : 0.0;
+  final bottom = _getBottomPosition(context) + keyboardHeight;
 
   _currentOverlayEntry?.remove();
   _currentOverlayEntry = null;

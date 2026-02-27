@@ -33,6 +33,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   bool _isLoading = false;
   List<String> _searchHistory = [];
   bool _wasFocused = false;
+  bool _isHistoryEditMode = false;
 
   // 分组设置
   String _selectedGroup = 'auto';
@@ -143,15 +144,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     super.dispose();
   }
 
-  /// 边打边搜 - 防抖搜索
+  /// 边打边搜 - 立即前置匹配，无防抖
   void _onSearchTextChanged(String text) {
-    _debounceTimer?.cancel();
-
     if (_isSearchingWord) return;
 
     final trimmedText = text.trim();
     if (trimmedText.isEmpty) {
-      _debounceTimer?.cancel();
       _prefixSearchToken++;
       setState(() {
         _searchResults = [];
@@ -161,7 +159,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     }
 
     final currentToken = ++_prefixSearchToken;
-    _debounceTimer = Timer(const Duration(milliseconds: 100), () async {
+    () async {
       if (currentToken != _prefixSearchToken) return;
 
       List<String> results;
@@ -174,10 +172,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       } else {
         results = await _dbService.searchByPrefix(
           trimmedText,
-          limit: 10,
+          limit: 30,
           sourceLanguage: _selectedGroup,
         );
         results = _sortPrefixResults(trimmedText, results);
+        results = results.take(8).toList();
       }
 
       if (!mounted || currentToken != _prefixSearchToken) return;
@@ -186,7 +185,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         _searchResults = results;
         _showSearchResults = results.isNotEmpty;
       });
-    });
+    }();
   }
 
   List<String> _sortPrefixResults(String prefix, List<String> results) {
@@ -447,7 +446,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 right: 16,
                 top: topPadding + 12,
                 bottom: 12,
-              }),
+              ),
               child: UnifiedSearchBarFactory.withLanguageSelector(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
@@ -714,60 +713,124 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   Widget _buildHistoryView() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '历史记录',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              TextButton.icon(
-                onPressed: _clearHistory,
-                icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('清除'),
-              ),
-            ],
+    return GestureDetector(
+      onTap: () {
+        if (_isHistoryEditMode) {
+          setState(() {
+            _isHistoryEditMode = false;
+          });
+        }
+      },
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '历史记录',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _clearHistory,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('清除'),
+                ),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _searchHistory.length,
-            itemBuilder: (context, index) {
-              final word = _searchHistory[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                elevation: 0,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.only(left: 8, right: 16),
-                  leading: const Icon(Icons.history),
-                  title: Text(word),
-                  trailing: Padding(
-                    padding: const EdgeInsets.only(right: 0),
-                    child: IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () async {
-                        await _historyService.removeSearchRecord(word);
-                        await _loadSearchHistory();
-                      },
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                mainAxisExtent: 42,
+              ),
+              itemCount: _searchHistory.length,
+              itemBuilder: (context, index) {
+                final word = _searchHistory[index];
+                return _buildHistoryItem(word);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryItem(String word) {
+    return InkWell(
+      onTap: () {
+        if (_isHistoryEditMode) {
+          return;
+        }
+        _onSearchFromHistory(word);
+      },
+      onLongPress: () {
+        setState(() {
+          _isHistoryEditMode = true;
+        });
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Builder(
+        builder: (context) {
+          return GestureDetector(
+            onSecondaryTapUp: (details) {
+              setState(() {
+                _isHistoryEditMode = true;
+              });
+            },
+            child: Container(
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      word,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
-                  onTap: () => _onSearchFromHistory(word),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+                  if (_isHistoryEditMode)
+                    GestureDetector(
+                      onTap: () => _deleteHistoryItem(word),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: _ShakingDeleteIcon(
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
+  }
+
+  Future<void> _deleteHistoryItem(String word) async {
+    await _historyService.removeSearchRecord(word);
+    await _loadSearchHistory();
+    if (mounted) {
+      showToast(context, '已删除 "$word"');
+    }
   }
 
   String _detectLanguage(String text) {
@@ -792,5 +855,51 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         showToast(context, '下载完成，搜索 "$word" 以测试功能');
       }
     }
+  }
+}
+
+class _ShakingDeleteIcon extends StatefulWidget {
+  final Color? color;
+
+  const _ShakingDeleteIcon({this.color});
+
+  @override
+  State<_ShakingDeleteIcon> createState() => _ShakingDeleteIconState();
+}
+
+class _ShakingDeleteIconState extends State<_ShakingDeleteIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _animation = Tween<double>(
+      begin: -0.1,
+      end: 0.1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Transform.rotate(angle: _animation.value, child: child);
+      },
+      child: Icon(Icons.close, size: 18, color: widget.color),
+    );
   }
 }

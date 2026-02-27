@@ -1092,17 +1092,62 @@ class _WordBankPageState extends State<WordBankPage> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton(
-            onPressed: () => _showManageWordListsDialog(),
-            icon: const Icon(Icons.playlist_add_check),
-            tooltip: '管理词表',
-            iconSize: 28,
-            style: IconButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              hoverColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                width: 1,
+          // 圆形按钮：轮廓线以内不透明，轮廓线向外渐变至透明，遮住底部词表 chip
+          Tooltip(
+            message: '管理词表',
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // 渐变光晕层：以按钮半径为不透明区，按钮轮廓线外侧 8px 线性渐变至透明
+                  // 使用矩形 Container（不裁圆），让渐变自然覆盖按钮四周
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        radius: 0.5,
+                        colors: [
+                          Theme.of(context).colorScheme.surface,
+                          Theme.of(context).colorScheme.surface,
+                          Theme.of(context)
+                              .colorScheme
+                              .surface
+                              .withOpacity(0.0),
+                        ],
+                        // stop 0.714 ≈ 20/28，对应直径 40 内切圆半径 20px 与外层 28px 之比
+                        stops: const [0.0, 0.714, 1.0],
+                      ),
+                    ),
+                  ),
+                  // 圆形按钮本体（带 1px 轮廓线）
+                  Material(
+                    color: Theme.of(context).colorScheme.surface,
+                    shape: CircleBorder(
+                      side: BorderSide(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .outline
+                            .withOpacity(0.35),
+                        width: 1,
+                      ),
+                    ),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => _showManageWordListsDialog(),
+                      hoverColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest.withOpacity(0.6),
+                      child: const SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Icon(Icons.playlist_add_check, size: 22),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1351,7 +1396,7 @@ class _WordBankPageState extends State<WordBankPage> {
                     padding: EdgeInsets.only(
                       left: 16,
                       right: 16,
-                      top: topPadding + 6,
+                      top: topPadding + 12,
                       bottom: 12,
                     ),
                     child: UnifiedSearchBarFactory.withLanguageSelector(

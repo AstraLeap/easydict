@@ -311,6 +311,10 @@ class UserDictsService {
           success: true,
           dictId: data['dict_id'] as String?,
           name: data['name'] as String?,
+          version: data['version'] as int?,
+          updatedFiles: (data['updated_files'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList(),
         );
       } else if (statusCode == 401) {
         return UploadResult(success: false, error: '登录已过期，请重新登录');

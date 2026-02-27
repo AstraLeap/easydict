@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dictionary_manager.dart';
+import 'preferences_service.dart';
 import '../core/logger.dart';
 
 class EnglishDbService {
@@ -31,23 +32,23 @@ class EnglishDbService {
   }
 
   Future<bool> shouldShowDownloadDialog() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     final neverAskAgain = prefs.getBool(_kNeverAskAgain) ?? false;
     return !neverAskAgain;
   }
 
   Future<void> setNeverAskAgain(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     await prefs.setBool(_kNeverAskAgain, value);
   }
 
   Future<void> resetNeverAskAgain() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     await prefs.setBool(_kNeverAskAgain, false);
   }
 
   Future<bool> getNeverAskAgain() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     return prefs.getBool(_kNeverAskAgain) ?? false;
   }
 

@@ -29,6 +29,7 @@ import 'services/media_kit_manager.dart';
 import 'services/font_loader_service.dart';
 import 'services/window_state_service.dart';
 import 'services/dict_update_check_service.dart';
+import 'services/zstd_service.dart';
 import 'core/utils/toast_utils.dart';
 import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
@@ -86,6 +87,16 @@ void main() async {
   } catch (e) {
     Logger.e('MediaKit 初始化失败: $e', tag: 'Startup');
   }
+
+  // ZstdService 在后台异步初始化，不阻塞应用启动
+  Future.microtask(() {
+    try {
+      ZstdService();
+      Logger.i('ZstdService 后台初始化完成', tag: 'Startup');
+    } catch (e) {
+      Logger.w('ZstdService 后台初始化失败: $e', tag: 'Startup');
+    }
+  });
 
   try {
     DatabaseInitializer().initialize();
@@ -272,7 +283,16 @@ class _MyAppState extends State<MyApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       MediaKit.ensureInitialized();
+      // 从后台恢复时重新应用 edge-to-edge，防止某些 ROM 切换小窗后失效
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // 窗口尺寸变化时（进入/退出多窗口、小窗模式）重新应用 edge-to-edge
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   @override
@@ -284,6 +304,22 @@ class _MyAppState extends State<MyApp>
   @override
   void onWindowResized() async {
     await _saveWindowState();
+    await _updateSystemUIForWindowSize();
+  }
+
+  Future<void> _updateSystemUIForWindowSize() async {
+    try {
+      final size = await windowManager.getSize();
+      final isSmallWindow = size.height < 600 || size.width < 400;
+
+      if (isSmallWindow) {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      } else {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      }
+    } catch (e) {
+      Logger.e('更新系统UI模式失败: $e', tag: 'MyApp');
+    }
   }
 
   @override
@@ -334,6 +370,7 @@ class _MyAppState extends State<MyApp>
             theme: theme,
             darkTheme: AppTheme.darkTheme(seedColor: themeProvider.seedColor),
             themeMode: themeMode,
+            navigatorObservers: [toastRouteObserver],
             home: const MainScreen(),
             builder: (context, widget) {
               Logger.i('MaterialApp builder 被调用', tag: 'MyApp');
@@ -389,11 +426,14 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _initDictUpdateCheck() async {
+    // 在 await 之前先获取 service，避免 context 在异步间隙后被销毁
+    final updateCheckService = context.read<DictUpdateCheckService>();
     final dictManager = DictionaryManager();
     final baseUrl = await dictManager.onlineSubscriptionUrl;
+    if (!mounted) return;
     if (baseUrl.isNotEmpty) {
-      final updateCheckService = context.read<DictUpdateCheckService>();
       updateCheckService.setBaseUrl(baseUrl);
+      // 将启动时检查作为独立 Future 运行，不阻塞主线程
       updateCheckService.startDailyCheck();
     }
   }
@@ -876,7 +916,11 @@ class _SettingsPageState extends State<SettingsPage> {
         child: CustomScrollView(
           slivers: [
             SliverPadding(
-              padding: EdgeInsets.only(left: 8, right: 8, top: topPadding + 6),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: topPadding + 12,
+              ),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   // 云服务组
@@ -900,7 +944,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   // 核心功能组
                   _buildSettingsGroup(
                     context,
@@ -960,7 +1004,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   // 外观设置组
                   _buildSettingsGroup(
                     context,
@@ -968,7 +1012,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       _buildSettingsTile(
                         context,
                         title: '主题设置',
-                        subtitle: _getThemeColorName(themeProvider.seedColor),
                         icon: Icons.palette_outlined,
                         iconColor: colorScheme.primary,
                         showArrow: true,
@@ -984,7 +1027,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       _buildSettingsTile(
                         context,
                         title: '软件布局缩放',
-                        subtitle: '${(_dictionaryContentScale * 100).toInt()}%',
                         icon: Icons.zoom_in,
                         iconColor: colorScheme.primary,
                         onTap: _showDictionaryContentScaleDialog,
@@ -993,7 +1035,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         _buildSettingsTile(
                           context,
                           title: '点击动作设置',
-                          subtitle: _getClickActionLabel(_clickAction),
                           icon: Icons.touch_app_outlined,
                           iconColor: colorScheme.primary,
                           onTap: _showClickActionDialog,
@@ -1022,7 +1063,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   // 帮助与支持组
                   _buildSettingsGroup(
                     context,
@@ -1044,7 +1085,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 52),
                 ]),
               ),
             ),
@@ -1063,6 +1104,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return Card(
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
@@ -1107,11 +1149,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
 
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      leading: Icon(icon, color: effectiveIconColor, size: 22),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      leading: Icon(icon, color: effectiveIconColor, size: 24),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        style: const TextStyle(fontSize: 15),
       ),
       subtitle: subtitle != null
           ? Text(
@@ -1200,7 +1242,12 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('其它设置'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('其它设置'),
+        centerTitle: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : PageScaleWrapper(
@@ -1574,7 +1621,7 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
-                '拖动排序，列表第一项将作为点击时的默认动作',
+                '列表第一项将作为点击时的功能，其它通过右键/长按触发',
                 style: TextStyle(
                   fontSize: 13,
                   color: colorScheme.onSurfaceVariant,

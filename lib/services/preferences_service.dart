@@ -153,7 +153,7 @@ class PreferencesService {
       case actionAiHistory:
         return Icons.auto_awesome;
       case actionResetEntry:
-        return Icons.restore;
+        return Icons.refresh;
       default:
         return Icons.more_horiz;
     }
@@ -298,6 +298,7 @@ class PreferencesService {
     if (providerIndex == null) return null;
 
     final providers = [
+      {'name': 'edge', 'baseUrl': ''},
       {'name': 'azure', 'baseUrl': ''},
       {'name': 'google', 'baseUrl': 'https://texttospeech.googleapis.com/v1'},
     ];
@@ -314,6 +315,10 @@ class PreferencesService {
       } else if (voice.isEmpty) {
         voice = 'en-US-Chirp3-HD-Puck';
       }
+    }
+
+    if (provider == 'edge' && voice.isEmpty) {
+      voice = 'zh-CN-XiaoxiaoNeural';
     }
 
     return {
