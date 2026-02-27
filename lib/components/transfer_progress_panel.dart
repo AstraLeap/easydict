@@ -12,32 +12,42 @@ class DownloadProgressPanel extends StatefulWidget {
 }
 
 class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
+  // Throttle: show at most one speed update per interval
   String _displayedSpeed = '';
   int? _lastSpeedValue;
-  Timer? _debounceTimer;
-  static const _debounceDuration = Duration(milliseconds: 300);
+  Timer? _throttleTimer;
+  static const _throttleDuration = Duration(milliseconds: 300);
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
+    _throttleTimer?.cancel();
     super.dispose();
   }
 
-  void _updateSpeedWithDebounce(
+  // Throttle (not debounce): immediately show the first value, then at most
+  // once per _throttleDuration so rapid fluctuations don't block display.
+  void _updateSpeedThrottled(
     int speedBytesPerSecond,
     DownloadManager manager,
   ) {
-    if (_lastSpeedValue != speedBytesPerSecond) {
-      _lastSpeedValue = speedBytesPerSecond;
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(_debounceDuration, () {
-        if (mounted) {
+    _lastSpeedValue = speedBytesPerSecond;
+    if (_throttleTimer == null) {
+      // No pending timer: show immediately and start a cooldown.
+      setState(() {
+        _displayedSpeed = manager.formatSpeed(speedBytesPerSecond);
+      });
+      _throttleTimer = Timer(_throttleDuration, () {
+        _throttleTimer = null;
+        // After cooldown, show the latest value collected during the window.
+        if (mounted && _lastSpeedValue != null) {
           setState(() {
-            _displayedSpeed = manager.formatSpeed(speedBytesPerSecond);
+            _displayedSpeed = manager.formatSpeed(_lastSpeedValue!);
           });
         }
       });
     }
+    // If timer is running, the latest value is stored in _lastSpeedValue
+    // and will be flushed when the cooldown expires.
   }
 
   @override
@@ -50,7 +60,8 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
         currentTask.state == DownloadState.idle) {
       _displayedSpeed = '';
       _lastSpeedValue = null;
-      _debounceTimer?.cancel();
+      _throttleTimer?.cancel();
+      _throttleTimer = null;
       return const SizedBox.shrink();
     }
 
@@ -59,7 +70,7 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
     final isCancelled = currentTask.state == DownloadState.cancelled;
 
     if (!isError && !isCancelled && currentTask.speedBytesPerSecond > 0) {
-      _updateSpeedWithDebounce(
+      _updateSpeedThrottled(
         currentTask.speedBytesPerSecond,
         downloadManager,
       );
@@ -153,7 +164,10 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: currentTask.fileProgress.clamp(0.0, 1.0),
+                  // null = indeterminate animation when total size is unknown
+                  value: currentTask.totalBytes > 0
+                      ? currentTask.fileProgress.clamp(0.0, 1.0)
+                      : null,
                   minHeight: 6,
                   backgroundColor: colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation<Color>(
@@ -179,26 +193,29 @@ class UploadProgressPanel extends StatefulWidget {
 class _UploadProgressPanelState extends State<UploadProgressPanel> {
   String _displayedSpeed = '';
   int? _lastSpeedValue;
-  Timer? _debounceTimer;
-  static const _debounceDuration = Duration(milliseconds: 300);
+  Timer? _throttleTimer;
+  static const _throttleDuration = Duration(milliseconds: 300);
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
+    _throttleTimer?.cancel();
     super.dispose();
   }
 
-  void _updateSpeedWithDebounce(
+  void _updateSpeedThrottled(
     int speedBytesPerSecond,
     UploadManager manager,
   ) {
-    if (_lastSpeedValue != speedBytesPerSecond) {
-      _lastSpeedValue = speedBytesPerSecond;
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(_debounceDuration, () {
-        if (mounted) {
+    _lastSpeedValue = speedBytesPerSecond;
+    if (_throttleTimer == null) {
+      setState(() {
+        _displayedSpeed = manager.formatSpeed(speedBytesPerSecond);
+      });
+      _throttleTimer = Timer(_throttleDuration, () {
+        _throttleTimer = null;
+        if (mounted && _lastSpeedValue != null) {
           setState(() {
-            _displayedSpeed = manager.formatSpeed(speedBytesPerSecond);
+            _displayedSpeed = manager.formatSpeed(_lastSpeedValue!);
           });
         }
       });
@@ -213,7 +230,8 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
     if (currentTask == null || currentTask.state == UploadState.idle) {
       _displayedSpeed = '';
       _lastSpeedValue = null;
-      _debounceTimer?.cancel();
+      _throttleTimer?.cancel();
+      _throttleTimer = null;
       return const SizedBox.shrink();
     }
 
@@ -226,7 +244,7 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
         !isCancelled &&
         !isCompleted &&
         currentTask.speedBytesPerSecond > 0) {
-      _updateSpeedWithDebounce(currentTask.speedBytesPerSecond, uploadManager);
+      _updateSpeedThrottled(currentTask.speedBytesPerSecond, uploadManager);
     }
 
     String statusText;
@@ -334,7 +352,9 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: currentTask.fileProgress.clamp(0.0, 1.0),
+                  value: currentTask.totalBytes > 0
+                      ? currentTask.fileProgress.clamp(0.0, 1.0)
+                      : null,
                   minHeight: 6,
                   backgroundColor: colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation<Color>(

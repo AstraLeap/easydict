@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../data/models/dictionary_metadata.dart';
 import '../data/models/user_dictionary.dart' as user_dict;
@@ -8,7 +7,8 @@ import '../services/preferences_service.dart';
 import '../core/logger.dart';
 
 class DictUpdateCheckService extends ChangeNotifier {
-  static final DictUpdateCheckService _instance = DictUpdateCheckService._internal();
+  static final DictUpdateCheckService _instance =
+      DictUpdateCheckService._internal();
   factory DictUpdateCheckService() => _instance;
   DictUpdateCheckService._internal();
 
@@ -19,7 +19,6 @@ class DictUpdateCheckService extends ChangeNotifier {
   Map<String, user_dict.DictUpdateInfo> _updatableDicts = {};
   bool _isChecking = false;
   DateTime? _lastCheckTime;
-  Timer? _dailyCheckTimer;
 
   Map<String, user_dict.DictUpdateInfo> get updatableDicts => _updatableDicts;
   int get updatableCount => _updatableDicts.length;
@@ -30,11 +29,11 @@ class DictUpdateCheckService extends ChangeNotifier {
     _userDictsService.setBaseUrl(url);
   }
 
+  /// 启动时检查：如果上次检查距今已超过24小时，则在后台触发一次更新检查。
+  /// 此方法本身是非阻塞的，不需要 await。
   Future<void> startDailyCheck() async {
     final enabled = await _preferencesService.getAutoCheckDictUpdate();
     if (!enabled) return;
-
-    _dailyCheckTimer?.cancel();
 
     final lastCheck = await _preferencesService.getLastDictUpdateCheckTime();
     if (lastCheck != null) {
@@ -43,20 +42,13 @@ class DictUpdateCheckService extends ChangeNotifier {
 
     final now = DateTime.now();
     if (lastCheck == null || now.difference(lastCheck).inHours >= 24) {
+      // 不提前 await，让检查在后台运行不阻塞 UI
       checkForUpdates();
     }
-
-    _dailyCheckTimer = Timer.periodic(const Duration(hours: 1), (_) {
-      final currentTime = DateTime.now();
-      if (_lastCheckTime == null || currentTime.difference(_lastCheckTime!).inHours >= 24) {
-        checkForUpdates();
-      }
-    });
   }
 
   void stopDailyCheck() {
-    _dailyCheckTimer?.cancel();
-    _dailyCheckTimer = null;
+    // 已移除定期检查机制，此方法保留以兼容设置开关逻辑
   }
 
   Future<void> checkForUpdates() async {
@@ -94,14 +86,22 @@ class DictUpdateCheckService extends ChangeNotifier {
         dictVersions[dict.id] = (dict.version, null);
       }
 
-      Logger.i('检查 ${dictVersions.length} 个词典的更新...', tag: 'DictUpdateCheckService');
-      final updateInfos = await _userDictsService.getDictsUpdateInfo(dictVersions);
+      Logger.i(
+        '检查 ${dictVersions.length} 个词典的更新...',
+        tag: 'DictUpdateCheckService',
+      );
+      final updateInfos = await _userDictsService.getDictsUpdateInfo(
+        dictVersions,
+      );
 
       final updatable = <String, user_dict.DictUpdateInfo>{};
       updateInfos.forEach((dictId, info) {
         if (info.from < info.to) {
           updatable[dictId] = info;
-          Logger.i('词典 $dictId 有更新: v${info.from} -> v${info.to}', tag: 'DictUpdateCheckService');
+          Logger.i(
+            '词典 $dictId 有更新: v${info.from} -> v${info.to}',
+            tag: 'DictUpdateCheckService',
+          );
         }
       });
 
@@ -109,7 +109,10 @@ class DictUpdateCheckService extends ChangeNotifier {
       _lastCheckTime = DateTime.now();
       await _preferencesService.setLastDictUpdateCheckTime(_lastCheckTime!);
 
-      Logger.i('检查完成，发现 ${updatable.length} 个可更新词典', tag: 'DictUpdateCheckService');
+      Logger.i(
+        '检查完成，发现 ${updatable.length} 个可更新词典',
+        tag: 'DictUpdateCheckService',
+      );
     } catch (e) {
       Logger.e('检查词典更新失败: $e', tag: 'DictUpdateCheckService');
     } finally {
@@ -140,7 +143,6 @@ class DictUpdateCheckService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _dailyCheckTimer?.cancel();
     super.dispose();
   }
 }

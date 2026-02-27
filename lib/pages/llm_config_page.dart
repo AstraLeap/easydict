@@ -8,13 +8,14 @@ import 'dart:async';
 import '../core/logger.dart';
 import '../core/utils/toast_utils.dart';
 import '../services/font_loader_service.dart';
+import '../services/dictionary_manager.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
 enum LLMProvider {
   openAI('OpenAI', 'https://api.openai.com/v1'),
   anthropic('Anthropic', 'https://api.anthropic.com/v1'),
-  gemini('Google Gemini', 'https://generativelanguage.googleapis.com/v1'),
+  gemini('Google Gemini', 'https://generativelanguage.googleapis.com/v1beta'),
   deepseek('DeepSeek', 'https://api.deepseek.com/v1'),
   moonshot('Moonshot (月之暗面)', 'https://api.moonshot.cn/v1'),
   zhipu('智谱AI', 'https://open.bigmodel.cn/api/paas/v4'),
@@ -28,6 +29,7 @@ enum LLMProvider {
 }
 
 enum TTSProvider {
+  edge('Edge TTS', ''),
   azure('Azure TTS', ''),
   google('Google TTS', 'https://texttospeech.googleapis.com/v1');
 
@@ -35,22 +37,6 @@ enum TTSProvider {
   final String defaultBaseUrl;
 
   const TTSProvider(this.displayName, this.defaultBaseUrl);
-}
-
-/// Google TTS 模型选项
-enum GoogleTTSModel {
-  chirp3HD('Chirp 3 HD', 'chirp3-hd', '最新高质量语音，基于大语言模型，最自然'),
-  journey('Journey', 'journey', '专为长文本和叙事优化，流畅自然'),
-  studio('Studio', 'studio', '专业级语音，适合商业和媒体内容'),
-  neural2('Neural2', 'neural2', '神经网络语音，高质量且自然'),
-  wavenet('WaveNet', 'wavenet', '基于DeepMind WaveNet技术'),
-  standard('Standard', 'standard', '标准语音，基础质量');
-
-  final String displayName;
-  final String modelCode;
-  final String description;
-
-  const GoogleTTSModel(this.displayName, this.modelCode, this.description);
 }
 
 /// Google TTS 音色选项（按模型分类）
@@ -72,7 +58,7 @@ class GoogleTTSVoice {
 
 /// Google TTS 可用音色列表
 final List<GoogleTTSVoice> googleTTSVoices = [
-  // Chirp 3 HD Voices - 最新高质量
+  // 英语(美国)
   const GoogleTTSVoice(
     name: 'en-US-Chirp3-HD-Aoede',
     gender: '女性',
@@ -92,7 +78,7 @@ final List<GoogleTTSVoice> googleTTSVoices = [
     gender: '男性',
     language: '英语(美国)',
     model: 'chirp3-hd',
-    description: '清晰、有力，适合新闻播报',
+    description: '清晰、有力',
   ),
   const GoogleTTSVoice(
     name: 'en-US-Chirp3-HD-Kore',
@@ -106,252 +92,1092 @@ final List<GoogleTTSVoice> googleTTSVoices = [
     gender: '女性',
     language: '英语(美国)',
     model: 'chirp3-hd',
-    description: '自然、流畅，适合客服和教育',
+    description: '自然、流畅',
   ),
-  // Journey Voices
+  // 英语(英国)
   const GoogleTTSVoice(
-    name: 'en-US-Journey-D',
+    name: 'en-GB-Chirp3-HD-A',
+    gender: '女性',
+    language: '英语(英国)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'en-GB-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'journey',
-    description: '叙事风格，适合长文本',
+    language: '英语(英国)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 英语(澳大利亚)
   const GoogleTTSVoice(
-    name: 'en-US-Journey-F',
+    name: 'en-AU-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'journey',
-    description: '叙事风格，适合长文本',
+    language: '英语(澳大利亚)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Journey-O',
-    gender: '其他',
-    language: '英语(美国)',
-    model: 'journey',
-    description: '叙事风格，中性声音',
-  ),
-  // Studio Voices
-  const GoogleTTSVoice(
-    name: 'en-US-Studio-M',
+    name: 'en-AU-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'studio',
-    description: '专业男声，适合商业内容',
+    language: '英语(澳大利亚)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 英语(印度)
   const GoogleTTSVoice(
-    name: 'en-US-Studio-O',
+    name: 'en-IN-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'studio',
-    description: '专业女声，适合商业内容',
-  ),
-  // Neural2 Voices
-  const GoogleTTSVoice(
-    name: 'en-US-Neural2-A',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络女声A',
+    language: '英语(印度)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Neural2-C',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络女声C',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Neural2-D',
+    name: 'en-IN-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络男声D',
+    language: '英语(印度)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 中文(简体)
   const GoogleTTSVoice(
-    name: 'en-US-Neural2-E',
+    name: 'cmn-CN-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络女声E',
+    language: '中文(简体)',
+    model: 'chirp3-hd',
+    description: '清晰、自然',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Neural2-F',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络女声F（默认）',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Neural2-G',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络女声G',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Neural2-H',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络女声H',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Neural2-I',
+    name: 'cmn-CN-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络男声I',
+    language: '中文(简体)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 日语
+  const GoogleTTSVoice(
+    name: 'ja-JP-Chirp3-HD-A',
+    gender: '女性',
+    language: '日语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Neural2-J',
+    name: 'ja-JP-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'neural2',
-    description: '神经网络男声J',
+    language: '日语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
-  // WaveNet Voices
+  // 韩语
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-A',
+    name: 'ko-KR-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet女声A',
+    language: '韩语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-B',
+    name: 'ko-KR-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet男声B',
+    language: '韩语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 德语
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-C',
+    name: 'de-DE-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet女声C',
+    language: '德语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-D',
+    name: 'de-DE-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet男声D',
+    language: '德语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 法语(法国)
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-E',
+    name: 'fr-FR-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet女声E',
+    language: '法语(法国)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-F',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet女声F',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-WaveNet-G',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet女声G',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-WaveNet-H',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet女声H',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-WaveNet-I',
+    name: 'fr-FR-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet男声I',
+    language: '法语(法国)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 法语(加拿大)
+  const GoogleTTSVoice(
+    name: 'fr-CA-Chirp3-HD-A',
+    gender: '女性',
+    language: '法语(加拿大)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-WaveNet-J',
+    name: 'fr-CA-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'wavenet',
-    description: 'WaveNet男声J',
+    language: '法语(加拿大)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
-  // Standard Voices
+  // 西班牙语(西班牙)
   const GoogleTTSVoice(
-    name: 'en-US-Standard-A',
+    name: 'es-ES-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准女声A',
+    language: '西班牙语(西班牙)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Standard-B',
+    name: 'es-ES-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准男声B',
+    language: '西班牙语(西班牙)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 西班牙语(美国)
   const GoogleTTSVoice(
-    name: 'en-US-Standard-C',
+    name: 'es-US-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准女声C',
+    language: '西班牙语(美国)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Standard-D',
+    name: 'es-US-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准男声D',
+    language: '西班牙语(美国)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
+  // 意大利语
   const GoogleTTSVoice(
-    name: 'en-US-Standard-E',
+    name: 'it-IT-Chirp3-HD-A',
     gender: '女性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准女声E',
+    language: '意大利语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Standard-F',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准女声F',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Standard-G',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准女声G',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Standard-H',
-    gender: '女性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准女声H',
-  ),
-  const GoogleTTSVoice(
-    name: 'en-US-Standard-I',
+    name: 'it-IT-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准男声I',
+    language: '意大利语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 葡萄牙语(巴西)
+  const GoogleTTSVoice(
+    name: 'pt-BR-Chirp3-HD-A',
+    gender: '女性',
+    language: '葡萄牙语(巴西)',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
   ),
   const GoogleTTSVoice(
-    name: 'en-US-Standard-J',
+    name: 'pt-BR-Chirp3-HD-B',
     gender: '男性',
-    language: '英语(美国)',
-    model: 'standard',
-    description: '标准男声J',
+    language: '葡萄牙语(巴西)',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 俄语
+  const GoogleTTSVoice(
+    name: 'ru-RU-Chirp3-HD-A',
+    gender: '女性',
+    language: '俄语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'ru-RU-Chirp3-HD-B',
+    gender: '男性',
+    language: '俄语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 阿拉伯语
+  const GoogleTTSVoice(
+    name: 'ar-XA-Chirp3-HD-A',
+    gender: '女性',
+    language: '阿拉伯语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'ar-XA-Chirp3-HD-B',
+    gender: '男性',
+    language: '阿拉伯语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 印地语
+  const GoogleTTSVoice(
+    name: 'hi-IN-Chirp3-HD-A',
+    gender: '女性',
+    language: '印地语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'hi-IN-Chirp3-HD-B',
+    gender: '男性',
+    language: '印地语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 荷兰语
+  const GoogleTTSVoice(
+    name: 'nl-NL-Chirp3-HD-A',
+    gender: '女性',
+    language: '荷兰语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'nl-NL-Chirp3-HD-B',
+    gender: '男性',
+    language: '荷兰语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 波兰语
+  const GoogleTTSVoice(
+    name: 'pl-PL-Chirp3-HD-A',
+    gender: '女性',
+    language: '波兰语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'pl-PL-Chirp3-HD-B',
+    gender: '男性',
+    language: '波兰语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 土耳其语
+  const GoogleTTSVoice(
+    name: 'tr-TR-Chirp3-HD-A',
+    gender: '女性',
+    language: '土耳其语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'tr-TR-Chirp3-HD-B',
+    gender: '男性',
+    language: '土耳其语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 越南语
+  const GoogleTTSVoice(
+    name: 'vi-VN-Chirp3-HD-A',
+    gender: '女性',
+    language: '越南语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'vi-VN-Chirp3-HD-B',
+    gender: '男性',
+    language: '越南语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 泰语
+  const GoogleTTSVoice(
+    name: 'th-TH-Chirp3-HD-A',
+    gender: '女性',
+    language: '泰语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'th-TH-Chirp3-HD-B',
+    gender: '男性',
+    language: '泰语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 瑞典语
+  const GoogleTTSVoice(
+    name: 'sv-SE-Chirp3-HD-A',
+    gender: '女性',
+    language: '瑞典语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'sv-SE-Chirp3-HD-B',
+    gender: '男性',
+    language: '瑞典语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 丹麦语
+  const GoogleTTSVoice(
+    name: 'da-DK-Chirp3-HD-A',
+    gender: '女性',
+    language: '丹麦语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'da-DK-Chirp3-HD-B',
+    gender: '男性',
+    language: '丹麦语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 芬兰语
+  const GoogleTTSVoice(
+    name: 'fi-FI-Chirp3-HD-A',
+    gender: '女性',
+    language: '芬兰语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'fi-FI-Chirp3-HD-B',
+    gender: '男性',
+    language: '芬兰语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 希腊语
+  const GoogleTTSVoice(
+    name: 'el-GR-Chirp3-HD-A',
+    gender: '女性',
+    language: '希腊语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'el-GR-Chirp3-HD-B',
+    gender: '男性',
+    language: '希腊语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 捷克语
+  const GoogleTTSVoice(
+    name: 'cs-CZ-Chirp3-HD-A',
+    gender: '女性',
+    language: '捷克语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'cs-CZ-Chirp3-HD-B',
+    gender: '男性',
+    language: '捷克语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 罗马尼亚语
+  const GoogleTTSVoice(
+    name: 'ro-RO-Chirp3-HD-A',
+    gender: '女性',
+    language: '罗马尼亚语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'ro-RO-Chirp3-HD-B',
+    gender: '男性',
+    language: '罗马尼亚语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 乌克兰语
+  const GoogleTTSVoice(
+    name: 'uk-UA-Chirp3-HD-A',
+    gender: '女性',
+    language: '乌克兰语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'uk-UA-Chirp3-HD-B',
+    gender: '男性',
+    language: '乌克兰语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 匈牙利语
+  const GoogleTTSVoice(
+    name: 'hu-HU-Chirp3-HD-A',
+    gender: '女性',
+    language: '匈牙利语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'hu-HU-Chirp3-HD-B',
+    gender: '男性',
+    language: '匈牙利语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 希伯来语
+  const GoogleTTSVoice(
+    name: 'he-IL-Chirp3-HD-A',
+    gender: '女性',
+    language: '希伯来语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'he-IL-Chirp3-HD-B',
+    gender: '男性',
+    language: '希伯来语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
+  ),
+  // 印度尼西亚语
+  const GoogleTTSVoice(
+    name: 'id-ID-Chirp3-HD-A',
+    gender: '女性',
+    language: '印度尼西亚语',
+    model: 'chirp3-hd',
+    description: '自然、流畅',
+  ),
+  const GoogleTTSVoice(
+    name: 'id-ID-Chirp3-HD-B',
+    gender: '男性',
+    language: '印度尼西亚语',
+    model: 'chirp3-hd',
+    description: '专业、沉稳',
   ),
 ];
+
+class EdgeTTSVoice {
+  final String name;
+  final String gender;
+  final String language;
+  final String description;
+
+  const EdgeTTSVoice({
+    required this.name,
+    required this.gender,
+    required this.language,
+    required this.description,
+  });
+}
+
+final List<EdgeTTSVoice> edgeTTSVoices = [
+  // ==========================================
+  // 1. 英语 - 美国 (en-US) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'en-US-AriaNeural',
+    gender: '女性',
+    language: '英语(美国)',
+    description: '成熟女声，语气多变，适合新闻与故事',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-JennyNeural',
+    gender: '女性',
+    language: '英语(美国)',
+    description: '通用女声，语气亲切，适合各类应用',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-EmmaNeural',
+    gender: '女性',
+    language: '英语(美国)',
+    description: '明快女声，适合交互式教育',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-MichelleNeural',
+    gender: '女性',
+    language: '英语(美国)',
+    description: '稳健女声，适合商务陈述',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-GuyNeural',
+    gender: '男性',
+    language: '英语(美国)',
+    description: '沉稳男声，非常有力量感，适合旁白',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-ChristopherNeural',
+    gender: '男性',
+    language: '英语(美国)',
+    description: '职场男声，发音清晰，适合演示稿',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-EricNeural',
+    gender: '男性',
+    language: '英语(美国)',
+    description: '自然男声，语气平和，适合播客',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-US-SteffanNeural',
+    gender: '男性',
+    language: '英语(美国)',
+    description: '自信男声，节奏感强，适合广告语',
+  ),
+
+  // ==========================================
+  // 2. 英语 - 英国 (en-GB) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'en-GB-SoniaNeural',
+    gender: '女性',
+    language: '英语(英国)',
+    description: '优雅英音女声，语调考究',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-LibbyNeural',
+    gender: '女性',
+    language: '英语(英国)',
+    description: '自然英音女声，适合有声读物',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-MaisieNeural',
+    gender: '女性',
+    language: '英语(英国)',
+    description: '活泼英国少女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-AbbiNeural',
+    gender: '女性',
+    language: '英语(英国)',
+    description: '清脆英音女声，发音极其标准',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-RyanNeural',
+    gender: '男性',
+    language: '英语(英国)',
+    description: '睿智英音男声，充满绅士感',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-ThomasNeural',
+    gender: '男性',
+    language: '英语(英国)',
+    description: '稳重英音男声，适合播音',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-AlfieNeural',
+    gender: '男性',
+    language: '英语(英国)',
+    description: '年轻英音男声，语气随性',
+  ),
+  const EdgeTTSVoice(
+    name: 'en-GB-ElliotNeural',
+    gender: '男性',
+    language: '英语(英国)',
+    description: '富有磁性的英音低音',
+  ),
+
+  // ==========================================
+  // 3. 中文 - 大陆 (zh-CN) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'zh-CN-XiaoxiaoNeural',
+    gender: '女性',
+    language: '中文(普通话)',
+    description: '温柔女声，情感丰富',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-XiaoyiNeural',
+    gender: '女性',
+    language: '中文(普通话)',
+    description: '活泼少女声，适合短视频解说',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-XiaohanNeural',
+    gender: '女性',
+    language: '中文(普通话)',
+    description: '温婉女声，适合散文和情感类',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-XiaoxuanNeural',
+    gender: '女性',
+    language: '中文(普通话)',
+    description: '成熟女声，语气坚定，适合纪录片',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-YunxiNeural',
+    gender: '男性',
+    language: '中文(普通话)',
+    description: '阳光男声，多才多艺，适合动漫和旁白',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-YunjianNeural',
+    gender: '男性',
+    language: '中文(普通话)',
+    description: '专业男声，语调客观，适合新闻播报',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-YunyangNeural',
+    gender: '男性',
+    language: '中文(普通话)',
+    description: '磁性男声，适合解说和商业广告',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-CN-YunzeNeural',
+    gender: '男性',
+    language: '中文(普通话)',
+    description: '稳重男声，语速适中，适合教育培训',
+  ),
+
+  // ==========================================
+  // 4. 中文 - 其他地区 (HK/TW) - 选集
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'zh-HK-HiuMaanNeural',
+    gender: '女性',
+    language: '中文(粤语)',
+    description: '标准粤语女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-HK-WanLungNeural',
+    gender: '男性',
+    language: '中文(粤语)',
+    description: '磁性粤语男声',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-TW-HsiaoChenNeural',
+    gender: '女性',
+    language: '中文(台湾)',
+    description: '甜美台普女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'zh-TW-YunJheNeural',
+    gender: '男性',
+    language: '中文(台湾)',
+    description: '自然台普男声',
+  ),
+
+  // ==========================================
+  // 5. 法语 - 法国 (fr-FR) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'fr-FR-DeniseNeural',
+    gender: '女性',
+    language: '法语',
+    description: '优雅女声，发音优美',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-EloiseNeural',
+    gender: '女性',
+    language: '法语',
+    description: '知性女声，适合长文本',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-ArianeNeural',
+    gender: '女性',
+    language: '法语',
+    description: '欢快女声，富有节奏感',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-BrigitteNeural',
+    gender: '女性',
+    language: '法语',
+    description: '成熟女声，语气正式',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-HenriNeural',
+    gender: '男性',
+    language: '法语',
+    description: '稳重男声，韵律自然',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-AlainNeural',
+    gender: '男性',
+    language: '法语',
+    description: '清朗男声，适合说明演示',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-ClaudeNeural',
+    gender: '男性',
+    language: '法语',
+    description: '浑厚男声，语气诚恳',
+  ),
+  const EdgeTTSVoice(
+    name: 'fr-FR-JeromeNeural',
+    gender: '男性',
+    language: '法语',
+    description: '活力男声，适合旅游导览',
+  ),
+
+  // ==========================================
+  // 6. 德语 - 德国 (de-DE) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'de-DE-KatjaNeural',
+    gender: '女性',
+    language: '德语',
+    description: '标准德语女声，严谨专业',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-AmalaNeural',
+    gender: '女性',
+    language: '德语',
+    description: '亲切女声，适合客服对话',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-IngridNeural',
+    gender: '女性',
+    language: '德语',
+    description: '叙事女声，语调柔和',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-MarleneNeural',
+    gender: '女性',
+    language: '德语',
+    description: '沉稳女声，语气平稳',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-ConradNeural',
+    gender: '男性',
+    language: '德语',
+    description: '男声代表，语气有力',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-BerndNeural',
+    gender: '男性',
+    language: '德语',
+    description: '专业男声，适合正式场合',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-ChristophNeural',
+    gender: '男性',
+    language: '德语',
+    description: '自然男声，语速稳定',
+  ),
+  const EdgeTTSVoice(
+    name: 'de-DE-KillianNeural',
+    gender: '男性',
+    language: '德语',
+    description: '磁性男声，适合创意内容',
+  ),
+
+  // ==========================================
+  // 7. 西班牙语 - 西班牙 (es-ES) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'es-ES-ElviraNeural',
+    gender: '女性',
+    language: '西班牙语(西班牙)',
+    description: '明亮女声，叙事性强',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-AbrilNeural',
+    gender: '女性',
+    language: '西班牙语(西班牙)',
+    description: '活力女声，语速较快',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-EstrellaNeural',
+    gender: '女性',
+    language: '西班牙语(西班牙)',
+    description: '温柔女声，适合情感朗读',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-ElenaNeural',
+    gender: '女性',
+    language: '西班牙语(西班牙)',
+    description: '干练女声，发音清晰',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-AlvaroNeural',
+    gender: '男性',
+    language: '西班牙语(西班牙)',
+    description: '稳重男声，充满张力',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-ArnauNeural',
+    gender: '男性',
+    language: '西班牙语(西班牙)',
+    description: '磁性男声，非常有魅力',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-DarioNeural',
+    gender: '男性',
+    language: '西班牙语(西班牙)',
+    description: '叙事男声，语气平和',
+  ),
+  const EdgeTTSVoice(
+    name: 'es-ES-EliasNeural',
+    gender: '男性',
+    language: '西班牙语(西班牙)',
+    description: '青年男声，语调活泼',
+  ),
+
+  // ==========================================
+  // 8. 意大利语 (it-IT) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'it-IT-ElsaNeural',
+    gender: '女性',
+    language: '意大利语',
+    description: '优雅女声，韵律优美',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-IsabellaNeural',
+    gender: '女性',
+    language: '意大利语',
+    description: '自信女声，语气流畅',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-PalmiraNeural',
+    gender: '女性',
+    language: '意大利语',
+    description: '日常女声，适合配音',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-ImeldaNeural',
+    gender: '女性',
+    language: '意大利语',
+    description: '温润女声，语速适中',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-DiegoNeural',
+    gender: '男性',
+    language: '意大利语',
+    description: '清爽男声，适合播客',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-BenignoNeural',
+    gender: '男性',
+    language: '意大利语',
+    description: '厚实男声，语气恳切',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-CalogeroNeural',
+    gender: '男性',
+    language: '意大利语',
+    description: '叙事男声，富有表现力',
+  ),
+  const EdgeTTSVoice(
+    name: 'it-IT-GiuseppeNeural',
+    gender: '男性',
+    language: '意大利语',
+    description: '职场男声，适合商务',
+  ),
+
+  // ==========================================
+  // 9. 俄语 (ru-RU) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'ru-RU-SvetlanaNeural',
+    gender: '女性',
+    language: '俄语',
+    description: '标准女声，极具穿透力',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-DariyaNeural',
+    gender: '女性',
+    language: '俄语',
+    description: '柔和女声，语气自然',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-EkaterinaNeural',
+    gender: '女性',
+    language: '俄语',
+    description: '知性女声，适合长文',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-IrinaNeural',
+    gender: '女性',
+    language: '俄语',
+    description: '亲切女声，语调平稳',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-DmitryNeural',
+    gender: '男性',
+    language: '俄语',
+    description: '男声代表，播音范十足',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-PavelNeural',
+    gender: '男性',
+    language: '俄语',
+    description: '沉稳男声，语气平和',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-AleksandrNeural',
+    gender: '男性',
+    language: '俄语',
+    description: '充满活力的男声',
+  ),
+  const EdgeTTSVoice(
+    name: 'ru-RU-YaroslavNeural',
+    gender: '男性',
+    language: '俄语',
+    description: '低沉男声，厚实有力',
+  ),
+
+  // ==========================================
+  // 10. 葡萄牙语 - 巴西 (pt-BR) - 8个音色 (4女4男)
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'pt-BR-FranciscaNeural',
+    gender: '女性',
+    language: '葡萄牙语(巴西)',
+    description: '热情女声，典型的南美风格',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-BrendaNeural',
+    gender: '女性',
+    language: '葡萄牙语(巴西)',
+    description: '现代感女声，非常口语化',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-GiovannaNeural',
+    gender: '女性',
+    language: '葡萄牙语(巴西)',
+    description: '专业女声，语气客观',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-ThalitaNeural',
+    gender: '女性',
+    language: '葡萄牙语(巴西)',
+    description: '温柔女声，适合有声书',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-AntonioNeural',
+    gender: '男性',
+    language: '葡萄牙语(巴西)',
+    description: '磁性男声，适合纪录片',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-FabioNeural',
+    gender: '男性',
+    language: '葡萄牙语(巴西)',
+    description: '阳光男声，语气欢快',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-HumbertoNeural',
+    gender: '男性',
+    language: '葡萄牙语(巴西)',
+    description: '稳重男声，语速适中',
+  ),
+  const EdgeTTSVoice(
+    name: 'pt-BR-JulioNeural',
+    gender: '男性',
+    language: '葡萄牙语(巴西)',
+    description: '叙事男声，语气自然',
+  ),
+
+  // ==========================================
+  // 11. 日语、韩语、阿拉伯语（小众或由于API限制数量较少）
+  // ==========================================
+  const EdgeTTSVoice(
+    name: 'ja-JP-NanamiNeural',
+    gender: '女性',
+    language: '日语',
+    description: '甜美女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'ja-JP-AoiNeural',
+    gender: '女性',
+    language: '日语',
+    description: '自然女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'ja-JP-KeitaNeural',
+    gender: '男性',
+    language: '日语',
+    description: '温润男声',
+  ),
+  const EdgeTTSVoice(
+    name: 'ja-JP-DaichiNeural',
+    gender: '男性',
+    language: '日语',
+    description: '清爽男声',
+  ),
+
+  const EdgeTTSVoice(
+    name: 'ko-KR-SunHiNeural',
+    gender: '女性',
+    language: '韩语',
+    description: '活泼女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'ko-KR-InJoonNeural',
+    gender: '男性',
+    language: '韩语',
+    description: '标准男声',
+  ),
+
+  const EdgeTTSVoice(
+    name: 'ar-EG-SalmaNeural',
+    gender: '女性',
+    language: '阿拉伯语',
+    description: '埃及地区女声',
+  ),
+  const EdgeTTSVoice(
+    name: 'ar-SA-HamedNeural',
+    gender: '男性',
+    language: '阿拉伯语',
+    description: '沙特地区男声',
+  ),
+];
+
+class LanguageVoiceMapping {
+  final String langCode;
+  final String langName;
+
+  const LanguageVoiceMapping({required this.langCode, required this.langName});
+}
+
+const List<LanguageVoiceMapping> supportedLanguages = [
+  LanguageVoiceMapping(langCode: 'en', langName: '英语'),
+  LanguageVoiceMapping(langCode: 'zh', langName: '中文'),
+  LanguageVoiceMapping(langCode: 'ja', langName: '日语'),
+  LanguageVoiceMapping(langCode: 'ko', langName: '韩语'),
+  LanguageVoiceMapping(langCode: 'fr', langName: '法语'),
+  LanguageVoiceMapping(langCode: 'de', langName: '德语'),
+  LanguageVoiceMapping(langCode: 'es', langName: '西班牙语'),
+  LanguageVoiceMapping(langCode: 'it', langName: '意大利语'),
+  LanguageVoiceMapping(langCode: 'ru', langName: '俄语'),
+  LanguageVoiceMapping(langCode: 'pt', langName: '葡萄牙语'),
+  LanguageVoiceMapping(langCode: 'ar', langName: '阿拉伯语'),
+  LanguageVoiceMapping(langCode: 'text', langName: '文本'),
+];
+
+final Map<String, List<GoogleTTSVoice>> googleTTSVoicesByLanguage = {
+  'en': googleTTSVoices
+      .where((v) => v.language.contains('英语') && v.language.contains('美国'))
+      .toList(),
+  'zh': googleTTSVoices.where((v) => v.language.contains('中文')).toList(),
+  'ja': googleTTSVoices.where((v) => v.language.contains('日语')).toList(),
+  'ko': googleTTSVoices.where((v) => v.language.contains('韩语')).toList(),
+  'fr': googleTTSVoices.where((v) => v.language.contains('法语')).toList(),
+  'de': googleTTSVoices.where((v) => v.language.contains('德语')).toList(),
+  'es': googleTTSVoices.where((v) => v.language.contains('西班牙语')).toList(),
+  'it': googleTTSVoices.where((v) => v.language.contains('意大利语')).toList(),
+  'ru': googleTTSVoices.where((v) => v.language.contains('俄语')).toList(),
+  'pt': googleTTSVoices.where((v) => v.language.contains('葡萄牙')).toList(),
+  'ar': googleTTSVoices.where((v) => v.language.contains('阿拉伯')).toList(),
+};
+
+final Map<String, List<EdgeTTSVoice>> edgeTTSVoicesByLanguage = {
+  'en': edgeTTSVoices.where((v) => v.language.contains('英语')).toList(),
+  'zh': edgeTTSVoices.where((v) => v.language.contains('中文')).toList(),
+  'ja': edgeTTSVoices.where((v) => v.language.contains('日语')).toList(),
+  'ko': edgeTTSVoices.where((v) => v.language.contains('韩语')).toList(),
+  'fr': edgeTTSVoices.where((v) => v.language.contains('法语')).toList(),
+  'de': edgeTTSVoices.where((v) => v.language.contains('德语')).toList(),
+  'es': edgeTTSVoices.where((v) => v.language.contains('西班牙')).toList(),
+  'it': edgeTTSVoices.where((v) => v.language.contains('意大利')).toList(),
+  'ru': edgeTTSVoices.where((v) => v.language.contains('俄语')).toList(),
+  'pt': edgeTTSVoices.where((v) => v.language.contains('葡萄牙')).toList(),
+  'ar': edgeTTSVoices.where((v) => v.language.contains('阿拉伯')).toList(),
+};
 
 class ApiTestResult {
   final bool success;
@@ -392,7 +1218,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
   LLMProvider _fastProvider = LLMProvider.openAI;
   LLMProvider _standardProvider = LLMProvider.openAI;
-  TTSProvider _ttsProvider = TTSProvider.azure;
+  TTSProvider _ttsProvider = TTSProvider.edge;
 
   // Google TTS 音色配置
   GoogleTTSVoice? _selectedGoogleVoice;
@@ -413,25 +1239,70 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   String? _testResultTts;
   bool? _testSuccessTts;
 
-  static const Map<LLMProvider, String> _defaultModels = {
-    LLMProvider.openAI: 'gpt-4o-mini',
-    LLMProvider.anthropic: 'claude-3-sonnet-20240229',
-    LLMProvider.gemini: 'gemini-pro',
+  /// 快速模型默认名：速度优先、价格较低
+  static const Map<LLMProvider, String> _fastDefaultModels = {
+    LLMProvider.openAI: 'gpt-5-mini',
+    LLMProvider.anthropic: 'claude-haiku-4-5-20251001',
+    LLMProvider.gemini: 'gemini-2.5-flash',
     LLMProvider.deepseek: 'deepseek-chat',
-    LLMProvider.moonshot: 'moonshot-v1-8k',
-    LLMProvider.zhipu: 'glm-4',
+    LLMProvider.moonshot: 'kimi-k2-turbo-preview',
+    LLMProvider.zhipu: 'glm-4-flash-250414',
+    LLMProvider.ali: 'qwen-flash',
+    LLMProvider.custom: '',
+  };
+
+  /// 标准模型默认名：质量优先、能力较强
+  static const Map<LLMProvider, String> _standardDefaultModels = {
+    LLMProvider.openAI: 'gpt-5.2',
+    LLMProvider.anthropic: 'claude-sonnet-4-6',
+    LLMProvider.gemini: 'gemini-2.5-pro',
+    LLMProvider.deepseek: 'deepseek-reasoner',
+    LLMProvider.moonshot: 'kimi-k2.5',
+    LLMProvider.zhipu: 'glm-4-plus',
+    LLMProvider.ali: 'qwen3-max',
     LLMProvider.custom: '',
   };
 
   static const Map<TTSProvider, String> _defaultTtsModels = {
+    TTSProvider.edge: '',
     TTSProvider.azure: 'azure-tts',
     TTSProvider.google: '',
   };
 
   static const Map<TTSProvider, String> _defaultTtsVoices = {
+    TTSProvider.edge: 'zh-CN-XiaoxiaoNeural',
     TTSProvider.azure: 'zh-CN-XiaoxiaoNeural',
     TTSProvider.google: 'en-US-Neural2-F',
   };
+
+  final Map<String, String> _languageVoiceSettings = {};
+  String? _currentEditingLanguage;
+  List<String> _availableLanguages = [];
+
+  Future<List<String>> _getAvailableLanguages() async {
+    final dictManager = DictionaryManager();
+    final allMetadata = await dictManager.getAllDictionariesMetadata();
+    final languageSet = <String>{};
+
+    for (final metadata in allMetadata) {
+      if (metadata.sourceLanguage.isNotEmpty) {
+        final lang = metadata.sourceLanguage.toLowerCase();
+        if (supportedLanguages.any((l) => l.langCode == lang)) {
+          languageSet.add(lang);
+        }
+      }
+      for (final targetLang in metadata.targetLanguages) {
+        if (targetLang.isNotEmpty) {
+          final lang = targetLang.toLowerCase();
+          if (supportedLanguages.any((l) => l.langCode == lang)) {
+            languageSet.add(lang);
+          }
+        }
+      }
+    }
+
+    return languageSet.toList()..sort();
+  }
 
   @override
   void initState() {
@@ -469,7 +1340,8 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     _fastBaseUrlController.text =
         prefs.getString('fast_llm_base_url') ?? _fastProvider.defaultBaseUrl;
     _fastModelController.text =
-        prefs.getString('fast_llm_model') ?? _defaultModels[_fastProvider]!;
+        prefs.getString('fast_llm_model') ??
+        (_fastDefaultModels[_fastProvider] ?? '');
 
     final standardProviderIndex = prefs.getInt('standard_llm_provider') ?? 0;
     _standardProvider = LLMProvider.values[standardProviderIndex];
@@ -480,14 +1352,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
         _standardProvider.defaultBaseUrl;
     _standardModelController.text =
         prefs.getString('standard_llm_model') ??
-        _defaultModels[_standardProvider]!;
+        (_standardDefaultModels[_standardProvider] ?? '');
 
     final ttsProviderIndex = prefs.getInt('tts_provider');
     if (ttsProviderIndex != null &&
         ttsProviderIndex < TTSProvider.values.length) {
       _ttsProvider = TTSProvider.values[ttsProviderIndex];
     } else {
-      _ttsProvider = TTSProvider.azure;
+      _ttsProvider = TTSProvider.edge;
     }
     _ttsApiKeyController.text = prefs.getString('tts_api_key') ?? '';
     _ttsBaseUrlController.text =
@@ -513,6 +1385,38 @@ class _LLMConfigPageState extends State<LLMConfigPage>
         (v) => v.model == 'chirp3-hd',
         orElse: () => googleTTSVoices.first,
       );
+    }
+
+    // 加载已有词典涉及的语言
+    _availableLanguages = await _getAvailableLanguages();
+
+    // 如果没有已有词典，至少显示一个默认语言
+    if (_availableLanguages.isEmpty) {
+      _availableLanguages = ['zh', 'en'];
+    }
+
+    // 加载语言音色设置（只加载已有词典涉及的语言）
+    for (final langCode in _availableLanguages) {
+      final lang = supportedLanguages.firstWhere(
+        (l) => l.langCode == langCode,
+        orElse: () => supportedLanguages.first,
+      );
+      final voiceKey = 'voice_${lang.langCode}';
+      final savedVoice = prefs.getString(voiceKey);
+      if (savedVoice != null && savedVoice.isNotEmpty) {
+        _languageVoiceSettings[lang.langCode] = savedVoice;
+      } else {
+        // 使用音色列表中第一个
+        if (_ttsProvider == TTSProvider.google) {
+          final voices = googleTTSVoicesByLanguage[lang.langCode];
+          _languageVoiceSettings[lang.langCode] =
+              voices != null && voices.isNotEmpty ? voices.first.name : '';
+        } else {
+          final voices = edgeTTSVoicesByLanguage[lang.langCode];
+          _languageVoiceSettings[lang.langCode] =
+              voices != null && voices.isNotEmpty ? voices.first.name : '';
+        }
+      }
     }
 
     setState(() {
@@ -607,7 +1511,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('tts_provider', _ttsProvider.index);
-    await prefs.setString('tts_api_key', _ttsApiKeyController.text.trim());
+    await prefs.setString(
+      'tts_api_key',
+      _ttsProvider == TTSProvider.edge ? '' : _ttsApiKeyController.text.trim(),
+    );
     await prefs.setString('tts_base_url', _ttsBaseUrlController.text.trim());
 
     // 如果是 Google TTS，保存音色选择
@@ -620,6 +1527,11 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       await prefs.setString('tts_voice', _ttsVoiceController.text.trim());
     }
 
+    // 保存语言音色设置
+    for (final entry in _languageVoiceSettings.entries) {
+      await prefs.setString('voice_${entry.key}', entry.value);
+    }
+
     _showSavedSnackBar();
   }
 
@@ -628,7 +1540,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     setState(() {
       _fastProvider = provider;
       _fastBaseUrlController.text = provider.defaultBaseUrl;
-      _fastModelController.text = _defaultModels[provider]!;
+      _fastModelController.text = _fastDefaultModels[provider] ?? '';
       _testResultFast = null;
       _testSuccessFast = null;
     });
@@ -639,7 +1551,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     setState(() {
       _standardProvider = provider;
       _standardBaseUrlController.text = provider.defaultBaseUrl;
-      _standardModelController.text = _defaultModels[provider]!;
+      _standardModelController.text = _standardDefaultModels[provider] ?? '';
       _testResultStandard = null;
       _testSuccessStandard = null;
     });
@@ -647,6 +1559,22 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
   void _onTtsProviderChanged(TTSProvider? provider) {
     if (provider == null) return;
+
+    // 切换 Provider 时，更新语言音色设置为新 Provider 的默认值
+    for (final lang in _availableLanguages) {
+      if (provider == TTSProvider.google) {
+        final voices = googleTTSVoicesByLanguage[lang];
+        _languageVoiceSettings[lang] = voices != null && voices.isNotEmpty
+            ? voices.first.name
+            : '';
+      } else {
+        final voices = edgeTTSVoicesByLanguage[lang];
+        _languageVoiceSettings[lang] = voices != null && voices.isNotEmpty
+            ? voices.first.name
+            : '';
+      }
+    }
+
     setState(() {
       _ttsProvider = provider;
       _ttsBaseUrlController.text = provider.defaultBaseUrl;
@@ -846,6 +1774,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     required String subtitle,
     required GlobalKey<FormState> formKey,
     required LLMProvider provider,
+    required Map<LLMProvider, String> defaultModels,
     required void Function(LLMProvider?) onProviderChanged,
     required TextEditingController apiKeyController,
     required TextEditingController baseUrlController,
@@ -974,13 +1903,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               return null;
             },
           ),
-          const SizedBox(height: 8),
-          Text(
-            '您的API Key仅存储在本地，不会上传到任何服务器',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-          ),
+
           const SizedBox(height: 16),
           TextFormField(
             controller: baseUrlController,
@@ -1014,7 +1937,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           ),
           const SizedBox(height: 8),
           Text(
-            '仅在使用自定义端点或代理时需要修改',
+            '仅在使用自定义端点或代理时需要修改url',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -1057,7 +1980,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           ),
           const SizedBox(height: 8),
           Text(
-            '默认模型: ${_defaultModels[provider]}',
+            '默认模型: ${defaultModels[provider] ?? ''}',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -1216,110 +2139,18 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             onChanged: _onTtsProviderChanged,
           ),
           const SizedBox(height: 16),
-          TextFormField(
-            controller: _ttsApiKeyController,
-            obscureText: _obscureTtsApiKey,
-            maxLines: _obscureTtsApiKey
-                ? 1
-                : (_ttsProvider == TTSProvider.google ? 5 : 1),
-            minLines: 1,
-            decoration: InputDecoration(
-              labelText: _ttsProvider == TTSProvider.google
-                  ? 'Service Account JSON Key'
-                  : 'API Key',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 2,
-                ),
-              ),
-              filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-              prefixIcon: const Icon(Icons.key_outlined),
-              prefixIconConstraints: const BoxConstraints(
-                minWidth: 48,
-                minHeight: 48,
-              ),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureTtsApiKey
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _obscureTtsApiKey = !_obscureTtsApiKey;
-                  });
-                },
-              ),
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return '请输入API Key';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _ttsProvider == TTSProvider.google
-                ? '使用 Google Cloud Service Account JSON Key\n访问 https://console.cloud.google.com/apis/credentials 创建'
-                : '使用 Azure Speech Service 获取 API Key',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _ttsBaseUrlController,
-            decoration: InputDecoration(
-              labelText: 'Base URL (可选)',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 2,
-                ),
-              ),
-              filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-              prefixIcon: const Icon(Icons.link_outlined),
-              prefixIconConstraints: const BoxConstraints(
-                minWidth: 48,
-                minHeight: 48,
-              ),
-              hintText: _ttsProvider == TTSProvider.google
-                  ? '留空使用: https://texttospeech.googleapis.com/v1'
-                  : '留空使用默认地址',
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (_ttsProvider == TTSProvider.google) ...[
-            // Google TTS 音色选择（默认使用 Chirp 3 HD 模型）
-            DropdownButtonFormField2<GoogleTTSVoice>(
-              value: _selectedGoogleVoice,
-              isExpanded: true,
+          if (_ttsProvider != TTSProvider.edge) ...[
+            TextFormField(
+              controller: _ttsApiKeyController,
+              obscureText: _obscureTtsApiKey,
+              maxLines: _obscureTtsApiKey
+                  ? 1
+                  : (_ttsProvider == TTSProvider.google ? 5 : 1),
+              minLines: 1,
               decoration: InputDecoration(
-                labelText: '选择音色',
+                labelText: _ttsProvider == TTSProvider.google
+                    ? 'Service Account JSON Key'
+                    : 'API Key',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -1338,88 +2169,101 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                prefixIcon: const Icon(Icons.person_outline),
+                prefixIcon: const Icon(Icons.key_outlined),
                 prefixIconConstraints: const BoxConstraints(
                   minWidth: 48,
                   minHeight: 48,
                 ),
-              ),
-              iconStyleData: IconStyleData(
-                icon: Icon(
-                  Icons.arrow_drop_down,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              dropdownStyleData: DropdownStyleData(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Theme.of(context).colorScheme.surface,
-                ),
-                maxHeight: 300,
-                offset: const Offset(0, -4),
-              ),
-              menuItemStyleData: const MenuItemStyleData(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-              ),
-              items: googleTTSVoices.where((v) => v.model == 'chirp3-hd').map((
-                voice,
-              ) {
-                return DropdownMenuItem(
-                  value: voice,
-                  child: Text(
-                    '${voice.name} (${voice.gender})',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureTtsApiKey
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
                   ),
-                );
-              }).toList(),
-              onChanged: (voice) {
-                setState(() {
-                  _selectedGoogleVoice = voice;
-                });
-              },
-            ),
-            const SizedBox(height: 8),
-            if (_selectedGoogleVoice != null)
-              Text(
-                '${_selectedGoogleVoice!.description} (Chirp 3 HD 高质量语音)',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
+                  onPressed: () {
+                    setState(() {
+                      _obscureTtsApiKey = !_obscureTtsApiKey;
+                    });
+                  },
                 ),
-              ),
-            const SizedBox(height: 16),
-          ] else ...[
-            // Azure TTS 语音选择
-            TextFormField(
-              controller: _ttsVoiceController,
-              decoration: InputDecoration(
-                labelText: '语音 (Voice)',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.record_voice_over),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 48,
-                  minHeight: 48,
-                ),
-                hintText: '例如: zh-CN-XiaoxiaoNeural',
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return '请输入语音名称';
+                  return '请输入API Key';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 8),
             Text(
-              '默认: ${_defaultTtsVoices[_ttsProvider]}',
+              _ttsProvider == TTSProvider.google
+                  ? '使用 Google Cloud Service Account JSON Key\n访问 https://console.cloud.google.com/apis/credentials 创建'
+                  : '使用 Azure Speech Service 获取 API Key',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
             ),
-            const SizedBox(height: 16),
+          ] else ...[
+            Text(
+              'Edge TTS 是微软 Edge 浏览器的语音合成服务，无需配置即可使用',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
           ],
+          if (_ttsProvider != TTSProvider.edge) ...[
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _ttsBaseUrlController,
+              decoration: InputDecoration(
+                labelText: 'Base URL (可选)',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                prefixIcon: const Icon(Icons.link_outlined),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 48,
+                  minHeight: 48,
+                ),
+                hintText: _ttsProvider == TTSProvider.google
+                    ? '留空使用: https://texttospeech.googleapis.com/v1'
+                    : '留空使用默认地址',
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          Text(
+            '语言音色设置',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '为每种语言设置发音音色，词典发音时将根据语言自动选择对应音色',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...supportedLanguages
+              .where((lang) => _availableLanguages.contains(lang.langCode))
+              .map((lang) => _buildLanguageVoiceSetting(lang)),
           const SizedBox(height: 32),
           Row(
             children: [
@@ -1518,6 +2362,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       subtitle: '适用于日常查询，速度优先',
                       formKey: _fastFormKey,
                       provider: _fastProvider,
+                      defaultModels: _fastDefaultModels,
                       onProviderChanged: _onFastProviderChanged,
                       apiKeyController: _fastApiKeyController,
                       baseUrlController: _fastBaseUrlController,
@@ -1547,6 +2392,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       subtitle: '适用于高质量翻译和解释',
                       formKey: _standardFormKey,
                       provider: _standardProvider,
+                      defaultModels: _standardDefaultModels,
                       onProviderChanged: _onStandardProviderChanged,
                       apiKeyController: _standardApiKeyController,
                       baseUrlController: _standardBaseUrlController,
@@ -1598,5 +2444,129 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     }
 
     return PageScaleWrapper(scale: _dictionaryContentScale, child: content);
+  }
+
+  Widget _buildLanguageVoiceSetting(LanguageVoiceMapping lang) {
+    List<GoogleTTSVoice> googleVoices = [];
+    List<EdgeTTSVoice> edgeVoices = [];
+
+    if (_ttsProvider == TTSProvider.google) {
+      googleVoices = googleTTSVoicesByLanguage[lang.langCode] ?? [];
+    } else {
+      edgeVoices = edgeTTSVoicesByLanguage[lang.langCode] ?? [];
+    }
+
+    final currentVoice =
+        _languageVoiceSettings[lang.langCode] ??
+        (_ttsProvider == TTSProvider.google
+            ? (googleVoices.isNotEmpty ? googleVoices.first.name : '')
+            : (edgeVoices.isNotEmpty ? edgeVoices.first.name : ''));
+
+    List<DropdownMenuItem<String>> voiceItems = [];
+
+    if (_ttsProvider == TTSProvider.google) {
+      voiceItems = googleVoices.map((voice) {
+        return DropdownMenuItem(
+          value: voice.name,
+          child: Text(
+            '${voice.name} (${voice.gender})',
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList();
+    } else {
+      voiceItems = edgeVoices.map((voice) {
+        return DropdownMenuItem(
+          value: voice.name,
+          child: Text(
+            '${voice.name} (${voice.gender})',
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList();
+    }
+
+    if (voiceItems.isEmpty) {
+      voiceItems.add(
+        DropdownMenuItem(
+          value: currentVoice,
+          child: Text(currentVoice.isEmpty ? '无可用音色' : currentVoice),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              lang.langName,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: DropdownButtonFormField2<String>(
+              value: voiceItems.any((item) => item.value == currentVoice)
+                  ? currentVoice
+                  : (voiceItems.isNotEmpty ? voiceItems.first.value : ''),
+              isExpanded: true,
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              ),
+              iconStyleData: IconStyleData(
+                icon: Icon(
+                  Icons.arrow_drop_down,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 20,
+                ),
+              ),
+              dropdownStyleData: DropdownStyleData(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Theme.of(context).colorScheme.surface,
+                ),
+                maxHeight: 250,
+                offset: const Offset(0, -4),
+              ),
+              menuItemStyleData: const MenuItemStyleData(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+              ),
+              items: voiceItems,
+              onChanged: (voice) {
+                if (voice != null) {
+                  setState(() {
+                    _languageVoiceSettings[lang.langCode] = voice;
+                  });
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

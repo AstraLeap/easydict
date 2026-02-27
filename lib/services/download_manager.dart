@@ -218,6 +218,15 @@ class DownloadManager with ChangeNotifier {
     RemoteDictionary dict,
     DownloadOptionsResult options,
   ) async {
+    // Guarantee periodic UI refreshes independent of HTTP chunk delivery.
+    // On Android, large chunks may arrive infrequently; without this timer
+    // the UI could freeze between chunks even though bytes are flowing.
+    final progressTimer = Timer.periodic(_minNotifyInterval, (_) {
+      if (task.state == DownloadState.downloading) {
+        notifyListeners();
+      }
+    });
+
     try {
       if (_storeService == null) {
         throw Exception('未配置词典商店服务');
@@ -262,9 +271,12 @@ class DownloadManager with ChangeNotifier {
               : 0.0;
           task.status = event['status'] as String? ?? '下载中...';
           task.error = null;
+          // The periodic timer handles UI updates; also notify immediately
+          // so the very first chunk is reflected without waiting 100 ms.
           _notifyIfNeeded();
           _saveDownloads();
         } else if (event['type'] == 'complete') {
+          progressTimer.cancel();
           task.state = DownloadState.completed;
           task.status = '下载完成';
           task.overallProgress = 1.0;
@@ -288,6 +300,8 @@ class DownloadManager with ChangeNotifier {
       _saveDownloads();
       task.onError?.call(e.toString());
       _currentDownloadId = null;
+    } finally {
+      progressTimer.cancel();
     }
   }
 
@@ -333,8 +347,17 @@ class DownloadManager with ChangeNotifier {
   Future<void> startUpdate(
     String dictId,
     String dictName,
-    Future<void> Function(void Function(String, int, int) onProgress)
-    updateTask, {
+    Future<void> Function(
+      void Function(
+        String status,
+        int fileIndex,
+        int totalFiles, {
+        int receivedBytes,
+        int totalBytes,
+        double fileProgress,
+        int speedBytesPerSecond,
+      }) onProgress,
+    ) updateTask, {
     VoidCallback? onComplete,
     void Function(String error)? onError,
   }) async {
@@ -357,18 +380,42 @@ class DownloadManager with ChangeNotifier {
     notifyListeners();
     _saveDownloads();
 
+    // Periodic timer keeps the UI refreshed even between chunk events.
+    final progressTimer = Timer.periodic(_minNotifyInterval, (_) {
+      if (task.state == DownloadState.downloading) {
+        notifyListeners();
+      }
+    });
+
     try {
-      await updateTask((status, current, total) {
+      await updateTask((
+        status,
+        current,
+        total, {
+        int receivedBytes = 0,
+        int totalBytes = 0,
+        double fileProgress = 0.0,
+        int speedBytesPerSecond = 0,
+      }) {
         task.status = status;
         task.fileIndex = current;
         task.totalFiles = total;
-        task.overallProgress = total > 0 ? current / total : 0;
+        task.receivedBytes = receivedBytes;
+        task.totalBytes = totalBytes;
+        task.fileProgress = fileProgress;
+        task.speedBytesPerSecond = speedBytesPerSecond;
+        // Overall = completed files + fraction of current file
+        task.overallProgress = total > 0
+            ? ((current - 1) + fileProgress) / total
+            : 0.0;
         _notifyIfNeeded();
       });
 
+      progressTimer.cancel();
       task.state = DownloadState.completed;
       task.status = '更新完成';
       task.overallProgress = 1.0;
+      task.fileProgress = 1.0;
       notifyListeners();
       _saveDownloads();
       task.onComplete?.call();
@@ -381,6 +428,7 @@ class DownloadManager with ChangeNotifier {
       _saveDownloads();
       task.onError?.call(e.toString());
     } finally {
+      progressTimer.cancel();
       _currentDownloadId = null;
     }
   }
@@ -433,35 +481,46 @@ class DownloadManager with ChangeNotifier {
       task.fileIndex = 1;
       task.totalFiles = 1;
 
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        receivedBytes += chunk.length;
-
-        final now = DateTime.now();
-        if (task.lastSpeedUpdate != null) {
-          final elapsedMs = now
-              .difference(task.lastSpeedUpdate!)
-              .inMilliseconds;
-          if (elapsedMs > 0) {
-            final bytesDiff = receivedBytes - task.receivedBytes;
-            task.speedBytesPerSecond = (bytesDiff * 1000 / elapsedMs).round();
-          }
-        } else {
-          final elapsedMs = now.difference(task.startTime).inMilliseconds;
-          if (elapsedMs > 0) {
-            task.speedBytesPerSecond = (receivedBytes * 1000 / elapsedMs)
-                .round();
-          }
+      // Periodic timer guarantees UI refreshes on all platforms.
+      final progressTimer = Timer.periodic(_minNotifyInterval, (_) {
+        if (task.state == DownloadState.downloading) {
+          notifyListeners();
         }
+      });
 
-        task.receivedBytes = receivedBytes;
-        task.lastSpeedUpdate = now;
-        task.fileProgress = contentLength > 0
-            ? receivedBytes / contentLength
-            : 0.0;
-        task.overallProgress = task.fileProgress;
-        task.status = '[1/1] 下载 $fileName';
-        _notifyIfNeeded();
+      try {
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          receivedBytes += chunk.length;
+
+          final now = DateTime.now();
+          if (task.lastSpeedUpdate != null) {
+            final elapsedMs = now
+                .difference(task.lastSpeedUpdate!)
+                .inMilliseconds;
+            if (elapsedMs > 0) {
+              final bytesDiff = receivedBytes - task.receivedBytes;
+              task.speedBytesPerSecond = (bytesDiff * 1000 / elapsedMs).round();
+            }
+          } else {
+            final elapsedMs = now.difference(task.startTime).inMilliseconds;
+            if (elapsedMs > 0) {
+              task.speedBytesPerSecond = (receivedBytes * 1000 / elapsedMs)
+                  .round();
+            }
+          }
+
+          task.receivedBytes = receivedBytes;
+          task.lastSpeedUpdate = now;
+          task.fileProgress = contentLength > 0
+              ? receivedBytes / contentLength
+              : 0.0;
+          task.overallProgress = task.fileProgress;
+          task.status = '[1/1] 下载 $fileName';
+          _notifyIfNeeded();
+        }
+      } finally {
+        progressTimer.cancel();
       }
 
       await sink.close();

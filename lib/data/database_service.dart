@@ -165,7 +165,7 @@ class DictionaryEntry {
                   .where((e) => e.isNotEmpty)
                   .toList()
             : [],
-        rawJson: Map<String, dynamic>.from(json),
+        rawJson: json,
       );
     } catch (e) {
       rethrow;
@@ -335,6 +335,12 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
+  // 静态 RegExp 常量，避免每次调用时重新创建对象
+  static final RegExp _diacriticsRegExp = RegExp(r'[\u0300-\u036f]');
+  static final RegExp _chineseRegExp = RegExp(r'[\u4e00-\u9fa5]');
+  static final RegExp _japaneseRegExp = RegExp(r'[\u3040-\u309f\u30a0-\u30ff]');
+  static final RegExp _koreanRegExp = RegExp(r'[\uac00-\ud7af]');
+
   final DictionaryManager _dictManager = DictionaryManager();
   Database? _database;
   String? _currentDictionaryId;
@@ -444,15 +450,15 @@ class DatabaseService {
     // 小写化
     String normalized = word.toLowerCase();
     // 去除音调符号（Unicode组合字符）
-    normalized = normalized.replaceAll(RegExp(r'[\u0300-\u036f]'), '');
+    normalized = normalized.replaceAll(_diacriticsRegExp, '');
     return normalized;
   }
 
   /// 简单的语言检测
   String _detectLanguage(String text) {
-    if (RegExp(r'[\u4e00-\u9fa5]').hasMatch(text)) return 'zh';
-    if (RegExp(r'[\u3040-\u309f\u30a0-\u30ff]').hasMatch(text)) return 'ja';
-    if (RegExp(r'[\uac00-\ud7af]').hasMatch(text)) return 'ko';
+    if (_chineseRegExp.hasMatch(text)) return 'zh';
+    if (_japaneseRegExp.hasMatch(text)) return 'ja';
+    if (_koreanRegExp.hasMatch(text)) return 'ko';
     return 'en';
   }
 
@@ -782,7 +788,7 @@ class DatabaseService {
           columns: ['headword'],
           where: whereClause,
           whereArgs: whereArgs,
-          orderBy: 'headword ASC',
+          orderBy: 'headword_normalized ASC',
           limit: limit,
         );
 
@@ -800,12 +806,10 @@ class DatabaseService {
     for (final dictResults in allResults) {
       for (final headword in dictResults) {
         results.add(headword);
-        if (results.length >= limit) break;
       }
-      if (results.length >= limit) break;
     }
 
-    return results.toList()..sort();
+    return results.toList();
   }
 
   Future<List<String>> searchByWildcard(

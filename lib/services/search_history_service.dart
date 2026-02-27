@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'preferences_service.dart';
 
 /// 搜索记录模型
 class SearchRecord {
@@ -53,7 +54,7 @@ class SearchHistoryService {
 
   /// 获取完整的搜索记录
   Future<List<SearchRecord>> getSearchRecords() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     final jsonString = prefs.getString(_prefKeySearchHistory);
     if (jsonString == null || jsonString.isEmpty) return [];
 
@@ -74,7 +75,7 @@ class SearchHistoryService {
   }) async {
     if (word.trim().isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     List<SearchRecord> records = await getSearchRecords();
 
     final trimmedWord = word.trim();
@@ -105,12 +106,12 @@ class SearchHistoryService {
   }
 
   Future<void> clearHistory() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     await prefs.remove(_prefKeySearchHistory);
   }
 
   Future<void> removeSearchRecord(String word) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await PreferencesService().prefs;
     List<SearchRecord> records = await getSearchRecords();
 
     records.removeWhere((r) => r.word == word);

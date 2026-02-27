@@ -193,7 +193,9 @@ class LLMClient {
         'messages': [
           {'role': 'user', 'content': prompt},
         ],
-        'system': systemPrompt,
+        // Anthropic 要求 system 字段必须是字符串，传 null 会导致 400 错误
+        if (systemPrompt != null && systemPrompt.isNotEmpty)
+          'system': systemPrompt,
         'max_tokens': maxTokens,
       }),
     );
@@ -229,7 +231,8 @@ class LLMClient {
       body: jsonEncode({
         'model': model,
         'messages': messages,
-        'system': systemPrompt,
+        if (systemPrompt != null && systemPrompt.isNotEmpty)
+          'system': systemPrompt,
         'max_tokens': maxTokens,
       }),
     );
@@ -251,21 +254,30 @@ class LLMClient {
   }) async {
     final url = '$baseUrl/models/$model:generateContent?key=$apiKey';
 
-    final parts = <Map<String, String>>[
-      {'text': prompt},
-    ];
+    final requestBody = <String, dynamic>{
+      'contents': [
+        {
+          'role': 'user',
+          'parts': [
+            {'text': prompt},
+          ],
+        },
+      ],
+    };
+
+    // 使用正确的 systemInstruction 字段，而不是将其拼接到用户消息中
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      parts.insert(0, {'text': 'System: $systemPrompt\n\n'});
+      requestBody['systemInstruction'] = {
+        'parts': [
+          {'text': systemPrompt},
+        ],
+      };
     }
 
     final response = await http.post(
       Uri.parse(url),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'contents': [
-          {'parts': parts},
-        ],
-      }),
+      body: jsonEncode(requestBody),
     );
 
     if (response.statusCode == 200) {
