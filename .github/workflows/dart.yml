@@ -1,0 +1,55 @@
+name: Flutter Build CI
+
+# 触发条件：当推送代码到 main 分支时
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    # 使用最新的 Ubuntu 系统作为运行环境
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 安装 Java (Android 编译需要)
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. 安装 Flutter 环境
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable' # 使用稳定版
+          cache: true              # 开启缓存以加快后续编译速度
+
+      # 4. 获取依赖
+      - name: Install dependencies
+        run: flutter pub get
+
+      # 5. 代码检查（可选）
+      - name: Analyze code
+        run: flutter analyze
+
+      # 6. 运行测试（可选）
+      - name: Run tests
+        run: flutter test
+
+      # 7. 编译 APK
+      - name: Build APK
+        run: flutter build apk --release
+
+      # 8. 将生成的 APK 上传到 GitHub，方便下载
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
