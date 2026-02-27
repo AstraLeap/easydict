@@ -37,8 +37,6 @@ class FormattedTextResult {
 }
 
 // 颜色映射表
-const double _senseLeftIndent = 30;
-
 const Map<String, Color> _colorMap = {
   'red': Colors.red,
   'green': Colors.green,
@@ -287,10 +285,16 @@ class _RenderTappable extends RenderProxyBox {
   _RenderTappable(this.pathData);
 }
 
+// 预编译的正则表达式常量，避免每次调用时重新创建对象
+final RegExp _removeFormattingPattern = RegExp(r'\[([^\]]*?)\]\([^\)]*?\)');
+final RegExp _formattedTextPattern = RegExp(r'\[([^\]]*?)\]\(([^)]*?)\)');
+
 /// 去除文本格式，将 [text](style) 转换为 text
 String _removeFormatting(String text) {
-  final RegExp pattern = RegExp(r'\[([^\]]*?)\]\([^\)]*?\)');
-  return text.replaceAllMapped(pattern, (match) => match.group(1) ?? '');
+  return text.replaceAllMapped(
+    _removeFormattingPattern,
+    (match) => match.group(1) ?? '',
+  );
 }
 
 String? _extractTextToCopy(dynamic value) {
@@ -398,7 +402,7 @@ FormattedTextResult parseFormattedText(
     locale: const Locale('zh', 'CN'),
   );
 
-  final RegExp pattern = RegExp(r'\[([^\]]*?)\]\(([^)]*?)\)');
+  final RegExp pattern = _formattedTextPattern;
   final List<InlineSpan> spans = [];
   final List<String> plainTexts = [];
   int lastIndex = 0;
@@ -869,9 +873,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
   DateTime? _lastTapTime;
   int? _lastTapButton;
   Offset? _lastTapPosition;
+  Timer? _longPressTimer;
+  bool _longPressHandled = false;
   DateTime? _lastTtsTime; // TTS防抖时间戳
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
+
+  /// ASCII 字母判断助手（替代循环内 RegExp 创建）
+  static bool _isAsciiLetter(int cu) =>
+      (cu >= 65 && cu <= 90) || (cu >= 97 && cu <= 122);
 
   // 用于存储元素 Key 的 Map，用于精确滚动
   final Map<String, GlobalKey> _elementKeys = {};
@@ -1103,12 +1113,27 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return GestureDetector(
       key: elementKey, // 绑定 Key
       behavior: HitTestBehavior.translucent,
-      onTapDown: text != null && textStyle != null
-          ? (details) {
-              _lastTapPosition = details.globalPosition;
-            }
-          : null,
+      onTapDown: (details) {
+        _lastTapPosition = details.globalPosition;
+        _longPressHandled = false;
+        _longPressTimer?.cancel();
+        _longPressTimer = Timer(const Duration(milliseconds: 200), () {
+          _longPressHandled = true;
+          final pathStr2 = _convertPathToString(pathData.path);
+          _handleElementSecondaryTap(
+            pathStr2,
+            pathData.label,
+            context,
+            details.globalPosition,
+          );
+        });
+      },
       onTap: () {
+        _longPressTimer?.cancel();
+        if (_longPressHandled) {
+          _longPressHandled = false;
+          return;
+        }
         // 单击立即生效
         _handleElementTap(pathStr, pathData.label);
 
@@ -1140,15 +1165,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         }
       },
       onSecondaryTapUp: (details) {
-        final pathStr = _convertPathToString(pathData.path);
-        _handleElementSecondaryTap(
-          pathStr,
-          pathData.label,
-          context,
-          details.globalPosition,
-        );
-      },
-      onLongPressStart: (details) {
+        _longPressTimer?.cancel();
         final pathStr = _convertPathToString(pathData.path);
         _handleElementSecondaryTap(
           pathStr,
@@ -1320,11 +1337,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     int start = offset;
     int end = offset;
 
-    while (start > 0 && text[start - 1].startsWith(RegExp(r'[a-zA-Z]'))) {
+    while (start > 0 && _isAsciiLetter(text.codeUnitAt(start - 1))) {
       start--;
     }
 
-    while (end < text.length && text[end].startsWith(RegExp(r'[a-zA-Z]'))) {
+    while (end < text.length && _isAsciiLetter(text.codeUnitAt(end))) {
       end++;
     }
 
@@ -1508,8 +1525,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
           }
         };
 
-      final longPressRecognizer = LongPressGestureRecognizer()
-        ..onLongPressStart = (details) {
+      final longPressRecognizer = LongPressGestureRecognizer(
+        duration: const Duration(milliseconds: 200),
+      )..onLongPressStart = (details) {
           _lastTapPosition = details.globalPosition;
           if (onElementSecondaryTapWithPosition != null) {
             onElementSecondaryTapWithPosition(
@@ -1819,6 +1837,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _lastTtsTime = now;
 
     final pathParts = path.split('.');
+    Logger.d('TTS path: $path, parts: $pathParts', tag: '_performSpeak');
+
     final json = _localEntry.toJson();
     dynamic currentValue = json;
 
@@ -1850,11 +1870,38 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
+    // 尝试从路径中提取语言代码（路径的最后一部分通常是语言代码）
+    String? languageCode;
+    if (pathParts.isNotEmpty) {
+      final lastPart = pathParts.last;
+      // 检查是否是语言代码（如 en, zh, ja 等）
+      final knownLanguages = [
+        'en',
+        'zh',
+        'ja',
+        'ko',
+        'fr',
+        'de',
+        'es',
+        'it',
+        'ru',
+        'pt',
+        'ar',
+        'text',
+      ];
+      if (knownLanguages.contains(lastPart.toLowerCase())) {
+        languageCode = lastPart.toLowerCase();
+      }
+    }
+
     try {
       showToast(context, '正在生成音频...');
-      Logger.d('开始TTS: $textToSpeak', tag: '_performSpeak');
+      Logger.d('开始TTS: $textToSpeak, 语言: $languageCode', tag: '_performSpeak');
 
-      final audioData = await AIService().textToSpeech(textToSpeak);
+      final audioData = await AIService().textToSpeech(
+        textToSpeak,
+        languageCode: languageCode,
+      );
 
       Logger.d('TTS音频生成成功，长度: ${audioData.length} bytes', tag: '_performSpeak');
 
@@ -1894,12 +1941,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       // 监听播放状态 - 使用弱引用避免热重启时回调错误
       StreamSubscription? completionSub;
-      completionSub = player.stream.completed.listen((completed) {
+      completionSub = player.stream.completed.listen((completed) async {
         if (completed) {
           Logger.d('TTS音频播放完成', tag: '_playTtsAudio');
           // 取消订阅避免内存泄漏
           completionSub?.cancel();
           _streamSubscriptions.remove(completionSub);
+
+          // 清理 player
+          try {
+            await player.stop();
+            MediaKitManager().unregisterPlayer(player);
+            await player.dispose();
+          } catch (e) {
+            // ignore
+          }
+
           // 延迟删除，确保播放完全结束
           Future.delayed(const Duration(seconds: 1), () {
             try {
@@ -2207,10 +2264,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    final maxHeight = screenSize.height * 0.6;
-    if (dy + maxHeight > screenSize.height) {
+    // 实际可用高度：屏幕高度的 60%，但不超过屏幕高度减去顶部安全边距
+    final maxHeight = (screenSize.height * 0.6).clamp(
+      100.0,
+      screenSize.height - 32,
+    );
+    // 优先显示在点击位置下方；若下方空间不足则翻转到上方
+    if (dy + maxHeight > screenSize.height - 8) {
       dy = position.dy - maxHeight - 10;
     }
+    // 无论何种方向，最终都 clamp 到视野内
+    dy = dy.clamp(8.0, screenSize.height - maxHeight - 8);
+    dx = dx.clamp(8.0, screenSize.width - overlayWidth - 8);
 
     _phraseBarrierEntry = OverlayEntry(
       builder: (context) => Positioned.fill(
@@ -2391,6 +2456,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   @override
   void dispose() {
+    _longPressTimer?.cancel();
     _scrollSubscription?.cancel();
     _translationInsertSubscription?.cancel();
     _toggleHiddenSubscription?.cancel();
@@ -2571,6 +2637,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final pos = entry.sense.isNotEmpty
         ? (entry.sense[0]['pos'] as String? ?? '')
         : '';
+    final isPhrase = entry.entryType == 'phrase';
+    final headwordFontSize = isPhrase ? 20.0 : 32.0;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -2588,7 +2656,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     children: _parseFormattedText(
                       word,
                       TextStyle(
-                        fontSize: 32,
+                        fontSize: headwordFontSize,
                         fontWeight: FontWeight.bold,
                         color: colorScheme.onSurface,
                         height: 1.0,
@@ -3591,6 +3659,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Map<String, dynamic> sense,
     String indexStr,
   ) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final senseLeftIndent = screenWidth > 600 ? 30.0 : (screenWidth * 0.06);
+
     final senselabel = sense['label'] as Map<String, dynamic>?;
     final pos = senselabel?['pos'] as String? ?? '';
     final definitionObj = sense['definition'] as Map<String, dynamic>?;
@@ -3636,12 +3707,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(left: _senseLeftIndent),
+      margin: EdgeInsets.only(left: senseLeftIndent),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Transform.translate(
-            offset: const Offset(-_senseLeftIndent, 0),
+            offset: Offset(-senseLeftIndent, 0),
             child: PathScope.append(
               context,
               key: 'index',
@@ -3933,7 +4004,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         '${groupPath}.group_sub_name',
                         'Group Sub Name',
                         TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: colorScheme.onSurfaceVariant,
                         ),

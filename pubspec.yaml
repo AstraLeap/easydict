@@ -64,6 +64,10 @@ dependencies:
   visibility_detector: ^0.4.0+2
   es_compression: ^2.0.12
   window_manager: ^0.5.1
+  permission_handler: ^11.4.0
+  edge_tts_dart:
+    git:
+      url: https://github.com/twn39/edgetts-dart.git
 
 dev_dependencies:
   flutter_test:

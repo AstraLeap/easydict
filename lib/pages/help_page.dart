@@ -42,7 +42,12 @@ class _HelpPageState extends State<HelpPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('帮助与反馈'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('帮助与反馈'),
+        centerTitle: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: PageScaleWrapper(
         scale: _contentScale,
         child: ListView(

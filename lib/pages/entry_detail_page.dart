@@ -873,7 +873,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 itemPositionsListener: _itemPositionsListener,
                 padding: _getDynamicPadding(
                   context,
-                ).copyWith(top: 8, bottom: 100),
+                ).copyWith(
+                  top: MediaQuery.of(context).viewPadding.top + 8,
+                  bottom: 100,
+                ),
                 itemCount: totalCount,
                 minCacheExtent: 100,
                 itemBuilder: (context, index) {

@@ -49,8 +49,17 @@ class UploadResult {
   final String? error;
   final String? dictId;
   final String? name;
+  final int? version;
+  final List<String>? updatedFiles;
 
-  UploadResult({required this.success, this.error, this.dictId, this.name});
+  UploadResult({
+    required this.success,
+    this.error,
+    this.dictId,
+    this.name,
+    this.version,
+    this.updatedFiles,
+  });
 }
 
 /// 条目更新结果

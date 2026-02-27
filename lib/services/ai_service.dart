@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:googleapis/texttospeech/v1.dart' as tts;
+import 'package:edge_tts_dart/edge_tts_dart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/logger.dart';
 import 'llm_client.dart';
 import 'preferences_service.dart';
@@ -134,29 +136,54 @@ class AIService {
     );
   }
 
-  Future<List<int>> textToSpeech(String text) async {
+  Future<List<int>> textToSpeech(String text, {String? languageCode}) async {
     final config = await _prefsService.getTTSConfig();
     if (config == null) {
       throw Exception('未配置TTS服务，请先在设置中配置API');
     }
 
     final provider = config['provider'] as String;
-    final apiKey = config['apiKey'] as String;
+    var apiKey = config['apiKey'] as String;
     final baseUrl = config['baseUrl'] as String;
     final model = config['model'] as String;
-    final voice = config['voice'] as String;
+    var voice = config['voice'] as String;
 
+    Logger.d(
+      'textToSpeech: provider=$provider, languageCode=$languageCode, defaultVoice=$voice',
+      tag: 'textToSpeech',
+    );
+
+    // 如果提供了语言代码，尝试获取该语言对应的音色
+    if (languageCode != null &&
+        languageCode.isNotEmpty &&
+        languageCode != 'text') {
+      final prefs = await SharedPreferences.getInstance();
+      final langVoiceKey = 'voice_$languageCode';
+      final langVoice = prefs.getString(langVoiceKey);
+      Logger.d(
+        '查找音色: key=$langVoiceKey, value=$langVoice',
+        tag: 'textToSpeech',
+      );
+      if (langVoice != null && langVoice.isNotEmpty) {
+        voice = langVoice;
+        Logger.d('使用语言音色: $languageCode -> $voice', tag: 'textToSpeech');
+      }
+    }
+
+    // Edge TTS 不需要 API Key
     if (apiKey.isEmpty) {
       if (provider == 'google') {
         throw Exception(
           'Google TTS 需要配置 API Key。请访问 https://console.cloud.google.com 创建项目并启用 Cloud Text-to-Speech API',
         );
-      } else {
+      } else if (provider == 'azure') {
         throw Exception('未配置API Key');
       }
     }
 
     switch (provider) {
+      case 'edge':
+        return await _callEdgeTTS(voice: voice, text: text);
       case 'google':
         return await _callGoogleTTS(
           baseUrl: baseUrl,
@@ -176,6 +203,48 @@ class AIService {
       default:
         throw Exception('不支持的TTS服务商: $provider');
     }
+  }
+
+  Future<List<int>> _callEdgeTTS({
+    required String voice,
+    required String text,
+  }) async {
+    // 尝试使用用户选择的音色，如果失败则使用默认音色
+    final fallbackVoices = [
+      voice,
+      'en-US-AriaNeural',
+      'en-US-JennyNeural',
+      'zh-CN-XiaoxiaoNeural',
+    ];
+
+    for (final currentVoice in fallbackVoices) {
+      if (currentVoice.isEmpty) continue;
+
+      try {
+        Logger.d('Edge TTS 尝试音色: $currentVoice', tag: '_callEdgeTTS');
+
+        final communicate = Communicate(text: text, voice: currentVoice);
+
+        final List<int> audioData = [];
+
+        await for (final chunk in communicate.stream()) {
+          if (chunk.type == "audio" && chunk.audioData != null) {
+            audioData.addAll(chunk.audioData!);
+          }
+        }
+
+        if (audioData.isNotEmpty) {
+          Logger.d('Edge TTS 成功使用音色: $currentVoice', tag: '_callEdgeTTS');
+          return audioData;
+        }
+      } catch (e) {
+        Logger.w('Edge TTS 音色 $currentVoice 失败: $e', tag: '_callEdgeTTS');
+        continue;
+      }
+    }
+
+    Logger.e('Edge TTS 所有音色都失败', tag: '_callEdgeTTS');
+    throw Exception('Edge TTS 返回的音频数据为空');
   }
 
   Future<List<int>> _callGoogleTTS({

@@ -28,6 +28,7 @@ class DictionaryManager {
 
   String? _baseDirectory;
   final Map<String, DictionaryMetadata> _metadataCache = {};
+  List<DictionaryMetadata>? _enabledDictionariesMetadataCache;
   final Map<String, Database> _databasePool = {};
   final Map<String, Database> _mediaDatabasePool = {};
   final Map<String, Future<Database>> _pendingOpens = {};
@@ -92,6 +93,7 @@ class DictionaryManager {
     Logger.i('保存词典目录: $directory', tag: 'DictionaryManager');
     _baseDirectory = directory;
     _metadataCache.clear();
+    _enabledDictionariesMetadataCache = null;
     await closeAllDatabases();
   }
 
@@ -114,6 +116,7 @@ class DictionaryManager {
   Future<void> setEnabledDictionaries(List<String> dictionaryIds) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_enabledDictionariesKey, dictionaryIds);
+    _enabledDictionariesMetadataCache = null;
   }
 
   Future<void> enableDictionary(String dictionaryId) async {
@@ -655,6 +658,10 @@ class DictionaryManager {
   }
 
   Future<List<DictionaryMetadata>> getEnabledDictionariesMetadata() async {
+    if (_enabledDictionariesMetadataCache != null) {
+      return _enabledDictionariesMetadataCache!;
+    }
+
     final enabledIds = await getEnabledDictionaries();
     final metadatas = <DictionaryMetadata>[];
 
@@ -668,6 +675,7 @@ class DictionaryManager {
       }
     }
 
+    _enabledDictionariesMetadataCache = metadatas;
     return metadatas;
   }
 

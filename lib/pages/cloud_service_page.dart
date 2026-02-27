@@ -527,7 +527,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
       if (!mounted) return;
 
       if (extractResult.success) {
-        showToast(context, '设置已从云端同步，部分设置需要重启应用后生效');
+        // 直接解析 JSON 文件并逐键写入内存，确保 LLM 等配置即刻生效而无需重启
+        await _syncService.applyPrefsFromFile();
+        if (mounted) showToast(context, '设置已从云端同步');
       } else {
         showToast(context, extractResult.error ?? '解压失败');
       }
@@ -1574,6 +1576,29 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
 
         if (!result.success) {
           throw Exception(result.error ?? '更新失败');
+        }
+
+        if (result.version != null) {
+          final metadataFile = await _dictManager.getMetadataFile(dictId);
+          if (await metadataFile.exists()) {
+            final metadataJson =
+                jsonDecode(await metadataFile.readAsString());
+            final updatedMetadata =
+                DictionaryMetadata.fromJson(metadataJson);
+            final newMetadata = DictionaryMetadata(
+              id: updatedMetadata.id,
+              name: updatedMetadata.name,
+              version: result.version!,
+              description: updatedMetadata.description,
+              sourceLanguage: updatedMetadata.sourceLanguage,
+              targetLanguages: updatedMetadata.targetLanguages,
+              publisher: updatedMetadata.publisher,
+              maintainer: updatedMetadata.maintainer,
+              contactMaintainer: updatedMetadata.contactMaintainer,
+              updatedAt: DateTime.now(),
+            );
+            await _dictManager.saveDictionaryMetadata(newMetadata);
+          }
         }
       },
       onComplete: () {
