@@ -34,7 +34,13 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
 
 # json数据格式
 
-## json结构
+词典数据以entry为基础单位，数据库中储存着诸多entry。
+同一个单词（可以下涵多个entry，entry有两个重要属性，page和section。
+同一个单词的诸多entry按照page属性分类，同一个page的多个entry组成一个独立单元，比如“药学词典”page、”儿童词典“page、“美语词典”page、”英语词典“page等。
+同一个page的各个entry之间通过section属性区分，section可以表示不同起源，或是不同词性等等。
+每个entry的json结构如下所示：
+
+## entry的json结构
 
 ```jsonc
 {
