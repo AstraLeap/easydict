@@ -616,4 +616,24 @@ class PreferencesService {
     final p = await prefs;
     await p.setString(_kLastDictUpdateCheckTime, time.toIso8601String());
   }
+
+  static const String _kLastAppUpdateCheckTime = 'last_app_update_check_time';
+
+  Future<DateTime?> getLastAppUpdateCheckTime() async {
+    final p = await prefs;
+    final timeStr = p.getString(_kLastAppUpdateCheckTime);
+    if (timeStr != null) {
+      try {
+        return DateTime.parse(timeStr);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Future<void> setLastAppUpdateCheckTime(DateTime time) async {
+    final p = await prefs;
+    await p.setString(_kLastAppUpdateCheckTime, time.toIso8601String());
+  }
 }
