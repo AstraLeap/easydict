@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
 import '../core/logger.dart';
 import '../services/dictionary_manager.dart';
@@ -86,9 +87,12 @@ class _FontConfigPageState extends State<FontConfigPage>
         _fontScales = fontScales;
         _languages = languages;
         if (_languages.isNotEmpty) {
+          final prevIndex = _tabController?.index ?? 0;
+          _tabController?.dispose();
           _tabController = TabController(
             length: _languages.length,
             vsync: this,
+            initialIndex: prevIndex.clamp(0, _languages.length - 1),
           );
           _initTabController();
         }
@@ -227,7 +231,7 @@ class _FontConfigPageState extends State<FontConfigPage>
     final result = <String, DetectedFonts>{};
 
     for (final lang in languages) {
-      final fontDir = Directory('$basePath\\$lang');
+      final fontDir = Directory(p.join(basePath, lang));
       if (await fontDir.exists()) {
         result[lang] = await _scanFontDirectory(fontDir);
       } else {
@@ -395,7 +399,7 @@ class _FontConfigPageState extends State<FontConfigPage>
   ) async {
     try {
       for (final lang in languages) {
-        final langDir = Directory('$basePath\\$lang');
+        final langDir = Directory(p.join(basePath, lang));
         if (!await langDir.exists()) {
           await langDir.create(recursive: true);
           Logger.i('创建语言子文件夹: ${langDir.path}', tag: 'FontLoader');
@@ -416,7 +420,7 @@ class _FontConfigPageState extends State<FontConfigPage>
       return;
     }
 
-    final fontDir = Directory('$_fontFolderPath\\$language');
+    final fontDir = Directory(p.join(_fontFolderPath!, language));
     if (!await fontDir.exists()) {
       showToast(context, '语言文件夹不存在: $language');
       return;
@@ -945,6 +949,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
     final isPercentage = widget.unit == '%';
 
     return AlertDialog(
+      contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
       title: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -966,35 +971,47 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
+          // 最小/最大标签行（展示在拖动条上方，左右对齐滑动条轨道两端）
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
               Text(
                 isPercentage
                     ? '${widget.min.toInt()}%'
                     : widget.min.toStringAsFixed(1),
-              ),
-              Expanded(
-                child: Slider(
-                  value: _value.clamp(widget.min, widget.max),
-                  min: widget.min,
-                  max: widget.max,
-                  divisions: ((widget.max - widget.min) / widget.divisions)
-                      .round(),
-                  label: _formatValue(_value),
-                  onChanged: (value) {
-                    setState(() {
-                      _value = value;
-                      _controller.text = _formatValue(value);
-                    });
-                  },
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
               Text(
                 isPercentage
                     ? '${widget.max.toInt()}%'
                     : widget.max.toStringAsFixed(1),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
+          ),
+        ),
+          // 拖动条充满全宽
+          Slider(
+            value: _value.clamp(widget.min, widget.max),
+            min: widget.min,
+            max: widget.max,
+            divisions: ((widget.max - widget.min) / widget.divisions)
+                .round(),
+            label: _formatValue(_value),
+            onChanged: (value) {
+              setState(() {
+                _value = value;
+                _controller.text = _formatValue(value);
+              });
+            },
           ),
           const SizedBox(height: 8),
           Row(

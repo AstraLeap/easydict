@@ -27,6 +27,8 @@ import '../services/search_history_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/language_utils.dart';
 import 'global_scale_wrapper.dart';
+import 'hidden_languages_scope.dart';
+import 'path_scope.dart';
 
 class FormattedTextResult {
   final List<InlineSpan> spans;
@@ -147,42 +149,6 @@ class _SecondaryTapGestureRecognizer extends OneSequenceGestureRecognizer {
   }
 }
 
-class PathScope extends InheritedWidget {
-  final List<String> path;
-
-  const PathScope({super.key, required this.path, required super.child});
-
-  static List<String> of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<PathScope>();
-    return scope?.path ?? [];
-  }
-
-  static Widget append(
-    BuildContext context, {
-    required String key,
-    required Widget child,
-  }) {
-    final parentPath = PathScope.of(context);
-    // 如果 key 包含点号，说明这是一个复合路径，需要拆分
-    final List<String> newParts;
-    if (key.contains('.')) {
-      newParts = key.split('.');
-    } else {
-      newParts = [key];
-    }
-    return PathScope(path: [...parentPath, ...newParts], child: child);
-  }
-
-  @override
-  bool updateShouldNotify(PathScope oldWidget) {
-    // 简单的列表比较，实际应用中可能需要更高效的比较
-    if (path.length != oldWidget.path.length) return true;
-    for (int i = 0; i < path.length; i++) {
-      if (path[i] != oldWidget.path[i]) return true;
-    }
-    return false;
-  }
-}
 
 /// 高亮闪烁包装器 - 用于滚动到目标元素时显示闪烁效果
 class _HighlightWrapper extends StatefulWidget {
@@ -735,116 +701,6 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
 }
 
 /// 用于管理隐藏语言状态的通知器
-class HiddenLanguagesNotifier extends ValueNotifier<List<String>> {
-  HiddenLanguagesNotifier(super.initialValue);
-
-  void toggle(String path) {
-    if (value.contains(path)) {
-      value = List<String>.from(value)..remove(path);
-    } else {
-      value = List<String>.from(value)..add(path);
-    }
-  }
-
-  bool contains(String path) => value.contains(path);
-
-  /// 强制通知监听器，用于数据更新后触发重建
-  void forceNotify() {
-    notifyListeners();
-  }
-}
-
-/// 用于在组件树中传递 HiddenLanguagesNotifier
-class HiddenLanguagesScope extends InheritedWidget {
-  final HiddenLanguagesNotifier notifier;
-
-  const HiddenLanguagesScope({
-    super.key,
-    required this.notifier,
-    required super.child,
-  });
-
-  static HiddenLanguagesNotifier of(BuildContext context) {
-    final scope = context
-        .dependOnInheritedWidgetOfExactType<HiddenLanguagesScope>();
-    assert(scope != null, 'HiddenLanguagesScope not found in context');
-    return scope!.notifier;
-  }
-
-  @override
-  bool updateShouldNotify(HiddenLanguagesScope oldWidget) {
-    return oldWidget.notifier != notifier;
-  }
-}
-
-/// 仅当 selector 返回的值发生变化时才重建的组件
-class HiddenLanguagesSelector<T> extends StatefulWidget {
-  final T Function(List<String> hiddenLanguages) selector;
-  final Widget Function(BuildContext context, T value, Widget? child) builder;
-  final Widget? child;
-
-  const HiddenLanguagesSelector({
-    super.key,
-    required this.selector,
-    required this.builder,
-    this.child,
-  });
-
-  @override
-  State<HiddenLanguagesSelector<T>> createState() =>
-      _HiddenLanguagesSelectorState<T>();
-}
-
-class _HiddenLanguagesSelectorState<T>
-    extends State<HiddenLanguagesSelector<T>> {
-  late T _value;
-  HiddenLanguagesNotifier? _notifier;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final newNotifier = HiddenLanguagesScope.of(context);
-    if (_notifier != newNotifier) {
-      _notifier?.removeListener(_onValueChanged);
-      _notifier = newNotifier;
-      _notifier!.addListener(_onValueChanged);
-      _value = widget.selector(_notifier!.value);
-    }
-  }
-
-  @override
-  void didUpdateWidget(HiddenLanguagesSelector<T> oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_notifier != null) {
-      final newValue = widget.selector(_notifier!.value);
-      if (newValue != _value) {
-        setState(() {
-          _value = newValue;
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _notifier?.removeListener(_onValueChanged);
-    super.dispose();
-  }
-
-  void _onValueChanged() {
-    final newValue = widget.selector(_notifier!.value);
-    if (newValue != _value) {
-      setState(() {
-        _value = newValue;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.builder(context, _value, widget.child);
-  }
-}
 
 class ComponentRenderer extends StatefulWidget {
   final DictionaryEntry entry;
@@ -853,6 +709,9 @@ class ComponentRenderer extends StatefulWidget {
   final void Function(String path, String label)? onAiAsk;
   final void Function(String path, DictionaryEntry newEntry)?
   onTranslationInsert;
+  /// 自定义顶部内边距。如果为 -1（默认），则自动加上状态栏高度和 16px。
+  /// 嵌入 ScrollablePositionedList 时应传 0。
+  final double topPadding;
 
   const ComponentRenderer({
     super.key,
@@ -861,6 +720,7 @@ class ComponentRenderer extends StatefulWidget {
     this.onEditElement,
     this.onAiAsk,
     this.onTranslationInsert,
+    this.topPadding = -1,
   });
 
   @override
@@ -1622,13 +1482,37 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   void _scrollToSection(int sectionIndex) {
     final key = _sectionKeys[sectionIndex];
-    if (key != null) {
-      Scrollable.ensureVisible(
-        key.currentContext!,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
+    if (key == null) return;
+    final elementContext = key.currentContext;
+    if (elementContext == null) return;
+
+    final renderBox = elementContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final scrollableState = Scrollable.maybeOf(elementContext);
+    if (scrollableState == null) return;
+
+    final scrollRenderBox =
+        scrollableState.context.findRenderObject() as RenderBox?;
+    if (scrollRenderBox == null) return;
+
+    // dy = current distance from element's top to the scrollable viewport's top edge
+    final elementOffset =
+        renderBox.localToGlobal(Offset.zero, ancestor: scrollRenderBox);
+
+    final position = scrollableState.position;
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+
+    // Scroll so the element's top sits exactly at statusBarHeight below the
+    // screen's physical top (i.e. just below the status bar).
+    final targetPixels = (position.pixels + elementOffset.dy - statusBarHeight)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+
+    position.animateTo(
+      targetPixels,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   FormattedTextResult _parseFormattedText(
@@ -1893,6 +1777,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         languageCode = lastPart.toLowerCase();
       }
     }
+    // 从路径未识别到语言时，回退到词典源语言
+    languageCode ??= _sourceLanguage;
 
     try {
       showToast(context, '正在生成音频...');
@@ -1914,8 +1800,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   Future<void> _playTtsAudio(List<int> audioData) async {
     try {
-      await _currentPlayer?.stop();
-      await _currentPlayer?.dispose();
+      final oldPlayer = _currentPlayer;
+      _currentPlayer = null;
+      if (oldPlayer != null) {
+        try {
+          await oldPlayer.stop();
+          await oldPlayer.dispose();
+        } catch (e) {
+          // ignore: player may already be disposed
+        }
+      }
 
       final player = Player();
       _currentPlayer = player;
@@ -1953,6 +1847,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
             await player.stop();
             MediaKitManager().unregisterPlayer(player);
             await player.dispose();
+            if (_currentPlayer == player) {
+              _currentPlayer = null;
+            }
           } catch (e) {
             // ignore
           }
@@ -2576,7 +2473,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
           child: PathScope(
             path: const ['entry'],
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: widget.topPadding >= 0
+                    ? widget.topPadding
+                    : MediaQuery.of(context).padding.top + 16,
+                bottom: 16,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3977,7 +3881,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final groupPath = 'sense_group.$groupIndex';
 
         return Column(
-          key: _sectionKeys[groupIndex],
+          key: _sectionKeys.putIfAbsent(groupIndex, () => GlobalKey()),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (groupName.isNotEmpty || groupSubName.isNotEmpty)
@@ -4428,7 +4332,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              margin: const EdgeInsets.only(top: 7),
+              margin: const EdgeInsets.only(top: 4),
               width: 5,
               height: 5,
               decoration: BoxDecoration(
@@ -4717,7 +4621,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            margin: const EdgeInsets.only(top: 10),
+            margin: const EdgeInsets.only(top: 4),
             width: 5,
             height: 5,
             decoration: BoxDecoration(
@@ -5045,6 +4949,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             borderRadius: BorderRadius.circular(4),
           ),
           child: SizedBox(
+            width: _thumbnailSize,
             height: _thumbnailSize,
             child: SvgPicture.string(
               cleanedSvg,

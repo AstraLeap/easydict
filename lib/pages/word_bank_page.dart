@@ -1373,20 +1373,23 @@ class _WordBankPageState extends State<WordBankPage> {
   @override
   Widget build(BuildContext context) {
     if (_isInitialLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: SafeArea(child: Center(child: CircularProgressIndicator())),
+      );
     }
 
     if (_languages.isEmpty) {
-      return Scaffold(body: _buildEmptyState());
+      return Scaffold(body: SafeArea(child: _buildEmptyState()));
     }
 
     final contentScale = FontLoaderService().getDictionaryContentScale();
-    final topPadding = MediaQuery.of(context).viewPadding.top;
 
     return Scaffold(
       body: PageScaleWrapper(
         scale: contentScale,
-        child: Column(
+        child: SafeArea(
+          bottom: false,
+          child: Column(
           children: [
             Container(
               color: Theme.of(context).colorScheme.surface,
@@ -1396,7 +1399,7 @@ class _WordBankPageState extends State<WordBankPage> {
                     padding: EdgeInsets.only(
                       left: 16,
                       right: 16,
-                      top: topPadding + 12,
+                      top: 12,
                       bottom: 12,
                     ),
                     child: UnifiedSearchBarFactory.withLanguageSelector(
@@ -1484,6 +1487,9 @@ class _WordBankPageState extends State<WordBankPage> {
                         });
                       },
                       onSubmitted: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
                         _loadWords();
                       },
                     ),
@@ -1531,6 +1537,7 @@ class _WordBankPageState extends State<WordBankPage> {
                     ),
             ),
           ],
+        ),
         ),
       ),
     );
