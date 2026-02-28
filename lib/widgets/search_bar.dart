@@ -204,6 +204,7 @@ class _UnifiedSearchBarWithLanguageSelectorState
               icon: const Icon(Icons.clear, size: 20),
               onPressed: () {
                 widget.controller.clear();
+                widget.onChanged?.call('');
               },
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,

@@ -232,6 +232,13 @@ class DownloadManager with ChangeNotifier {
         throw Exception('未配置词典商店服务');
       }
 
+      // 滞动窗口算速变量（完全局部，不持久化）
+      // 每隔 _speedUpdateInterval 秒刚好经过的字节数用于计算窗口内平均速度
+      const speedUpdateInterval = Duration(seconds: 5);
+      var speedWindowStart = DateTime.now();
+      var speedWindowBytes = 0; // 窗口内新增字节数
+      var lastWindowSpeed = 0; // 上一个窗口的速度，用于窗口切换间的平滑
+
       await for (final event in _storeService!.downloadDictionaryFilesStream(
         dict: dict,
         options: options,
@@ -243,24 +250,22 @@ class DownloadManager with ChangeNotifier {
           final newReceivedBytes =
               (event['receivedBytes'] as num?)?.toInt() ?? 0;
 
-          if (task.lastSpeedUpdate != null) {
-            final elapsedMs = now
-                .difference(task.lastSpeedUpdate!)
-                .inMilliseconds;
-            if (elapsedMs > 0) {
-              final bytesDiff = newReceivedBytes - task.receivedBytes;
-              task.speedBytesPerSecond = (bytesDiff * 1000 / elapsedMs).round();
-            }
-          } else {
-            final elapsedMs = now.difference(task.startTime).inMilliseconds;
-            if (elapsedMs > 0) {
-              task.speedBytesPerSecond = (newReceivedBytes * 1000 / elapsedMs)
-                  .round();
-            }
+          // 滞动窗口速度计算：每 2 秒更新一次，避免单个 chunk 大小波动巾尕显示
+          speedWindowBytes += (newReceivedBytes - task.receivedBytes).clamp(0, double.maxFinite.toInt());
+          final windowElapsed = now.difference(speedWindowStart);
+          if (windowElapsed >= speedUpdateInterval) {
+            final windowSecs = windowElapsed.inMilliseconds / 1000.0;
+            final windowSpeed = (speedWindowBytes / windowSecs).round();
+            // 轻度 EMA 平滑窗口间切换
+            task.speedBytesPerSecond = lastWindowSpeed == 0
+                ? windowSpeed
+                : ((0.4 * windowSpeed) + (0.6 * lastWindowSpeed)).round();
+            lastWindowSpeed = task.speedBytesPerSecond;
+            speedWindowStart = now;
+            speedWindowBytes = 0;
           }
 
           task.receivedBytes = newReceivedBytes;
-          task.lastSpeedUpdate = now;
           task.currentFileName = event['fileName'] as String?;
           task.fileIndex = (event['fileIndex'] as num?)?.toInt() ?? 0;
           task.totalFiles = (event['totalFiles'] as num?)?.toInt() ?? 0;

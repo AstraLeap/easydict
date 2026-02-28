@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +8,7 @@ import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/models/dictionary_metadata.dart';
 import '../components/dictionary_navigation_panel.dart';
+import '../components/dictionary_logo.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 import '../components/component_renderer.dart';
@@ -181,6 +181,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   /// 当前正在加载的AI请求ID
   String? _currentLoadingId;
 
+  /// AI聊天历史弹窗的 setState，用于在请求完成时刷新弹窗内容
+  StateSetter? _modalSetState;
+
   // 导航栏位置状态（固定在右侧，只保存垂直位置）
   double _navPanelDy = 0.7; // 相对屏幕高度的比例
   bool _isNavPanelLoaded = false;
@@ -190,6 +193,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       GlobalKey<DictionaryNavigationPanelState>();
 
   bool? _areNonTargetLanguagesVisible;
+
+  /// 折叠状态：存储已折叠的词典 dictId
+  final Set<String> _collapsedDicts = {};
+
+  /// 词形关系搜索的缓存 Future，所有词典共享，只搜索一次
+  Future<List<WordRelationRow>>? _wordRelationsFuture;
 
   DateTime? _lastScrollUpdateTime;
   static const _scrollUpdateThrottle = Duration(milliseconds: 100);
@@ -204,6 +213,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _entryGroup = widget.entryGroup;
     // 关键数据：导航栏位置（影响UI布局）
     _loadNavPanelPosition();
+    // 初始化单词关系搜索（缓存 Future，所有词典共享）
+    _initWordRelationsSearch();
     // 非关键数据延迟加载
     _loadDeferredData();
     // 软件布局缩放已从 FontLoaderService 同步获取，无需异步加载
@@ -258,9 +269,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final entries = _getAllEntriesInOrder();
     if (entries.isEmpty) return;
 
-    final hasRelations =
-        widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
-
     int lastFullyVisibleIndex = -1;
     double maxVisibleHeight = 0;
     int maxVisibleIndex = -1;
@@ -294,7 +302,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         : maxVisibleIndex;
     if (targetIndex < 0) return;
 
-    int entryIndex = hasRelations ? targetIndex - 1 : targetIndex;
+    // 索引 0: 词形关系横幅（始终存在）
+    int entryIndex = targetIndex - 1;
     if (entryIndex < 0 || entryIndex >= entries.length) return;
 
     final targetEntry = entries[entryIndex];
@@ -435,6 +444,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     if (oldWidget.initialWord != widget.initialWord) {
       _entryGroup = widget.entryGroup;
       _loadFavoriteStatus();
+      _initWordRelationsSearch();
+    }
+  }
+
+  /// 初始化单词关系搜索，所有词典只搜索一次
+  void _initWordRelationsSearch() {
+    final word = widget.initialWord;
+    if (word.isNotEmpty) {
+      _wordRelationsFuture = EnglishSearchService().searchWordRelations(word);
+    } else {
+      _wordRelationsFuture = null;
     }
   }
 
@@ -463,68 +483,76 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   /// 构建搜索关系信息横幅
-  Widget _buildSearchRelationBanner() {
+  /// 在词典头部下方显示该词典通过词形关系找到词条的提示横幅
+  Widget _buildInlineDictRelationBanner(List<SearchRelation> relations) {
     final colorScheme = Theme.of(context).colorScheme;
-    final relations = widget.searchRelations!;
-    final dynamicPadding = _getDynamicPadding(context);
+    const hPad = 16.0;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: dynamicPadding.bottom),
-      child: Card(
-        color: colorScheme.primaryContainer.withOpacity(0.9),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: colorScheme.primary.withOpacity(0.3),
-            width: 1,
+    return Container(
+      margin: EdgeInsets.only(
+        left: hPad + 4,
+        right: hPad + 4,
+        top: 2,
+        bottom: 10,
+      ),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: colorScheme.primary.withOpacity(0.4),
+            width: 3,
           ),
         ),
-        margin: EdgeInsets.symmetric(
-          horizontal: dynamicPadding.horizontal / 2,
-          vertical: dynamicPadding.top / 2,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
+      ),
+      padding: const EdgeInsets.only(left: 10, top: 5, bottom: 5),
+      child: Wrap(
+        spacing: 20,
+        runSpacing: 5,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: relations.map((relation) {
+          final posLabel = _shortenPos(relation.pos);
+          final desc = relation.description ?? relation.relationType;
+          final label = posLabel.isNotEmpty ? '$desc $posLabel' : desc;
+
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.info_outline,
-                size: 16,
-                color: colorScheme.onPrimaryContainer,
-              ),
               Text(
                 widget.initialWord,
                 style: TextStyle(
-                  fontSize: 14,
-                  color: colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w500,
-                  decoration: TextDecoration.lineThrough,
+                  fontSize: 13.5,
+                  color: colorScheme.onSurface.withOpacity(0.55),
+                  fontWeight: FontWeight.w400,
                 ),
               ),
-              Icon(
-                Icons.arrow_forward,
-                size: 14,
-                color: colorScheme.onPrimaryContainer,
+              const SizedBox(width: 3),
+              Text(
+                '($label)',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.65),
+                  fontWeight: FontWeight.w400,
+                ),
               ),
-              ...relations.entries.expand((entry) {
-                final mappedWord = entry.key;
-                final relationList = entry.value;
-                return relationList.map((relation) {
-                  return Text(
-                    '$mappedWord（${relation.description ?? relation.relationType}）',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  );
-                });
-              }),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: colorScheme.primary.withOpacity(0.55),
+                ),
+              ),
+              Text(
+                relation.mappedWord,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
+              ),
             ],
-          ),
-        ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -608,16 +636,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
 
     if (index != -1) {
-      if (widget.searchRelations != null &&
-          widget.searchRelations!.isNotEmpty) {
-        index += 1;
-      }
+      // 始终 +1 跳过词形关系横幅 (index 0)
+      index += 1;
 
       // 如果有 targetPath，直接滚动到精确位置，不再先滚动到 entry 顶部
       if (targetPath != null) {
         _scrollToElement(entry.id, targetPath);
         return;
       }
+
+      // SafeArea 已处理状态栏偏移，滚动 alignment 直接对齐视口顶部
+      const scrollAlignment = 0.0;
 
       if (_itemScrollController.isAttached) {
         Logger.d('Controller attached, scrolling now', tag: 'EntryDetail');
@@ -628,10 +657,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               index: index,
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
-              alignment: 0.0,
+              alignment: scrollAlignment,
             )
             .then((_) {
-              _isProgrammaticScroll = false;
+              // 动画结束后额外缓冲，防止位置监听器在动画完成后触发误判
+              Future.delayed(const Duration(milliseconds: 400), () {
+                if (mounted) _isProgrammaticScroll = false;
+              });
             });
       } else {
         Logger.d(
@@ -653,10 +685,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   index: index,
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
-                  alignment: 0.0,
+                  alignment: scrollAlignment,
                 )
                 .then((_) {
-                  _isProgrammaticScroll = false;
+                  Future.delayed(const Duration(milliseconds: 400), () {
+                    if (mounted) _isProgrammaticScroll = false;
+                  });
                 });
           } else {
             Logger.w(
@@ -681,8 +715,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     EntryEventBus().emitScrollToElement(
       ScrollToElementEvent(entryId: entryId, path: path),
     );
-    // 延迟重置标志位，给滚动动画留出时间
-    Future.delayed(const Duration(milliseconds: 350), () {
+    // 延迟重置标志位，给滚动动画留出时间（含额外缓冲）
+    Future.delayed(const Duration(milliseconds: 700), () {
       if (mounted) {
         _isProgrammaticScroll = false;
       }
@@ -812,7 +846,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       final newEntry = DictionaryEntry.fromJson(entryData);
 
       final databaseService = DatabaseService();
-      final success = await databaseService.insertOrUpdateEntry(newEntry);
+      // 重置到服务器原始状态，不写 commit；并删除该词条已有的 commit 记录
+      final success = await databaseService.insertOrUpdateEntry(
+        newEntry,
+        skipCommit: true,
+      );
+      if (success) {
+        await databaseService.deleteUpdateRecord(dictId, newEntry.id);
+      }
 
       if (success && mounted) {
         final currentDictGroup = _entryGroup.currentDictionaryGroup;
@@ -848,15 +889,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   @override
   Widget build(BuildContext context) {
     final entries = _getAllEntriesInOrder();
-    final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = mediaQuery.viewPadding.bottom;
-
-    final hasRelations =
-        widget.searchRelations != null && widget.searchRelations!.isNotEmpty;
-    final totalCount = entries.length + (hasRelations ? 1 : 0);
+    // item 0: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
+    const wordRelationsOffset = 1;
+    // 搜索关系横幅现在内嵌在各词典的词典头部下方，不占独立 item
+    final totalCount = wordRelationsOffset + entries.length;
 
     final content = Scaffold(
       body: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -864,29 +902,51 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                return false;
-              },
-              child: ScrollablePositionedList.builder(
-                itemScrollController: _itemScrollController,
-                itemPositionsListener: _itemPositionsListener,
-                padding: _getDynamicPadding(
-                  context,
-                ).copyWith(
-                  top: MediaQuery.of(context).viewPadding.top + 8,
-                  bottom: 100,
-                ),
-                itemCount: totalCount,
-                minCacheExtent: 100,
-                itemBuilder: (context, index) {
-                  if (hasRelations && index == 0) {
-                    return _buildSearchRelationBanner();
-                  }
-                  final entryIndex = hasRelations ? index - 1 : index;
-                  final entry = entries[entryIndex];
-                  return Container(child: _buildEntryContent(entry));
+            SafeArea(
+              bottom: false,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  return false;
                 },
+                child: ScrollablePositionedList.builder(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  padding: _getDynamicPadding(
+                    context,
+                  ).copyWith(top: 16, bottom: 100),
+                  itemCount: totalCount,
+                  minCacheExtent: 100,
+                  itemBuilder: (context, index) {
+                    // 索引 0: 单词形态关系横幅
+                    if (index == 0) return _buildWordRelationsBanner();
+
+                    final entryIndex = index - wordRelationsOffset;
+                    final entry = entries[entryIndex];
+
+                    // 仅在该词典第一条 entry 处显示词典 Logo+名称
+                    final showDictHeader =
+                        entryIndex == 0 ||
+                        entries[entryIndex - 1].dictId != entry.dictId;
+
+                    // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
+                    List<SearchRelation>? entryRelations;
+                    if (showDictHeader && widget.searchRelations != null) {
+                      final headword = entry.headword.toLowerCase();
+                      for (final rel in widget.searchRelations!.entries) {
+                        if (rel.key.toLowerCase() == headword) {
+                          entryRelations = rel.value;
+                          break;
+                        }
+                      }
+                    }
+
+                    return _buildEntryContent(
+                      entry,
+                      showDictHeader: showDictHeader,
+                      relations: entryRelations,
+                    );
+                  },
+                ),
               ),
             ),
             if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
@@ -902,8 +962,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: bottomPadding > 0 ? bottomPadding : 16,
-              child: _buildBottomActionBar(),
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.only(bottom: 16),
+                child: _buildBottomActionBar(),
+              ),
             ),
           ],
         ),
@@ -921,9 +985,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   Widget _buildBottomActionBar() {
     final colorScheme = Theme.of(context).colorScheme;
-    final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = mediaQuery.padding.bottom;
-
     final toolbarWidgets = _toolbarActions
         .map(
           (action) => Expanded(child: _buildToolbarAction(action, colorScheme)),
@@ -931,10 +992,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         .toList();
 
     return Container(
-      margin: EdgeInsets.only(
-        top: 0,
-        bottom: bottomPadding > 0 ? bottomPadding / 2 : 0,
-      ),
+      margin: EdgeInsets.zero,
       padding: EdgeInsets.zero,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
@@ -1159,103 +1217,362 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
-  Widget _buildEntryContent(DictionaryEntry entry) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final EdgeInsets padding;
-    if (screenWidth < 600) {
-      padding = const EdgeInsets.symmetric(horizontal: 0, vertical: 6);
-    } else if (screenWidth < 900) {
-      padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
-    } else {
-      padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 6);
-    }
+  Widget _buildEntryContent(
+    DictionaryEntry entry, {
+    bool showDictHeader = false,
+    List<SearchRelation>? relations,
+  }) {
+    final dictId = entry.dictId ?? '';
+    final isCollapsed = dictId.isNotEmpty && _collapsedDicts.contains(dictId);
+
+    // 折叠状态：非第一条 entry 直接隐藏
+    if (isCollapsed && !showDictHeader) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Stack(
-            children: [
-              Padding(
-                padding: padding,
-                child: ComponentRenderer(
-                  key: ValueKey(entry.id),
-                  entry: entry,
-                  onElementTap: (path, label) {
-                    _handleTranslationTap(entry, path, label);
-                  },
-                  onEditElement: (path, label) {
-                    _showJsonElementEditorFromPath(entry, path);
-                  },
-                  onAiAsk: (path, label) {
-                    _handleAiElementTap(entry, path, label);
-                  },
-                  onTranslationInsert: (path, newEntry) {
-                    EntryEventBus().emitTranslationInsert(
-                      TranslationInsertEvent(
-                        entryId: entry.id,
-                        path: path,
-                        newEntry: newEntry.toJson(),
-                      ),
-                    );
-                  },
-                ),
+          if (showDictHeader)
+            _buildDictionaryHeader(
+              entry,
+              isCollapsed: isCollapsed,
+              onToggle: dictId.isEmpty
+                  ? null
+                  : () => setState(() {
+                      if (_collapsedDicts.contains(dictId)) {
+                        _collapsedDicts.remove(dictId);
+                      } else {
+                        _collapsedDicts.add(dictId);
+                      }
+                    }),
+            ),
+          if (!isCollapsed)
+            ...([
+              if (relations != null && relations.isNotEmpty)
+                _buildInlineDictRelationBanner(relations),
+              ComponentRenderer(
+                key: ValueKey(entry.id),
+                entry: entry,
+                topPadding: 12,
+                onElementTap: (path, label) {
+                  _handleTranslationTap(entry, path, label);
+                },
+                onEditElement: (path, label) {
+                  _showJsonElementEditorFromPath(entry, path);
+                },
+                onAiAsk: (path, label) {
+                  _handleAiElementTap(entry, path, label);
+                },
+                onTranslationInsert: (path, newEntry) {
+                  EntryEventBus().emitTranslationInsert(
+                    TranslationInsertEvent(
+                      entryId: entry.id,
+                      path: path,
+                      newEntry: newEntry.toJson(),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
-          _buildNominalizationLink(entry),
+            ]),
         ],
       ),
     );
   }
 
-  Widget _buildNominalizationLink(DictionaryEntry entry) {
-    final headword = entry.headword;
-    if (headword.isEmpty) return const SizedBox.shrink();
+  /// 每个词典条目顶部显示词典 Logo + 名称，可点击折叠/展开
+  Widget _buildDictionaryHeader(
+    DictionaryEntry entry, {
+    bool isCollapsed = false,
+    VoidCallback? onToggle,
+  }) {
+    final dictId = entry.dictId ?? '';
+    if (dictId.isEmpty) return const SizedBox.shrink();
 
-    return FutureBuilder<String?>(
-      future: EnglishSearchService().searchNominalizationBase(headword),
+    final cachedMeta = DictionaryManager().getCachedMetadata(dictId);
+    final dictName = cachedMeta?.name ?? dictId;
+    final colorScheme = Theme.of(context).colorScheme;
+    const hPad = 16.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(),
+          child: InkWell(
+            onTap: onToggle,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: hPad,
+                right: hPad,
+                top: 6,
+                bottom: 6,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: DictionaryLogo(
+                      dictionaryId: dictId,
+                      dictionaryName: dictName,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Text(
+                    dictName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface.withOpacity(0.75),
+                      letterSpacing: 0.1,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // 居中横线充满剩余空间
+                  Expanded(
+                    child: Divider(
+                      thickness: 1,
+                      color: colorScheme.outlineVariant.withOpacity(0.4),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    isCollapsed
+                        ? Icons.keyboard_arrow_down_rounded
+                        : Icons.keyboard_arrow_up_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.55),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 词性缩写辅助方法
+  String _shortenPos(String? pos) {
+    switch (pos) {
+      case 'noun':
+        return 'n.';
+      case 'verb':
+        return 'v.';
+      case 'adj':
+        return 'adj.';
+      case 'adv':
+        return 'adv.';
+      case 'prep':
+        return 'prep.';
+      default:
+        return pos ?? '';
+    }
+  }
+
+  /// 单词关系横幅，显示在所有词典条目顶部，展示 spelling_variant / nominalization / inflection 命中结果
+  Widget _buildWordRelationsBanner() {
+    if (_wordRelationsFuture == null) {
+      // SafeArea 已处理顶部安全区域，此处无需额外间距
+      return const SizedBox.shrink();
+    }
+
+    // 列名显示标签
+    const Map<String, String> _colLabels = {
+      'word1': '',
+      'word2': '',
+      'base': '原形',
+      'nominal': '名词形',
+      'plural': '复数',
+      'past': '过去式',
+      'past_part': '过去分词',
+      'pres_part': '现在分词',
+      'third_sing': '三单',
+      'comp': '比较级',
+      'superl': '最高级',
+    };
+    const Map<String, String> _tableLabels = {
+      'spelling_variant': '拼写变体',
+      'nominalization': '名词化',
+      'inflection': '变形',
+    };
+
+    return FutureBuilder<List<WordRelationRow>>(
+      future: _wordRelationsFuture,
       builder: (context, snapshot) {
-        final baseWord = snapshot.data;
-        if (baseWord == null) return const SizedBox.shrink();
+        final rows = snapshot.data;
+
+        if (rows == null || rows.isEmpty) {
+          return const SizedBox.shrink();
+        }
 
         final colorScheme = Theme.of(context).colorScheme;
+        const hPad = 16.0;
 
-        return Padding(
-          padding: _getDynamicPadding(context).copyWith(top: 0),
-          child: Row(
-            children: [
-              Icon(Icons.translate, size: 16, color: colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: RichText(
-                  locale: const Locale('zh', 'CN'),
-                  text: TextSpan(
-                    text: '可以通过名词化还原为单词 ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    children: [
-                      TextSpan(
-                        text: baseWord,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w500,
-                          decoration: TextDecoration.underline,
-                        ),
-                        recognizer: TapGestureRecognizer()
-                          ..onTap = () {
-                            _handleNominalizationTap(baseWord);
-                          },
+        // 计算所有行标签中最宽的，让各行标签列对齐
+        const labelTextStyle = TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          height: 1.3,
+        );
+        double maxLabelWidth = 48.0;
+        for (final row in rows) {
+          final pos = row.fields['pos'];
+          final posLabel = _shortenPos(pos);
+          final baseLabel = _tableLabels[row.tableName] ?? row.tableName;
+          final lbl = posLabel.isNotEmpty ? '$baseLabel $posLabel' : baseLabel;
+          final tp = TextPainter(
+            text: TextSpan(text: lbl, style: labelTextStyle),
+            textDirection: TextDirection.ltr,
+          )..layout();
+          // horizontal padding (8*2) + border (1*2)
+          final w = tp.width + 18;
+          if (w > maxLabelWidth) maxLabelWidth = w;
+        }
+
+        // 用 Container + width:infinity 确保横幅始终占满全宽
+        return Container(
+          width: double.infinity,
+          color: colorScheme.surface,
+          padding: EdgeInsets.only(left: hPad, right: hPad, top: 6, bottom: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: rows.asMap().entries.map((entry) {
+              final rowIndex = entry.key;
+              final row = entry.value;
+
+              // 从 fields 中提取 pos，并过滤掉 pos 字段不展示为 chip
+              final pos = row.fields['pos'];
+              final posLabel = _shortenPos(pos);
+              final baseLabel = _tableLabels[row.tableName] ?? row.tableName;
+              final tableLabel = posLabel.isNotEmpty
+                  ? '$baseLabel $posLabel'
+                  : baseLabel;
+
+              final nonNullFields = row.fields.entries
+                  .where(
+                    (e) =>
+                        e.key != 'pos' &&
+                        e.value != null &&
+                        e.value!.isNotEmpty,
+                  )
+                  .toList();
+              if (nonNullFields.isEmpty) return const SizedBox.shrink();
+
+              return Padding(
+                padding: EdgeInsets.only(top: rowIndex == 0 ? 0 : 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 表类型+词性标签（左侧，对齐首行胶囊）
+                    Container(
+                      width: maxLabelWidth,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
                       ),
-                    ],
-                  ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.secondaryContainer.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        tableLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.onSecondaryContainer,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // 词形chips（右侧充满剩余宽度）
+                    Expanded(
+                      child: Wrap(
+                        spacing: 7,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: nonNullFields.map((field) {
+                          final colLabel = _colLabels[field.key] ?? field.key;
+                          final wordVal = field.value!;
+                          final isCurrentWord =
+                              wordVal.toLowerCase() ==
+                              widget.initialWord.toLowerCase();
+
+                          final chip = Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isCurrentWord
+                                  ? colorScheme.primaryContainer
+                                  : colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isCurrentWord
+                                    ? colorScheme.primary.withOpacity(0.4)
+                                    : colorScheme.outlineVariant.withOpacity(
+                                        0.4,
+                                      ),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                if (colLabel.isNotEmpty)
+                                  ...([
+                                    Text(
+                                      colLabel,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        height: 1.2,
+                                        color: isCurrentWord
+                                            ? colorScheme.onPrimaryContainer
+                                                  .withOpacity(0.65)
+                                            : colorScheme.onSurfaceVariant
+                                                  .withOpacity(0.7),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ]),
+                                Text(
+                                  wordVal,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.2,
+                                    fontWeight: isCurrentWord
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: isCurrentWord
+                                        ? colorScheme.onPrimaryContainer
+                                        : colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (isCurrentWord) return chip;
+
+                          return GestureDetector(
+                            onTap: () => _navigateToWord(wordVal),
+                            child: chip,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              );
+            }).toList(),
           ),
         );
       },
@@ -1288,10 +1605,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         showToast(context, '未找到单词: $word');
       }
     }
-  }
-
-  void _handleNominalizationTap(String word) async {
-    _navigateToWord(word);
   }
 
   void _showJsonElementEditorFromPath(
@@ -1755,7 +2068,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         current[targetLang] = formattedTranslation;
 
         final newEntry = DictionaryEntry.fromJson(json);
-        await DatabaseService().insertOrUpdateEntry(newEntry);
+        await DatabaseService().insertOrUpdateEntry(newEntry, skipCommit: true);
 
         final hiddenPath = targetPath.join('.');
         final hiddenKey = '$hiddenPath.$targetLang';
@@ -2280,6 +2593,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
           if (mounted) {
             setState(() {});
+            _modalSetState?.call(() {});
             // 显示完成提示
             showToast(
               context,
@@ -2331,6 +2645,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
           if (mounted) {
             setState(() {});
+            _modalSetState?.call(() {});
             showToast(context, 'AI请求失败: $e');
           }
         });
@@ -2529,6 +2844,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final freeChatController = TextEditingController();
     final freeChatFocusNode = FocusNode();
     bool isFullScreen = false;
+    // 提前从父级 context 获取状态栏高度，底部弹出层的 context 中 viewPadding.top 为 0
+    final statusBarHeight = MediaQuery.of(context).viewPadding.top;
 
     showModalBottomSheet(
       context: context,
@@ -2538,16 +2855,25 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) {
+          _modalSetState = setModalState;
           final screenSize = MediaQuery.of(context).size;
           return DraggableScrollableSheet(
             initialChildSize: isFullScreen ? 1.0 : 0.7,
             minChildSize: isFullScreen ? 1.0 : 0.5,
-            maxChildSize: 1.0,
+            // 非全屏时限制最大拖动高度，确保内容不压住状态栏底部
+            maxChildSize: isFullScreen
+                ? 1.0
+                : (screenSize.height - statusBarHeight - 8) / screenSize.height,
             expand: false,
             builder: (context, scrollController) {
               Widget content = Container(
                 width: isFullScreen ? screenSize.width : null,
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.only(
+                  top: isFullScreen ? statusBarHeight + 8 : 16,
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                ),
                 decoration: isFullScreen
                     ? BoxDecoration(
                         color: Theme.of(context).colorScheme.surface,
@@ -2557,56 +2883,68 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 child: Column(
                   children: [
                     // 标题栏
-                    Row(
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _summarizeCurrentPage();
-                          },
-                          icon: Icon(
-                            Icons.auto_awesome,
-                            size: 18,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          label: Text(
-                            '总结当前页',
-                            style: TextStyle(
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _summarizeCurrentPage();
+                            },
+                            icon: Icon(
+                              Icons.auto_awesome,
+                              size: 16,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
+                            label: Text(
+                              '总结当前页',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                             ),
-                            side: BorderSide(
-                              color: Theme.of(context).colorScheme.primary,
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              side: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.6),
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            backgroundColor: Colors.transparent,
                           ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () {
-                            setModalState(() {
-                              isFullScreen = !isFullScreen;
-                            });
-                          },
-                          icon: Icon(
-                            isFullScreen
-                                ? Icons.fullscreen_exit
-                                : Icons.fullscreen,
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () {
+                              setModalState(() {
+                                isFullScreen = !isFullScreen;
+                              });
+                            },
+                            icon: Icon(
+                              isFullScreen
+                                  ? Icons.fullscreen_exit
+                                  : Icons.fullscreen,
+                              size: 20,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: isFullScreen ? '退出全屏' : '全屏',
                           ),
-                          tooltip: isFullScreen ? '退出全屏' : '全屏',
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
+                          IconButton(
+                            onPressed: () {
+                              _modalSetState = null;
+                              Navigator.pop(context);
+                            },
+                            icon: const Icon(Icons.close, size: 20),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
                     ),
-                    const Divider(),
+                    const SizedBox(height: 10),
                     // 聊天记录列表
                     Expanded(
                       child: _aiChatHistory.isEmpty
@@ -2643,7 +2981,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                 );
 
                                 return Card(
-                                  margin: const EdgeInsets.only(bottom: 12),
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    side: BorderSide(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant
+                                          .withOpacity(0.5),
+                                    ),
+                                  ),
                                   child: ExpansionTile(
                                     leading: isLoading
                                         ? SizedBox(
@@ -2696,7 +3044,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                     ),
                                     children: [
                                       Padding(
-                                        padding: const EdgeInsets.all(16),
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          8,
+                                          12,
+                                          4,
+                                        ),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -2767,7 +3120,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                               _LazyMarkdownBody(
                                                 data: record.answer,
                                               ),
-                                            const SizedBox(height: 8),
+                                            const SizedBox(height: 4),
                                             Row(
                                               mainAxisAlignment:
                                                   MainAxisAlignment.end,
@@ -2787,11 +3140,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                     },
                                                     icon: const Icon(
                                                       Icons.copy,
-                                                      size: 18,
+                                                      size: 16,
                                                     ),
-                                                    label: const Text('复制回答'),
+                                                    label: const Text('复制'),
+                                                    style: TextButton.styleFrom(
+                                                      visualDensity:
+                                                          VisualDensity.compact,
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                    ),
                                                   ),
-                                                const SizedBox(width: 8),
                                                 // 继续对话按钮
                                                 if (!isLoading && !isError)
                                                   TextButton.icon(
@@ -2806,13 +3165,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                     },
                                                     icon: const Icon(
                                                       Icons.chat,
-                                                      size: 18,
+                                                      size: 16,
                                                     ),
-                                                    label: const Text('继续对话'),
+                                                    label: const Text('继续'),
+                                                    style: TextButton.styleFrom(
+                                                      visualDensity:
+                                                          VisualDensity.compact,
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                    ),
                                                   ),
-                                                const SizedBox(width: 8),
                                                 // 删除单条记录按钮
-                                                TextButton.icon(
+                                                IconButton(
                                                   onPressed: () async {
                                                     final confirm = await showDialog<bool>(
                                                       context: context,
@@ -2874,18 +3239,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                   icon: Icon(
                                                     Icons.delete_outline,
                                                     size: 18,
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.error,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .error
+                                                        .withOpacity(0.7),
                                                   ),
-                                                  label: Text(
-                                                    '删除',
-                                                    style: TextStyle(
-                                                      color: Theme.of(
-                                                        context,
-                                                      ).colorScheme.error,
-                                                    ),
-                                                  ),
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  tooltip: '删除',
                                                 ),
                                               ],
                                             ),
@@ -2898,7 +3259,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               },
                             ),
                     ),
-                    const Divider(),
+                    const SizedBox(height: 6),
                     // 自由发送文本框
                     Container(
                       padding: EdgeInsets.only(
@@ -2915,7 +3276,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               maxLines: 3,
                               minLines: 1,
                               decoration: InputDecoration(
-                                hintText: '输入任意问题，AI将结合当前单词上下文回答...',
+                                hintText: '输入任意问题...',
                                 hintStyle: TextStyle(
                                   fontSize: 13,
                                   color: Theme.of(context).colorScheme.outline,
@@ -3022,7 +3383,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   ],
                 ),
               );
-              // 全屏时使用 ClipRect 裁剪圆角
+              // 全屏时使用 ClipRect 裁剪圆角，顶部 padding 已手动留起状态栏空间
               if (isFullScreen) {
                 return ClipRect(child: content);
               }
@@ -3120,6 +3481,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
           if (mounted) {
             setState(() {});
+            _modalSetState?.call(() {});
           }
         })
         .catchError((e) {
@@ -3152,6 +3514,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           }
           if (mounted) {
             setState(() {});
+            _modalSetState?.call(() {});
           }
         });
   }
@@ -3271,9 +3634,86 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                   MarkdownBody(
                                     data: record.answer,
                                     selectable: true,
-                                    styleSheet: MarkdownStyleSheet(
-                                      p: Theme.of(context).textTheme.bodyMedium,
-                                    ),
+                                    styleSheet:
+                                        MarkdownStyleSheet.fromTheme(
+                                          Theme.of(context),
+                                        ).copyWith(
+                                          p: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(height: 1.6),
+                                          code: TextStyle(
+                                            fontFamily: 'Consolas',
+                                            fontSize:
+                                                (Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.fontSize ??
+                                                    14) *
+                                                0.9,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                            backgroundColor: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                          ),
+                                          codeblockDecoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .outlineVariant
+                                                  .withOpacity(0.5),
+                                            ),
+                                          ),
+                                          codeblockPadding:
+                                              const EdgeInsets.all(12),
+                                          blockquote: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                                fontStyle: FontStyle.italic,
+                                                height: 1.6,
+                                              ),
+                                          blockquoteDecoration: BoxDecoration(
+                                            border: Border(
+                                              left: BorderSide(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                    .withOpacity(0.5),
+                                                width: 4,
+                                              ),
+                                            ),
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primaryContainer
+                                                .withOpacity(0.15),
+                                            borderRadius:
+                                                const BorderRadius.only(
+                                                  topRight: Radius.circular(4),
+                                                  bottomRight: Radius.circular(
+                                                    4,
+                                                  ),
+                                                ),
+                                          ),
+                                          blockquotePadding:
+                                              const EdgeInsets.fromLTRB(
+                                                12,
+                                                8,
+                                                8,
+                                                8,
+                                              ),
+                                        ),
                                   ),
                                 ],
                               ),
@@ -4092,7 +4532,8 @@ class _LazyMarkdownBodyState extends State<_LazyMarkdownBody> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
+    // 延迟 300ms 渲染 Markdown，避免在 ExpansionTile 展开动画期间带来卡顿
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         setState(() {
           _isReady = true;
@@ -4116,30 +4557,102 @@ class _LazyMarkdownBodyState extends State<_LazyMarkdownBody> {
       );
     }
 
-    return MarkdownBody(
-      data: widget.data,
-      selectable: true,
-      styleSheet: MarkdownStyleSheet(
-        p: Theme.of(context).textTheme.bodyMedium,
-        code: TextStyle(
-          fontFamily: 'Consolas',
-          backgroundColor: Theme.of(
-            context,
-          ).colorScheme.surfaceContainerHighest,
-        ),
-        blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-        blockquoteDecoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(
-              color: Theme.of(context).colorScheme.outline,
-              width: 4,
+    return RepaintBoundary(
+      child: MarkdownBody(
+        data: widget.data,
+        selectable: true,
+        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+          p: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6),
+          h1: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+          h2: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+          h3: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            height: 1.4,
+          ),
+          h1Padding: const EdgeInsets.only(top: 16, bottom: 4),
+          h2Padding: const EdgeInsets.only(top: 12, bottom: 4),
+          h3Padding: const EdgeInsets.only(top: 8, bottom: 4),
+          pPadding: const EdgeInsets.symmetric(vertical: 2),
+          code: TextStyle(
+            fontFamily: 'Consolas',
+            fontSize:
+                (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14) * 0.9,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest,
+          ),
+          codeblockDecoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Theme.of(
+                context,
+              ).colorScheme.outlineVariant.withOpacity(0.5),
             ),
           ),
-          color: Theme.of(
+          codeblockPadding: const EdgeInsets.all(12),
+          blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontStyle: FontStyle.italic,
+            height: 1.6,
+          ),
+          blockquoteDecoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                width: 4,
+              ),
+            ),
+            color: Theme.of(
+              context,
+            ).colorScheme.primaryContainer.withOpacity(0.15),
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(4),
+              bottomRight: Radius.circular(4),
+            ),
+          ),
+          blockquotePadding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          listBullet: Theme.of(
             context,
-          ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          ).textTheme.bodyMedium?.copyWith(height: 1.6),
+          listIndent: 20,
+          strong: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            height: 1.6,
+          ),
+          em: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontStyle: FontStyle.italic,
+            height: 1.6,
+          ),
+          horizontalRuleDecoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
+          ),
+          tableHead: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          tableBody: Theme.of(context).textTheme.bodyMedium,
+          tableBorder: TableBorder.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            width: 1,
+          ),
+          tableColumnWidth: const FlexColumnWidth(),
+          tableCellsPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 6,
+          ),
+          tableHeadAlign: TextAlign.left,
         ),
       ),
     );

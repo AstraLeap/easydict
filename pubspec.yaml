@@ -1,5 +1,5 @@
 name: easydict
-description: "A new Flutter project."
+description: "EasyDict - 本地词典查词工具，支持多词典、AI 辅助、单词本等功能。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev

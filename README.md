@@ -6,12 +6,30 @@ flutter pub get
 
 # 运行应用
 flutter run
+```
 
-# 构建 Windows 版本
-flutter build windows
+## 构建发布版本
 
-# 构建 Android 版本
-flutter build apk
+| 平台    | 命令                    |
+| ------- | ----------------------- |
+| Windows | `flutter build windows` |
+| Android | `flutter build apk`     |
+| macOS   | `flutter build macos`   |
+| iOS     | `flutter build ios`     |
+| Linux   | `flutter build linux`   |
+| Web     | `flutter build web`     |
+
+## 可选编译参数（--dart-define）
+
+| 参数               | 说明                                      |
+| ------------------ | ----------------------------------------- |
+| `ENABLE_LOG=true`  | 启用日志输出（默认关闭），调试时使用      |
+| `LOG_TO_FILE=true` | 将日志同时写入文件，适合 Release 模式调试 |
+
+两个参数可以同时使用：
+
+```bash
+flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
 ```
 
 # json数据格式
@@ -21,7 +39,7 @@ flutter build apk
 ```jsonc
 {
   "dict_id": "my_dict", // 必填，词典id
-  "entry_id": 212, // 必填，不重复的entry标识符，整型
+  "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
   "headword": "fog", // 必填，词头，可重复
   "headword_normalized": "fog", // 表音文字必填，小写且去音调符号的词头
   "entry_type": "word", // 必填，word或phrase
@@ -116,7 +134,7 @@ flutter build apk
 }
 ```
 
-- **除了上面给定的键值外，还可以添加自定义键值对 `customKey:customValue`，这会被渲染为一个可折叠的board，board标题为customKey**
+- 除了上面给定的键值外，**还可以添加自定义键值对** `customKey:customValue`，这会被渲染为一个可折叠的*board*，board标题为customKey，customValue需要是一个map。map里的键值对会被渲染为board的内容,map里还可以继续嵌套*board*。强烈建议map里需要显示的文本键名为语言代码，比如`"zh":"这是一句话"`。
 
 - pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表
 
@@ -147,6 +165,7 @@ flutter build apk
 | `==entry_id.path`  | 精确跳转     |
 
 ### 示例
+
 ```
 for more information, please [see here](->dog)
 Wow, so pretty[text](color,bold)!
@@ -166,17 +185,17 @@ dictionary_name/
 
 ```json
 {
-  "id": "example_dict",
+  "id": "example_dict",//必填
+  "source_language": "en",//必填
+  "target_language": ["en", "zh"],//必填
   "name": "Example Dictionary",
-  "version": 13, //一定要是整型！！！
   "description": "An example dictionary for demonstration purposes",
-  "source_language": "en",
-  "target_language": ["en", "zh"],
   "publisher": "Example Publisher",
   "maintainer": "example_user",
+  "encode": "utf-8",
   "contact_maintainer": "example@example.com",
-  "repository": "https://github.com/example/dictionary",
-  "updatedAt": "2024-01-01T00:00:00.000Z"//唯一指定的标准时间格式
+  "version": 13, //一定要是整型！！！
+  "updatedAt": ""2026-02-23T01:54:36.679419+00:00""//唯一指定的标准时间格式
 }
 ```
 
@@ -186,20 +205,21 @@ dictionary_name/
 CREATE TABLE config (
     key TEXT PRIMARY KEY,--唯一键值为'zstd_dict'
     value BLOB --这里储存zstd的字典，用于压缩和解压
-);
+);--必要的表，只有一行
 
 CREATE TABLE entries (
-    entry_id INTEGER PRIMARY KEY,
-    headword TEXT,
-    headword_normalized TEXT,--只用给这个字段建立索引
-    entry_type TEXT,
-    page TEXT,
-    section TEXT,
-    json_data BLOB--储存使用zstd压缩后的json数据
-);
+    entry_id INTEGER PRIMARY KEY,--必要字段
+    headword TEXT,--必要字段，仅表意文字需建立此索引
+    phonetic TEXT,--非必要字段。表意文字可选择使用此字段并建立索引
+    headword_normalized TEXT,--非必要字段。表音文字必须使用此字段并建立索引
+    entry_type TEXT,--必要字段
+    page TEXT,--必要字段
+    section TEXT,--必要字段
+    json_data BLOB--必要字段，储存使用zstd压缩后的json数据
+);--必要的表
 
 CREATE INDEX idx_entry_id ON entries(entry_id);
-CREATE INDEX idx_headword_normalized ON entries(headword_normalized);
+--还需根据词典特性创建一些字段的索引
 ```
 
 ## media.db

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -46,48 +45,14 @@ class WordBankService {
   /// 缓存的词表列（从数据库读取）
   final Map<String, List<WordListInfo>> _cachedWordLists = {};
 
-  /// 用户自定义的词表配置
-  Map<String, List<WordListInfo>> _customLists = {};
-
-  static const String _customListsKey = 'custom_word_lists';
   static const String _lastLanguageKey = 'last_selected_language';
 
   /// 获取 SharedPreferences
   Future<SharedPreferences> get prefs async {
     if (_prefs == null) {
       _prefs = await SharedPreferences.getInstance();
-      await _loadCustomLists();
     }
     return _prefs!;
-  }
-
-  /// 加载用户自定义词表
-  Future<void> _loadCustomLists() async {
-    final p = await SharedPreferences.getInstance();
-    final customListsJson = p.getString(_customListsKey);
-    if (customListsJson != null) {
-      try {
-        final Map<String, dynamic> decoded = jsonDecode(customListsJson);
-        _customLists = decoded.map((key, value) {
-          final lists = (value as List<dynamic>)
-              .map((e) => WordListInfo.fromJson(e as Map<String, dynamic>))
-              .toList();
-          return MapEntry(key, lists);
-        });
-      } catch (e) {
-        _customLists = {};
-      }
-    }
-  }
-
-  /// 保存用户自定义词表
-  Future<void> _saveCustomLists() async {
-    final p = await prefs;
-    final encoded = _customLists.map((key, value) {
-      final lists = value.map((e) => e.toJson()).toList();
-      return MapEntry(key, lists);
-    });
-    await p.setString(_customListsKey, jsonEncode(encoded));
   }
 
   /// 保存最后选择的语言
@@ -127,47 +92,8 @@ class WordBankService {
       await _copyDatabaseFromAssets(dbPath);
     }
 
-    _database = await openDatabase(
-      dbPath,
-      version: 1,
-      onOpen: (db) async {
-        // 数据库打开时的初始化
-        await _ensureCustomListsInDatabase(db);
-      },
-    );
+    _database = await openDatabase(dbPath, version: 1);
     return _database!;
-  }
-
-  /// 确保自定义词表在数据库中存在
-  Future<void> _ensureCustomListsInDatabase(Database db) async {
-    for (final entry in _customLists.entries) {
-      final language = entry.key;
-      final lists = entry.value;
-
-      // 检查表是否存在
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        [language],
-      );
-
-      if (tables.isNotEmpty) {
-        // 检查列是否存在
-        final columns = await db.rawQuery('PRAGMA table_info($language)');
-        final existingColumns = columns.map((c) => c['name'] as String).toSet();
-
-        for (final list in lists) {
-          if (!existingColumns.contains(list.name)) {
-            // 添加新列
-            await db.execute(
-              'ALTER TABLE $language ADD COLUMN ${list.name} INTEGER DEFAULT 0',
-            );
-            await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_${language}_${list.name} ON $language(${list.name})',
-            );
-          }
-        }
-      }
-    }
   }
 
   /// 从 assets 复制数据库到用户目录
@@ -246,17 +172,6 @@ class WordBankService {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS "idx_${langLower}_$listNameClean" ON $langLower("$listNameClean")',
       );
-
-      // 保存到自定义词表配置
-      _customLists[langLower] ??= [];
-      final existingIndex = _customLists[langLower]!.indexWhere(
-        (l) => l.name.toLowerCase() == listNameClean.toLowerCase(),
-      );
-      if (existingIndex < 0) {
-        _customLists[langLower]!.add(WordListInfo(name: listNameClean));
-      }
-
-      await _saveCustomLists();
 
       // 清除缓存，下次读取时重新加载
       _clearWordListsCache(langLower);
@@ -348,12 +263,6 @@ class WordBankService {
           await txn.execute('DELETE FROM $langLower');
         }
       });
-
-      // 从自定义配置中移除
-      if (_customLists.containsKey(langLower)) {
-        _customLists[langLower]!.removeWhere((l) => l.name == listNameClean);
-        await _saveCustomLists();
-      }
 
       // 清除缓存
       _clearWordListsCache(langLower);
@@ -458,17 +367,6 @@ class WordBankService {
         }
       });
 
-      // 更新自定义配置
-      if (_customLists.containsKey(langLower)) {
-        final index = _customLists[langLower]!.indexWhere(
-          (l) => l.name == oldNameClean,
-        );
-        if (index >= 0) {
-          _customLists[langLower]![index] = WordListInfo(name: newNameClean);
-          await _saveCustomLists();
-        }
-      }
-
       // 清除缓存
       _clearWordListsCache(langLower);
 
@@ -551,31 +449,6 @@ class WordBankService {
           }
         }
       });
-
-      // 更新自定义配置中的顺序
-      if (_customLists.containsKey(langLower)) {
-        final customListMap = {
-          for (var l in _customLists[langLower]!) l.name: l,
-        };
-        final newCustomLists = <WordListInfo>[];
-        for (final name in newOrder) {
-          final matchedKey = customListMap.keys.firstWhere(
-            (k) => k.toLowerCase() == name.toLowerCase(),
-            orElse: () => '',
-          );
-          if (matchedKey.isNotEmpty) {
-            newCustomLists.add(customListMap[matchedKey]!);
-          }
-        }
-        // 添加遗漏的
-        for (final l in _customLists[langLower]!) {
-          if (!newCustomLists.contains(l)) {
-            newCustomLists.add(l);
-          }
-        }
-        _customLists[langLower] = newCustomLists;
-        await _saveCustomLists();
-      }
 
       // 清除缓存
       _clearWordListsCache(langLower);

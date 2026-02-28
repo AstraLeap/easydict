@@ -34,7 +34,7 @@ class DictionaryMetadata {
       'publisher': publisher,
       'maintainer': maintainer,
       if (contactMaintainer != null) 'contact_maintainer': contactMaintainer,
-      'updatedAt': updatedAt.toIso8601String(),
+      'updated_at': updatedAt.toUtc().toIso8601String().replaceFirst('Z', '+00:00'),
     };
   }
 
@@ -67,7 +67,7 @@ class DictionaryMetadata {
       publisher: json['publisher'] as String? ?? '',
       maintainer: json['maintainer'] as String? ?? '',
       contactMaintainer: json['contact_maintainer'] as String?,
-      updatedAt: _parseDateTime(json['updatedAt']),
+      updatedAt: _parseDateTime(json['updated_at'] ?? json['updatedAt']),
     );
   }
 

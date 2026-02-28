@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dictionary_manager.dart';
+import 'english_search_service.dart';
 import 'preferences_service.dart';
 import '../core/logger.dart';
 
@@ -139,5 +140,18 @@ class EnglishDbService {
 
   Future<String> _getDefaultDownloadUrl() async {
     return getDefaultDownloadUrl();
+  }
+
+  Future<bool> deleteDb() async {
+    // 先关闭存在的内存中数据库连接，否则尽管文件删除了查词依然可用
+    await EnglishSearchService().closeDatabase();
+    final dbPath = await getDbPath();
+    final dbFile = File(dbPath);
+    if (await dbFile.exists()) {
+      await dbFile.delete();
+      Logger.i('EnglishDbService: 数据库已删除', tag: 'EnglishDB');
+      return true;
+    }
+    return false;
   }
 }

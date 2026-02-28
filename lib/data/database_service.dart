@@ -909,7 +909,10 @@ class DatabaseService {
   }
 
   /// 更新词典条目
-  Future<bool> updateEntry(DictionaryEntry entry) async {
+  Future<bool> updateEntry(
+    DictionaryEntry entry, {
+    bool skipCommit = false,
+  }) async {
     try {
       final dictId = entry.dictId;
       if (dictId == null) {
@@ -950,7 +953,7 @@ class DatabaseService {
       );
 
       // 如果更新成功，记录到 update 表
-      if (result > 0) {
+      if (result > 0 && !skipCommit) {
         await _recordUpdate(db, entry.id, entry.headword);
       }
 
@@ -962,7 +965,10 @@ class DatabaseService {
   }
 
   /// 插入或更新词典条目
-  Future<bool> insertOrUpdateEntry(DictionaryEntry entry) async {
+  Future<bool> insertOrUpdateEntry(
+    DictionaryEntry entry, {
+    bool skipCommit = false,
+  }) async {
     try {
       final dictId = entry.dictId;
       if (dictId == null) {
@@ -1006,7 +1012,9 @@ class DatabaseService {
         'json_data': compressedBlob,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
-      await _recordUpdate(db, entry.id, entry.headword);
+      if (!skipCommit) {
+        await _recordUpdate(db, entry.id, entry.headword);
+      }
 
       return true;
     } catch (e) {
@@ -1090,6 +1098,27 @@ class DatabaseService {
     } catch (e) {
       Logger.e('获取条目JSON失败: $e', tag: 'DatabaseService', error: e);
       return null;
+    }
+  }
+
+  /// 删除 commits 表中指定条目的记录
+  Future<bool> deleteUpdateRecord(String dictId, String entryId) async {
+    try {
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+
+      final tableExists = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='commits'",
+      );
+      if (tableExists.isEmpty) {
+        return true;
+      }
+
+      await db.delete('commits', where: 'id = ?', whereArgs: [entryId]);
+      return true;
+    } catch (e) {
+      Logger.e('删除更新记录失败: $e', tag: 'DatabaseService', error: e);
+      return false;
     }
   }
 
