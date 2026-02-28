@@ -4,6 +4,7 @@ import '../core/theme_provider.dart';
 import '../core/utils/toast_utils.dart';
 import '../data/services/ai_chat_database_service.dart';
 import '../services/dict_update_check_service.dart';
+import '../services/app_update_service.dart';
 import '../services/english_db_service.dart';
 import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
@@ -147,6 +148,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final updateCheckService = context.watch<DictUpdateCheckService>();
+    final appUpdateService = context.watch<AppUpdateService>();
     final colorScheme = Theme.of(context).colorScheme;
     final contentScale = FontLoaderService().getDictionaryContentScale();
     return Scaffold(
@@ -311,6 +313,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           icon: Icons.help_outline,
                           iconColor: colorScheme.primary,
                           showArrow: true,
+                          badgeCount: appUpdateService.hasUpdate ? 1 : null,
                           onTap: () {
                             Navigator.push(
                               context,
@@ -386,7 +389,7 @@ class _SettingsPageState extends State<SettingsPage> {
       leading: Icon(icon, color: effectiveIconColor, size: 24),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500),
       ),
       subtitle: subtitle != null
           ? Text(

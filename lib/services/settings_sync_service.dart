@@ -33,6 +33,7 @@ class SettingsSyncService {
     'enabled_dictionaries',      // 词典管理页 - 启用的词典列表
     'auto_check_dict_update',    // 词典管理页 - 自动检查更新
     'last_dict_update_check_time', // 词典管理页 - 上次检查时间
+    'last_app_update_check_time',  // 应用更新 - 上次检查时间（设备相关）
   ];
 
   bool _isExcludedFromSync(String rawKey) {

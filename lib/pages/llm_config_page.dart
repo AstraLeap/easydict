@@ -1209,9 +1209,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       '  fast_llm_base_url: ${_fastBaseUrlController.text.trim()}',
       tag: 'LLMConfig',
     );
-    await prefs.setString('fast_llm_model', _fastModelController.text.trim());
+    final fastModelText = _fastModelController.text.trim();
+    final fastModelToSave = (fastModelText.isEmpty &&
+            _fastProvider != LLMProvider.custom)
+        ? (_fastDefaultModels[_fastProvider] ?? '')
+        : fastModelText;
+    await prefs.setString('fast_llm_model', fastModelToSave);
     Logger.i(
-      '  fast_llm_model: ${_fastModelController.text.trim()}',
+      '  fast_llm_model: $fastModelToSave',
       tag: 'LLMConfig',
     );
 
@@ -1244,12 +1249,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       '  standard_llm_base_url: ${_standardBaseUrlController.text.trim()}',
       tag: 'LLMConfig',
     );
-    await prefs.setString(
-      'standard_llm_model',
-      _standardModelController.text.trim(),
-    );
+    final standardModelText = _standardModelController.text.trim();
+    final standardModelToSave = (standardModelText.isEmpty &&
+            _standardProvider != LLMProvider.custom)
+        ? (_standardDefaultModels[_standardProvider] ?? '')
+        : standardModelText;
+    await prefs.setString('standard_llm_model', standardModelToSave);
     Logger.i(
-      '  standard_llm_model: ${_standardModelController.text.trim()}',
+      '  standard_llm_model: $standardModelToSave',
       tag: 'LLMConfig',
     );
 
@@ -1725,10 +1732,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 minWidth: 48,
                 minHeight: 48,
               ),
+              hintText: provider == LLMProvider.custom
+                  ? ''
+                  : '留空使用默认: ${defaultModels[provider] ?? ''}',
             ),
             validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return '请输入模型名称';
+              if (provider == LLMProvider.custom &&
+                  (value == null || value.trim().isEmpty)) {
+                return '自定义服务商需要指定模型名称';
               }
               return null;
             },

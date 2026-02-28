@@ -22,6 +22,7 @@ import 'services/media_kit_manager.dart';
 import 'services/font_loader_service.dart';
 import 'services/window_state_service.dart';
 import 'services/dict_update_check_service.dart';
+import 'services/app_update_service.dart';
 import 'services/zstd_service.dart';
 import 'core/utils/toast_utils.dart';
 import 'core/logger.dart';
@@ -191,6 +192,7 @@ void main() async {
         ChangeNotifierProvider(create: (context) => DownloadManager()),
         ChangeNotifierProvider(create: (context) => UploadManager()),
         ChangeNotifierProvider(create: (context) => DictUpdateCheckService()),
+        ChangeNotifierProvider(create: (context) => AppUpdateService()),
       ],
       child: const MyApp(),
     ),
@@ -416,6 +418,12 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     Logger.i('MainScreen initState', tag: 'MainScreen');
     _initDictUpdateCheck();
+    _initAppUpdateCheck();
+  }
+
+  Future<void> _initAppUpdateCheck() async {
+    final appUpdateService = context.read<AppUpdateService>();
+    appUpdateService.checkOnStartup();
   }
 
   Future<void> _initDictUpdateCheck() async {
@@ -466,23 +474,26 @@ class _MainScreenState extends State<MainScreen> {
     bool showBadgeDot = false,
   }) {
     final showBadge = badgeCount != null && badgeCount > 0;
+    // showBadgeDot: 显示小红点（无数字）而不是数字标签
+    final dotVisible = showBadgeDot && showBadge;
+    final labelVisible = !showBadgeDot && showBadge;
 
     return NavigationDestination(
       icon: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Badge(
-          isLabelVisible: showBadge && !showBadgeDot,
-          label: Text('$badgeCount'),
-          smallSize: showBadgeDot ? 8 : null,
+          isLabelVisible: dotVisible || labelVisible,
+          label: labelVisible ? Text('$badgeCount') : null,
+          smallSize: dotVisible ? 8 : null,
           child: Icon(icon),
         ),
       ),
       selectedIcon: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Badge(
-          isLabelVisible: showBadge && !showBadgeDot,
-          label: Text('$badgeCount'),
-          smallSize: showBadgeDot ? 8 : null,
+          isLabelVisible: dotVisible || labelVisible,
+          label: labelVisible ? Text('$badgeCount') : null,
+          smallSize: dotVisible ? 8 : null,
           child: Icon(selectedIcon),
         ),
       ),
@@ -494,7 +505,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     Logger.i('MainScreen build 开始', tag: 'MainScreen');
     final updateCheckService = context.watch<DictUpdateCheckService>();
-    final updateCount = updateCheckService.updatableCount;
+    final appUpdateService = context.watch<AppUpdateService>();
+    final dictUpdateCount = updateCheckService.updatableCount;
+    // 字典更新或应用更新均在设置层tab显示小红点
+    final hasAnyUpdate =
+        dictUpdateCount > 0 || appUpdateService.hasUpdate;
 
     final bottomNav = NavigationBar(
       selectedIndex: _selectedIndex,
@@ -517,7 +532,7 @@ class _MainScreenState extends State<MainScreen> {
           selectedIcon: Icons.tune,
           label: '设置',
           index: 2,
-          badgeCount: updateCount,
+          badgeCount: hasAnyUpdate ? 1 : null,
           showBadgeDot: true,
         ),
       ],

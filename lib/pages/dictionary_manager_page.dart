@@ -1356,35 +1356,31 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        onLongPress: () => _showDeleteDictionaryDialog(metadata),
-        onSecondaryTapUp: (_) => _showDeleteDictionaryDialog(metadata),
-        child: ListTile(
-          leading: FutureBuilder<String?>(
-            future: _dictManager.getLogoPath(metadata.id),
-            builder: (context, snapshot) {
-              if (snapshot.hasData && snapshot.data != null) {
-                return CircleAvatar(
-                  backgroundColor: Colors.transparent,
-                  backgroundImage: FileImage(File(snapshot.data!)),
-                  child: null,
-                );
-              }
-              return CircleAvatar(child: Text(metadata.name[0].toUpperCase()));
-            },
-          ),
-          title: Text(metadata.name),
-          subtitle: Text(
-            '${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Switch(
-            value: isEnabled,
-            onChanged: (_) => _toggleDictionary(metadata.id),
-          ),
-          onTap: () => _showDictionaryDetails(metadata),
+      child: ListTile(
+        leading: FutureBuilder<String?>(
+          future: _dictManager.getLogoPath(metadata.id),
+          builder: (context, snapshot) {
+            if (snapshot.hasData && snapshot.data != null) {
+              return CircleAvatar(
+                backgroundColor: Colors.transparent,
+                backgroundImage: FileImage(File(snapshot.data!)),
+                child: null,
+              );
+            }
+            return CircleAvatar(child: Text(metadata.name[0].toUpperCase()));
+          },
         ),
+        title: Text(metadata.name),
+        subtitle: Text(
+          '${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Switch(
+          value: isEnabled,
+          onChanged: (_) => _toggleDictionary(metadata.id),
+        ),
+        onTap: () => _showDictionaryDetails(metadata),
       ),
     );
   }
@@ -2424,6 +2420,27 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                       const SizedBox(height: 28),
 
                       _buildFilesSection(),
+                      const SizedBox(height: 28),
+
+                      // 删除词典按鈕
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _deleteDictionary(metadata),
+                          icon: const Icon(
+                            Icons.delete_forever,
+                            color: Colors.red,
+                          ),
+                          label: const Text(
+                            '删除词典',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 32),
                     ],
                   ),
@@ -3095,6 +3112,55 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
       'hasAudios': await dictManager.hasAudiosZip(dictId),
       'hasImages': await dictManager.hasImagesZip(dictId),
     };
+  }
+
+  Future<void> _deleteDictionary(DictionaryMetadata metadata) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever, color: Colors.red),
+            SizedBox(width: 8),
+            Text('删除词典'),
+          ],
+        ),
+        content: Text(
+          '确定删除「${metadata.name}」？\n\n这将删除该词典的所有文件（包括数据库、媒体、元数据等），且无法恢复。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    try {
+      final dictManager = DictionaryManager();
+      // 如果已启用，先禁用
+      final enabledIds = await dictManager.getEnabledDictionaries();
+      if (enabledIds.contains(metadata.id)) {
+        await dictManager.disableDictionary(metadata.id);
+      }
+      // 删除词典文件夹
+      await dictManager.deleteDictionary(metadata.id);
+      if (mounted) {
+        showToast(context, '词典「${metadata.name}」已删除');
+        Navigator.pop(context); // 返回词典管理页
+      }
+    } catch (e) {
+      if (mounted) showToast(context, '删除失败: $e');
+    }
   }
 
   String _formatDate(DateTime date) {

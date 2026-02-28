@@ -713,6 +713,9 @@ class ComponentRenderer extends StatefulWidget {
   /// 嵌入 ScrollablePositionedList 时应传 0。
   final double topPadding;
 
+  /// 自定义底部内边距。如果为 -1（默认），则使用 16px。
+  final double bottomPadding;
+
   const ComponentRenderer({
     super.key,
     required this.entry,
@@ -721,6 +724,7 @@ class ComponentRenderer extends StatefulWidget {
     this.onAiAsk,
     this.onTranslationInsert,
     this.topPadding = -1,
+    this.bottomPadding = -1,
   });
 
   @override
@@ -1922,18 +1926,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // Ensure position is within bounds
     final screenSize = MediaQuery.of(context).size;
+    final topPadding = MediaQuery.of(context).padding.top;
     double dx = position?.dx ?? screenSize.width / 2;
     double dy = position?.dy ?? screenSize.height / 2;
 
-    // Simple boundary check (menu width approx 200, height approx 150)
-    if (dx + 200 > screenSize.width) {
-      dx = screenSize.width - 210;
-    }
-    if (dy + 160 > screenSize.height) {
-      dy = screenSize.height - 170;
-    }
-
     final order = await PreferencesService().getClickActionOrder();
+
+    // 根据菜单项数量动态计算菜单高度，确保菜单完全在屏幕内
+    const menuWidth = 200.0;
+    final menuHeight = order.length * 48.0 + 16.0;
+    dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
+    dy = dy.clamp(topPadding + 8.0, screenSize.height - menuHeight - 8.0);
 
     overlayEntry = OverlayEntry(
       builder: (context) {
@@ -2134,7 +2137,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final fontScale = _fontScales[_sourceLanguage ?? 'en']?['serif'] ?? 1.0;
     final dictionaryContentScale = FontLoaderService()
         .getDictionaryContentScale();
-    final titleFontSize = 15 * fontScale * dictionaryContentScale;
     final iconSize = 18 * fontScale * dictionaryContentScale;
 
     final screenSize = MediaQuery.of(context).size;
@@ -2142,16 +2144,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     double overlayWidth;
     double dx;
-    double dy;
 
     if (isMobile) {
       overlayWidth = screenSize.width - 32;
       dx = 16;
-      dy = position.dy + 20;
     } else {
       overlayWidth = 420.0 * dictionaryContentScale.clamp(0.8, 1.2);
       dx = position.dx;
-      dy = position.dy + 20;
 
       if (dx + overlayWidth > screenSize.width) {
         dx = screenSize.width - overlayWidth - 16;
@@ -2161,18 +2160,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    // 实际可用高度：屏幕高度的 60%，但不超过屏幕高度减去顶部安全边距
-    final maxHeight = (screenSize.height * 0.6).clamp(
-      100.0,
-      screenSize.height - 32,
-    );
-    // 优先显示在点击位置下方；若下方空间不足则翻转到上方
-    if (dy + maxHeight > screenSize.height - 8) {
-      dy = position.dy - maxHeight - 10;
-    }
-    // 无论何种方向，最终都 clamp 到视野内
-    dy = dy.clamp(8.0, screenSize.height - maxHeight - 8);
-    dx = dx.clamp(8.0, screenSize.width - overlayWidth - 8);
+    // maxHeight 预估，用于限制弹窗最大高度（在 builder 中会用到）
+    final maxHeight = (screenSize.height * 0.55).clamp(150.0, 480.0);
 
     _phraseBarrierEntry = OverlayEntry(
       builder: (context) => Positioned.fill(
@@ -2190,10 +2179,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
 
     _phraseOverlayEntry = OverlayEntry(
-      builder: (context) {
+      builder: (ctx) {
+        // 在 overlay 的 context 中获取状态栏高度（不受 SafeArea 影响的真实物理值）
+        final statusBarHeight = MediaQuery.of(ctx).viewPadding.top;
+        final safeBottom = MediaQuery.of(ctx).viewPadding.bottom;
+        final effectiveDy = (position.dy + 20).clamp(
+          statusBarHeight + 8.0,
+          screenSize.height - maxHeight - safeBottom - 8.0,
+        );
+        final effectiveDx = dx.clamp(8.0, screenSize.width - overlayWidth - 8.0);
         return Positioned(
-          left: dx,
-          top: dy,
+          left: effectiveDx,
+          top: effectiveDy,
           width: overlayWidth,
           child: Material(
             color: Colors.transparent,
@@ -2219,121 +2216,66 @@ class ComponentRendererState extends State<ComponentRenderer> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Stack(
                   children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 16 * fontScale * dictionaryContentScale,
-                        vertical: 10 * fontScale * dictionaryContentScale,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primaryContainer,
-                            colorScheme.primaryContainer.withValues(
-                              alpha: 0.85,
-                            ),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Flexible(
+                          child: SingleChildScrollView(
                             padding: EdgeInsets.all(
-                              6 * fontScale * dictionaryContentScale,
+                              12 * fontScale * dictionaryContentScale,
+                            ),
+                            child: PageScaleWrapper(
+                              child: ComponentRenderer(
+                                entry: entryGroup.currentEntry ?? entries.first,
+                                topPadding: 8,
+                                bottomPadding: 8,
+                                onElementTap: (path, label) {
+                                  Logger.d(
+                                    'Phrase overlay element tapped: $path',
+                                    tag: 'PhraseOverlay',
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: () {
+                            _removePhraseOverlay();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EntryDetailPage(
+                                  entryGroup: entryGroup,
+                                  initialWord: phrase,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: EdgeInsets.all(
+                              8 * fontScale * dictionaryContentScale,
                             ),
                             decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(
-                                alpha: 0.15,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
+                              color: colorScheme.surface.withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Icon(
-                              Icons.format_quote,
+                              Icons.open_in_new,
                               size: iconSize,
                               color: colorScheme.primary,
                             ),
-                          ),
-                          SizedBox(
-                            width: 12 * fontScale * dictionaryContentScale,
-                          ),
-                          Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                children: parseFormattedText(
-                                  phrase,
-                                  TextStyle(
-                                    fontSize: titleFontSize,
-                                    fontWeight: FontWeight.w600,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                  sourceLanguage: _sourceLanguage,
-                                  fontScales: _fontScales,
-                                  isSerif: true,
-                                  isBold: true,
-                                ).spans,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          SizedBox(
-                            width: 8 * fontScale * dictionaryContentScale,
-                          ),
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () {
-                                _removePhraseOverlay();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => EntryDetailPage(
-                                      entryGroup: entryGroup,
-                                      initialWord: phrase,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: EdgeInsets.all(
-                                  8 * fontScale * dictionaryContentScale,
-                                ),
-                                child: Icon(
-                                  Icons.open_in_new,
-                                  size: iconSize,
-                                  color: colorScheme.primary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Divider(
-                      height: 1,
-                      thickness: 0.5,
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                    ),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.all(
-                          12 * fontScale * dictionaryContentScale,
-                        ),
-                        child: PageScaleWrapper(
-                          child: ComponentRenderer(
-                            entry: entryGroup.currentEntry ?? entries.first,
-                            onElementTap: (path, label) {
-                              Logger.d(
-                                'Phrase overlay element tapped: $path',
-                                tag: 'PhraseOverlay',
-                              );
-                            },
                           ),
                         ),
                       ),
@@ -2479,7 +2421,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 top: widget.topPadding >= 0
                     ? widget.topPadding
                     : MediaQuery.of(context).padding.top + 16,
-                bottom: 16,
+                bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2492,24 +2434,26 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     _buildSectionNavigation(context, sections),
                     const SizedBox(height: 12),
                   ],
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      _buildWord(context),
-                      if (entry.frequency.isNotEmpty ||
-                          entry.pronunciations.isNotEmpty) ...[
+                  _buildWord(context),
+                  if (entry.frequency.isNotEmpty ||
+                      entry.pronunciations.isNotEmpty ||
+                      entry.certifications.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
                         if (entry.frequency.isNotEmpty)
                           _buildFrequencyStars(context),
                         if (entry.pronunciations.isNotEmpty)
                           _buildPronunciations(context),
+                        if (entry.certifications.isNotEmpty) ...[
+                          ..._buildCertificationsInline(context),
+                        ],
                       ],
-                      if (entry.certifications.isNotEmpty) ...[
-                        ..._buildCertificationsInline(context),
-                      ],
-                    ],
-                  ),
+                    ),
+                  ],
                   // 渲染 datas（在 sense 之前）
                   _buildDatasIfExist(context),
                   if (entry.sense.isNotEmpty) ...[
@@ -2544,52 +2488,61 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final isPhrase = entry.entryType == 'phrase';
     final headwordFontSize = isPhrase ? 20.0 : 32.0;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        PathScope.append(
-          context,
-          key: 'headword',
-          child: Builder(
-            builder: (context) {
-              return _buildTappableWidget(
-                context: context,
-                pathData: _PathData(PathScope.of(context), 'Headword'),
-                child: RichText(
-                  text: TextSpan(
-                    children: _parseFormattedText(
-                      word,
-                      TextStyle(
-                        fontSize: headwordFontSize,
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
-                        height: 1.0,
-                      ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Flexible(
+              child: PathScope.append(
+                context,
+                key: 'headword',
+                child: Builder(
+                  builder: (context) {
+                    return _buildTappableWidget(
                       context: context,
-                      isSerif: true,
-                      isBold: true,
-                    ).spans,
-                  ),
+                      pathData: _PathData(PathScope.of(context), 'Headword'),
+                      child: RichText(
+                        softWrap: true,
+                        text: TextSpan(
+                          children: _parseFormattedText(
+                            word,
+                            TextStyle(
+                              fontSize: headwordFontSize,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                              height: 1.0,
+                            ),
+                            context: context,
+                            isSerif: true,
+                            isBold: true,
+                          ).spans,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-        ),
-        if (pos.isNotEmpty) ...[
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: PathScope.append(
-              context,
-              key: 'senses.0.pos',
-              child: Builder(
-                builder: (context) {
-                  return _buildPosElement(context, pos);
-                },
               ),
             ),
-          ),
-        ],
+            if (pos.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: PathScope.append(
+                  context,
+                  key: 'senses.0.pos',
+                  child: Builder(
+                    builder: (context) {
+                      return _buildPosElement(context, pos);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
   }
