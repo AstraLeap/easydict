@@ -207,6 +207,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   List<String> _toolbarActions = [];
   List<String> _overflowActions = [];
 
+  /// 是否有新的AI回答尚未查看（用于工具栏按鈕闪烁）
+  bool _hasNewAiAnswer = false;
+
   @override
   void initState() {
     super.initState();
@@ -1056,9 +1059,30 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           onPressed: _toggleAllNonTargetLanguages,
         );
       case PreferencesService.actionAiHistory:
-        return _buildActionButton(
-          icon: Icons.auto_awesome,
-          onPressed: _showAiChatHistory,
+        final colorScheme = Theme.of(context).colorScheme;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              final hadNewAnswer = _hasNewAiAnswer;
+              if (mounted) setState(() => _hasNewAiAnswer = false);
+              _showAiChatHistory(
+                startFullscreen: hadNewAnswer,
+                expandNewest: hadNewAnswer,
+              );
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              child: _BlinkingIcon(
+                icon: Icons.auto_awesome,
+                color: _hasNewAiAnswer
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+                isBlinking: _hasNewAiAnswer,
+              ),
+            ),
+          ),
         );
       case PreferencesService.actionResetEntry:
         return _buildActionButton(
@@ -1164,7 +1188,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         _toggleAllNonTargetLanguages();
         break;
       case PreferencesService.actionAiHistory:
-        _showAiChatHistory();
+        final hadNewAnswer = _hasNewAiAnswer;
+        if (mounted) setState(() => _hasNewAiAnswer = false);
+        _showAiChatHistory(
+          startFullscreen: hadNewAnswer,
+          expandNewest: hadNewAnswer,
+        );
         break;
       case PreferencesService.actionResetEntry:
         _resetCurrentEntry();
@@ -2592,25 +2621,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             _currentLoadingId = null;
           }
           if (mounted) {
-            setState(() {});
+            setState(() {
+              _hasNewAiAnswer = true;
+            });
             _modalSetState?.call(() {});
             // 显示完成提示
-            showToast(
-              context,
-              'AI回答已就绪',
-              action: SnackBarAction(
-                label: '查看',
-                onPressed: () {
-                  // 先关闭SnackBar
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  _showAiResponseDialog(
-                    question,
-                    answer,
-                    record: _aiChatHistory[index],
-                  );
-                },
-              ),
-            );
+            showToast(context, 'AI回答已生成，请查看');
           }
         })
         .catchError((e) {
@@ -2700,141 +2716,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
-  /// 显示AI回答对话框
-  void _showAiResponseDialog(
-    String question,
-    String answer, {
-    AiChatRecord? record,
-  }) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.auto_awesome,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            const Text('AI回答'),
-            // 查看历史按钮
-            IconButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _showAiChatHistory();
-              },
-              icon: const Icon(Icons.history),
-              tooltip: '查看历史记录',
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '问题: $question',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              if (record?.path != null) ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.home,
-                      size: 14,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        record!.path!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 12),
-              const Divider(),
-              const SizedBox(height: 12),
-              // 使用Markdown渲染回答
-              Flexible(
-                child: SingleChildScrollView(
-                  child: MarkdownBody(
-                    data: answer,
-                    selectable: true,
-                    styleSheet: MarkdownStyleSheet(
-                      p: Theme.of(context).textTheme.bodyMedium,
-                      h1: Theme.of(context).textTheme.headlineMedium,
-                      h2: Theme.of(context).textTheme.headlineSmall,
-                      h3: Theme.of(context).textTheme.titleLarge,
-                      code: TextStyle(
-                        fontFamily: 'Consolas',
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                      ),
-                      codeblockDecoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      blockquote: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                      blockquoteDecoration: BoxDecoration(
-                        border: Border(
-                          left: BorderSide(
-                            color: Theme.of(context).colorScheme.outline,
-                            width: 4,
-                          ),
-                        ),
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
-          ),
-          FilledButton(
-            onPressed: () {
-              // 复制到剪贴板
-              Clipboard.setData(ClipboardData(text: answer));
-              Navigator.pop(context);
-              showToast(context, '已复制到剪贴板');
-            },
-            child: const Text('复制'),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 显示AI聊天记录
-  void _showAiChatHistory() async {
+  void _showAiChatHistory({
+    bool startFullscreen = false,
+    bool expandNewest = false,
+  }) async {
     // 首次打开时加载聊天记录
     if (!_isAiChatHistoryLoaded) {
       await _loadAiChatHistory();
@@ -2843,7 +2729,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
     final freeChatController = TextEditingController();
     final freeChatFocusNode = FocusNode();
-    bool isFullScreen = false;
+    bool isFullScreen = startFullscreen;
     // 提前从父级 context 获取状态栏高度，底部弹出层的 context 中 viewPadding.top 为 0
     final statusBarHeight = MediaQuery.of(context).viewPadding.top;
 
@@ -3017,6 +2903,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                               context,
                                             ).colorScheme.primary,
                                           ),
+                                    initiallyExpanded: index == 0 && expandNewest,
                                     title: Text(
                                       record.question,
                                       maxLines: 2,
@@ -4070,22 +3957,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             _currentLoadingId = null;
           }
           if (mounted) {
-            setState(() {});
-            showToast(
-              context,
-              'AI总结已就绪',
-              action: SnackBarAction(
-                label: '查看',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  _showAiResponseDialog(
-                    '当前页内容总结',
-                    summary,
-                    record: _aiChatHistory[index],
-                  );
-                },
-              ),
-            );
+            setState(() {
+              _hasNewAiAnswer = true;
+            });
+            showToast(context, 'AI回答已生成，请查看');
           }
         })
         .catchError((e) {
@@ -4121,6 +3996,78 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             showToast(context, 'AI总结失败: $e');
           }
         });
+  }
+}
+
+/// 工具栏 AI 按鈕闪烁动画小部件
+class _BlinkingIcon extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final bool isBlinking;
+
+  const _BlinkingIcon({
+    required this.icon,
+    required this.color,
+    required this.isBlinking,
+  });
+
+  @override
+  State<_BlinkingIcon> createState() => _BlinkingIconState();
+}
+
+class _BlinkingIconState extends State<_BlinkingIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 700),
+      vsync: this,
+    );
+    _animation = Tween<double>(begin: 1.0, end: 0.25).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    if (widget.isBlinking) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_BlinkingIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isBlinking != oldWidget.isBlinking) {
+      if (widget.isBlinking) {
+        _controller.repeat(reverse: true);
+      } else {
+        _controller.stop();
+        _controller.value = 1.0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isBlinking) {
+      return Icon(widget.icon, size: 24, color: widget.color);
+    }
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _animation.value,
+          child: Icon(widget.icon, size: 24, color: widget.color),
+        );
+      },
+    );
   }
 }
 

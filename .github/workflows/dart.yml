@@ -1,55 +1,101 @@
-name: Flutter Build CI
+name: Flutter Professional CI/CD
 
-# 触发条件：当推送代码到 main 分支时
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
+  # 阶段一：并行编译
   build:
-    # 使用最新的 Ubuntu 系统作为运行环境
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: android
+            os: ubuntu-latest
+            build_cmd: flutter build apk --release
+            artifact_path: build/app/outputs/flutter-apk/app-release.apk
+          - target: windows
+            os: windows-latest
+            build_cmd: |
+              flutter build windows --release
+              dart run msix:create --architecture x64
+            artifact_path: build/windows/x64/runner/Release/*.msix
+          - target: linux
+            os: ubuntu-latest
+            build_cmd: |
+              sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+              flutter build linux --release
+              tar -czvf flutter-app-linux.tar.gz -C build/linux/x64/release/bundle .
+            artifact_path: flutter-app-linux.tar.gz
+          - target: macos
+            os: macos-latest
+            build_cmd: |
+              flutter build macos --release
+              cd build/macos/Build/Products/Release/
+              zip -r ../../../../flutter-app-macos.zip *.app
+            artifact_path: flutter-app-macos.zip
 
     steps:
-      # 1. 检出代码
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2. 安装 Java (Android 编译需要)
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      # 缓存 Pub 依赖 (跨平台通用)
+      - name: Cache Pub packages
+        uses: actions/cache@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          path: |
+            ~/.pub-cache
+            ${{ env.FLUTTER_HOME }}/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-pub-
 
-      # 3. 安装 Flutter 环境
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable' # 使用稳定版
-          cache: true              # 开启缓存以加快后续编译速度
+          channel: "stable"
+          cache: true
 
-      # 4. 获取依赖
       - name: Install dependencies
         run: flutter pub get
 
-      # 5. 代码检查（可选）
-      - name: Analyze code
-        run: flutter analyze
+      - name: Execute Build
+        run: ${{ matrix.build_cmd }}
+        shell: bash
 
-      # 6. 运行测试（可选）
-      - name: Run tests
-        run: flutter test
-
-      # 7. 编译 APK
-      - name: Build APK
-        run: flutter build apk --release
-
-      # 8. 将生成的 APK 上传到 GitHub，方便下载
-      - name: Upload APK
+      # 将生成的产物暂时上传到 GitHub 暂存区
+      - name: Upload to Staging
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: build-artifact-${{ matrix.target }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 1 # 仅保存1天，省空间
+
+  # 阶段二：汇总并发布
+  release:
+    name: Create GitHub Release
+    needs: build # 必须等上面 4 个都编完
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-files
+          merge-multiple: true # 合并所有下载的文件到同一个目录
+
+      - name: Generate Release Note
+        run: echo "Release of version ${{ github.ref_name }}" > release_note.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_note.md
+          files: ./release-files/**/* # 自动拾取所有子目录下的文件
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false

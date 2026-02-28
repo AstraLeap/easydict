@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 import '../services/font_loader_service.dart';
+import '../services/app_update_service.dart';
 import '../components/global_scale_wrapper.dart';
 
 class HelpPage extends StatefulWidget {
@@ -40,6 +42,7 @@ class _HelpPageState extends State<HelpPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final appUpdateService = context.watch<AppUpdateService>();
 
     return Scaffold(
       appBar: AppBar(
@@ -103,9 +106,20 @@ class _HelpPageState extends State<HelpPage> {
                 _buildSettingsTile(
                   context,
                   title: '词典反馈',
-                  icon: Icons.feedback_outlined,
+                  icon: Icons.forum_outlined,
                   iconColor: colorScheme.primary,
-                  onTap: () async {},
+                  isExternal: true,
+                  onTap: () async {
+                    final url = Uri.parse(
+                      'https://forum.freemdict.com/t/topic/43251',
+                    );
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
                 ),
                 _buildSettingsTile(
                   context,
@@ -143,6 +157,16 @@ class _HelpPageState extends State<HelpPage> {
                     }
                   },
                 ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // 检查更新组
+            _buildSettingsGroup(
+              context,
+              children: [
+                _buildUpdateTile(context, appUpdateService),
               ],
             ),
 
@@ -288,6 +312,86 @@ class _HelpPageState extends State<HelpPage> {
           Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
       ),
+    );
+  }
+
+  Widget _buildUpdateTile(BuildContext context, AppUpdateService service) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    String subtitle;
+    Widget? trailing;
+    VoidCallback? onTap;
+
+    if (service.isChecking) {
+      subtitle = '正在检查…';
+      trailing = const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (service.hasUpdate) {
+      subtitle = '发现新版本 ${service.latestRelease?.version ?? ''} · 点击前往 GitHub 下载';
+      trailing = Icon(Icons.open_in_new, color: colorScheme.error, size: 18);
+      onTap = () async {
+        final url = Uri.tryParse(service.latestRelease?.htmlUrl ?? '');
+        if (url != null && await canLaunchUrl(url)) {
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+        }
+      };
+    } else if (service.latestRelease != null) {
+      subtitle = '已是最新版本 ${service.currentVersion ?? ''}';
+      trailing = Icon(Icons.check_circle_outline, color: colorScheme.primary, size: 18);
+      onTap = () => service.checkForUpdates();
+    } else if (service.errorMessage != null) {
+      subtitle = service.errorMessage!;
+      trailing = const Icon(Icons.refresh, size: 18);
+      onTap = () => service.checkForUpdates();
+    } else {
+      subtitle = '当前版本 ${service.currentVersion ?? (_packageInfo?.version ?? '')}';
+      trailing = const Icon(Icons.refresh, size: 18);
+      onTap = () => service.checkForUpdates();
+    }
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(
+            Icons.system_update_outlined,
+            color: service.hasUpdate ? colorScheme.error : colorScheme.primary,
+            size: 24,
+          ),
+          if (service.hasUpdate)
+            Positioned(
+              right: -4,
+              top: -4,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: colorScheme.error,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Text(
+        '检查更新',
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: service.hasUpdate
+              ? colorScheme.error
+              : colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: trailing,
+      onTap: onTap,
     );
   }
 }
