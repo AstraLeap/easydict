@@ -16,6 +16,34 @@ class AIService {
   final _llmClient = LLMClient();
   final _prefsService = PreferencesService();
 
+  /// 带指数退避的自动重试
+  Future<T> _retryWithBackoff<T>(
+    Future<T> Function() fn, {
+    int maxRetries = 2,
+    Duration initialDelay = const Duration(seconds: 1),
+  }) async {
+    Duration delay = initialDelay;
+    Object? lastError;
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        lastError = e;
+        if (attempt < maxRetries) {
+          Logger.w(
+            'AI 请求失败 (第 ${attempt + 1} 次)，${delay.inSeconds}s 后重试: $e',
+            tag: 'AIService',
+          );
+          await Future.delayed(delay);
+          delay = Duration(
+            milliseconds: (delay.inMilliseconds * 2).round(),
+          );
+        }
+      }
+    }
+    throw lastError!;
+  }
+
   Future<String> chat(
     String prompt, {
     String? systemPrompt,
@@ -30,13 +58,15 @@ class AIService {
       throw Exception('未配置API Key');
     }
 
-    return await _llmClient.callApi(
-      provider: config.provider,
-      baseUrl: config.effectiveBaseUrl,
-      apiKey: config.apiKey,
-      model: config.model,
-      prompt: prompt,
-      systemPrompt: systemPrompt,
+    return await _retryWithBackoff(
+      () => _llmClient.callApi(
+        provider: config.provider,
+        baseUrl: config.effectiveBaseUrl,
+        apiKey: config.apiKey,
+        model: config.model,
+        prompt: prompt,
+        systemPrompt: systemPrompt,
+      ),
     );
   }
 
@@ -104,14 +134,16 @@ class AIService {
       throw Exception('未配置API Key');
     }
 
-    return await _llmClient.callApiWithHistory(
-      provider: config.provider,
-      baseUrl: config.effectiveBaseUrl,
-      apiKey: config.apiKey,
-      model: config.model,
-      question: question,
-      history: history,
-      systemPrompt: systemPrompt,
+    return await _retryWithBackoff(
+      () => _llmClient.callApiWithHistory(
+        provider: config.provider,
+        baseUrl: config.effectiveBaseUrl,
+        apiKey: config.apiKey,
+        model: config.model,
+        question: question,
+        history: history,
+        systemPrompt: systemPrompt,
+      ),
     );
   }
 

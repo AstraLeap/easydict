@@ -419,48 +419,39 @@ class DictionaryStoreService {
         };
 
         final dbPath = path.join(dictDir, 'dictionary.db');
-        final existingSize = await _getExistingFileSize(dbPath);
+        // 无断点续传：先删除可能存在的残余文件，从头重新下载
+        final dbFile = File(dbPath);
+        if (await dbFile.exists()) await dbFile.delete();
         final url = _buildUrl('download/${dict.id}/file/dictionary.db');
 
-        http.BaseRequest request;
-        if (existingSize > 0) {
-          request = http.Request('GET', Uri.parse(url));
-          request.headers['Range'] = 'bytes=$existingSize-';
-        } else {
-          request = http.Request('GET', Uri.parse(url));
-        }
-
+        final request = http.Request('GET', Uri.parse(url));
         final response = await _client.send(request);
 
-        if (response.statusCode == 200 || response.statusCode == 206) {
-          final dbFile = File(dbPath);
-          final sink = dbFile.openWrite(mode: FileMode.append);
+        if (response.statusCode == 200) {
+          final sink = dbFile.openWrite();
           var receivedBytes = 0;
-          final contentLength = response.contentLength ?? 0;
-          final totalBytes = existingSize + contentLength;
-          final startBytes = existingSize;
+          final totalBytes = response.contentLength ?? 0;
 
           await for (final chunk in response.stream) {
             sink.add(chunk);
             receivedBytes += chunk.length;
 
-            final currentProgress = startBytes + receivedBytes;
             yield {
               'type': 'progress',
               'fileName': 'dictionary.db',
               'fileIndex': currentStep,
               'totalFiles': totalSteps,
-              'progress': totalBytes > 0 ? currentProgress / totalBytes : 0.0,
-              'receivedBytes': currentProgress,
+              'progress': totalBytes > 0 ? receivedBytes / totalBytes : 0.0,
+              'receivedBytes': receivedBytes,
               'totalBytes': totalBytes,
               'status':
-                  '[$currentStep/$totalSteps] 下载数据库... ${totalBytes > 0 ? '${(currentProgress / totalBytes * 100).toInt()}%' : formatBytes(currentProgress)}',
+                  '[$currentStep/$totalSteps] 下载数据库... ${totalBytes > 0 ? '${(receivedBytes / totalBytes * 100).toInt()}%' : formatBytes(receivedBytes)}',
             };
           }
           await sink.close();
 
           Logger.i(
-            '数据库下载完成: ${formatBytes(totalBytes)}',
+            '数据库下载完成: ${formatBytes(receivedBytes)}',
             tag: 'DictionaryStore',
           );
         } else {
@@ -483,48 +474,39 @@ class DictionaryStoreService {
         };
 
         final mediaDbPath = path.join(dictDir, 'media.db');
-        final existingSize = await _getExistingFileSize(mediaDbPath);
+        // 无断点续传：先删除可能存在的残余文件，从头重新下载
+        final mediaDbFile = File(mediaDbPath);
+        if (await mediaDbFile.exists()) await mediaDbFile.delete();
         final url = _buildUrl('download/${dict.id}/file/media.db');
 
-        http.BaseRequest request;
-        if (existingSize > 0) {
-          request = http.Request('GET', Uri.parse(url));
-          request.headers['Range'] = 'bytes=$existingSize-';
-        } else {
-          request = http.Request('GET', Uri.parse(url));
-        }
-
+        final request = http.Request('GET', Uri.parse(url));
         final response = await _client.send(request);
 
-        if (response.statusCode == 200 || response.statusCode == 206) {
-          final mediaDbFile = File(mediaDbPath);
-          final sink = mediaDbFile.openWrite(mode: FileMode.append);
+        if (response.statusCode == 200) {
+          final sink = mediaDbFile.openWrite();
           var receivedBytes = 0;
-          final contentLength = response.contentLength ?? 0;
-          final totalBytes = existingSize + contentLength;
-          final startBytes = existingSize;
+          final totalBytes = response.contentLength ?? 0;
 
           await for (final chunk in response.stream) {
             sink.add(chunk);
             receivedBytes += chunk.length;
 
-            final currentProgress = startBytes + receivedBytes;
             yield {
               'type': 'progress',
               'fileName': 'media.db',
               'fileIndex': currentStep,
               'totalFiles': totalSteps,
-              'progress': totalBytes > 0 ? currentProgress / totalBytes : 0.0,
-              'receivedBytes': currentProgress,
+              'progress': totalBytes > 0 ? receivedBytes / totalBytes : 0.0,
+              'receivedBytes': receivedBytes,
               'totalBytes': totalBytes,
               'status':
-                  '[$currentStep/$totalSteps] 下载媒体数据库... ${totalBytes > 0 ? '${(currentProgress / totalBytes * 100).toInt()}%' : formatBytes(currentProgress)}',
+                  '[$currentStep/$totalSteps] 下载媒体数据库... ${totalBytes > 0 ? '${(receivedBytes / totalBytes * 100).toInt()}%' : formatBytes(receivedBytes)}',
             };
           }
           await sink.close();
 
           Logger.i(
-            '媒体数据库下载完成: ${formatBytes(totalBytes)}',
+            '媒体数据库下载完成: ${formatBytes(receivedBytes)}',
             tag: 'DictionaryStore',
           );
         } else {
@@ -576,26 +558,22 @@ class DictionaryStoreService {
       // subject to a short timeout.  The body is piped to disk in chunks
       // with no overall timeout, which avoids spurious failures on large
       // files (e.g. media.db) over slow mobile connections.
-      final existingSize = await _getExistingFileSize(savePath);
+      // 无断点续传：先删除可能存在的残余文件，从头重新下载
+      final file = File(savePath);
+      await file.parent.create(recursive: true);
+      if (await file.exists()) await file.delete();
+
       final request = http.Request('GET', Uri.parse(url.toString()));
-      if (existingSize > 0) {
-        request.headers['Range'] = 'bytes=$existingSize-';
-        Logger.i('断点续传 $fileName，已有 ${formatBytes(existingSize)}', tag: 'DictionaryStore');
-      }
       final response = await _client
           .send(request)
           .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode != 200 && response.statusCode != 206) {
+      if (response.statusCode != 200) {
         Logger.w('文件下载失败: HTTP ${response.statusCode}', tag: 'DictionaryStore');
         return null;
       }
 
-      final file = File(savePath);
-      await file.parent.create(recursive: true);
-      final sink = file.openWrite(
-        mode: existingSize > 0 ? FileMode.append : FileMode.write,
-      );
+      final sink = file.openWrite();
       var downloadedBytes = 0;
 
       try {
@@ -607,7 +585,7 @@ class DictionaryStoreService {
         await sink.close();
       }
 
-      final totalBytes = existingSize + downloadedBytes;
+      final totalBytes = downloadedBytes;
       if (totalBytes == 0) {
         Logger.w('文件下载失败: 响应内容为空 - $fileName', tag: 'DictionaryStore');
         await file.delete().catchError((_) => file);
@@ -639,28 +617,21 @@ class DictionaryStoreService {
       final url = Uri.parse(_buildUrl('download/$dictId/file/$fileName'));
       Logger.i('下载词典文件(流式): $url', tag: 'DictionaryStore');
 
-      final existingSize = await _getExistingFileSize(savePath);
-      final request = http.Request('GET', url);
-      if (existingSize > 0) {
-        request.headers['Range'] = 'bytes=$existingSize-';
-        Logger.i('断点续传 $fileName，已有 ${formatBytes(existingSize)}',
-            tag: 'DictionaryStore');
-      }
+      // 无断点续传：先删除可能存在的残余文件，从头重新下载
+      final file = File(savePath);
+      await file.parent.create(recursive: true);
+      if (await file.exists()) await file.delete();
 
+      final request = http.Request('GET', url);
       final response =
           await _client.send(request).timeout(const Duration(seconds: 30));
 
-      if (response.statusCode != 200 && response.statusCode != 206) {
+      if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
 
-      final contentLength = response.contentLength ?? 0;
-      final totalBytes = existingSize + contentLength;
-
-      final file = File(savePath);
-      await file.parent.create(recursive: true);
-      final sink =
-          file.openWrite(mode: existingSize > 0 ? FileMode.append : FileMode.write);
+      final totalBytes = response.contentLength ?? 0;
+      final sink = file.openWrite();
 
       var downloadedBytes = 0;
       DateTime? lastSpeedUpdate;
@@ -681,12 +652,11 @@ class DictionaryStoreService {
           }
           lastSpeedUpdate = now;
 
-          final currentBytes = existingSize + downloadedBytes;
           yield {
             'type': 'progress',
-            'receivedBytes': currentBytes,
+            'receivedBytes': downloadedBytes,
             'totalBytes': totalBytes,
-            'progress': totalBytes > 0 ? currentBytes / totalBytes : 0.0,
+            'progress': totalBytes > 0 ? downloadedBytes / totalBytes : 0.0,
             'speedBytesPerSecond': speedBytesPerSecond,
           };
         }
@@ -694,12 +664,12 @@ class DictionaryStoreService {
         await sink.close();
       }
 
-      if (existingSize + downloadedBytes == 0) {
+      if (downloadedBytes == 0) {
         throw Exception('响应内容为空');
       }
 
       Logger.i(
-        '文件下载完成: $fileName (${formatBytes(existingSize + downloadedBytes)})',
+        '文件下载完成: $fileName (${formatBytes(downloadedBytes)})',
         tag: 'DictionaryStore',
       );
       yield {'type': 'complete'};

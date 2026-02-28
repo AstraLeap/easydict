@@ -1077,25 +1077,25 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
     Widget sectionWidget = InkWell(
       onTap: () => _onSectionTapped(section, dictId, index, isSelected),
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(12),
       mouseCursor: SystemMouseCursors.click,
       child: Container(
         width: 40,
-        height: 32, // 增加高度
+        height: 32,
         margin: const EdgeInsets.symmetric(
           vertical: 3,
           horizontal: 6,
-        ), // 增加垂直间距
+        ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(12),
           color: isSelected
-              ? colorScheme.primaryContainer.withOpacity(0.75)
-              : colorScheme.surfaceContainer,
+              ? colorScheme.primaryContainer.withOpacity(0.65)
+              : colorScheme.surfaceContainerLow,
           border: Border.all(
             color: isSelected
-                ? colorScheme.primary
-                : colorScheme.outlineVariant.withOpacity(0.5),
-            width: isSelected ? 2 : 1,
+                ? colorScheme.primary.withOpacity(0.65)
+                : colorScheme.outlineVariant.withOpacity(0.45),
+            width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Center(
@@ -1107,8 +1107,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               fontSize: 12,
               fontWeight: FontWeight.bold,
               color: isSelected
-                  ? colorScheme.onPrimaryContainer
-                  : colorScheme.onSurfaceVariant,
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant.withOpacity(0.75),
             ),
           ),
         ),

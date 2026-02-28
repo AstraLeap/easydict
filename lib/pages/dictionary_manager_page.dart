@@ -67,7 +67,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   @override
   void dispose() {
-    _storeService?.dispose();
+    // 若后台下载仍在进行，不关闭 HTTP 客户端，让 DownloadManager 继续使用
+    if (!DownloadManager().isDownloading) {
+      _storeService?.dispose();
+    }
     _userDictsService.dispose();
     super.dispose();
   }
@@ -157,7 +160,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     final extDir = await getExternalStorageDirectory();
     final appSpecificDir = extDir != null
         ? path.join(extDir.path, 'dictionaries')
-        : path.join((await getApplicationDocumentsDirectory()).path, 'easydict');
+        : path.join(
+            (await getApplicationDocumentsDirectory()).path,
+            'easydict',
+          );
 
     if (!mounted) return;
 
@@ -262,14 +268,15 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_circle, size: 14, color: Colors.green[700]),
+                    Icon(
+                      Icons.check_circle,
+                      size: 14,
+                      color: Colors.green[700],
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       '权限已授予',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green[700],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.green[700]),
                     ),
                   ],
                 );
@@ -424,38 +431,37 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                       dense: true,
                     ),
 
-                    if (_selected >= 1 && !hasPermission) ...
-                      [
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: colorScheme.errorContainer.withOpacity(0.4),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                size: 16,
-                                color: colorScheme.onErrorContainer,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  '点击「确定」后系统将跳转到设置页面，'
-                                  '请开启「管理所有文件」权限后返回应用。',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: colorScheme.onErrorContainer,
-                                  ),
+                    if (_selected >= 1 && !hasPermission) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: colorScheme.errorContainer.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: colorScheme.onErrorContainer,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '点击「确定」后系统将跳转到设置页面，'
+                                '请开启「管理所有文件」权限后返回应用。',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.onErrorContainer,
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                    ],
                     const SizedBox(height: 8),
                   ],
                 ),
@@ -466,8 +472,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   child: const Text('取消'),
                 ),
                 FilledButton(
-                  onPressed: () =>
-                      Navigator.pop(ctx, {'choice': _selected}),
+                  onPressed: () => Navigator.pop(ctx, {'choice': _selected}),
                   child: const Text('确定'),
                 ),
               ],
@@ -1351,33 +1356,82 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: FutureBuilder<String?>(
-          future: _dictManager.getLogoPath(metadata.id),
-          builder: (context, snapshot) {
-            if (snapshot.hasData && snapshot.data != null) {
-              return CircleAvatar(
-                backgroundColor: Colors.transparent,
-                backgroundImage: FileImage(File(snapshot.data!)),
-                child: null,
-              );
-            }
-            return CircleAvatar(child: Text(metadata.name[0].toUpperCase()));
-          },
+      child: GestureDetector(
+        onLongPress: () => _showDeleteDictionaryDialog(metadata),
+        onSecondaryTapUp: (_) => _showDeleteDictionaryDialog(metadata),
+        child: ListTile(
+          leading: FutureBuilder<String?>(
+            future: _dictManager.getLogoPath(metadata.id),
+            builder: (context, snapshot) {
+              if (snapshot.hasData && snapshot.data != null) {
+                return CircleAvatar(
+                  backgroundColor: Colors.transparent,
+                  backgroundImage: FileImage(File(snapshot.data!)),
+                  child: null,
+                );
+              }
+              return CircleAvatar(child: Text(metadata.name[0].toUpperCase()));
+            },
+          ),
+          title: Text(metadata.name),
+          subtitle: Text(
+            '${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Switch(
+            value: isEnabled,
+            onChanged: (_) => _toggleDictionary(metadata.id),
+          ),
+          onTap: () => _showDictionaryDetails(metadata),
         ),
-        title: Text(metadata.name),
-        subtitle: Text(
-          '${metadata.sourceLanguage} → ${metadata.targetLanguages.join(", ")}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Switch(
-          value: isEnabled,
-          onChanged: (_) => _toggleDictionary(metadata.id),
-        ),
-        onTap: () => _showDictionaryDetails(metadata),
       ),
     );
+  }
+
+  Future<void> _showDeleteDictionaryDialog(DictionaryMetadata metadata) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever, color: Colors.red),
+            SizedBox(width: 8),
+            Text('删除词典'),
+          ],
+        ),
+        content: Text(
+          '确定删除「${metadata.name}」？\n\n这将删除该词典的所有文件（包括数据库、媒体、元数据等），且无法恢复。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    try {
+      // 如果已启用，先禁用
+      if (_isEnabled(metadata.id)) {
+        await _dictManager.disableDictionary(metadata.id);
+      }
+      // 删除词典文件夹
+      await _dictManager.deleteDictionary(metadata.id);
+      await _refreshLocalDictionaries();
+      if (mounted) showToast(context, '词典「${metadata.name}」已删除');
+    } catch (e) {
+      if (mounted) showToast(context, '删除失败: $e');
+    }
   }
 
   /// 显示下载选项对话框
@@ -1611,8 +1665,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 receivedBytes: (event['receivedBytes'] as num).toInt(),
                 totalBytes: (event['totalBytes'] as num).toInt(),
                 fileProgress: (event['progress'] as num).toDouble(),
-                speedBytesPerSecond:
-                    (event['speedBytesPerSecond'] as num).toInt(),
+                speedBytesPerSecond: (event['speedBytesPerSecond'] as num)
+                    .toInt(),
               );
             } else if (event['type'] == 'complete') {
               downloadOk = true;
@@ -1734,8 +1788,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 receivedBytes: (event['receivedBytes'] as num).toInt(),
                 totalBytes: (event['totalBytes'] as num).toInt(),
                 fileProgress: (event['progress'] as num).toDouble(),
-                speedBytesPerSecond:
-                    (event['speedBytesPerSecond'] as num).toInt(),
+                speedBytesPerSecond: (event['speedBytesPerSecond'] as num)
+                    .toInt(),
               );
             } else if (event['type'] == 'complete') {
               downloadOk = true;
@@ -1776,6 +1830,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       options,
       onComplete: () async {
         if (!mounted) return;
+        // 关闭旧数据库连接，确保查词时重新打开新下载的文件
+        await _dictManager.closeDatabase(dict.id);
         await _dictManager.enableDictionary(dict.id);
         await _refreshLocalDictionaries();
       },
@@ -2348,15 +2404,17 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
         scale: _contentScale,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 480;
+            final hPad = isNarrow ? 12.0 : 24.0;
             return SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 24.0),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 800),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildHeader(metadata),
+                      _buildHeader(metadata, isNarrow: isNarrow),
                       const SizedBox(height: 28),
 
                       _buildStatsSection(),
@@ -2378,11 +2436,13 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
     );
   }
 
-  Widget _buildHeader(DictionaryMetadata metadata) {
+  Widget _buildHeader(DictionaryMetadata metadata, {bool isNarrow = false}) {
     final colorScheme = Theme.of(context).colorScheme;
+    final logoSize = isNarrow ? 52.0 : 72.0;
+    final containerPad = isNarrow ? 14.0 : 20.0;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(containerPad),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -2403,23 +2463,23 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 return Hero(
                   tag: 'dict_logo_${metadata.id}',
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     child: Image.file(
                       File(snapshot.data!),
-                      width: 72,
-                      height: 72,
+                      width: logoSize,
+                      height: logoSize,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
-                        return _buildDefaultIcon(metadata);
+                        return _buildDefaultIcon(metadata, size: logoSize);
                       },
                     ),
                   ),
                 );
               }
-              return _buildDefaultIcon(metadata);
+              return _buildDefaultIcon(metadata, size: logoSize);
             },
           ),
-          const SizedBox(width: 20),
+          SizedBox(width: isNarrow ? 12.0 : 20.0),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2431,31 +2491,30 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (metadata.publisher.isNotEmpty) ...
-                  [
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 13,
-                          color: colorScheme.outline,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            metadata.publisher,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: colorScheme.outline,
-                            ),
+                if (metadata.publisher.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 13,
+                        color: colorScheme.outline,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          metadata.publisher,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.outline,
                           ),
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 10),
               ],
             ),
@@ -2465,12 +2524,12 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
     );
   }
 
-  Widget _buildDefaultIcon(DictionaryMetadata metadata) {
+  Widget _buildDefaultIcon(DictionaryMetadata metadata, {double size = 72}) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      width: 72,
-      height: 72,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -2493,7 +2552,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
         child: Text(
           metadata.name.isNotEmpty ? metadata.name[0].toUpperCase() : '?',
           style: TextStyle(
-            fontSize: 32,
+            fontSize: size * 0.44,
             fontWeight: FontWeight.bold,
             color: colorScheme.onPrimaryContainer,
           ),
@@ -2620,38 +2679,41 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
             ],
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  icon: Icons.text_fields,
-                  label: '词条数',
-                  value: '${_stats!.entryCount}',
-                  color: colorScheme.primary,
-                  onTap: _stats!.entryCount > 0
-                      ? () => _showEntriesList(widget.metadata.id)
-                      : null,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.text_fields,
+                    label: '词条数',
+                    value: '${_stats!.entryCount}',
+                    color: colorScheme.primary,
+                    onTap: _stats!.entryCount > 0
+                        ? () => _showEntriesList(widget.metadata.id)
+                        : null,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatItem(
-                  icon: Icons.music_note,
-                  label: '音频文件',
-                  value: '${_stats!.audioCount}',
-                  color: colorScheme.tertiary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.music_note,
+                    label: '音频文件',
+                    value: '${_stats!.audioCount}',
+                    color: colorScheme.tertiary,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatItem(
-                  icon: Icons.image,
-                  label: '图片文件',
-                  value: '${_stats!.imageCount}',
-                  color: colorScheme.secondary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatItem(
+                    icon: Icons.image,
+                    label: '图片文件',
+                    value: '${_stats!.imageCount}',
+                    color: colorScheme.secondary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -2667,7 +2729,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final child = Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -2678,28 +2740,35 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 20, color: color),
+            child: Icon(icon, size: 18, color: color),
           ),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: colorScheme.outline),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+            ),
           ),
         ],
       ),
@@ -3232,10 +3301,10 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
               bool downloadOk = false;
               await for (final event
                   in widget.storeService!.downloadDictFileStream(
-                dictId,
-                fileName,
-                savePath,
-              )) {
+                    dictId,
+                    fileName,
+                    savePath,
+                  )) {
                 if (event['type'] == 'progress') {
                   onProgress(
                     '[$step/$totalSteps] 下载 $fileName',
@@ -3244,8 +3313,8 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
                     receivedBytes: (event['receivedBytes'] as num).toInt(),
                     totalBytes: (event['totalBytes'] as num).toInt(),
                     fileProgress: (event['progress'] as num).toDouble(),
-                    speedBytesPerSecond:
-                        (event['speedBytesPerSecond'] as num).toInt(),
+                    speedBytesPerSecond: (event['speedBytesPerSecond'] as num)
+                        .toInt(),
                   );
                 } else if (event['type'] == 'complete') {
                   downloadOk = true;

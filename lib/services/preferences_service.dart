@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/logger.dart';
 import '../pages/llm_config_page.dart';
 
 class LLMConfig {
@@ -40,6 +41,22 @@ class PreferencesService {
   static const String _kGlobalTranslationVisibility =
       'global_translation_visibility';
   static const String _kDictionaryContentScale = 'dictionary_content_scale';
+
+  // LLM 模型键名
+  static const String _kLlmFastPrefix = 'fast_llm';
+  static const String _kLlmStandardPrefix = 'standard_llm';
+  static const String _kLlmSuffixProvider = '_provider';
+  static const String _kLlmSuffixApiKey = '_api_key';
+  static const String _kLlmSuffixBaseUrl = '_base_url';
+  static const String _kLlmSuffixModel = '_model';
+
+  // TTS 键名
+  static const String _kTtsProvider = 'tts_provider';
+  static const String _kTtsApiKey = 'tts_api_key';
+  static const String _kTtsBaseUrl = 'tts_base_url';
+  static const String _kTtsModel = 'tts_model';
+  static const String _kTtsVoice = 'tts_voice';
+  static const String _kGoogleTtsVoice = 'google_tts_voice';
 
   static const String navPositionLeft = 'left';
   static const String navPositionRight = 'right';
@@ -258,14 +275,14 @@ class PreferencesService {
 
   Future<LLMConfig?> getLLMConfig({bool isFast = false}) async {
     final p = await prefs;
-    final prefix = isFast ? 'fast_llm' : 'standard_llm';
+    final prefix = isFast ? _kLlmFastPrefix : _kLlmStandardPrefix;
 
-    final providerIndex = p.getInt('${prefix}_provider');
+    final providerIndex = p.getInt('$prefix${_kLlmSuffixProvider}');
     if (providerIndex == null) return null;
 
-    final apiKey = p.getString('${prefix}_api_key') ?? '';
-    final baseUrl = p.getString('${prefix}_base_url') ?? '';
-    final model = p.getString('${prefix}_model') ?? '';
+    final apiKey = p.getString('$prefix${_kLlmSuffixApiKey}') ?? '';
+    final baseUrl = p.getString('$prefix${_kLlmSuffixBaseUrl}') ?? '';
+    final model = p.getString('$prefix${_kLlmSuffixModel}') ?? '';
 
     return LLMConfig(
       provider: LLMProvider.values[providerIndex],
@@ -283,18 +300,18 @@ class PreferencesService {
     required String model,
   }) async {
     final p = await prefs;
-    final prefix = isFast ? 'fast_llm' : 'standard_llm';
+    final prefix = isFast ? _kLlmFastPrefix : _kLlmStandardPrefix;
 
-    await p.setInt('${prefix}_provider', provider.index);
-    await p.setString('${prefix}_api_key', apiKey);
-    await p.setString('${prefix}_base_url', baseUrl);
-    await p.setString('${prefix}_model', model);
+    await p.setInt('$prefix${_kLlmSuffixProvider}', provider.index);
+    await p.setString('$prefix${_kLlmSuffixApiKey}', apiKey);
+    await p.setString('$prefix${_kLlmSuffixBaseUrl}', baseUrl);
+    await p.setString('$prefix${_kLlmSuffixModel}', model);
   }
 
   Future<Map<String, dynamic>?> getTTSConfig() async {
     final p = await prefs;
 
-    final providerIndex = p.getInt('tts_provider');
+    final providerIndex = p.getInt(_kTtsProvider);
     if (providerIndex == null) return null;
 
     final providers = [
@@ -324,9 +341,9 @@ class PreferencesService {
     return {
       'provider': provider,
       'baseUrl':
-          p.getString('tts_base_url') ?? providers[providerIndex]['baseUrl'],
-      'apiKey': p.getString('tts_api_key') ?? '',
-      'model': p.getString('tts_model') ?? '',
+          p.getString(_kTtsBaseUrl) ?? providers[providerIndex]['baseUrl'],
+      'apiKey': p.getString(_kTtsApiKey) ?? '',
+      'model': p.getString(_kTtsModel) ?? '',
       'voice': voice,
     };
   }
@@ -339,11 +356,11 @@ class PreferencesService {
     required String voice,
   }) async {
     final p = await prefs;
-    await p.setInt('tts_provider', providerIndex);
-    await p.setString('tts_api_key', apiKey);
-    await p.setString('tts_base_url', baseUrl);
-    await p.setString('tts_model', model);
-    await p.setString('tts_voice', voice);
+    await p.setInt(_kTtsProvider, providerIndex);
+    await p.setString(_kTtsApiKey, apiKey);
+    await p.setString(_kTtsBaseUrl, baseUrl);
+    await p.setString(_kTtsModel, model);
+    await p.setString(_kTtsVoice, voice);
   }
 
   static const String _kFontFolderPath = 'font_folder_path';
@@ -422,8 +439,9 @@ class PreferencesService {
     final existed = p.containsKey(key);
     await p.remove(key);
     final removed = !p.containsKey(key);
-    print(
-      '[PreferencesService] clearFontConfig: key=$key, existed=$existed, removed=$removed',
+    Logger.d(
+      'clearFontConfig: key=$key, existed=$existed, removed=$removed',
+      tag: 'PreferencesService',
     );
   }
 

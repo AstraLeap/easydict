@@ -4,6 +4,17 @@ import 'english_db_service.dart';
 import '../data/services/database_initializer.dart';
 import '../core/logger.dart';
 
+/// 三张关系表中命中的完整行数据
+class WordRelationRow {
+  /// 表名: 'spelling_variant', 'nominalization', 'inflection'
+  final String tableName;
+
+  /// 该行所有字段 (列名 -> 值)
+  final Map<String, String?> fields;
+
+  WordRelationRow({required this.tableName, required this.fields});
+}
+
 /// 搜索结果与原始搜索词的关系信息
 
 class SearchRelation {
@@ -19,11 +30,15 @@ class SearchRelation {
   /// 描述：例如 "复数形式"、"缩写" 等
   final String? description;
 
+  /// 词性，例如 'noun', 'verb', 'adj', 'adv' 等（来自表的 pos 字段）
+  final String? pos;
+
   SearchRelation({
     required this.originalWord,
     required this.mappedWord,
     required this.relationType,
     this.description,
+    this.pos,
   });
 
   @override
@@ -54,6 +69,15 @@ class EnglishSearchService {
     return _database!;
   }
 
+  /// 关闭并释放数据库连接，删除数据库文件后需要调用此方法以使单例重置
+  Future<void> closeDatabase() async {
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+      Logger.i('EnglishSearchService: 数据库已关闭并重置', tag: 'EnglishDB');
+    }
+  }
+
   Future<Database> _initDatabase() async {
     Logger.d('EnglishSearchService: 初始化数据库...', tag: 'EnglishDB');
     // 使用统一的数据库初始化器
@@ -75,6 +99,65 @@ class EnglishSearchService {
     Logger.i('EnglishSearchService: 数据库打开成功', tag: 'EnglishDB');
 
     return db;
+  }
+
+  /// 在三张关系表中搜索词，返回每一个命中的完整行。
+  /// 表: spelling_variant(word1,word2), nominalization(base,nominal),
+  ///     inflection(base,plural,past,past_part,pres_part,third_sing,comp,superl)
+  Future<List<WordRelationRow>> searchWordRelations(String word) async {
+    if (word.isEmpty) return [];
+    try {
+      final db = await database;
+      final results = <WordRelationRow>[];
+
+      // spelling_variant
+      final svRows = await db.query(
+        'spelling_variant',
+        where: 'word1 = ? OR word2 = ?',
+        whereArgs: [word, word],
+      );
+      for (final row in svRows) {
+        results.add(WordRelationRow(
+          tableName: 'spelling_variant',
+          fields: row.map((k, v) => MapEntry(k, v?.toString())),
+        ));
+      }
+
+      // nominalization
+      final nomRows = await db.query(
+        'nominalization',
+        where: 'base = ? OR nominal = ?',
+        whereArgs: [word, word],
+      );
+      for (final row in nomRows) {
+        results.add(WordRelationRow(
+          tableName: 'nominalization',
+          fields: row.map((k, v) => MapEntry(k, v?.toString())),
+        ));
+      }
+
+      // inflection
+      final inflRows = await db.query(
+        'inflection',
+        where:
+            'base = ? OR plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
+        whereArgs: [word, word, word, word, word, word, word, word],
+      );
+      for (final row in inflRows) {
+        results.add(WordRelationRow(
+          tableName: 'inflection',
+          fields: row.map((k, v) => MapEntry(k, v?.toString())),
+        ));
+      }
+
+      return results;
+    } catch (e) {
+      Logger.w(
+        'EnglishSearchService: searchWordRelations 错误: $e',
+        tag: 'EnglishDB',
+      );
+      return [];
+    }
   }
 
   Future<List<String>> searchSimpleTables(String word) async {
@@ -129,7 +212,10 @@ class EnglishSearchService {
         }
       }
     } catch (e) {
-      // Error handling without debug output
+      Logger.w(
+        'EnglishSearchService: _searchTwoColumnTable 表 $table 查询失败: $e',
+        tag: 'EnglishDB',
+      );
     }
     return results;
   }
@@ -282,9 +368,9 @@ class EnglishSearchService {
   ) async {
     final results = <String, List<SearchRelation>>{};
     try {
+      // 不限定 columns，让每个表返回全部字段（nominalization 有 pos 字段）
       final maps = await db.query(
         table,
-        columns: [col1, col2],
         where: '$col1 = ? OR $col2 = ?',
         whereArgs: [word, word],
       );
@@ -292,6 +378,7 @@ class EnglishSearchService {
       for (final map in maps) {
         final val1 = map[col1] as String?;
         final val2 = map[col2] as String?;
+        final pos = map['pos'] as String?;
         if (val1 == word && val2 != null) {
           results
               .putIfAbsent(val2, () => [])
@@ -301,6 +388,7 @@ class EnglishSearchService {
                   mappedWord: val2,
                   relationType: table,
                   description: relationDesc,
+                  pos: pos,
                 ),
               );
         } else if (val2 == word && val1 != null) {
@@ -312,12 +400,16 @@ class EnglishSearchService {
                   mappedWord: val1,
                   relationType: table,
                   description: relationDesc,
+                  pos: pos,
                 ),
               );
         }
       }
     } catch (e) {
-      // Error handling without debug output
+      Logger.w(
+        'EnglishSearchService: _searchTwoColumnTableWithRelations 表 $table 查询失败: $e',
+        tag: 'EnglishDB',
+      );
     }
     return results;
   }
@@ -338,10 +430,12 @@ class EnglishSearchService {
     };
 
     try {
+      // 包含 pos 字段，用于显示词性
       final maps = await db.query(
         'inflection',
         columns: [
           'base',
+          'pos',
           'plural',
           'past',
           'past_part',
@@ -357,6 +451,7 @@ class EnglishSearchService {
 
       for (final map in maps) {
         final baseWord = map['base'] as String?;
+        final pos = map['pos'] as String?;
         if (baseWord != null) {
           for (final entry in inflectionCols.entries) {
             final col = entry.key;
@@ -370,6 +465,7 @@ class EnglishSearchService {
                       mappedWord: baseWord,
                       relationType: 'inflection',
                       description: desc,
+                      pos: pos,
                     ),
                   );
             }
@@ -377,7 +473,10 @@ class EnglishSearchService {
         }
       }
     } catch (e) {
-      // Error handling without debug output
+      Logger.w(
+        'EnglishSearchService: _searchInflectionWithRelations 查询失败: $e',
+        tag: 'EnglishDB',
+      );
     }
     return results;
   }

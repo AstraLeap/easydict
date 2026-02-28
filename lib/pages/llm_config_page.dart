@@ -577,7 +577,7 @@ class EdgeTTSVoice {
 
 final List<EdgeTTSVoice> edgeTTSVoices = [
   // ==========================================
-  // 1. 英语 - 美国 (en-US) - 8个音色 (4女4男)
+  // 1. 英语 - 美国 (en-US) - 8个音色 (100% 免费)
   // ==========================================
   const EdgeTTSVoice(
     name: 'en-US-AriaNeural',
@@ -598,10 +598,10 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '明快女声，适合交互式教育',
   ),
   const EdgeTTSVoice(
-    name: 'en-US-MichelleNeural',
+    name: 'en-US-AvaNeural',
     gender: '女性',
     language: '英语(美国)',
-    description: '稳健女声，适合商务陈述',
+    description: '自然女声，语调现代且专业',
   ),
   const EdgeTTSVoice(
     name: 'en-US-GuyNeural',
@@ -616,20 +616,20 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '职场男声，发音清晰，适合演示稿',
   ),
   const EdgeTTSVoice(
-    name: 'en-US-EricNeural',
+    name: 'en-US-AndrewNeural',
     gender: '男性',
     language: '英语(美国)',
-    description: '自然男声，语气平和，适合播客',
+    description: '亲切男声，语气平缓，适合长文本',
   ),
   const EdgeTTSVoice(
-    name: 'en-US-SteffanNeural',
+    name: 'en-US-BrianNeural',
     gender: '男性',
     language: '英语(美国)',
     description: '自信男声，节奏感强，适合广告语',
   ),
 
   // ==========================================
-  // 2. 英语 - 英国 (en-GB) - 8个音色 (4女4男)
+  // 2. 英语 - 英国 (en-GB) - 6个音色 (免费可用)
   // ==========================================
   const EdgeTTSVoice(
     name: 'en-GB-SoniaNeural',
@@ -650,12 +650,6 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '活泼英国少女声',
   ),
   const EdgeTTSVoice(
-    name: 'en-GB-AbbiNeural',
-    gender: '女性',
-    language: '英语(英国)',
-    description: '清脆英音女声，发音极其标准',
-  ),
-  const EdgeTTSVoice(
     name: 'en-GB-RyanNeural',
     gender: '男性',
     language: '英语(英国)',
@@ -673,15 +667,9 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     language: '英语(英国)',
     description: '年轻英音男声，语气随性',
   ),
-  const EdgeTTSVoice(
-    name: 'en-GB-ElliotNeural',
-    gender: '男性',
-    language: '英语(英国)',
-    description: '富有磁性的英音低音',
-  ),
 
   // ==========================================
-  // 3. 中文 - 大陆 (zh-CN) - 8个音色 (4女4男)
+  // 3. 中文 - 大陆 (zh-CN) - 7个音色 (免费全集)
   // ==========================================
   const EdgeTTSVoice(
     name: 'zh-CN-XiaoxiaoNeural',
@@ -694,12 +682,6 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     gender: '女性',
     language: '中文(普通话)',
     description: '活泼少女声，适合短视频解说',
-  ),
-  const EdgeTTSVoice(
-    name: 'zh-CN-XiaohanNeural',
-    gender: '女性',
-    language: '中文(普通话)',
-    description: '温婉女声，适合散文和情感类',
   ),
   const EdgeTTSVoice(
     name: 'zh-CN-XiaoxuanNeural',
@@ -733,7 +715,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
   ),
 
   // ==========================================
-  // 4. 中文 - 其他地区 (HK/TW) - 选集
+  // 4. 中文 - 地区 (HK/TW) - 全集
   // ==========================================
   const EdgeTTSVoice(
     name: 'zh-HK-HiuMaanNeural',
@@ -761,7 +743,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
   ),
 
   // ==========================================
-  // 5. 法语 - 法国 (fr-FR) - 8个音色 (4女4男)
+  // 5. 其他核心语言 (法语、德语、西语等) - 仅保留免费可用音色
   // ==========================================
   const EdgeTTSVoice(
     name: 'fr-FR-DeniseNeural',
@@ -773,19 +755,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     name: 'fr-FR-EloiseNeural',
     gender: '女性',
     language: '法语',
-    description: '知性女声，适合长文本',
-  ),
-  const EdgeTTSVoice(
-    name: 'fr-FR-ArianeNeural',
-    gender: '女性',
-    language: '法语',
-    description: '欢快女声，富有节奏感',
-  ),
-  const EdgeTTSVoice(
-    name: 'fr-FR-BrigitteNeural',
-    gender: '女性',
-    language: '法语',
-    description: '成熟女声，语气正式',
+    description: '知性女声',
   ),
   const EdgeTTSVoice(
     name: 'fr-FR-HenriNeural',
@@ -793,28 +763,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     language: '法语',
     description: '稳重男声，韵律自然',
   ),
-  const EdgeTTSVoice(
-    name: 'fr-FR-AlainNeural',
-    gender: '男性',
-    language: '法语',
-    description: '清朗男声，适合说明演示',
-  ),
-  const EdgeTTSVoice(
-    name: 'fr-FR-ClaudeNeural',
-    gender: '男性',
-    language: '法语',
-    description: '浑厚男声，语气诚恳',
-  ),
-  const EdgeTTSVoice(
-    name: 'fr-FR-JeromeNeural',
-    gender: '男性',
-    language: '法语',
-    description: '活力男声，适合旅游导览',
-  ),
 
-  // ==========================================
-  // 6. 德语 - 德国 (de-DE) - 8个音色 (4女4男)
-  // ==========================================
   const EdgeTTSVoice(
     name: 'de-DE-KatjaNeural',
     gender: '女性',
@@ -822,22 +771,10 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '标准德语女声，严谨专业',
   ),
   const EdgeTTSVoice(
-    name: 'de-DE-AmalaNeural',
-    gender: '女性',
+    name: 'de-DE-KillianNeural',
+    gender: '男性',
     language: '德语',
-    description: '亲切女声，适合客服对话',
-  ),
-  const EdgeTTSVoice(
-    name: 'de-DE-IngridNeural',
-    gender: '女性',
-    language: '德语',
-    description: '叙事女声，语调柔和',
-  ),
-  const EdgeTTSVoice(
-    name: 'de-DE-MarleneNeural',
-    gender: '女性',
-    language: '德语',
-    description: '沉稳女声，语气平稳',
+    description: '磁性男声',
   ),
   const EdgeTTSVoice(
     name: 'de-DE-ConradNeural',
@@ -845,28 +782,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     language: '德语',
     description: '男声代表，语气有力',
   ),
-  const EdgeTTSVoice(
-    name: 'de-DE-BerndNeural',
-    gender: '男性',
-    language: '德语',
-    description: '专业男声，适合正式场合',
-  ),
-  const EdgeTTSVoice(
-    name: 'de-DE-ChristophNeural',
-    gender: '男性',
-    language: '德语',
-    description: '自然男声，语速稳定',
-  ),
-  const EdgeTTSVoice(
-    name: 'de-DE-KillianNeural',
-    gender: '男性',
-    language: '德语',
-    description: '磁性男声，适合创意内容',
-  ),
 
-  // ==========================================
-  // 7. 西班牙语 - 西班牙 (es-ES) - 8个音色 (4女4男)
-  // ==========================================
   const EdgeTTSVoice(
     name: 'es-ES-ElviraNeural',
     gender: '女性',
@@ -874,51 +790,12 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '明亮女声，叙事性强',
   ),
   const EdgeTTSVoice(
-    name: 'es-ES-AbrilNeural',
-    gender: '女性',
-    language: '西班牙语(西班牙)',
-    description: '活力女声，语速较快',
-  ),
-  const EdgeTTSVoice(
-    name: 'es-ES-EstrellaNeural',
-    gender: '女性',
-    language: '西班牙语(西班牙)',
-    description: '温柔女声，适合情感朗读',
-  ),
-  const EdgeTTSVoice(
-    name: 'es-ES-ElenaNeural',
-    gender: '女性',
-    language: '西班牙语(西班牙)',
-    description: '干练女声，发音清晰',
-  ),
-  const EdgeTTSVoice(
     name: 'es-ES-AlvaroNeural',
     gender: '男性',
     language: '西班牙语(西班牙)',
     description: '稳重男声，充满张力',
   ),
-  const EdgeTTSVoice(
-    name: 'es-ES-ArnauNeural',
-    gender: '男性',
-    language: '西班牙语(西班牙)',
-    description: '磁性男声，非常有魅力',
-  ),
-  const EdgeTTSVoice(
-    name: 'es-ES-DarioNeural',
-    gender: '男性',
-    language: '西班牙语(西班牙)',
-    description: '叙事男声，语气平和',
-  ),
-  const EdgeTTSVoice(
-    name: 'es-ES-EliasNeural',
-    gender: '男性',
-    language: '西班牙语(西班牙)',
-    description: '青年男声，语调活泼',
-  ),
 
-  // ==========================================
-  // 8. 意大利语 (it-IT) - 8个音色 (4女4男)
-  // ==========================================
   const EdgeTTSVoice(
     name: 'it-IT-ElsaNeural',
     gender: '女性',
@@ -929,19 +806,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     name: 'it-IT-IsabellaNeural',
     gender: '女性',
     language: '意大利语',
-    description: '自信女声，语气流畅',
-  ),
-  const EdgeTTSVoice(
-    name: 'it-IT-PalmiraNeural',
-    gender: '女性',
-    language: '意大利语',
-    description: '日常女声，适合配音',
-  ),
-  const EdgeTTSVoice(
-    name: 'it-IT-ImeldaNeural',
-    gender: '女性',
-    language: '意大利语',
-    description: '温润女声，语速适中',
+    description: '自信女声',
   ),
   const EdgeTTSVoice(
     name: 'it-IT-DiegoNeural',
@@ -949,28 +814,7 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     language: '意大利语',
     description: '清爽男声，适合播客',
   ),
-  const EdgeTTSVoice(
-    name: 'it-IT-BenignoNeural',
-    gender: '男性',
-    language: '意大利语',
-    description: '厚实男声，语气恳切',
-  ),
-  const EdgeTTSVoice(
-    name: 'it-IT-CalogeroNeural',
-    gender: '男性',
-    language: '意大利语',
-    description: '叙事男声，富有表现力',
-  ),
-  const EdgeTTSVoice(
-    name: 'it-IT-GiuseppeNeural',
-    gender: '男性',
-    language: '意大利语',
-    description: '职场男声，适合商务',
-  ),
 
-  // ==========================================
-  // 9. 俄语 (ru-RU) - 8个音色 (4女4男)
-  // ==========================================
   const EdgeTTSVoice(
     name: 'ru-RU-SvetlanaNeural',
     gender: '女性',
@@ -978,51 +822,12 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '标准女声，极具穿透力',
   ),
   const EdgeTTSVoice(
-    name: 'ru-RU-DariyaNeural',
-    gender: '女性',
-    language: '俄语',
-    description: '柔和女声，语气自然',
-  ),
-  const EdgeTTSVoice(
-    name: 'ru-RU-EkaterinaNeural',
-    gender: '女性',
-    language: '俄语',
-    description: '知性女声，适合长文',
-  ),
-  const EdgeTTSVoice(
-    name: 'ru-RU-IrinaNeural',
-    gender: '女性',
-    language: '俄语',
-    description: '亲切女声，语调平稳',
-  ),
-  const EdgeTTSVoice(
     name: 'ru-RU-DmitryNeural',
     gender: '男性',
     language: '俄语',
     description: '男声代表，播音范十足',
   ),
-  const EdgeTTSVoice(
-    name: 'ru-RU-PavelNeural',
-    gender: '男性',
-    language: '俄语',
-    description: '沉稳男声，语气平和',
-  ),
-  const EdgeTTSVoice(
-    name: 'ru-RU-AleksandrNeural',
-    gender: '男性',
-    language: '俄语',
-    description: '充满活力的男声',
-  ),
-  const EdgeTTSVoice(
-    name: 'ru-RU-YaroslavNeural',
-    gender: '男性',
-    language: '俄语',
-    description: '低沉男声，厚实有力',
-  ),
 
-  // ==========================================
-  // 10. 葡萄牙语 - 巴西 (pt-BR) - 8个音色 (4女4男)
-  // ==========================================
   const EdgeTTSVoice(
     name: 'pt-BR-FranciscaNeural',
     gender: '女性',
@@ -1030,50 +835,14 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '热情女声，典型的南美风格',
   ),
   const EdgeTTSVoice(
-    name: 'pt-BR-BrendaNeural',
-    gender: '女性',
-    language: '葡萄牙语(巴西)',
-    description: '现代感女声，非常口语化',
-  ),
-  const EdgeTTSVoice(
-    name: 'pt-BR-GiovannaNeural',
-    gender: '女性',
-    language: '葡萄牙语(巴西)',
-    description: '专业女声，语气客观',
-  ),
-  const EdgeTTSVoice(
-    name: 'pt-BR-ThalitaNeural',
-    gender: '女性',
-    language: '葡萄牙语(巴西)',
-    description: '温柔女声，适合有声书',
-  ),
-  const EdgeTTSVoice(
     name: 'pt-BR-AntonioNeural',
     gender: '男性',
     language: '葡萄牙语(巴西)',
     description: '磁性男声，适合纪录片',
   ),
-  const EdgeTTSVoice(
-    name: 'pt-BR-FabioNeural',
-    gender: '男性',
-    language: '葡萄牙语(巴西)',
-    description: '阳光男声，语气欢快',
-  ),
-  const EdgeTTSVoice(
-    name: 'pt-BR-HumbertoNeural',
-    gender: '男性',
-    language: '葡萄牙语(巴西)',
-    description: '稳重男声，语速适中',
-  ),
-  const EdgeTTSVoice(
-    name: 'pt-BR-JulioNeural',
-    gender: '男性',
-    language: '葡萄牙语(巴西)',
-    description: '叙事男声，语气自然',
-  ),
 
   // ==========================================
-  // 11. 日语、韩语、阿拉伯语（小众或由于API限制数量较少）
+  // 6. 亚洲及其他
   // ==========================================
   const EdgeTTSVoice(
     name: 'ja-JP-NanamiNeural',
@@ -1082,24 +851,11 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     description: '甜美女声',
   ),
   const EdgeTTSVoice(
-    name: 'ja-JP-AoiNeural',
-    gender: '女性',
-    language: '日语',
-    description: '自然女声',
-  ),
-  const EdgeTTSVoice(
     name: 'ja-JP-KeitaNeural',
     gender: '男性',
     language: '日语',
     description: '温润男声',
   ),
-  const EdgeTTSVoice(
-    name: 'ja-JP-DaichiNeural',
-    gender: '男性',
-    language: '日语',
-    description: '清爽男声',
-  ),
-
   const EdgeTTSVoice(
     name: 'ko-KR-SunHiNeural',
     gender: '女性',
@@ -1112,7 +868,6 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
     language: '韩语',
     description: '标准男声',
   ),
-
   const EdgeTTSVoice(
     name: 'ar-EG-SalmaNeural',
     gender: '女性',
@@ -1239,26 +994,26 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   String? _testResultTts;
   bool? _testSuccessTts;
 
-  /// 快速模型默认名：速度优先、价格较低
+  /// 快速模型默认名：速度优先、价格较低、适合简单对话或实时处理
   static const Map<LLMProvider, String> _fastDefaultModels = {
     LLMProvider.openAI: 'gpt-5-mini',
-    LLMProvider.anthropic: 'claude-haiku-4-5-20251001',
-    LLMProvider.gemini: 'gemini-2.5-flash',
+    LLMProvider.anthropic: 'claude-4-5-haiku-latest',
+    LLMProvider.gemini: 'gemini-3-flash',
     LLMProvider.deepseek: 'deepseek-chat',
-    LLMProvider.moonshot: 'kimi-k2-turbo-preview',
-    LLMProvider.zhipu: 'glm-4-flash-250414',
+    LLMProvider.moonshot: 'kimi-k2-turbo',
+    LLMProvider.zhipu: 'glm-4-flash',
     LLMProvider.ali: 'qwen-flash',
     LLMProvider.custom: '',
   };
 
-  /// 标准模型默认名：质量优先、能力较强
+  /// 标准模型默认名：质量优先、深度思考能力、适合复杂逻辑和长文本
   static const Map<LLMProvider, String> _standardDefaultModels = {
-    LLMProvider.openAI: 'gpt-5.2',
-    LLMProvider.anthropic: 'claude-sonnet-4-6',
-    LLMProvider.gemini: 'gemini-2.5-pro',
-    LLMProvider.deepseek: 'deepseek-reasoner',
+    LLMProvider.openAI: 'gpt-5',
+    LLMProvider.anthropic: 'claude-4-6-sonnet-latest',
+    LLMProvider.gemini: 'gemini-3-pro',
+    LLMProvider.deepseek: 'deepseek-v4',
     LLMProvider.moonshot: 'kimi-k2.5',
-    LLMProvider.zhipu: 'glm-4-plus',
+    LLMProvider.zhipu: 'glm-5',
     LLMProvider.ali: 'qwen3-max',
     LLMProvider.custom: '',
   };
