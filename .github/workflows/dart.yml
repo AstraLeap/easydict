@@ -58,8 +58,17 @@ jobs:
         run: flutter pub get
 
       - name: Execute Build
-        run: ${{ matrix.build_cmd }}
+        run: |
+          if [ "${{ matrix.target }}" = "android" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/easydict.jks
+          fi
+          ${{ matrix.build_cmd }}
         shell: bash
+        env:
+          KEYSTORE_FILE: android/app/easydict.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Upload to Staging
         uses: actions/upload-artifact@v4

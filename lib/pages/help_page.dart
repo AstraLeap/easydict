@@ -46,7 +46,7 @@ class _HelpPageState extends State<HelpPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('帮助与反馈'),
+        title: const Text('关于软件'),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
@@ -64,13 +64,16 @@ class _HelpPageState extends State<HelpPage> {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Icon(
-                      Icons.book,
-                      size: 48,
-                      color: colorScheme.onPrimaryContainer,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.asset(
+                        'assets/icon/app_icon.png',
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -81,21 +84,6 @@ class _HelpPageState extends State<HelpPage> {
                       color: colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  if (_isLoading)
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    Text(
-                      _packageInfo?.version ?? 'v1.0.0',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.outline,
-                      ),
-                    ),
-                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -106,6 +94,7 @@ class _HelpPageState extends State<HelpPage> {
                 _buildSettingsTile(
                   context,
                   title: '词典反馈',
+                  subtitle: '任何改进建议尽管提出',
                   icon: Icons.forum_outlined,
                   iconColor: colorScheme.primary,
                   isExternal: true,
@@ -165,48 +154,14 @@ class _HelpPageState extends State<HelpPage> {
             // 检查更新组
             _buildSettingsGroup(
               context,
-              children: [
-                _buildUpdateTile(context, appUpdateService),
-              ],
+              children: [_buildUpdateTile(context, appUpdateService)],
             ),
 
-            const SizedBox(height: 24),
-
-            _buildSettingsGroup(
-              context,
-              children: [
-                if (_isLoading)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else ...[
-                  _buildInfoTile(
-                    context,
-                    '应用版本',
-                    _packageInfo?.version ?? '未知',
-                  ),
-                  _buildInfoTile(
-                    context,
-                    '构建版本',
-                    _packageInfo?.buildNumber ?? '未知',
-                  ),
-                  _buildInfoTile(
-                    context,
-                    '包名',
-                    _packageInfo?.packageName ?? '未知',
-                  ),
-                  _buildInfoTile(context, 'Flutter SDK', _getFlutterVersion()),
-                  _buildInfoTile(context, 'Dart SDK', _getDartVersion()),
-                ],
-              ],
-            ),
-
-            const SizedBox(height: 40),
+            const SizedBox(height: 16),
 
             Center(
               child: Text(
-                'Copyright © 2024 EasyDict Team',
+                'Copyright © 2026 EasyDict Team',
                 style: TextStyle(
                   fontSize: 12,
                   color: colorScheme.outline.withOpacity(0.5),
@@ -330,7 +285,8 @@ class _HelpPageState extends State<HelpPage> {
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     } else if (service.hasUpdate) {
-      subtitle = '发现新版本 ${service.latestRelease?.version ?? ''} · 点击前往 GitHub 下载';
+      subtitle =
+          '发现新版本 ${service.latestRelease?.version ?? ''} · 点击前往 GitHub 下载';
       trailing = Icon(Icons.open_in_new, color: colorScheme.error, size: 18);
       onTap = () async {
         final url = Uri.tryParse(service.latestRelease?.htmlUrl ?? '');
@@ -340,14 +296,19 @@ class _HelpPageState extends State<HelpPage> {
       };
     } else if (service.latestRelease != null) {
       subtitle = '已是最新版本 ${service.currentVersion ?? ''}';
-      trailing = Icon(Icons.check_circle_outline, color: colorScheme.primary, size: 18);
+      trailing = Icon(
+        Icons.check_circle_outline,
+        color: colorScheme.primary,
+        size: 18,
+      );
       onTap = () => service.checkForUpdates();
     } else if (service.errorMessage != null) {
       subtitle = service.errorMessage!;
       trailing = const Icon(Icons.refresh, size: 18);
       onTap = () => service.checkForUpdates();
     } else {
-      subtitle = '当前版本 ${service.currentVersion ?? (_packageInfo?.version ?? '')}';
+      subtitle =
+          '当前版本 ${service.currentVersion ?? (_packageInfo?.version ?? '')}';
       trailing = const Icon(Icons.refresh, size: 18);
       onTap = () => service.checkForUpdates();
     }

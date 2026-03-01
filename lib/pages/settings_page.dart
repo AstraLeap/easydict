@@ -309,7 +309,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         _buildSettingsTile(
                           context,
-                          title: '帮助与反馈',
+                          title: '关于软件',
                           icon: Icons.help_outline,
                           iconColor: colorScheme.primary,
                           showArrow: true,
