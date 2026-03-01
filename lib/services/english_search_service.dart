@@ -136,9 +136,10 @@ class EnglishSearchService {
         ));
       }
 
-      // inflection
+      // inflection — pos 列无索引，不放入 WHERE，只在 SELECT 中取用
       final inflRows = await db.query(
         'inflection',
+        columns: ['base', 'pos', 'plural', 'past', 'past_part', 'pres_part', 'third_sing', 'comp', 'superl'],
         where:
             'base = ? OR plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
         whereArgs: [word, word, word, word, word, word, word, word],

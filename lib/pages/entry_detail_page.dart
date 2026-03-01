@@ -511,7 +511,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         spacing: 20,
         runSpacing: 5,
         crossAxisAlignment: WrapCrossAlignment.center,
-        children: relations.map((relation) {
+        children: relations
+            .fold<List<SearchRelation>>([], (deduped, relation) {
+              // 去重：相同的 (description/relationType, pos, mappedWord) 只显示一次
+              final key =
+                  '${relation.description ?? relation.relationType}|${relation.pos}|${relation.mappedWord}';
+              final alreadyAdded = deduped.any((r) {
+                return '${r.description ?? r.relationType}|${r.pos}|${r.mappedWord}' ==
+                    key;
+              });
+              if (!alreadyAdded) deduped.add(relation);
+              return deduped;
+            })
+            .map((relation) {
           final posLabel = _shortenPos(relation.pos);
           final desc = relation.description ?? relation.relationType;
           final label = posLabel.isNotEmpty ? '$desc $posLabel' : desc;
@@ -1425,9 +1437,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       'superl': '最高级',
     };
     const Map<String, String> _tableLabels = {
-      'spelling_variant': '拼写变体',
+      'spelling_variant': '变体',
       'nominalization': '名词化',
-      'inflection': '变形',
+      'inflection': '屈折化',
     };
 
     return FutureBuilder<List<WordRelationRow>>(
@@ -1439,42 +1451,36 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           return const SizedBox.shrink();
         }
 
+        // 预处理：合并 inflection 行并处理不可数名词、空行过滤
+        final processedRows = _preprocessInflectionRows(rows);
+
         final colorScheme = Theme.of(context).colorScheme;
         const hPad = 16.0;
 
-        // 计算所有行标签中最宽的，让各行标签列对齐
-        const labelTextStyle = TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          height: 1.3,
-        );
-        double maxLabelWidth = 48.0;
-        for (final row in rows) {
-          final pos = row.fields['pos'];
-          final posLabel = _shortenPos(pos);
-          final baseLabel = _tableLabels[row.tableName] ?? row.tableName;
-          final lbl = posLabel.isNotEmpty ? '$baseLabel $posLabel' : baseLabel;
-          final tp = TextPainter(
-            text: TextSpan(text: lbl, style: labelTextStyle),
-            textDirection: TextDirection.ltr,
-          )..layout();
-          // horizontal padding (8*2) + border (1*2)
-          final w = tp.width + 18;
-          if (w > maxLabelWidth) maxLabelWidth = w;
-        }
+        // 预先过滤掉没有有效字段的行，方便 Table 逐行渲染
+        final visibleRows = processedRows.where((row) {
+          return row.fields.entries.any(
+            (e) => e.key != 'pos' && e.value != null && e.value!.isNotEmpty,
+          );
+        }).toList();
 
-        // 用 Container + width:infinity 确保横幅始终占满全宽
+        if (visibleRows.isEmpty) return const SizedBox.shrink();
+
+        // 用 Table 代替 Column+Row，第一列宽度由内容决定，第二列占满剩余空间
         return Container(
           width: double.infinity,
           color: colorScheme.surface,
           padding: EdgeInsets.only(left: hPad, right: hPad, top: 6, bottom: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: rows.asMap().entries.map((entry) {
+          child: Table(
+            defaultVerticalAlignment: TableCellVerticalAlignment.top,
+            columnWidths: const {
+              0: IntrinsicColumnWidth(),
+              1: FlexColumnWidth(),
+            },
+            children: visibleRows.asMap().entries.map((entry) {
               final rowIndex = entry.key;
               final row = entry.value;
 
-              // 从 fields 中提取 pos，并过滤掉 pos 字段不展示为 chip
               final pos = row.fields['pos'];
               final posLabel = _shortenPos(pos);
               final baseLabel = _tableLabels[row.tableName] ?? row.tableName;
@@ -1490,38 +1496,45 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         e.value!.isNotEmpty,
                   )
                   .toList();
-              if (nonNullFields.isEmpty) return const SizedBox.shrink();
 
-              return Padding(
-                padding: EdgeInsets.only(top: rowIndex == 0 ? 0 : 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 表类型+词性标签（左侧，对齐首行胶囊）
-                    Container(
-                      width: maxLabelWidth,
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 5,
+              return TableRow(
+                children: [
+                  // ── 第一列：表类型+词性标签，宽度自适应，右对齐 ──────────
+                  TableCell(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        top: rowIndex == 0 ? 0 : 10,
+                        right: 8,
                       ),
-                      decoration: BoxDecoration(
-                        color: colorScheme.secondaryContainer.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        tableLabel,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: colorScheme.onSecondaryContainer,
-                          height: 1.3,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.secondaryContainer
+                                .withOpacity(0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            tableLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: colorScheme.onSecondaryContainer,
+                              height: 1.3,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    // 词形chips（右侧充满剩余宽度）
-                    Expanded(
+                  ),
+                  // ── 第二列：词形chips ────────────────────────────────────
+                  TableCell(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: rowIndex == 0 ? 0 : 10),
                       child: Wrap(
                         spacing: 7,
                         runSpacing: 6,
@@ -1529,9 +1542,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         children: nonNullFields.map((field) {
                           final colLabel = _colLabels[field.key] ?? field.key;
                           final wordVal = field.value!;
-                          final isCurrentWord =
-                              wordVal.toLowerCase() ==
-                              widget.initialWord.toLowerCase();
+                          // 合并胶囊（如"sawn, sawed"）：拆分后检查任一分量是否命中当前词
+                          final isCurrentWord = wordVal
+                              .split(', ')
+                              .any(
+                                (v) =>
+                                    v.toLowerCase() ==
+                                    widget.initialWord.toLowerCase(),
+                              );
 
                           final chip = Container(
                             padding: const EdgeInsets.symmetric(
@@ -1589,7 +1607,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                             ),
                           );
 
-                          if (isCurrentWord) return chip;
+                          // 合并值（含逗号）或"不可数"标记不可点击跳转
+                          final isNavigable =
+                              !isCurrentWord &&
+                              !wordVal.contains(', ') &&
+                              wordVal != '不可数';
+
+                          if (!isNavigable) return chip;
 
                           return GestureDetector(
                             onTap: () => _navigateToWord(wordVal),
@@ -1598,14 +1622,174 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         }).toList(),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               );
             }).toList(),
           ),
         );
       },
     );
+  }
+
+  /// 预处理 inflection 名词行：不可数名词显示"不可数"，多行合并为一行
+  /// 预处理 inflection 行：
+  /// - 相同 base+pos 的多个 inflection 行合并为一行（各字段去重后 ', ' 连接）
+  /// - 名词行：plural 为空且无其他变形列时，视为不可数名词，plural 显示"不可数"
+  /// - 名词以外的词性：如果除 base/pos 外所有字段均无数据，则整行跳过
+  List<WordRelationRow> _preprocessInflectionRows(
+    List<WordRelationRow> rows,
+  ) {
+    // 非 inflection 行直接保留，inflection 行按 base|pos 分组
+    final nonInflectionRows = <WordRelationRow>[];
+
+    // 'base|pos' → (firstIndex, list of rows) ── firstIndex 用于保持原始顺序
+    final Map<String, (int, List<WordRelationRow>)> inflectionGroups = {};
+    int inflectionFirstSeen = 0;
+
+    for (int i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      if (row.tableName != 'inflection') {
+        nonInflectionRows.add(row);
+        continue;
+      }
+      final base = row.fields['base'] ?? '';
+      final pos = row.fields['pos'] ?? '';
+      final groupKey = '$base|$pos';
+      if (!inflectionGroups.containsKey(groupKey)) {
+        inflectionGroups[groupKey] = (inflectionFirstSeen++, []);
+      }
+      inflectionGroups[groupKey]!.$2.add(row);
+    }
+
+    // 名词变形以外的列（用于判断是否"仅有 base"）
+    const nonNounCols = [
+      'plural',
+      'past',
+      'past_part',
+      'pres_part',
+      'third_sing',
+      'comp',
+      'superl',
+    ];
+
+    // 逐 base|pos 组合并
+    final mergedInflections = <(int, WordRelationRow)>[];
+
+    inflectionGroups.forEach((groupKey, record) {
+      final (sortKey, groupRows) = record;
+      if (groupRows.isEmpty) return;
+
+      final pos = groupRows.first.fields['pos'] ?? '';
+      final isNoun = pos == 'noun';
+
+      if (isNoun) {
+        // ── 名词：收集每行的 plural 值（空 plural = 不可数）──────────────
+        final seenPluralValues = <String>[];
+        for (final row in groupRows) {
+          final plural = row.fields['plural'];
+          final hasOtherNonNounContent = nonNounCols
+              .where((c) => c != 'plural')
+              .any((col) {
+                final v = row.fields[col];
+                return v != null && v.isNotEmpty;
+              });
+          if ((plural == null || plural.isEmpty) && !hasOtherNonNounContent) {
+            if (!seenPluralValues.contains('不可数')) {
+              seenPluralValues.add('不可数');
+            }
+          } else if (plural != null && plural.isNotEmpty) {
+            if (!seenPluralValues.contains(plural)) {
+              seenPluralValues.add(plural);
+            }
+          }
+        }
+
+        // 用第一行作为模板，写入合并后的 plural
+        final template = groupRows.first;
+        final mergedFields = <String, String?>{};
+        for (final entry in template.fields.entries) {
+          mergedFields[entry.key] = entry.value;
+        }
+        mergedFields['plural'] =
+            seenPluralValues.isNotEmpty ? seenPluralValues.join(', ') : null;
+
+        mergedInflections.add((
+          sortKey,
+          WordRelationRow(tableName: 'inflection', fields: mergedFields),
+        ));
+      } else {
+        // ── 非名词：按字段收集所有唯一非空值 ────────────────────────────
+        // 先检查是否所有行除了 base/pos 全为空
+        final allEmpty = groupRows.every((row) {
+          return nonNounCols.every((col) {
+            final v = row.fields[col];
+            return v == null || v.isEmpty;
+          });
+        });
+        if (allEmpty) return; // 跳过无实际变形数据的行
+
+        // 收集每列的唯一值
+        final colValues = <String, List<String>>{};
+        for (final row in groupRows) {
+          for (final entry in row.fields.entries) {
+            if (entry.key == 'pos' || entry.key == 'base') continue;
+            final v = entry.value;
+            if (v != null && v.isNotEmpty) {
+              colValues.putIfAbsent(entry.key, () => []);
+              if (!colValues[entry.key]!.contains(v)) {
+                colValues[entry.key]!.add(v);
+              }
+            }
+          }
+        }
+
+        // 用第一行作为模板
+        final template = groupRows.first;
+        final mergedFields = <String, String?>{};
+        for (final entry in template.fields.entries) {
+          if (entry.key == 'pos' || entry.key == 'base') {
+            mergedFields[entry.key] = entry.value;
+          } else {
+            final vals = colValues[entry.key];
+            mergedFields[entry.key] =
+                (vals != null && vals.isNotEmpty) ? vals.join(', ') : null;
+          }
+        }
+
+        mergedInflections.add((
+          sortKey,
+          WordRelationRow(tableName: 'inflection', fields: mergedFields),
+        ));
+      }
+    });
+
+    // 按原始出现顺序排序合并后的 inflection 行
+    mergedInflections.sort((a, b) => a.$1.compareTo(b.$1));
+
+    // 重新拼回：非 inflection 行在前，inflection 合并行按顺序追加
+    // 保持原始结构中非 inflection 先出现的顺序不变
+    // 实际上原始列表可能交错，这里简化为：先遍历原列表，遇到第一个 inflection 时插入所有合并结果
+    final result = <WordRelationRow>[];
+    bool inflectionInserted = false;
+    for (final row in rows) {
+      if (row.tableName != 'inflection') {
+        result.add(row);
+      } else if (!inflectionInserted) {
+        inflectionInserted = true;
+        for (final pair in mergedInflections) {
+          result.add(pair.$2);
+        }
+      }
+      // 后续 inflection 行全部跳过（已合并）
+    }
+    if (!inflectionInserted) {
+      for (final pair in mergedInflections) {
+        result.add(pair.$2);
+      }
+    }
+
+    return result;
   }
 
   /// 导航到指定单词的详情页

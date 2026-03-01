@@ -95,7 +95,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_note.md
-          files: ./release-files/**/* # 自动拾取所有子目录下的文件
+          files: ./release-files/**/*
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           prerelease: false
