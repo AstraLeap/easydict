@@ -36,6 +36,14 @@ class BatchToggleHiddenLanguagesEvent {
   });
 }
 
+/// 云端设置同步完成事件，携带本次同步涉及的数据类型
+class SettingsSyncedEvent {
+  /// 是否包含查词历史
+  final bool includesHistory;
+
+  const SettingsSyncedEvent({this.includesHistory = true});
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -49,6 +57,8 @@ class EntryEventBus {
       StreamController<ToggleHiddenLanguageEvent>.broadcast();
   final _batchToggleHiddenController =
       StreamController<BatchToggleHiddenLanguagesEvent>.broadcast();
+  final _settingsSyncedController =
+      StreamController<SettingsSyncedEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -58,6 +68,8 @@ class EntryEventBus {
       _toggleHiddenLanguageController.stream;
   Stream<BatchToggleHiddenLanguagesEvent> get batchToggleHidden =>
       _batchToggleHiddenController.stream;
+  Stream<SettingsSyncedEvent> get settingsSynced =>
+      _settingsSyncedController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -75,10 +87,15 @@ class EntryEventBus {
     _batchToggleHiddenController.add(event);
   }
 
+  void emitSettingsSynced(SettingsSyncedEvent event) {
+    _settingsSyncedController.add(event);
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
     _toggleHiddenLanguageController.close();
     _batchToggleHiddenController.close();
+    _settingsSyncedController.close();
   }
 }
