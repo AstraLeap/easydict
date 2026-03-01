@@ -45,3 +45,9 @@ app.*.map.json
 /android/app/release
 android/build/reports/problems/problems-report.html
 android/.kotlin/sessions/*
+
+# Keystore and sensitive Android build configuration
+*.jks
+*.keystore
+android/app/local.properties
+android/local.properties
