@@ -325,7 +325,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 52),
+                    // const SizedBox(height: 22),
                   ]),
                 ),
               ),
@@ -385,7 +385,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
       leading: Icon(icon, color: effectiveIconColor, size: 24),
       title: Text(
         title,

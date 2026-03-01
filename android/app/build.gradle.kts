@@ -43,10 +43,10 @@ android {
 
     buildTypes {
         release {
-        val envKeystoreFile     = System.getenv("KEYSTORE_FILE")
-            val envKeystorePassword = System.getenv("KEYSTORE_PASSWORD")
-            val envKeyAlias         = System.getenv("KEY_ALIAS")
-            val envKeyPassword      = System.getenv("KEY_PASSWORD")
+        val envKeystoreFile     = System.getenv("KEYSTORE_FILE") ?: findProperty("KEYSTORE_FILE")?.toString()
+            val envKeystorePassword = System.getenv("KEYSTORE_PASSWORD") ?: findProperty("KEYSTORE_PASSWORD")?.toString()
+            val envKeyAlias         = System.getenv("KEY_ALIAS") ?: findProperty("KEY_ALIAS")?.toString()
+            val envKeyPassword      = System.getenv("KEY_PASSWORD") ?: findProperty("KEY_PASSWORD")?.toString()
 
             if (envKeystoreFile != null && envKeystorePassword != null && envKeyAlias != null && envKeyPassword != null) {
                 signingConfig = signingConfigs.create("release") {

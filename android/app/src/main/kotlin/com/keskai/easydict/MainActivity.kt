@@ -34,7 +34,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "setWindowBackground" -> {
-                        val colorInt = call.argument<Int>("color")
+                        // Flutter 的 Dart int 在 Android 上经由 MethodChannel 传递时
+                        // 可能被编码为 Long（颜色值超出 Java int 有符号范围时），
+                        // 统一用 Number 接收再 toInt() 避免 ClassCastException
+                        val colorInt = (call.argument<Any>("color") as? Number)?.toInt()
                         if (colorInt != null) {
                             window.setBackgroundDrawable(ColorDrawable(colorInt))
                         }

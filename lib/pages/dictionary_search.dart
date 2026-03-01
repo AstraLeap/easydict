@@ -8,6 +8,7 @@ import '../services/advanced_search_settings_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_db_service.dart';
 import '../services/font_loader_service.dart';
+import '../services/entry_event_bus.dart';
 import 'entry_detail_page.dart';
 import '../core/utils/toast_utils.dart';
 import '../widgets/search_bar.dart';
@@ -54,6 +55,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   Timer? _debounceTimer;
   int _prefixSearchToken = 0;
   bool _isSearchingWord = false;
+  StreamSubscription<SettingsSyncedEvent>? _syncSubscription;
 
   bool _isInitializing = true;
 
@@ -92,6 +94,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       return KeyEventResult.ignored;
     };
     _initData();
+    _syncSubscription = EntryEventBus().settingsSynced.listen((event) {
+      if (event.includesHistory) _loadSearchHistory();
+    });
   }
 
   void _onFocusChange() {
@@ -169,6 +174,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   @override
   void dispose() {
+    _syncSubscription?.cancel();
     _debounceTimer?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
