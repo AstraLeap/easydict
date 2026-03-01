@@ -524,50 +524,51 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               return deduped;
             })
             .map((relation) {
-          final posLabel = _shortenPos(relation.pos);
-          final desc = relation.description ?? relation.relationType;
-          final label = posLabel.isNotEmpty ? '$desc $posLabel' : desc;
+              final posLabel = _shortenPos(relation.pos);
+              final desc = relation.description ?? relation.relationType;
+              final label = posLabel.isNotEmpty ? '$desc $posLabel' : desc;
 
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                widget.initialWord,
-                style: TextStyle(
-                  fontSize: 13.5,
-                  color: colorScheme.onSurface.withOpacity(0.55),
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-              const SizedBox(width: 3),
-              Text(
-                '($label)',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.65),
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  size: 14,
-                  color: colorScheme.primary.withOpacity(0.55),
-                ),
-              ),
-              Text(
-                relation.mappedWord,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.primary,
-                ),
-              ),
-            ],
-          );
-        }).toList(),
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    widget.initialWord,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      color: colorScheme.onSurface.withOpacity(0.55),
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    '($label)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant.withOpacity(0.65),
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 14,
+                      color: colorScheme.primary.withOpacity(0.55),
+                    ),
+                  ),
+                  Text(
+                    relation.mappedWord,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+              );
+            })
+            .toList(),
       ),
     );
   }
@@ -1439,7 +1440,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     const Map<String, String> _tableLabels = {
       'spelling_variant': '变体',
       'nominalization': '名词化',
-      'inflection': '屈折化',
+      'inflection': '屈折词',
     };
 
     return FutureBuilder<List<WordRelationRow>>(
@@ -1514,8 +1515,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                             vertical: 5,
                           ),
                           decoration: BoxDecoration(
-                            color: colorScheme.secondaryContainer
-                                .withOpacity(0.7),
+                            color: colorScheme.secondaryContainer.withOpacity(
+                              0.7,
+                            ),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -1637,9 +1639,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   /// - 相同 base+pos 的多个 inflection 行合并为一行（各字段去重后 ', ' 连接）
   /// - 名词行：plural 为空且无其他变形列时，视为不可数名词，plural 显示"不可数"
   /// - 名词以外的词性：如果除 base/pos 外所有字段均无数据，则整行跳过
-  List<WordRelationRow> _preprocessInflectionRows(
-    List<WordRelationRow> rows,
-  ) {
+  List<WordRelationRow> _preprocessInflectionRows(List<WordRelationRow> rows) {
     // 非 inflection 行直接保留，inflection 行按 base|pos 分组
     final nonInflectionRows = <WordRelationRow>[];
 
@@ -1711,8 +1711,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         for (final entry in template.fields.entries) {
           mergedFields[entry.key] = entry.value;
         }
-        mergedFields['plural'] =
-            seenPluralValues.isNotEmpty ? seenPluralValues.join(', ') : null;
+        mergedFields['plural'] = seenPluralValues.isNotEmpty
+            ? seenPluralValues.join(', ')
+            : null;
 
         mergedInflections.add((
           sortKey,
@@ -1752,8 +1753,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             mergedFields[entry.key] = entry.value;
           } else {
             final vals = colValues[entry.key];
-            mergedFields[entry.key] =
-                (vals != null && vals.isNotEmpty) ? vals.join(', ') : null;
+            mergedFields[entry.key] = (vals != null && vals.isNotEmpty)
+                ? vals.join(', ')
+                : null;
           }
         }
 
@@ -3087,7 +3089,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                               context,
                                             ).colorScheme.primary,
                                           ),
-                                    initiallyExpanded: index == 0 && expandNewest,
+                                    initiallyExpanded:
+                                        index == 0 && expandNewest,
                                     title: Text(
                                       record.question,
                                       maxLines: 2,
@@ -4211,9 +4214,10 @@ class _BlinkingIconState extends State<_BlinkingIcon>
       duration: const Duration(milliseconds: 700),
       vsync: this,
     );
-    _animation = Tween<double>(begin: 1.0, end: 0.25).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _animation = Tween<double>(
+      begin: 1.0,
+      end: 0.25,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     if (widget.isBlinking) {
       _controller.repeat(reverse: true);
     }

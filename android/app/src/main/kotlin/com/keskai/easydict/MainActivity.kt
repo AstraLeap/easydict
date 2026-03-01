@@ -89,36 +89,14 @@ class MainActivity : FlutterActivity() {
         Log.d(TAG, "applyEdgeToEdge called, isInMultiWindowMode=$isInMultiWindowMode")
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // DecorView 层拦截：让修正后的 insets 沿 View 树向下分发
-        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { view, insets ->
-            val corrected = buildCorrectedInsets(insets, "DecorView")
-            ViewCompat.dispatchApplyWindowInsets(view, corrected)
-            corrected
-        }
-
-        // -----------------------------------------------------------------------
-        // 关键：直接在 FlutterView 上覆盖 listener
+        // DecorView 层拦截：修正 insets 后直接返回，由 ViewGroup 框架自动传播给所有子 View。
         //
-        // Flutter 引擎通过 FlutterView 的 OnApplyWindowInsetsListener 读取 insets，
-        // 在 DecorView 层修改后调用 dispatchApplyWindowInsets 会传播下去，
-        // 但 Flutter 引擎在某些情况下（onCreate 后、requestApplyInsets 触发时）
-        // 会跳过分发链直接用 getRootWindowInsets()，绕开 DecorView 的拦截。
-        //
-        // 在 FlutterView（tag="flutter_view"）上直接设置 listener，
-        // 是拦截 Flutter 引擎最终看到的 insets 的唯一可靠方式。
-        // -----------------------------------------------------------------------
-        window.decorView.post {
-            val flutterView = window.decorView.findViewWithTag<View>("flutter_view")
-            Log.d(TAG, "FlutterView 查找结果: ${if (flutterView != null) "已找到，注册拦截器" else "未找到"}")
-            if (flutterView != null) {
-                ViewCompat.setOnApplyWindowInsetsListener(flutterView) { fView, insets ->
-                    val corrected = buildCorrectedInsets(insets, "FlutterView")
-                    ViewCompat.onApplyWindowInsets(fView, corrected)
-                    corrected
-                }
-                // 让 Flutter 引擎立即以修正后的值重新计算 viewport
-                ViewCompat.requestApplyInsets(flutterView)
-            }
+        // ⚠️ 不能在 listener 内对同一 view 调用 dispatchApplyWindowInsets 或
+        //    onApplyWindowInsets——两者都会再次触发本 listener，导致无限递归 StackOverflow。
+        // ViewGroup.dispatchApplyWindowInsets() 的实现会用 listener 的返回值
+        // (corrected) 递归分发给每个子 View，包括 FlutterView，无需手动传播。
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { _, insets ->
+            buildCorrectedInsets(insets, "DecorView")
         }
     }
 
