@@ -19,8 +19,10 @@ jobs:
         include:
           - target: android
             os: ubuntu-latest
-            build_cmd: flutter build apk --release
-            artifact_path: build/app/outputs/flutter-apk/app-release.apk
+            # 使用 --split-per-abi 生成各架构独立 APK
+            build_cmd: flutter build apk --release --split-per-abi
+            # 使用通配符匹配所有生成的 APK 文件
+            artifact_path: build/app/outputs/flutter-apk/app-*-release.apk
           - target: windows
             os: windows-latest
             build_cmd: |
@@ -45,13 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 缓存 Pub 依赖 (跨平台通用)
       - name: Cache Pub packages
         uses: actions/cache@v4
         with:
           path: |
             ~/.pub-cache
-            ${{ env.FLUTTER_HOME }}/.pub-cache
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: ${{ runner.os }}-pub-
 
@@ -67,18 +67,17 @@ jobs:
         run: ${{ matrix.build_cmd }}
         shell: bash
 
-      # 将生成的产物暂时上传到 GitHub 暂存区
       - name: Upload to Staging
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-${{ matrix.target }}
           path: ${{ matrix.artifact_path }}
-          retention-days: 1 # 仅保存1天，省空间
+          retention-days: 1
 
   # 阶段二：汇总并发布
   release:
     name: Create GitHub Release
-    needs: build # 必须等上面 4 个都编完
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -86,7 +85,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./release-files
-          merge-multiple: true # 合并所有下载的文件到同一个目录
+          merge-multiple: true
 
       - name: Generate Release Note
         run: echo "Release of version ${{ github.ref_name }}" > release_note.md
