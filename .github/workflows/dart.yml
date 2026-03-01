@@ -2,19 +2,18 @@ name: Flutter Professional CI/CD
 
 on:
   push:
-    tags: ["v*"] # 当推送 v1.0.0 等标签时触发发布
-  workflow_dispatch: # 支持手动触发
+    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  # 阶段一：并行编译各个平台
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # 即使一个平台失败，其他平台也继续编译
+      fail-fast: false
       matrix:
         include:
           - target: android
@@ -24,10 +23,10 @@ jobs:
 
           - target: windows
             os: windows-latest
-            # 编译后将 Release 文件夹内所有内容打包成 zip
+            # 修复了这里的打包逻辑
             build_cmd: |
               flutter build windows --release
-              powershell Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath easydict-windows-x64.zip
+              powershell "Compress-Archive -Path 'build/windows/x64/runner/Release/*' -DestinationPath 'easydict-windows-x64.zip' -Force"
             artifact_path: easydict-windows-x64.zip
 
           - target: linux
@@ -62,7 +61,6 @@ jobs:
         run: ${{ matrix.build_cmd }}
         shell: bash
 
-      # 临时保存产物，供 release 任务下载
       - name: Upload to Staging
         uses: actions/upload-artifact@v4
         with:
@@ -70,12 +68,10 @@ jobs:
           path: ${{ matrix.artifact_path }}
           retention-days: 1
 
-  # 阶段二：汇总并发布到 GitHub Release
   release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    # 仅在推送 tag 时执行发布逻辑
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
@@ -87,13 +83,12 @@ jobs:
       - name: Generate Release Note
         run: |
           echo "## Release of version ${{ github.ref_name }}" > release_note.md
-          echo "Automated build for Android (Split APKs), Windows (Portable), Linux, and macOS." >> release_note.md
+          echo "Automated build for Android, Windows (Portable), Linux, and macOS." >> release_note.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_note.md
-          # 自动匹配下载的所有产物
           files: ./release-files/**/*
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
