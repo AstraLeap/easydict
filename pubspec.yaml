@@ -95,7 +95,6 @@ flutter_launcher_icons:
   android: true
   ios: true
   linux: true
-  web: true
   image_path: "assets/icon/app_icon.png"
   # Android 自适应图标背景色（可选）
   adaptive_icon_background: "#FFFFFF"
