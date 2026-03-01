@@ -73,13 +73,19 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information on deactivating specific lint
-  # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
+  msix: ^3.16.0
+
+# msix 配置（用于 dart run msix:create 打包 Windows 安装包）
+msix_config:
+  display_name: EasyDict
+  publisher_display_name: YourName # 改为你的名字或组织名
+  identity_name: com.yourname.easydict # 改为唯一包标识符（反向域名格式）
+  msix_version: 1.0.0.0 # 格式必须是 4 段数字
+  logo_path: assets/icon/app_icon.png
+  architecture: x64
+  capabilities: internetClient
 
 # flutter_launcher_icons 配置
 # 使用方式：
