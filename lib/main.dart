@@ -259,16 +259,42 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp>
     with WidgetsBindingObserver, WindowListener {
+  bool _isMultiWindow = false;
+  // 缓存上次发给 Android 的 windowBackground 颜色，避免每帧都发 MethodChannel
+  int? _lastWindowBgColor;
+  static const _windowChannel = MethodChannel('com.keskai.easydict/window');
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     windowManager.addListener(this);
+    _windowChannel.setMethodCallHandler(_handleWindowChannelCall);
     Logger.i('MyApp initState', tag: 'MyApp');
+  }
+
+  Future<dynamic> _handleWindowChannelCall(MethodCall call) async {
+    if (call.method != 'onMultiWindowModeChanged') return;
+    final args = call.arguments as Map? ?? {};
+    final isMultiWindow = args['isMultiWindow'] as bool? ?? false;
+    Logger.i(
+      '[WindowChannel] 收到小窗状态: isMultiWindow=$isMultiWindow '
+      'captionBarHeight=${args["captionBarHeight"]} '
+      'bottomBarHeight=${args["bottomBarHeight"]}',
+      tag: 'EasyDictWindow',
+    );
+    if (!mounted) return;
+    if (_isMultiWindow != isMultiWindow) {
+      setState(() => _isMultiWindow = isMultiWindow);
+      Logger.i('[WindowChannel] setState: _isMultiWindow 更新为 $isMultiWindow', tag: 'EasyDictWindow');
+    } else {
+      Logger.i('[WindowChannel] _isMultiWindow 无变化，跳过 setState', tag: 'EasyDictWindow');
+    }
   }
 
   @override
   void dispose() {
+    _windowChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     super.dispose();
@@ -343,6 +369,22 @@ class _MyAppState extends State<MyApp>
     MediaKitManager().disposeAllPlayers();
   }
 
+  /// 把 Flutter 主题的 surface 颜色同步给 Android window background，
+  /// 使小窗顶栏/底栏（由系统用 windowBackground 渲染）与 App 内容颜色精确匹配。
+  /// 只在颜色真正变化时才发 MethodChannel，避免每帧都通信。
+  void _syncWindowBackground(Color color) {
+    if (!Platform.isAndroid) return;
+    final argb = color.toARGB32();
+    if (_lastWindowBgColor == argb) return;
+    _lastWindowBgColor = argb;
+    _windowChannel.invokeMethod<void>(
+      'setWindowBackground',
+      {'color': argb},
+    ).catchError((e) {
+      Logger.w('setWindowBackground 失败: $e', tag: 'MyApp');
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     Logger.i('MyApp build 开始', tag: 'MyApp');
@@ -367,18 +409,45 @@ class _MyAppState extends State<MyApp>
             themeMode: themeMode,
             navigatorObservers: [toastRouteObserver],
             home: const MainScreen(),
-            builder: (context, widget) {
-              Logger.i('MaterialApp builder 被调用', tag: 'MyApp');
-              final brightness = MediaQuery.of(context).platformBrightness;
+            builder: (context, child) {
+              final mq = MediaQuery.of(context);
+              final brightness = mq.platformBrightness;
               final isDark =
                   themeMode == ThemeMode.dark ||
                   (themeMode == ThemeMode.system &&
                       brightness == Brightness.dark);
+
+              Logger.i(
+                '[WindowDebug] builder: _isMultiWindow=$_isMultiWindow '
+                'padding.top=${mq.padding.top} padding.bottom=${mq.padding.bottom} '
+                'viewPadding.top=${mq.viewPadding.top} viewPadding.bottom=${mq.viewPadding.bottom} '
+                'size=${mq.size.width.toInt()}x${mq.size.height.toInt()}',
+                tag: 'EasyDictWindow',
+              );
+
+              final surfaceColor = Theme.of(context).colorScheme.surface;
+              _syncWindowBackground(surfaceColor);
+
+              Widget content = ErrorBoundary(child: child ?? const SizedBox());
+              if (_isMultiWindow) {
+                Logger.i(
+                  '[WindowDebug] 小窗模式激活：将 padding/viewPadding 顶底归零',
+                  tag: 'EasyDictWindow',
+                );
+                content = MediaQuery(
+                  data: mq.copyWith(
+                    padding: mq.padding.copyWith(top: 0, bottom: 0),
+                    viewPadding: mq.viewPadding.copyWith(top: 0, bottom: 0),
+                  ),
+                  child: content,
+                );
+              }
+
               return AnnotatedRegion<SystemUiOverlayStyle>(
                 value: isDark
                     ? AppTheme.darkSystemUiOverlayStyle()
                     : AppTheme.lightSystemUiOverlayStyle(),
-                child: ErrorBoundary(child: widget ?? const SizedBox()),
+                child: content,
               );
             },
           );
