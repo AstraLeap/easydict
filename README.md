@@ -132,6 +132,7 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
   "sense_group": [
     {
       "group_name": "noun", //释义组的组名
+      "group_sub_name": "obsoleted sense", //释义组的副组名
       "sense": [{}, {}],
     },
     {},
