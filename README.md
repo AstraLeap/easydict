@@ -34,6 +34,7 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
 
 # json数据格式
 
+- 制作词典时可使用本项目的`build_db_from_jsonl.py`脚本，将jsonl文件转换为sqlite数据库。
 - 词典数据以json格式的`entry`为基础单位，数据库中存储着一堆`entry`。
 - 同一个单词可以下涵多个`entry`，`entry`有两个重要属性，page和section。
 - 同一个单词的诸多`entry`按照page属性分类，同一个page的多个`entry`组成一个独立单元，比如“药学词典”page、”儿童词典“page、“美语词典”page、”英语词典“page等。
