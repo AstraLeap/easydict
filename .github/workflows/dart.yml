@@ -2,33 +2,34 @@ name: Flutter Professional CI/CD
 
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
+    tags: ["v*"] # 当推送 v1.0.0 等标签时触发发布
+  workflow_dispatch: # 支持手动触发
 
 permissions:
   contents: write
 
 jobs:
-  # 阶段一：并行编译
+  # 阶段一：并行编译各个平台
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: false # 即使一个平台失败，其他平台也继续编译
       matrix:
         include:
           - target: android
             os: ubuntu-latest
-            # 使用 --split-per-abi 生成各架构独立 APK
             build_cmd: flutter build apk --release --split-per-abi
-            # 使用通配符匹配所有生成的 APK 文件
             artifact_path: build/app/outputs/flutter-apk/app-*-release.apk
+
           - target: windows
             os: windows-latest
+            # 编译后将 Release 文件夹内所有内容打包成 zip
             build_cmd: |
               flutter build windows --release
-              dart run msix:create --architecture x64
-            artifact_path: build/windows/x64/runner/Release/*.msix
+              powershell Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath easydict-windows-x64.zip
+            artifact_path: easydict-windows-x64.zip
+
           - target: linux
             os: ubuntu-latest
             build_cmd: |
@@ -36,6 +37,7 @@ jobs:
               flutter build linux --release
               tar -czvf flutter-app-linux.tar.gz -C build/linux/x64/release/bundle .
             artifact_path: flutter-app-linux.tar.gz
+
           - target: macos
             os: macos-latest
             build_cmd: |
@@ -47,15 +49,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Pub packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: ${{ runner.os }}-pub-
-
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: "stable"
           cache: true
@@ -67,6 +62,7 @@ jobs:
         run: ${{ matrix.build_cmd }}
         shell: bash
 
+      # 临时保存产物，供 release 任务下载
       - name: Upload to Staging
         uses: actions/upload-artifact@v4
         with:
@@ -74,11 +70,12 @@ jobs:
           path: ${{ matrix.artifact_path }}
           retention-days: 1
 
-  # 阶段二：汇总并发布
+  # 阶段二：汇总并发布到 GitHub Release
   release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    # 仅在推送 tag 时执行发布逻辑
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
@@ -88,12 +85,15 @@ jobs:
           merge-multiple: true
 
       - name: Generate Release Note
-        run: echo "Release of version ${{ github.ref_name }}" > release_note.md
+        run: |
+          echo "## Release of version ${{ github.ref_name }}" > release_note.md
+          echo "Automated build for Android (Split APKs), Windows (Portable), Linux, and macOS." >> release_note.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_note.md
+          # 自动匹配下载的所有产物
           files: ./release-files/**/*
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
