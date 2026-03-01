@@ -17,7 +17,6 @@ flutter run
 | macOS   | `flutter build macos`   |
 | iOS     | `flutter build ios`     |
 | Linux   | `flutter build linux`   |
-| Web     | `flutter build web`     |
 
 ## 可选编译参数（--dart-define）
 
@@ -174,8 +173,8 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
 ### 示例
 
 ```
-for more information, please [see here](->dog)
-Wow, so pretty[text](color,bold)!
+For more information, please [see here](->wood).
+"Wow, you are so [pretty](color,bold)!"
 ```
 
 # 词典包结构
