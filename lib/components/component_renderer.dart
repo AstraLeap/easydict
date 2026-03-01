@@ -981,7 +981,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _lastTapPosition = details.globalPosition;
         _longPressHandled = false;
         _longPressTimer?.cancel();
-        _longPressTimer = Timer(const Duration(milliseconds: 200), () {
+        _longPressTimer = Timer(const Duration(milliseconds: 250), () {
           _longPressHandled = true;
           final pathStr2 = _convertPathToString(pathData.path);
           _handleElementSecondaryTap(
