@@ -70,98 +70,143 @@ class AIService {
     );
   }
 
-  Future<String> translate(String text, String targetLang) async {
-    const systemPrompt =
-        "You are a professional translator. Translate the following text into the target language. Only provide the translation result, no explanations or other text.";
-    final prompt = "Target Language: $targetLang\nText: $text";
+  Future<String> translate(
+    String text,
+    String targetLang, {
+    String? systemPrompt,
+  }) async {
+    final effectiveSystemPrompt =
+        systemPrompt ??
+        'You are a professional translator. '
+            'Translate the given text into the specified target language naturally and accurately. '
+            'Preserve the original meaning, tone, and any technical or domain-specific terminology. '
+            'Output only the translated text — no explanations, no commentary, no extra formatting.';
+    final prompt = 'Target Language: $targetLang\n\n$text';
 
-    return await chat(prompt, systemPrompt: systemPrompt, useFastModel: true);
+    return await chat(
+      prompt,
+      systemPrompt: effectiveSystemPrompt,
+      useFastModel: true,
+    );
   }
 
-  Future<String> summarizeDictionary(String jsonContent) async {
-    const systemPrompt =
-        "你是一个专业的词典内容分析师。你的任务是分析词典JSON数据并提供简洁、有用的总结。"
-        "请从以下几个方面进行分析："
-        "1. 单词的主要含义和用法"
-        "2. 词源信息（如果有）"
-        "3. 重要的搭配和例句"
-        "4. 任何特别的语言点或注意事项"
-        "请以清晰、易读的格式输出，使用Markdown格式。";
+  // ─────────────────────────────────────────────
+  // 流式接口
+  // ─────────────────────────────────────────────
 
-    final prompt =
-        "请分析以下词典JSON数据并提供总结：\n\n"
-        "```json\n"
-        "$jsonContent\n"
-        "```\n\n"
-        "请提供详细的分析和总结。";
-
-    return await chat(prompt, systemPrompt: systemPrompt);
-  }
-
-  Future<String> askAboutElement(
-    String elementJson,
-    String path,
-    String question,
-  ) async {
-    const systemPrompt =
-        "你是一个专业的语言学习助手。用户会提供词典中的特定内容，请你根据这些内容回答用户的问题。"
-        "请提供准确、有帮助的回答，并尽可能结合上下文给出解释。";
-
-    final prompt =
-        "JSON路径: $path\n\n"
-        "内容:\n"
-        "```json\n"
-        "$elementJson\n"
-        "```\n\n"
-        "用户问题: $question\n\n"
-        "请根据以上内容回答问题。";
-
-    return await chat(prompt, systemPrompt: systemPrompt);
-  }
-
-  Future<String> chatWithHistory(
-    String question, {
-    required List<Map<String, String>> history,
+  /// 单轮对话流式版本
+  Stream<LLMChunk> chatStream(
+    String prompt, {
     String? systemPrompt,
     bool useFastModel = false,
-  }) async {
+  }) async* {
     final config = await _prefsService.getLLMConfig(isFast: useFastModel);
     if (config == null) {
       throw Exception('未配置${useFastModel ? "快速" : "标准"}AI模型，请先在设置中配置API');
     }
-
     if (!config.isValid) {
       throw Exception('未配置API Key');
     }
-
-    return await _retryWithBackoff(
-      () => _llmClient.callApiWithHistory(
-        provider: config.provider,
-        baseUrl: config.effectiveBaseUrl,
-        apiKey: config.apiKey,
-        model: config.model,
-        question: question,
-        history: history,
-        systemPrompt: systemPrompt,
-      ),
+    yield* _llmClient.callApiStream(
+      provider: config.provider,
+      baseUrl: config.effectiveBaseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      prompt: prompt,
+      systemPrompt: systemPrompt,
+      enableThinking: config.enableThinking,
     );
   }
 
-  Future<String> freeChat(
+  /// 多轮对话流式版本
+  Stream<LLMChunk> chatWithHistoryStream(
+    String question, {
+    required List<Map<String, String>> history,
+    String? systemPrompt,
+    bool useFastModel = false,
+  }) async* {
+    final config = await _prefsService.getLLMConfig(isFast: useFastModel);
+    if (config == null) {
+      throw Exception('未配置${useFastModel ? "快速" : "标准"}AI模型，请先在设置中配置API');
+    }
+    if (!config.isValid) {
+      throw Exception('未配置API Key');
+    }
+    yield* _llmClient.callApiWithHistoryStream(
+      provider: config.provider,
+      baseUrl: config.effectiveBaseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      question: question,
+      history: history,
+      systemPrompt: systemPrompt,
+      enableThinking: config.enableThinking,
+    );
+  }
+
+  /// 词典内容总结流式版本
+  Stream<LLMChunk> summarizeDictionaryStream(String jsonContent) {
+    const systemPrompt =
+        '你是一位专业的词典内容解析师，擅长从词典数据中提炼关键语言信息。'
+        '请对提供的词典 JSON 数据进行分析，输出结构清晰的 Markdown 总结，内容包括：\n'
+        '1. **核心含义**：列出主要词义及词性，表述简洁\n'
+        '2. **词源 / 构词**（如有）：简述词根、词缀或来源\n'
+        '3. **重要搭配与例句**：优先列出高频、实用的搭配和典型例句\n'
+        '4. **语言要点**：发音、用法区分、常见错误或文体色彩等值得注意之处\n'
+        '输出要条理分明，篇幅适中，以学习者视角呈现最有价值的信息。';
+
+    final prompt =
+        '请分析以下词典 JSON 数据：\n\n'
+        '```json\n'
+        '$jsonContent\n'
+        '```\n\n'
+        '按照要求输出结构化总结。';
+
+    return chatStream(prompt, systemPrompt: systemPrompt);
+  }
+
+  /// 询问AI关于词典元素的流式版本
+  Stream<LLMChunk> askAboutElementStream(
+    String elementJson,
+    String path,
+    String question,
+  ) {
+    const systemPrompt =
+        '你是一位专业的语言学老师，擅长词汇、语法、翻译和语言文化解析。'
+        '用户会向你展示词典中的某段具体内容（如例句、释义、搭配、词源等），并提出问题。'
+        '请结合语言学知识和实际用法，给出准确、有深度的解答。'
+        '回答要简洁清晰、重点突出，语言风格贴近语言学习者的需求。';
+
+    final prompt =
+        '词典路径：$path\n\n'
+        '内容：\n'
+        '```json\n'
+        '$elementJson\n'
+        '```\n\n'
+        '问题：$question\n\n'
+        '请针对上述内容和问题，给出专业、实用的解答。';
+
+    return chatStream(prompt, systemPrompt: systemPrompt);
+  }
+
+  /// 自由聊天流式版本
+  Stream<LLMChunk> freeChatStream(
     String question, {
     required List<Map<String, String>> history,
     String? context,
-  }) async {
+  }) {
     const systemPrompt =
-        "你是一个专业的语言学习助手。用户可能正在学习词汇或语言相关内容。"
-        "请提供准确、有帮助的回答，如果用户提供了上下文信息，请结合上下文回答。";
+        '你是一位专业的语言学习助手，擅长词汇解析、语法说明、翻译辨析和语言文化知识。'
+        '请提供准确、有帮助的回答，语言简洁明了。'
+        '若用户提供了学习上下文（如词典条目、例句等），请充分结合上下文作答，避免孤立回答。'
+        '对于语言相关问题，适当举例说明，帮助用户加深理解。';
 
     String fullQuestion = question;
     if (context != null && context.isNotEmpty) {
-      fullQuestion = "当前学习上下文:\n$context\n\n用户问题: $question";
+      fullQuestion = '当前学习上下文：\n$context\n\n用户问题：$question';
     }
 
-    return await chatWithHistory(
+    return chatWithHistoryStream(
       fullQuestion,
       history: history,
       systemPrompt: systemPrompt,

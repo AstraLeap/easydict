@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -6,15 +7,14 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
-import '../data/models/dictionary_metadata.dart';
 import '../components/dictionary_navigation_panel.dart';
 import '../components/dictionary_logo.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 import '../components/component_renderer.dart';
 import '../data/word_bank_service.dart';
 import '../services/search_history_service.dart';
 import '../services/ai_service.dart';
+import '../services/llm_client.dart';
 import '../data/services/ai_chat_database_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
@@ -26,115 +26,10 @@ import '../services/user_dicts_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
+import '../data/models/ai_chat_record.dart';
+import 'json_editor_bottom_sheet.dart';
 
-/// AI聊天记录模型
-class AiChatRecord {
-  final String id;
-  final String word;
-  final String question;
-  final String answer;
-  final DateTime timestamp;
-  final String? path;
-  final String? elementJson; // 存储查询的JSON内容
-
-  AiChatRecord({
-    required this.id,
-    required this.word,
-    required this.question,
-    required this.answer,
-    required this.timestamp,
-    this.path,
-    this.elementJson,
-  });
-}
-
-class _DraggableNavPanel extends StatefulWidget {
-  final DictionaryEntryGroup entryGroup;
-  final VoidCallback onDictionaryChanged;
-  final VoidCallback onPageChanged;
-  final VoidCallback onSectionChanged;
-  final Function(DictionaryEntry entry, {String? targetPath})?
-  onNavigateToEntry;
-  final double initialDy;
-  final GlobalKey<DictionaryNavigationPanelState>? navPanelKey;
-
-  const _DraggableNavPanel({
-    required this.entryGroup,
-    required this.onDictionaryChanged,
-    required this.onPageChanged,
-    required this.onSectionChanged,
-    required this.onNavigateToEntry,
-    required this.initialDy,
-    this.navPanelKey,
-  });
-
-  @override
-  State<_DraggableNavPanel> createState() => _DraggableNavPanelState();
-}
-
-class _DraggableNavPanelState extends State<_DraggableNavPanel> {
-  late double _dy;
-  double? _dragY;
-
-  @override
-  void initState() {
-    super.initState();
-    _dy = widget.initialDy;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final isMobile = screenSize.width < 600;
-    double top;
-
-    if (_dragY != null) {
-      top = _dragY!;
-    } else {
-      top = screenSize.height * _dy;
-      // 确保不超出屏幕底部
-      if (top > screenSize.height - 100) {
-        top = screenSize.height - 100;
-      }
-    }
-
-    // 固定在右边缘，手机端更贴近边缘
-    return Positioned(
-      top: top,
-      right: isMobile ? 4 : 16,
-      child: GestureDetector(
-        onPanStart: (details) {
-          setState(() {
-            _dragY = screenSize.height * _dy;
-          });
-        },
-        onPanUpdate: (details) {
-          setState(() {
-            _dragY = _dragY! + details.delta.dy;
-          });
-        },
-        onPanEnd: (details) {
-          // 只保存垂直位置，固定在右侧
-          final newDy = (_dragY! / screenSize.height).clamp(0.1, 0.8);
-
-          setState(() {
-            _dy = newDy;
-            _dragY = null;
-          });
-          PreferencesService().setNavPanelPosition(true, _dy);
-        },
-        child: DictionaryNavigationPanel(
-          key: widget.navPanelKey,
-          entryGroup: widget.entryGroup,
-          onDictionaryChanged: widget.onDictionaryChanged,
-          onPageChanged: widget.onPageChanged,
-          onSectionChanged: widget.onSectionChanged,
-          onNavigateToEntry: widget.onNavigateToEntry,
-        ),
-      ),
-    );
-  }
-}
+part 'entry_detail_page_private_widgets.dart';
 
 class EntryDetailPage extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
@@ -157,9 +52,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
   final _preferencesService = PreferencesService();
-  // 同步从 FontLoaderService 获取软件布局缩放，避免异步加载导致的闪烁问题
-  final double _dictionaryContentScale = FontLoaderService()
-      .getDictionaryContentScale();
 
   final WordBankService _wordBankService = WordBankService();
   final AIService _aiService = AIService();
@@ -175,8 +67,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   final List<AiChatRecord> _aiChatHistory = [];
   bool _isAiChatHistoryLoaded = false;
 
-  /// 正在进行的AI请求
-  final Map<String, Future<String>> _pendingAiRequests = {};
+  /// 正在进行的AI请求（流式 StreamSubscription）
+  final Map<String, StreamSubscription<LLMChunk>> _pendingAiRequests = {};
+
+  /// 应自动展开的消息ID集合（新建流式请求时加入）
+  final Set<String> _autoExpandIds = {};
 
   /// 当前正在加载的AI请求ID
   String? _currentLoadingId;
@@ -250,6 +145,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _itemPositionsListener.itemPositions.removeListener(
       _onScrollPositionChanged,
     );
+    // 取消所有正在进行的流式AI请求
+    for (final sub in _pendingAiRequests.values) {
+      sub.cancel();
+    }
+    _pendingAiRequests.clear();
     super.dispose();
   }
 
@@ -535,7 +435,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   Text(
                     widget.initialWord,
                     style: TextStyle(
-                      fontSize: 13.5,
+                      fontSize: 14,
                       color: colorScheme.onSurface.withOpacity(0.55),
                       fontWeight: FontWeight.w400,
                     ),
@@ -601,6 +501,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       updateLogic();
     }
   }
+
+  List<DictionaryEntry> get entries => _getAllEntriesInOrder();
 
   List<DictionaryEntry> _getAllEntriesInOrder() {
     final List<DictionaryEntry> entries = [];
@@ -898,13 +800,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
-  void _showNewSearch() {
-    Navigator.of(context).pop({'selectText': true});
-  }
-
   @override
   Widget build(BuildContext context) {
-    final entries = _getAllEntriesInOrder();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // item 0: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
@@ -1135,7 +1032,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 获取底部安全区域高度
     final mediaQuery = MediaQuery.of(context);
     final bottomPadding = mediaQuery.padding.bottom;
-    final bottomInset = mediaQuery.viewInsets.bottom;
 
     // 计算底部工具栏的高度（约56dp + 边距）
     const toolbarHeight = 72.0;
@@ -1553,7 +1449,63 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                     widget.initialWord.toLowerCase(),
                               );
 
-                          final chip = Container(
+                          // 将词值按 ", " 拆分，分别渲染（支持单词点击查词，"不可数"不可点击且字体更小）
+                          final tokens = wordVal.split(', ');
+                          final tokenWidgets = <Widget>[];
+                          for (int ti = 0; ti < tokens.length; ti++) {
+                            final token = tokens[ti];
+                            final isNotCount = token == '不可数';
+                            final isTokenCurrentWord =
+                                token.toLowerCase() ==
+                                widget.initialWord.toLowerCase();
+                            if (ti > 0) {
+                              tokenWidgets.add(
+                                Text(
+                                  ', ',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    height: 1.2,
+                                    color: isCurrentWord
+                                        ? colorScheme.onPrimaryContainer
+                                              .withOpacity(0.5)
+                                        : colorScheme.onSurfaceVariant
+                                              .withOpacity(0.5),
+                                  ),
+                                ),
+                              );
+                            }
+                            Widget tokenWidget = Text(
+                              token,
+                              style: TextStyle(
+                                fontSize: isNotCount ? 11 : 13,
+                                height: 1.2,
+                                fontWeight: isTokenCurrentWord
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isNotCount
+                                    ? (isCurrentWord
+                                          ? colorScheme.onPrimaryContainer
+                                                .withOpacity(0.55)
+                                          : colorScheme.onSurfaceVariant
+                                                .withOpacity(0.65))
+                                    : (isTokenCurrentWord
+                                          ? colorScheme.onPrimaryContainer
+                                          : colorScheme.primary),
+                              ),
+                            );
+                            if (!isNotCount && !isTokenCurrentWord) {
+                              tokenWidget = MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  onTap: () => _navigateToWord(token),
+                                  child: tokenWidget,
+                                ),
+                              );
+                            }
+                            tokenWidgets.add(tokenWidget);
+                          }
+
+                          return Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
                               vertical: 5,
@@ -1577,7 +1529,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 if (colLabel.isNotEmpty)
-                                  ...([
+                                  ...(([
                                     Text(
                                       colLabel,
                                       style: TextStyle(
@@ -1591,35 +1543,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                  ]),
-                                Text(
-                                  wordVal,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    height: 1.2,
-                                    fontWeight: isCurrentWord
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: isCurrentWord
-                                        ? colorScheme.onPrimaryContainer
-                                        : colorScheme.primary,
-                                  ),
-                                ),
+                                  ])),
+                                ...tokenWidgets,
                               ],
                             ),
-                          );
-
-                          // 合并值（含逗号）或"不可数"标记不可点击跳转
-                          final isNavigable =
-                              !isCurrentWord &&
-                              !wordVal.contains(', ') &&
-                              wordVal != '不可数';
-
-                          if (!isNavigable) return chip;
-
-                          return GestureDetector(
-                            onTap: () => _navigateToWord(wordVal),
-                            child: chip,
                           );
                         }).toList(),
                       ),
@@ -1797,6 +1724,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   /// 导航到指定单词的详情页
   void _navigateToWord(String word) async {
     if (word.isEmpty) return;
+    if (word.toLowerCase() == widget.initialWord.toLowerCase()) return;
 
     final dbService = DatabaseService();
     final historyService = SearchHistoryService();
@@ -1927,7 +1855,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _JsonEditorBottomSheet(
+      builder: (context) => JsonEditorBottomSheet(
         entry: currentEntry,
         pathParts: pathParts,
         initialText: initialText,
@@ -2248,6 +2176,34 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
+  /// 根据元素路径判断翻译类型，返回对应的 system prompt。
+  /// - 路径中包含 "definition" → 词典释义专用提示词
+  /// - 路径中包含 "example" → 例句专用提示词
+  /// - 其他 → 通用补充信息提示词
+  String _getTranslationSystemPrompt(List<String> pathParts) {
+    final pathStr = pathParts.join('.').toLowerCase();
+    if (pathStr.contains('definition')) {
+      return 'You are a professional lexicographer and translator. '
+          'Translate the given dictionary definition to be concise, precise, and formal. '
+          'Ensure the translation matches the grammatical category of the original '
+          '(e.g., using noun phrases for nouns). '
+          'Output only the translated text — no explanations, no commentary.';
+    } else if (pathStr.contains('example')) {
+      return 'You are a professional translator specializing in linguistic context. '
+          'Translate the given dictionary example sentence to be natural and idiomatic. '
+          'Ensure the translation accurately reflects the specific usage and nuance '
+          'of the keyword in context. '
+          'Output only the translated text — no explanations, no commentary.';
+    } else {
+      return 'You are a professional linguistic consultant. '
+          'Translate the given supplementary dictionary information '
+          '(such as usage notes, etymology, or grammatical labels). '
+          'Maintain technical accuracy, use professional terminology, '
+          'and preserve any abbreviations or special symbols. '
+          'Output only the translated text — no explanations, no commentary.';
+    }
+  }
+
   Future<void> _performTranslation(
     DictionaryEntry entry,
     List<String> pathParts,
@@ -2258,7 +2214,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     showToast(context, '正在翻译...');
 
     try {
-      final translation = await AIService().translate(text, targetLang);
+      final systemPrompt = _getTranslationSystemPrompt(pathParts);
+      final translation = await AIService().translate(
+        text,
+        targetLang,
+        systemPrompt: systemPrompt,
+      );
       // 给AI翻译结果添加格式化标记
       final formattedTranslation = '[$translation](ai)';
 
@@ -2721,7 +2682,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
-  /// 向AI询问元素
+  /// 向AI询问元素（流式输出）
   Future<void> _askAiAboutElement(
     String elementJson,
     String path,
@@ -2735,17 +2696,18 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final compactJson = _formatCompactJson(elementJson);
 
     // 创建加载中的记录
-    final loadingRecord = AiChatRecord(
+    final record = AiChatRecord(
       id: requestId,
       word: targetWord,
       question: question,
-      answer: '', // 空表示加载中
+      answer: '',
       timestamp: DateTime.now(),
       path: path,
       elementJson: compactJson,
     );
-    _aiChatHistory.add(loadingRecord);
+    _aiChatHistory.add(record);
     _currentLoadingId = requestId;
+    _autoExpandIds.add(requestId);
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
@@ -2754,103 +2716,90 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         word: targetWord,
         question: question,
         answer: '',
-        timestamp: loadingRecord.timestamp,
+        timestamp: record.timestamp,
         path: path,
         elementJson: compactJson,
       ),
     );
 
-    // 立即刷新UI显示加载状态
+    // 立即刷新UI
     setState(() {});
 
-    // 启动后台请求
-    final requestFuture = _aiService.askAboutElement(
-      elementJson,
-      path,
-      question,
+    // 如果AI聊天面板还没有打开，立即打开（流式结果将实时显示）
+    final modalWasOpen = _modalSetState != null;
+    if (!modalWasOpen && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showAiChatHistory(expandNewest: true);
+      });
+    }
+
+    // 启动流式请求
+    final stream = _aiService.askAboutElementStream(elementJson, path, question);
+    final sub = stream.listen(
+      (chunk) {
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx == -1) return;
+        if (chunk.text != null) {
+          _aiChatHistory[idx].answer += chunk.text!;
+        }
+        if (chunk.thinking != null) {
+          _aiChatHistory[idx].thinkingContent =
+              (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      onDone: () {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _aiChatDatabaseService.updateRecord(
+            AiChatRecordModel(
+              id: requestId,
+              word: targetWord,
+              question: question,
+              answer: _aiChatHistory[idx].answer,
+              timestamp: _aiChatHistory[idx].timestamp,
+              path: path,
+              elementJson: compactJson,
+            ),
+          );
+        }
+        if (mounted) {
+          setState(() => _hasNewAiAnswer = true);
+          _modalSetState?.call(() {});
+        }
+      },
+      onError: (e) {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _aiChatHistory[idx].answer = '请求失败: $e';
+          _aiChatDatabaseService.updateRecord(
+            AiChatRecordModel(
+              id: requestId,
+              word: targetWord,
+              question: question,
+              answer: '请求失败: $e',
+              timestamp: _aiChatHistory[idx].timestamp,
+              path: path,
+              elementJson: compactJson,
+            ),
+          );
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+          showToast(context, 'AI请求失败: $e');
+        }
+      },
+      cancelOnError: true,
     );
-    _pendingAiRequests[requestId] = requestFuture;
-
-    // 显示一个简短的提示
-    showToast(context, 'AI正在思考中，您可以继续浏览...');
-
-    // 处理请求完成
-    requestFuture
-        .then((answer) {
-          _pendingAiRequests.remove(requestId);
-          // 更新记录
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
-              id: requestId,
-              word: targetWord,
-              question: question,
-              answer: answer,
-              timestamp: _aiChatHistory[index].timestamp,
-              path: path,
-              elementJson: compactJson,
-            );
-          }
-          // 更新持久化存储
-          _aiChatDatabaseService.updateRecord(
-            AiChatRecordModel(
-              id: requestId,
-              word: targetWord,
-              question: question,
-              answer: answer,
-              timestamp: _aiChatHistory[index].timestamp,
-              path: path,
-              elementJson: compactJson,
-            ),
-          );
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {
-              _hasNewAiAnswer = true;
-            });
-            _modalSetState?.call(() {});
-            // 显示完成提示
-            showToast(context, 'AI回答已生成，请查看');
-          }
-        })
-        .catchError((e) {
-          _pendingAiRequests.remove(requestId);
-          // 更新记录为错误状态
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
-              id: requestId,
-              word: targetWord,
-              question: question,
-              answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
-              path: path,
-              elementJson: compactJson,
-            );
-          }
-          // 更新持久化存储
-          _aiChatDatabaseService.updateRecord(
-            AiChatRecordModel(
-              id: requestId,
-              word: targetWord,
-              question: question,
-              answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
-              path: path,
-              elementJson: compactJson,
-            ),
-          );
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {});
-            _modalSetState?.call(() {});
-            showToast(context, 'AI请求失败: $e');
-          }
-        });
+    _pendingAiRequests[requestId] = sub;
   }
 
   /// 将JSON格式化为紧凑文本（移除换行和多余空格）
@@ -2960,9 +2909,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                       child: Row(
                         children: [
                           OutlinedButton.icon(
-                            onPressed: () {
+                            onPressed: () async {
                               Navigator.pop(context);
-                              _summarizeCurrentPage();
+                              await _summarizeCurrentPage();
+                              if (mounted) _showAiChatHistory(expandNewest: true);
                             },
                             icon: Icon(
                               Icons.auto_awesome,
@@ -3045,9 +2995,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                     _aiChatHistory[_aiChatHistory.length -
                                         1 -
                                         index];
-                                final isLoading =
-                                    record.answer.isEmpty &&
+                                final isStreaming =
                                     _pendingAiRequests.containsKey(record.id);
+                                final isLoading =
+                                    record.answer.isEmpty && isStreaming;
                                 final isError = record.answer.startsWith(
                                   '请求失败:',
                                 );
@@ -3065,6 +3016,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                     ),
                                   ),
                                   child: ExpansionTile(
+                                    key: ValueKey(record.id),
                                     leading: isLoading
                                         ? SizedBox(
                                             width: 20,
@@ -3090,7 +3042,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                             ).colorScheme.primary,
                                           ),
                                     initiallyExpanded:
-                                        index == 0 && expandNewest,
+                                        _autoExpandIds.contains(record.id) ||
+                                        (index == 0 && expandNewest),
                                     title: Text(
                                       record.question,
                                       maxLines: 2,
@@ -3154,6 +3107,76 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                 ),
                                               ),
                                             const SizedBox(height: 8),
+                                            // 显示思考过程（如果有）
+                                            if (record.thinkingContent != null &&
+                                                record.thinkingContent!.isNotEmpty)
+                                              Theme(
+                                                data: Theme.of(context).copyWith(
+                                                  dividerColor: Colors.transparent,
+                                                ),
+                                                child: ExpansionTile(
+                                                  dense: true,
+                                                  visualDensity: VisualDensity.compact,
+                                                  tilePadding: EdgeInsets.zero,
+                                                  childrenPadding: EdgeInsets.zero,
+                                                  title: Row(children: [
+                                                    Icon(
+                                                      Icons.psychology_outlined,
+                                                      size: 14,
+                                                      color: Theme.of(context).colorScheme.outline,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '思考过程',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Theme.of(context).colorScheme.outline,
+                                                      ),
+                                                    ),
+                                                    if (isStreaming && record.answer.isEmpty)
+                                                      Padding(
+                                                        padding: const EdgeInsets.only(left: 6),
+                                                        child: SizedBox(
+                                                          width: 10,
+                                                          height: 10,
+                                                          child: CircularProgressIndicator(
+                                                            strokeWidth: 1.5,
+                                                            color: Theme.of(context).colorScheme.outline,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ]),
+                                                  collapsedShape: const RoundedRectangleBorder(
+                                                    side: BorderSide.none,
+                                                  ),
+                                                  shape: const RoundedRectangleBorder(
+                                                    side: BorderSide.none,
+                                                  ),
+                                                  children: [
+                                                    Container(
+                                                      width: double.infinity,
+                                                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                                                      decoration: BoxDecoration(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .surfaceContainerHighest
+                                                            .withOpacity(0.5),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                      ),
+                                                      child: SelectableText(
+                                                        record.thinkingContent!,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Theme.of(context).colorScheme.outline,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            if (record.thinkingContent != null &&
+                                                record.thinkingContent!.isNotEmpty)
+                                              const SizedBox(height: 4),
                                             // 显示加载中、错误或回答内容
                                             if (isLoading)
                                               Row(
@@ -3193,6 +3216,31 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                               // Markdown渲染回答 - 使用延迟加载避免卡顿
                                               _LazyMarkdownBody(
                                                 data: record.answer,
+                                              ),
+                                            // 流式输出时在回答末尾显示进度指示器
+                                            if (isStreaming && record.answer.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4),
+                                                child: Row(
+                                                  children: [
+                                                    SizedBox(
+                                                      width: 12,
+                                                      height: 12,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 1.5,
+                                                        color: Theme.of(context).colorScheme.primary,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      '正在输出...',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Theme.of(context).colorScheme.outline,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             const SizedBox(height: 4),
                                             Row(
@@ -3469,7 +3517,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
-  /// 发送自由聊天消息
+  /// 发送自由聊天消息（流式输出）
   Future<void> _sendFreeChatMessage(
     String message, {
     required VoidCallback onMessageSent,
@@ -3484,8 +3532,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       context += '\n当前词典: ${currentDict.dictionaryId}';
     }
 
-    // 创建加载中的记录
-    final loadingRecord = AiChatRecord(
+    // 创建记录
+    final record = AiChatRecord(
       id: requestId,
       word: currentWord,
       question: message,
@@ -3494,8 +3542,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       path: null,
       elementJson: null,
     );
-    _aiChatHistory.add(loadingRecord);
+    _aiChatHistory.add(record);
     _currentLoadingId = requestId;
+    _autoExpandIds.add(requestId);
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
@@ -3504,7 +3553,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         word: currentWord,
         question: message,
         answer: '',
-        timestamp: loadingRecord.timestamp,
+        timestamp: record.timestamp,
         path: null,
         elementJson: null,
       ),
@@ -3515,82 +3564,74 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 准备历史对话（最近5轮）
     final history = _buildChatHistory();
 
-    // 启动后台请求
-    final requestFuture = _aiService.freeChat(
+    // 启动流式请求
+    final stream = _aiService.freeChatStream(
       message,
       history: history,
       context: context,
     );
-    _pendingAiRequests[requestId] = requestFuture;
-
-    // 处理请求完成
-    requestFuture
-        .then((answer) {
-          _pendingAiRequests.remove(requestId);
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
-              id: requestId,
-              word: currentWord,
-              question: message,
-              answer: answer,
-              timestamp: _aiChatHistory[index].timestamp,
-              path: null,
-              elementJson: null,
-            );
-          }
+    final sub = stream.listen(
+      (chunk) {
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx == -1) return;
+        if (chunk.text != null) _aiChatHistory[idx].answer += chunk.text!;
+        if (chunk.thinking != null) {
+          _aiChatHistory[idx].thinkingContent =
+              (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      onDone: () {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
               question: message,
-              answer: answer,
-              timestamp: _aiChatHistory[index].timestamp,
+              answer: _aiChatHistory[idx].answer,
+              timestamp: _aiChatHistory[idx].timestamp,
               path: null,
               elementJson: null,
             ),
           );
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {});
-            _modalSetState?.call(() {});
-          }
-        })
-        .catchError((e) {
-          _pendingAiRequests.remove(requestId);
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
-              id: requestId,
-              word: currentWord,
-              question: message,
-              answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
-              path: null,
-              elementJson: null,
-            );
-          }
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      onError: (e) {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _aiChatHistory[idx].answer = '请求失败: $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
               question: message,
               answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
+              timestamp: _aiChatHistory[idx].timestamp,
               path: null,
               elementJson: null,
             ),
           );
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {});
-            _modalSetState?.call(() {});
-          }
-        });
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      cancelOnError: true,
+    );
+    _pendingAiRequests[requestId] = sub;
   }
 
   /// 构建聊天历史（用于连续对话）
@@ -3904,7 +3945,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
-  /// 发送继续对话消息
+  /// 发送继续对话消息（流式输出）
   Future<void> _sendContinueChatMessage(
     AiChatRecord parentRecord,
     String message, {
@@ -3922,8 +3963,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       context += '\n相关词典内容: ${parentRecord.elementJson}';
     }
 
-    // 创建加载中的记录
-    final loadingRecord = AiChatRecord(
+    // 创建记录
+    final record = AiChatRecord(
       id: requestId,
       word: currentWord,
       question: message,
@@ -3932,8 +3973,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       path: parentRecord.path,
       elementJson: parentRecord.elementJson,
     );
-    _aiChatHistory.add(loadingRecord);
+    _aiChatHistory.add(record);
     _currentLoadingId = requestId;
+    _autoExpandIds.add(requestId);
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
@@ -3942,7 +3984,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         word: currentWord,
         question: message,
         answer: '',
-        timestamp: loadingRecord.timestamp,
+        timestamp: record.timestamp,
         path: parentRecord.path,
         elementJson: parentRecord.elementJson,
       ),
@@ -3956,80 +3998,74 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       {'role': 'assistant', 'content': parentRecord.answer},
     ];
 
-    // 启动后台请求
-    final requestFuture = _aiService.freeChat(
+    // 启动流式请求
+    final stream = _aiService.freeChatStream(
       message,
       history: history,
       context: context,
     );
-    _pendingAiRequests[requestId] = requestFuture;
-
-    // 处理请求完成
-    requestFuture
-        .then((answer) {
-          _pendingAiRequests.remove(requestId);
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
-              id: requestId,
-              word: currentWord,
-              question: message,
-              answer: answer,
-              timestamp: _aiChatHistory[index].timestamp,
-              path: parentRecord.path,
-              elementJson: parentRecord.elementJson,
-            );
-          }
+    final sub = stream.listen(
+      (chunk) {
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx == -1) return;
+        if (chunk.text != null) _aiChatHistory[idx].answer += chunk.text!;
+        if (chunk.thinking != null) {
+          _aiChatHistory[idx].thinkingContent =
+              (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      onDone: () {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
               question: message,
-              answer: answer,
-              timestamp: _aiChatHistory[index].timestamp,
+              answer: _aiChatHistory[idx].answer,
+              timestamp: _aiChatHistory[idx].timestamp,
               path: parentRecord.path,
               elementJson: parentRecord.elementJson,
             ),
           );
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {});
-          }
-        })
-        .catchError((e) {
-          _pendingAiRequests.remove(requestId);
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
-              id: requestId,
-              word: currentWord,
-              question: message,
-              answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
-              path: parentRecord.path,
-              elementJson: parentRecord.elementJson,
-            );
-          }
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      onError: (e) {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _aiChatHistory[idx].answer = '请求失败: $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
               question: message,
               answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
+              timestamp: _aiChatHistory[idx].timestamp,
               path: parentRecord.path,
               elementJson: parentRecord.elementJson,
             ),
           );
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {});
-          }
-        });
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      cancelOnError: true,
+    );
+    _pendingAiRequests[requestId] = sub;
   }
 
   /// 格式化时间戳
@@ -4050,7 +4086,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
-  /// 一键总结当前词典当前页的所有entry
+  /// 一键总结当前词典当前页的所有entry（流式输出）
   Future<void> _summarizeCurrentPage() async {
     final requestId = 'summary_${DateTime.now().millisecondsSinceEpoch}';
     final currentDict = _entryGroup.currentDictionaryGroup;
@@ -4075,8 +4111,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         ? entries[0].headword
         : '${entries[0].headword}等${entries.length}个词条';
 
-    // 创建加载中的记录
-    final loadingRecord = AiChatRecord(
+    // 创建记录
+    final record = AiChatRecord(
       id: requestId,
       word: targetWord,
       question: '请总结当前页的所有词典内容',
@@ -4084,8 +4120,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       timestamp: DateTime.now(),
       path: null,
     );
-    _aiChatHistory.add(loadingRecord);
+    _aiChatHistory.add(record);
     _currentLoadingId = requestId;
+    _autoExpandIds.add(requestId);
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
@@ -4094,7 +4131,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         word: targetWord,
         question: '请总结当前页的所有词典内容',
         answer: '',
-        timestamp: loadingRecord.timestamp,
+        timestamp: record.timestamp,
         path: null,
         elementJson: null,
       ),
@@ -4109,687 +4146,95 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       'entries': entries.map((e) => e.toJson()).toList(),
     });
 
-    final requestFuture = _aiService.summarizeDictionary(jsonContent);
-    _pendingAiRequests[requestId] = requestFuture;
+    // 打开AI聊天面板（如果未开）
+    final modalWasOpen = _modalSetState != null;
+    if (!modalWasOpen && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showAiChatHistory(expandNewest: true);
+      });
+    }
 
-    showToast(context, 'AI正在分析当前页内容...');
-
-    requestFuture
-        .then((summary) {
-          _pendingAiRequests.remove(requestId);
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
+    // 启动流式请求
+    final stream = _aiService.summarizeDictionaryStream(jsonContent);
+    final sub = stream.listen(
+      (chunk) {
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx == -1) return;
+        if (chunk.text != null) {
+          if (_aiChatHistory[idx].answer.isEmpty) {
+            // 第一个 token：将问题改成更友好的标题
+            _aiChatHistory[idx].answer = '';
+          }
+          _aiChatHistory[idx].answer += chunk.text!;
+        }
+        if (chunk.thinking != null) {
+          _aiChatHistory[idx].thinkingContent =
+              (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+        }
+      },
+      onDone: () {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          // 更新问题标题
+          final finalAnswer = _aiChatHistory[idx].answer;
+          _aiChatHistory[idx] = AiChatRecord(
+            id: requestId,
+            word: targetWord,
+            question: '当前页内容总结',
+            answer: finalAnswer,
+            thinkingContent: _aiChatHistory[idx].thinkingContent,
+            timestamp: _aiChatHistory[idx].timestamp,
+            path: null,
+          );
+          _aiChatDatabaseService.updateRecord(
+            AiChatRecordModel(
               id: requestId,
               word: targetWord,
               question: '当前页内容总结',
-              answer: summary,
-              timestamp: _aiChatHistory[index].timestamp,
+              answer: finalAnswer,
+              timestamp: _aiChatHistory[idx].timestamp,
               path: null,
-            );
-            // 更新持久化存储
-            _aiChatDatabaseService.updateRecord(
-              AiChatRecordModel(
-                id: requestId,
-                word: targetWord,
-                question: '当前页内容总结',
-                answer: summary,
-                timestamp: _aiChatHistory[index].timestamp,
-                path: null,
-                elementJson: null,
-              ),
-            );
-          }
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {
-              _hasNewAiAnswer = true;
-            });
-            showToast(context, 'AI回答已生成，请查看');
-          }
-        })
-        .catchError((e) {
-          _pendingAiRequests.remove(requestId);
-          final index = _aiChatHistory.indexWhere((r) => r.id == requestId);
-          if (index != -1) {
-            _aiChatHistory[index] = AiChatRecord(
+              elementJson: null,
+            ),
+          );
+        }
+        if (mounted) {
+          setState(() => _hasNewAiAnswer = true);
+          _modalSetState?.call(() {});
+        }
+      },
+      onError: (e) {
+        _pendingAiRequests.remove(requestId);
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _aiChatHistory[idx].answer = '请求失败: $e';
+          _aiChatDatabaseService.updateRecord(
+            AiChatRecordModel(
               id: requestId,
               word: targetWord,
               question: '当前页内容总结',
               answer: '请求失败: $e',
-              timestamp: _aiChatHistory[index].timestamp,
+              timestamp: _aiChatHistory[idx].timestamp,
               path: null,
-            );
-            // 更新持久化存储
-            _aiChatDatabaseService.updateRecord(
-              AiChatRecordModel(
-                id: requestId,
-                word: targetWord,
-                question: '当前页内容总结',
-                answer: '请求失败: $e',
-                timestamp: _aiChatHistory[index].timestamp,
-                path: null,
-                elementJson: null,
-              ),
-            );
-          }
-          if (_currentLoadingId == requestId) {
-            _currentLoadingId = null;
-          }
-          if (mounted) {
-            setState(() {});
-            showToast(context, 'AI总结失败: $e');
-          }
-        });
-  }
-}
-
-/// 工具栏 AI 按鈕闪烁动画小部件
-class _BlinkingIcon extends StatefulWidget {
-  final IconData icon;
-  final Color color;
-  final bool isBlinking;
-
-  const _BlinkingIcon({
-    required this.icon,
-    required this.color,
-    required this.isBlinking,
-  });
-
-  @override
-  State<_BlinkingIcon> createState() => _BlinkingIconState();
-}
-
-class _BlinkingIconState extends State<_BlinkingIcon>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 700),
-      vsync: this,
-    );
-    _animation = Tween<double>(
-      begin: 1.0,
-      end: 0.25,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-    if (widget.isBlinking) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(_BlinkingIcon oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isBlinking != oldWidget.isBlinking) {
-      if (widget.isBlinking) {
-        _controller.repeat(reverse: true);
-      } else {
-        _controller.stop();
-        _controller.value = 1.0;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!widget.isBlinking) {
-      return Icon(widget.icon, size: 24, color: widget.color);
-    }
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _animation.value,
-          child: Icon(widget.icon, size: 24, color: widget.color),
-        );
-      },
-    );
-  }
-}
-
-class _JsonEditorBottomSheet extends StatefulWidget {
-  final DictionaryEntry entry;
-  final List<String> pathParts;
-  final String initialText;
-  final int historyIndex;
-  final List<List<String>> pathHistory;
-  final List<String>? initialPath; // 新增：初始路径
-  final Function(dynamic) onSave;
-  final Function(List<String>, dynamic) onNavigate;
-
-  const _JsonEditorBottomSheet({
-    required this.entry,
-    required this.pathParts,
-    required this.initialText,
-    required this.historyIndex,
-    required this.pathHistory,
-    this.initialPath, // 新增：初始路径
-    required this.onSave,
-    required this.onNavigate,
-  });
-
-  @override
-  State<_JsonEditorBottomSheet> createState() => _JsonEditorBottomSheetState();
-}
-
-class _JsonEditorBottomSheetState extends State<_JsonEditorBottomSheet> {
-  late TextEditingController _controller;
-  final List<String> _undoStack = [];
-  final List<String> _redoStack = [];
-  int _currentEditPosition = 0;
-  bool _hasSyntaxError = false;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialText);
-    _undoStack.add(widget.initialText);
-    _controller.addListener(_trackChanges);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _trackChanges() {
-    final currentText = _controller.text;
-    if (_undoStack[_currentEditPosition] != currentText) {
-      if (_currentEditPosition < _undoStack.length - 1) {
-        _undoStack.removeRange(_currentEditPosition + 1, _undoStack.length);
-      }
-      _undoStack.add(currentText);
-      _currentEditPosition = _undoStack.length - 1;
-      _redoStack.clear();
-      _validateJson();
-    }
-  }
-
-  void _undo() {
-    if (_currentEditPosition > 0) {
-      setState(() {
-        _currentEditPosition--;
-        _controller.text = _undoStack[_currentEditPosition];
-        _redoStack.clear();
-        _validateJson();
-      });
-    }
-  }
-
-  void _redo() {
-    if (_currentEditPosition < _undoStack.length - 1) {
-      setState(() {
-        _currentEditPosition++;
-        _controller.text = _undoStack[_currentEditPosition];
-        _validateJson();
-      });
-    }
-  }
-
-  void _formatJson() {
-    try {
-      final json = jsonDecode(_controller.text);
-      final formatted = const JsonEncoder.withIndent('  ').convert(json);
-      setState(() {
-        _controller.text = formatted;
-      });
-    } catch (e) {
-      setState(() {
-        _hasSyntaxError = true;
-        _errorMessage = '格式化失败: $e';
-      });
-    }
-  }
-
-  void _validateJson() {
-    try {
-      jsonDecode(_controller.text);
-      setState(() {
-        _hasSyntaxError = false;
-        _errorMessage = null;
-      });
-    } catch (e) {
-      setState(() {
-        _hasSyntaxError = true;
-        _errorMessage = e.toString();
-      });
-    }
-  }
-
-  void _handleSave() async {
-    if (_hasSyntaxError) {
-      showToast(context, 'JSON 格式错误: $_errorMessage');
-      return;
-    }
-
-    try {
-      final newValue = jsonDecode(_controller.text);
-      await widget.onSave(newValue);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      showToast(context, '保存失败: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16,
-        right: 16,
-        top: 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _buildPathNavigator(
-                  context,
-                  widget.pathParts,
-                  (newPathParts) {
-                    Navigator.pop(context);
-                    final json = widget.entry.toJson();
-                    dynamic currentValue = json;
-                    for (final part in newPathParts) {
-                      if (currentValue is Map) {
-                        currentValue = currentValue[part];
-                      } else if (currentValue is List) {
-                        int? index = int.tryParse(part);
-                        if (index != null) currentValue = currentValue[index];
-                      }
-                    }
-                    widget.onNavigate(newPathParts, currentValue);
-                  },
-                  onHomeTap: () {
-                    // 跳转到根目录
-                    Navigator.pop(context);
-                    final json = widget.entry.toJson();
-                    widget.onNavigate([], json);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              if (widget.initialPath != null &&
-                  widget.pathParts.join('.') != widget.initialPath!.join('.'))
-                _buildToolbarIconButton(
-                  icon: Icons.first_page,
-                  onPressed: () {
-                    Navigator.pop(context);
-                    final startPath = widget.initialPath!;
-                    final json = widget.entry.toJson();
-                    dynamic currentValue = json;
-                    for (final part in startPath) {
-                      if (currentValue is Map) {
-                        currentValue = currentValue[part];
-                      } else if (currentValue is List) {
-                        int? index = int.tryParse(part);
-                        if (index != null) currentValue = currentValue[index];
-                      }
-                    }
-                    widget.onNavigate(startPath, currentValue);
-                  },
-                  tooltip: '返回初始路径',
-                  color: colorScheme.primary,
-                ),
-              _buildToolbarIconButton(
-                icon: Icons.undo,
-                onPressed: _currentEditPosition > 0 ? _undo : null,
-                tooltip: '撤销',
-              ),
-              _buildToolbarIconButton(
-                icon: Icons.redo,
-                onPressed: _currentEditPosition < _undoStack.length - 1
-                    ? _redo
-                    : null,
-                tooltip: '重做',
-              ),
-              _buildToolbarIconButton(
-                icon: Icons.format_align_left,
-                onPressed: _formatJson,
-                tooltip: '格式化',
-              ),
-              _buildToolbarIconButton(
-                icon: _hasSyntaxError
-                    ? Icons.error
-                    : Icons.check_circle_outline,
-                onPressed: _validateJson,
-                tooltip: _hasSyntaxError ? '语法错误' : '语法检测',
-                color: _hasSyntaxError ? colorScheme.error : null,
-              ),
-            ],
-          ),
-          if (_hasSyntaxError && _errorMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '错误: $_errorMessage',
-                style: TextStyle(color: colorScheme.error, fontSize: 12),
-              ),
-            ),
-          const SizedBox(height: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 300),
-            child: TextField(
-              controller: _controller,
-              maxLines: 10,
-              minLines: 3,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                hintText: '输入 JSON 内容',
-                errorText: _hasSyntaxError ? ' ' : null,
-              ),
-              style: const TextStyle(fontFamily: 'Consolas'),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('取消'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _hasSyntaxError ? null : _handleSave,
-                child: const Text('保存'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildToolbarButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onPressed,
-    Color? color,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(
-        icon,
-        size: 16,
-        color:
-            color ??
-            (onPressed != null ? colorScheme.primary : colorScheme.outline),
-      ),
-      label: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color:
-              color ??
-              (onPressed != null ? colorScheme.primary : colorScheme.outline),
-        ),
-      ),
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        backgroundColor: colorScheme.surfaceContainerHighest,
-        foregroundColor: colorScheme.onSurface,
-      ),
-    );
-  }
-
-  Widget _buildToolbarIconButton({
-    required IconData icon,
-    required VoidCallback? onPressed,
-    required String tooltip,
-    Color? color,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return IconButton(
-      onPressed: onPressed,
-      icon: Icon(
-        icon,
-        color:
-            color ??
-            (onPressed != null ? colorScheme.primary : colorScheme.outline),
-        size: 20,
-      ),
-      tooltip: tooltip,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-    );
-  }
-
-  Widget _buildPathNavigator(
-    BuildContext context,
-    List<String> pathParts,
-    Function(List<String>) onPathSelected, {
-    VoidCallback? onHomeTap,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        if (onHomeTap != null)
-          InkWell(
-            onTap: onHomeTap,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Icon(Icons.home, size: 18, color: colorScheme.primary),
-            ),
-          ),
-        ...pathParts.asMap().entries.expand((entry) {
-          final index = entry.key;
-          final part = entry.value;
-          final currentPath = pathParts.sublist(0, index + 1);
-
-          final widgets = <Widget>[];
-
-          if (index > 0) {
-            widgets.add(
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  '>',
-                  style: TextStyle(
-                    color: colorScheme.outline,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            );
-          }
-
-          final isLast = index == pathParts.length - 1;
-          widgets.add(
-            InkWell(
-              onTap: isLast ? null : () => onPathSelected(currentPath),
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  part,
-                  style: TextStyle(
-                    color: isLast
-                        ? colorScheme.primary
-                        : colorScheme.primary.withValues(alpha: 0.8),
-                    fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ),
+              elementJson: null,
             ),
           );
-
-          return widgets;
-        }),
-      ],
+        }
+        if (mounted) {
+          setState(() {});
+          _modalSetState?.call(() {});
+          showToast(context, 'AI总结失败: $e');
+        }
+      },
+      cancelOnError: true,
     );
-  }
-}
-
-class _LazyMarkdownBody extends StatefulWidget {
-  final String data;
-
-  const _LazyMarkdownBody({required this.data});
-
-  @override
-  State<_LazyMarkdownBody> createState() => _LazyMarkdownBodyState();
-}
-
-class _LazyMarkdownBodyState extends State<_LazyMarkdownBody> {
-  bool _isReady = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // 延迟 300ms 渲染 Markdown，避免在 ExpansionTile 展开动画期间带来卡顿
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        setState(() {
-          _isReady = true;
-        });
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_isReady) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-
-    return RepaintBoundary(
-      child: MarkdownBody(
-        data: widget.data,
-        selectable: true,
-        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-          p: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6),
-          h1: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            height: 1.4,
-          ),
-          h2: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            height: 1.4,
-          ),
-          h3: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-            height: 1.4,
-          ),
-          h1Padding: const EdgeInsets.only(top: 16, bottom: 4),
-          h2Padding: const EdgeInsets.only(top: 12, bottom: 4),
-          h3Padding: const EdgeInsets.only(top: 8, bottom: 4),
-          pPadding: const EdgeInsets.symmetric(vertical: 2),
-          code: TextStyle(
-            fontFamily: 'Consolas',
-            fontSize:
-                (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14) * 0.9,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest,
-          ),
-          codeblockDecoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.outlineVariant.withOpacity(0.5),
-            ),
-          ),
-          codeblockPadding: const EdgeInsets.all(12),
-          blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontStyle: FontStyle.italic,
-            height: 1.6,
-          ),
-          blockquoteDecoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-                width: 4,
-              ),
-            ),
-            color: Theme.of(
-              context,
-            ).colorScheme.primaryContainer.withOpacity(0.15),
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(4),
-              bottomRight: Radius.circular(4),
-            ),
-          ),
-          blockquotePadding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          listBullet: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(height: 1.6),
-          listIndent: 20,
-          strong: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            height: 1.6,
-          ),
-          em: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontStyle: FontStyle.italic,
-            height: 1.6,
-          ),
-          horizontalRuleDecoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                width: 1,
-              ),
-            ),
-          ),
-          tableHead: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-          tableBody: Theme.of(context).textTheme.bodyMedium,
-          tableBorder: TableBorder.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 1,
-          ),
-          tableColumnWidth: const FlexColumnWidth(),
-          tableCellsPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 6,
-          ),
-          tableHeadAlign: TextAlign.left,
-        ),
-      ),
-    );
+    _pendingAiRequests[requestId] = sub;
   }
 }

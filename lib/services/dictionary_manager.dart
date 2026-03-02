@@ -95,6 +95,13 @@ class DictionaryManager {
     _metadataCache.clear();
     _enabledDictionariesMetadataCache = null;
     await closeAllDatabases();
+
+    // 目录设置后自动启用目录中所有已有词典
+    final available = await getAvailableDictionaries();
+    if (available.isNotEmpty) {
+      await setEnabledDictionaries(available);
+      Logger.i('自动启用词典: $available', tag: 'DictionaryManager');
+    }
   }
 
   Future<String> get onlineSubscriptionUrl async {

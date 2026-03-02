@@ -688,7 +688,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 children: parseFormattedText(
                   groupName,
                   TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: colorScheme.primary,
                   ),
@@ -760,7 +760,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 Icon(Icons.format_quote, size: 16, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'phrase',
+                  'Phrase',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,

@@ -70,11 +70,12 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
       "audio_file": "fog_uk.opus",
     },
   ], //可选，发音部分
-  "datas": {
+  "phrases": ["fog in", "fog of"], // 可选，短语部分
+  "data": {
     "key1": {},
     "key2": {},
-  }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。datas可以放在词典的任何地方
-  "phrases": ["fog in", "fog of"], // 可选，短语部分
+  }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。data可以放在词典的任何地方
+  customKey:{}//除了规范里给定的键值外，还可以添加自定义键值，这会被渲染为board元素。board标题为customKey，customKey对应的值需要是一个map，map里的键值对会被渲染为board的内容。
 
   "sense": [
     {
@@ -83,12 +84,13 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
         "pos": "n",
         "pattern": ["in a ~", "mental ~"],
         "grammar": ["U", "S"],
+        "complex":"雜",
         "region": "global",
         "register": "informal",
         "usage": ["figurative"],
         "tone": "neutral",
         "topic": ["psychology"],
-        "unclassified": "test",
+        "others": "other label",//这里可以使用自定义的键名
       }, //里面统统是可选
       "definition": {
         "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
@@ -139,9 +141,8 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
   ], //释义组
 }
 ```
-
-- 除了上面给定的键值外，**还可以添加自定义键值对** `customKey:customValue`，这会被渲染为一个可折叠的*board*，board标题为customKey，customValue需要是一个map。map里的键值对会被渲染为board的内容,map里还可以继续嵌套*board*。强烈建议map里需要显示的文本键名为语言代码，比如`"zh":"这是一句话"`。
-
+- data和board内部还可以继续嵌套data或board
+- 强烈建议data和board里需要显示的文本键名为语言代码，比如`"zh":"这是一句话"`。
 - pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表
 
 ## 文本修饰语法

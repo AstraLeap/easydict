@@ -89,6 +89,12 @@ class FontLoaderService {
     return _cachedDictionaryContentScale;
   }
 
+  /// 立即同步更新缩放缓存并广播（用于快捷键即时调整，调用方负责持久化）
+  void setContentScaleImmediate(double scale) {
+    _cachedDictionaryContentScale = scale;
+    dictionaryContentScaleNotifier.value = scale;
+  }
+
   /// 刷新软件布局缩放缓存
   Future<void> reloadDictionaryContentScale() async {
     await _loadDictionaryContentScale();
@@ -220,7 +226,18 @@ class FontLoaderService {
       );
     }
 
-    return null;
+    // 最终回退：使用内置 bundled 字体（SourceSerif4 / SourceSans3）
+    return _getBundledFontInfo(isSerif: isSerif, isItalic: isItalic);
+  }
+
+  /// 返回内置 bundled 字体信息（SourceSerif4 衬线 / SourceSans3 非衬线）
+  FontInfo _getBundledFontInfo({required bool isSerif, required bool isItalic}) {
+    return FontInfo(
+      fontFamily: isSerif ? 'SourceSerif4' : 'SourceSans3',
+      fontWeight: FontWeight.normal,
+      fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
+      fontPath: '',
+    );
   }
 
   String? _findFallbackFontType(String language, {required bool isSerif}) {

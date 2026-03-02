@@ -29,6 +29,7 @@ import '../core/utils/language_utils.dart';
 import 'global_scale_wrapper.dart';
 import 'hidden_languages_scope.dart';
 import 'path_scope.dart';
+import '../core/utils/dict_typography.dart';
 
 class FormattedTextResult {
   final List<InlineSpan> spans;
@@ -280,13 +281,13 @@ String _convertPathToString(List<String> path) {
   return path.join('.');
 }
 
-void _handlePathTap(
-  List<String> path,
-  String label,
-  void Function(String, String) callback,
-) {
-  final pathStr = _convertPathToString(path);
-  callback(pathStr, label);
+/// 判断字符串是否为已知语言代码（非路径组件）
+bool _isKnownLanguageCode(String key) {
+  const known = {'en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar'};
+  return known.contains(key) ||
+      key.startsWith('zh_') ||
+      key.startsWith('ja_') ||
+      key.startsWith('ko_');
 }
 
 String? _determineEffectiveLanguage({
@@ -298,7 +299,8 @@ String? _determineEffectiveLanguage({
     return language;
   } else if (path != null && path.isNotEmpty) {
     final firstKey = path.first;
-    if (firstKey.isNotEmpty) {
+    // 仅当 path.first 是真正的语言代码时才用它（路径通常以 'entry'、'sense' 等开头）
+    if (_isKnownLanguageCode(firstKey)) {
       return firstKey;
     } else {
       return sourceLanguage;
@@ -323,7 +325,14 @@ FormattedTextResult parseFormattedText(
   Map<String, Map<String, double>>? fontScales,
   bool isSerif = false,
   bool isBold = false,
+  /// 可选：通过元素类型直接指定排版类别，自动覆盖 [isSerif]。
+  DictElementType? elementType,
+  /// 可选：覆盖带 recognizer 的 TextSpan 的鼠标样式（不影响链接跳转 span）。
+  MouseCursor? mouseCursor,
 }) {
+  // elementType 优先覆盖 isSerif
+  final effectiveIsSerif =
+      elementType != null ? DictTypography.isSerif(elementType) : isSerif;
   // 如果被隐藏，返回空的 spans
   if (hidden) {
     return FormattedTextResult([], [], hidden: true);
@@ -342,12 +351,12 @@ FormattedTextResult parseFormattedText(
     final fontService = FontLoaderService();
     final fontInfo = fontService.getFontInfo(
       effectiveLanguage,
-      isSerif: isSerif,
+      isSerif: effectiveIsSerif,
       isBold: isBold,
     );
 
     final fontScale =
-        fontScales?[effectiveLanguage]?[isSerif ? 'serif' : 'sans'] ?? 1.0;
+        fontScales?[effectiveLanguage]?[effectiveIsSerif ? 'serif' : 'sans'] ?? 1.0;
 
     // 只有当 baseStyle 没有指定 fontFamily 时，才应用自定义字体
     if (fontInfo != null && baseStyle.fontFamily == null) {
@@ -381,6 +390,7 @@ FormattedTextResult parseFormattedText(
           text: normalText,
           style: effectiveBaseStyle,
           recognizer: recognizer,
+          mouseCursor: mouseCursor,
         ),
       );
       plainTexts.add(normalText);
@@ -546,14 +556,19 @@ FormattedTextResult parseFormattedText(
       );
     } else {
       if (aiTextMark && context != null) {
+        // AI 生成内容：不修改文字颜色/字体，用主题色 primaryContainer 背景与普通文本区分
+        final bgColor = Theme.of(context).colorScheme.primaryContainer;
         style = style.copyWith(
-          backgroundColor: Theme.of(
-            context,
-          ).colorScheme.primary.withValues(alpha: 0.15),
+          backgroundColor: bgColor.withValues(alpha: 0.45),
         );
       }
       spans.add(
-        TextSpan(text: formattedText, style: style, recognizer: recognizer),
+        TextSpan(
+          text: formattedText,
+          style: style,
+          recognizer: recognizer,
+          mouseCursor: mouseCursor,
+        ),
       );
     }
     plainTexts.add(formattedText);
@@ -567,6 +582,7 @@ FormattedTextResult parseFormattedText(
         text: remainingText,
         style: effectiveBaseStyle,
         recognizer: recognizer,
+        mouseCursor: mouseCursor,
       ),
     );
     plainTexts.add(remainingText);
@@ -765,6 +781,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
   // 懒加载相关
   bool _isVisible = false;
   bool _hasBeenVisible = false;
+
+  // 缩放指示器相关（桌面端 Ctrl+滚轮缩放）
+  bool _showScaleIndicator = false;
+  Timer? _scaleIndicatorTimer;
+  OverlayEntry? _scaleOverlayEntry;
+  // 局部临时缩放（仅影响当前 ComponentRenderer，不进入全局状态）
+  double _tempContentScale = 1.0;
 
   @override
   void initState() {
@@ -1109,6 +1132,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     BuildContext context,
   ) async {
     Logger.d('双击查词: $word', tag: 'DoubleTapWord');
+    // 若双击的词与当前词条相同，不执行查词
+    if (word.toLowerCase() == (_localEntry.headword).toLowerCase()) return;
 
     // 获取当前语言的默认搜索选项
     final advancedSettingsService = AdvancedSearchSettingsService();
@@ -1229,14 +1254,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final spans = <InlineSpan>[];
     int currentTextOffset = 0;
 
-    final usageFontScale = fontScales?[sourceLanguage ?? 'en']?['sans'] ?? 1.0;
-    final usageFontSize = 12 * usageFontScale;
-
-    // 获取 usage 的自定义字体 (使用 sans)
-    final fontService = FontLoaderService();
-    final usageFontInfo = sourceLanguage != null
-        ? fontService.getFontInfo(sourceLanguage, isSerif: false)
-        : null;
+    final usageStyle = DictTypography.getScaledStyle(
+      DictElementType.exampleUsage,
+      language: sourceLanguage,
+      fontScales: fontScales ?? {},
+      color: colorScheme.onSecondaryContainer,
+    );
 
     if (usage.isNotEmpty) {
       final usagePath = [...basePath, 'usage'];
@@ -1262,17 +1285,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 usage,
-                style: TextStyle(
-                  fontSize: usageFontSize,
-                  color: colorScheme.onSecondaryContainer,
-                  height: 1.4,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: usageFontInfo?.fontFamily,
-                ),
+                style: usageStyle,
               ),
             ),
           ),
@@ -1307,39 +1324,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 使用 notifier 的当前值，这样当状态变化时会重建
       final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
-      // 确定有效语言并应用字体倍率
-      final effectiveLanguageForExample = _determineEffectiveLanguage(
-        language: key.isEmpty ? null : key,
-        path: path,
-        sourceLanguage: _sourceLanguage,
-      );
-      final exampleFontScale =
-          fontScales?[effectiveLanguageForExample]?['sans'] ?? 1.0;
-      final exampleFontSize = 14 * exampleFontScale;
+      // 判断是否为 CJK（日小或汉字）
+      final isCJK =
+          key == 'ja' ||
+          key == 'zh' ||
+          key.startsWith('zh_') ||
+          key.startsWith('ja_');
 
-      var exampleTextStyle = TextStyle(
-        fontSize: exampleFontSize,
+      // 使用 DictTypography 获取 example 基础样式（字体族和缩放由 _parseFormattedText 处理）
+      final exampleTextStyle = DictTypography.getBaseStyle(
+        DictElementType.example,
         color: colorScheme.onSurface.withValues(alpha: 0.85),
-        height: 1.5,
-        fontStyle:
-            key == 'ja' ||
-                key == 'zh' ||
-                key.startsWith('zh_') ||
-                key.startsWith('ja_')
-            ? FontStyle.normal
-            : FontStyle.italic,
+        // CJK 不使用斜体，非-CJK 使用斜体
+        fontStyleOverride: isCJK ? FontStyle.normal : FontStyle.italic,
       );
-
-      // 获取 example 的自定义字体 (使用 sans)
-      final fontService = FontLoaderService();
-      final fontInfo = effectiveLanguageForExample != null
-          ? fontService.getFontInfo(effectiveLanguageForExample, isSerif: false)
-          : null;
-      if (fontInfo != null) {
-        exampleTextStyle = exampleTextStyle.copyWith(
-          fontFamily: fontInfo.fontFamily,
-        );
-      }
 
       // 创建手势识别器以支持点击和右键菜单
       final tapRecognizer = TapGestureRecognizer()
@@ -1416,21 +1414,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
         doubleTapRecognizer: null,
       );
 
-      // 判断是否为日语或汉语（key 为 'ja' 或 'zh' 或包含这些标识）
-      final isCJK =
-          key == 'ja' ||
-          key == 'zh' ||
-          key.startsWith('zh_') ||
-          key.startsWith('ja_');
-
       final result = _parseFormattedText(
         text,
         exampleTextStyle,
         context: context,
         path: path,
+        language: key.isEmpty ? null : key,
         label: 'Example Text ($key)',
         recognizer: recognizer,
         hidden: hidden,
+        elementType: DictElementType.example,
+        mouseCursor: SystemMouseCursors.text,
       );
 
       // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
@@ -1532,6 +1526,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     String? language,
     bool isSerif = false,
     bool isBold = false,
+    DictElementType? elementType,
+    MouseCursor? mouseCursor,
   }) {
     return parseFormattedText(
       text,
@@ -1548,6 +1544,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontScales: _fontScales,
       isSerif: isSerif,
       isBold: isBold,
+      elementType: elementType,
+      mouseCursor: mouseCursor,
     );
   }
 
@@ -1610,30 +1608,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
         // 如果点击的是源语言
         if (currentSourceLang != null && lastKey == currentSourceLang) {
           if (parentValue is Map) {
-            bool hasTranslation = false;
-            // 检查是否有任何目标语言翻译
-            if (_targetLanguages.isNotEmpty) {
-              for (final targetLang in _targetLanguages) {
-                if (targetLang == currentSourceLang) continue; // 剔除源语言
-
-                if (parentValue.containsKey(targetLang)) {
-                  hasTranslation = true;
-                  break;
-                }
-              }
-            } else {
-              // 如果没有加载到目标语言信息，尝试推断
-              for (final key in parentValue.keys) {
-                if (key != currentSourceLang &&
-                    LanguageUtils.getLanguageDisplayName(key) !=
-                        key.toUpperCase()) {
-                  // 这是一个语言代码，且不是源语言
-                  hasTranslation = true;
-                  break;
-                }
-              }
-            }
-
             // 无论是否有翻译，都通知父组件
             // 如果有翻译，父组件会切换显示状态
             // 如果没有翻译，父组件会触发翻译
@@ -2199,6 +2173,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
               decoration: BoxDecoration(
                 color: colorScheme.surface,
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.75),
+                  width: 1.5,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.15),
@@ -2251,6 +2229,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         color: Colors.transparent,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
+                          mouseCursor: SystemMouseCursors.click,
                           onTap: () {
                             _removePhraseOverlay();
                             Navigator.push(
@@ -2272,7 +2251,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Icon(
-                              Icons.open_in_new,
+                              Icons.open_in_full,
                               size: iconSize,
                               color: colorScheme.primary,
                             ),
@@ -2295,6 +2274,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   @override
   void dispose() {
+    // _tempContentScale 是纯本地状态，无需还原全局缩放
+    _scaleIndicatorTimer?.cancel();
+    _scaleOverlayEntry?.remove();
+    _scaleOverlayEntry = null;
     _longPressTimer?.cancel();
     _scrollSubscription?.cancel();
     _translationInsertSubscription?.cancel();
@@ -2375,6 +2358,135 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return sections;
   }
 
+  // ── 桌面端 Ctrl/Cmd + 滚轮 缩放 ──────────────────────────────────────────
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final isCtrl = HardwareKeyboard.instance.isControlPressed ||
+        (Platform.isMacOS && HardwareKeyboard.instance.isMetaPressed);
+    if (!isCtrl) return;
+    // 声明消费此事件，阻止 SingleChildScrollView 滚动
+    GestureBinding.instance.pointerSignalResolver.register(
+      event,
+      (PointerSignalEvent e) {
+        if (e is PointerScrollEvent) _handleCtrlScroll(e.scrollDelta.dy);
+      },
+    );
+  }
+
+  void _handleCtrlScroll(double deltaY) {
+    const step = 0.05;
+    final newScale = (_tempContentScale - deltaY.sign * step).clamp(0.5, 4.0);
+    final rounded = (newScale * 20).round() / 20.0;
+    if ((rounded - _tempContentScale).abs() < 0.001) return;
+    _applyContentScale(rounded);
+  }
+
+  void _applyContentScale(double scale) {
+    if (!mounted) return;
+    setState(() {
+      _tempContentScale = scale;
+      _showScaleIndicator = true;
+    });
+    _updateScaleOverlay();
+    _scaleIndicatorTimer?.cancel();
+    _scaleIndicatorTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _showScaleIndicator = false);
+        _scaleOverlayEntry?.markNeedsBuild();
+      }
+    });
+  }
+
+  void _updateScaleOverlay() {
+    if (!mounted) return;
+    if (_scaleOverlayEntry == null) {
+      _scaleOverlayEntry = OverlayEntry(builder: _buildScaleOverlayContent);
+      Overlay.of(context).insert(_scaleOverlayEntry!);
+    } else {
+      _scaleOverlayEntry!.markNeedsBuild();
+    }
+  }
+
+  /// 缩放指示器固定显示在视口右上角（通过 Overlay 实现）
+  Widget _buildScaleOverlayContent(BuildContext overlayCtx) {
+    if (!_showScaleIndicator) return const SizedBox.shrink();
+    final colorScheme = Theme.of(overlayCtx).colorScheme;
+    final topPadding = MediaQuery.paddingOf(overlayCtx).top;
+    final percent = (_tempContentScale * 100).round();
+    final isDefault = (_tempContentScale - 1.0).abs() < 0.001;
+    return Positioned(
+      right: 16,
+      top: topPadding + 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.shadow.withValues(alpha: 0.12),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.zoom_in,
+                size: 15,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$percent%',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              if (!isDefault) ...[  
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _resetContentScale,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '重置',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _resetContentScale() => _applyContentScale(1.0);
+
+  // ────────────────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final entry = _localEntry;
@@ -2382,7 +2494,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final sections = _getSections();
 
     // 使用 VisibilityDetector 实现懒加载
-    return VisibilityDetector(
+    final visibilityWidget = VisibilityDetector(
       key: ValueKey('component_renderer_${entry.id}'),
       onVisibilityChanged: (visibilityInfo) {
         final visibleFraction = visibilityInfo.visibleFraction;
@@ -2410,6 +2522,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       child: HiddenLanguagesScope(
         notifier: _hiddenLanguagesNotifier,
         child: DictionaryInteractionScope(
+
           onElementTap: widget.onElementTap,
           onElementSecondaryTap: _handleElementSecondaryTap,
           child: PathScope(
@@ -2438,7 +2551,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   if (entry.frequency.isNotEmpty ||
                       entry.pronunciations.isNotEmpty ||
                       entry.certifications.isNotEmpty) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 8,
@@ -2474,7 +2587,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
           ),
         ),
       ),
-    ); // 注意这里：闭合 VisibilityDetector 和 HiddenLanguagesScope 并以分号结束
+    );
+
+    // 桌面端：包裹 Listener 以支持 Ctrl/Cmd+滚轮缩放 + 叠加缩放指示器
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    if (!isDesktop) return visibilityWidget;
+    return Listener(
+      onPointerSignal: _onPointerSignal,
+      // 始终保持 ScaleLayoutWrapper 在树中，避免 scale 在 1.0/非1.0 间切换时
+      // 因子节点类型变化导致子树（包括 _LazyImageLoader）被销毁重建
+      child: ScaleLayoutWrapper(
+        scale: _tempContentScale,
+        child: visibilityWidget,
+      ),
+    );
   }
 
   Widget _buildWord(BuildContext context) {
@@ -2486,7 +2613,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ? (entry.sense[0]['pos'] as String? ?? '')
         : '';
     final isPhrase = entry.entryType == 'phrase';
-    final headwordFontSize = isPhrase ? 20.0 : 32.0;
+    final headwordElementType =
+        isPhrase ? DictElementType.headwordPhrase : DictElementType.headword;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2509,14 +2637,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         text: TextSpan(
                           children: _parseFormattedText(
                             word,
-                            TextStyle(
-                              fontSize: headwordFontSize,
-                              fontWeight: FontWeight.bold,
+                            DictTypography.getBaseStyle(
+                              headwordElementType,
                               color: colorScheme.onSurface,
-                              height: 1.0,
                             ),
                             context: context,
-                            isSerif: true,
+                            elementType: headwordElementType,
                             isBold: true,
                           ).spans,
                         ),
@@ -2577,11 +2703,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
             ),
             child: Text(
               level,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+              style: DictTypography.getScaledStyle(
+                DictElementType.frequencyLevel,
+                language: _sourceLanguage,
+                fontScales: _fontScales,
                 color: colorScheme.onSecondaryContainer,
-                letterSpacing: 0.5,
               ),
             ),
           ),
@@ -2745,12 +2871,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 text: TextSpan(
                   children: _parseFormattedText(
                     note,
-                    TextStyle(
-                      fontSize: 13,
+                    DictTypography.getBaseStyle(
+                      DictElementType.note,
                       color: colorScheme.onSurfaceVariant,
-                      height: 1.5,
                     ),
                     context: context,
+                    elementType: DictElementType.note,
                   ).spans,
                 ),
               ),
@@ -2774,12 +2900,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
         text: TextSpan(
           children: _parseFormattedText(
             page[0].toUpperCase() + page.substring(1),
-            TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+            DictTypography.getBaseStyle(
+              DictElementType.pageDisplay,
               color: colorScheme.onPrimaryContainer,
             ),
             context: context,
+            elementType: DictElementType.pageDisplay,
           ).spans,
         ),
       ),
@@ -2820,11 +2946,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   text: TextSpan(
                     children: _parseFormattedText(
                       section,
-                      TextStyle(
-                        fontSize: 12,
+                      DictTypography.getBaseStyle(
+                        DictElementType.sectionNav,
                         color: colorScheme.onSecondaryContainer,
                       ),
                       context: context,
+                      elementType: DictElementType.sectionNav,
                     ).spans,
                   ),
                 ),
@@ -3011,13 +3138,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
             text: TextSpan(
               children: _parseFormattedText(
                 cert,
-                TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
+                DictTypography.getBaseStyle(
+                  DictElementType.certification,
                   color: colorScheme.tertiary,
-                  letterSpacing: 0.3,
                 ),
                 context: context,
+                elementType: DictElementType.certification,
               ).spans,
             ),
           ),
@@ -3026,24 +3152,29 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }).toList();
   }
 
-  Widget _renderIndex(BuildContext context, String indexStr) {
+  Widget _renderIndex(
+    BuildContext context,
+    String indexStr, {
+    double baseFontSize = 14,
+    double topPadding = 4,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return _buildTappableWidget(
       context: context,
       pathData: _PathData(PathScope.of(context), 'Index'),
       child: Padding(
-        padding: const EdgeInsets.only(top: 4),
+        padding: EdgeInsets.only(top: topPadding),
         child: RichText(
           text: TextSpan(
             children: _parseFormattedText(
               indexStr,
-              TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+              DictTypography.getBaseStyle(
+                DictElementType.senseIndex,
                 color: colorScheme.primary,
-              ),
+              ).copyWith(fontSize: baseFontSize),
               context: context,
+              elementType: DictElementType.senseIndex,
             ).spans,
           ),
         ),
@@ -3063,13 +3194,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
         text: TextSpan(
           children: _parseFormattedText(
             pos,
-            TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+            DictTypography.getBaseStyle(
+              DictElementType.pos,
               color: colorScheme.primary,
-              letterSpacing: 0.5,
             ),
             context: context,
+            elementType: DictElementType.pos,
           ).spans,
         ),
       ),
@@ -3099,15 +3229,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final text = RichText(
+      strutStyle: const StrutStyle(
+        forceStrutHeight: true,
+        height: 1.2,
+        leading: 0,
+      ),
       text: TextSpan(
         children: _parseFormattedText(
           '$region ',
-          TextStyle(
-            fontSize: 11,
+          DictTypography.getBaseStyle(
+            DictElementType.pronunciationRegion,
             color: colorScheme.outline,
-            fontWeight: FontWeight.w500,
           ),
           context: context,
+          elementType: DictElementType.pronunciationRegion,
         ).spans,
       ),
     );
@@ -3129,17 +3264,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final text = RichText(
+      strutStyle: const StrutStyle(
+        forceStrutHeight: true,
+        height: 1.2,
+        leading: 0,
+      ),
       text: TextSpan(
         children: _parseFormattedText(
           phonetic,
-          TextStyle(
-            fontSize: 13,
-            fontFamily: 'Monospace',
-            color: hasAudio
-                ? colorScheme.primary
-                : colorScheme.onSurfaceVariant,
-          ),
+          // 音标使用等宽字体；简单 copyWith 保留用户可修改的缩放比例
+          DictTypography.getBaseStyle(
+            DictElementType.phonetic,
+            color: hasAudio ? colorScheme.primary : colorScheme.onSurfaceVariant,
+          ).copyWith(fontFamily: 'Monospace'),
           context: context,
+          elementType: DictElementType.phonetic,
         ).spans,
       ),
     );
@@ -3179,12 +3318,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   context: context,
                   pathData: _PathData(PathScope.of(context), 'Part of Speech'),
                   child: Container(
-                    margin: const EdgeInsets.only(right: 8, top: 4),
+                    margin: const EdgeInsets.only(right: 8),
                     child: Text(
                       pos.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                      style: DictTypography.getScaledStyle(
+                        DictElementType.pos,
+                        language: _sourceLanguage,
+                        fontScales: _fontScales,
                         color: colorScheme.primary,
                       ),
                     ),
@@ -3233,36 +3373,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
           // 使用 notifier 的当前值，这样当状态变化时会重建
           final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
-          // 确定有效语言并应用字体倍率
-          final defKey = definition.key;
-          final defLang = defKey.startsWith('definition.')
-              ? defKey.substring('definition.'.length)
-              : defKey;
-          final effectiveLanguageForDef = _determineEffectiveLanguage(
-            language: defLang.isEmpty ? null : defLang,
-            path: path,
-            sourceLanguage: _sourceLanguage,
-          );
-          final defFontScale =
-              fontScales?[effectiveLanguageForDef]?['sans'] ?? 1.0;
-          final defFontSize = 15 * defFontScale;
-
-          var definitionTextStyle = TextStyle(
-            fontSize: defFontSize,
+          // 使用 DictTypography 获取 definition 基础样式（字体族和缩放由 _parseFormattedText 处理）
+          final definitionTextStyle = DictTypography.getBaseStyle(
+            DictElementType.definition,
             color: colorScheme.onSurface,
-            height: 1.6,
           );
-
-          // 获取 definition 的自定义字体 (使用 sans)
-          final fontService = FontLoaderService();
-          final fontInfo = effectiveLanguageForDef != null
-              ? fontService.getFontInfo(effectiveLanguageForDef, isSerif: false)
-              : null;
-          if (fontInfo != null) {
-            definitionTextStyle = definitionTextStyle.copyWith(
-              fontFamily: fontInfo.fontFamily,
-            );
-          }
 
           // 创建手势识别器以支持点击和右键菜单
           final tapRecognizer = TapGestureRecognizer()
@@ -3336,14 +3451,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
             doubleTapRecognizer: null,
           );
 
+          // definition.key 格式为 'definition.en'，需剥掉前缀取出真实语言代码
+          final definitionLangKey = definition.key.contains('.')
+              ? definition.key.split('.').last
+              : definition.key;
           final result = _parseFormattedText(
             definition.value,
             definitionTextStyle,
             context: context,
             path: path,
+            language: definitionLangKey.isEmpty ? null : definitionLangKey,
             label: 'Definition (${definition.key})',
             recognizer: recognizer,
             hidden: hidden,
+            elementType: DictElementType.definition,
+            mouseCursor: SystemMouseCursors.text,
           );
 
           // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
@@ -3369,12 +3491,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final order = [
       'pattern',
       'grammar',
+      'complex',
       'register',
       'region',
       'usage',
       'tone',
       'topic',
-      'unclassified',
     ];
 
     for (final key in order) {
@@ -3420,6 +3542,35 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
+    // 渲染 order 中未包含的额外 label key（pos 除外）
+    for (final key in label.keys) {
+      if (key == 'pos') continue;
+      if (order.contains(key)) continue;
+      final value = label[key];
+      if (value == null) continue;
+      const hasBackground = true;
+      if (value is List<dynamic>) {
+        for (int i = 0; i < value.length; i++) {
+          final item = value[i];
+          final itemValue = _capitalizeFirst(item is String ? item : '$item');
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: _buildLabelWidget(context, itemValue, key, hasBackground, index: i),
+            ),
+          );
+        }
+      } else {
+        final displayValue = _capitalizeFirst(value is String ? value : '$value');
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _buildLabelWidget(context, displayValue, key, hasBackground),
+          ),
+        );
+      }
+    }
+
     return spans;
   }
 
@@ -3436,44 +3587,42 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     TextStyle textStyle;
     if (!hasBackground) {
-      textStyle = TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
+      // 无背景的语法模式标签（label.pattern）
+      textStyle = DictTypography.getBaseStyle(
+        DictElementType.labelPattern,
         color: colorScheme.primary,
       );
     } else {
-      final onSurface = colorScheme.onSurface;
-      textStyle = TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-        color: onSurface,
-        height: 1.2,
+      // 带背景的语法/地区/用法标签
+      textStyle = DictTypography.getBaseStyle(
+        DictElementType.label,
+        color: colorScheme.onSurface,
       );
     }
 
-    final result = _parseFormattedText(text, textStyle, context: context);
+    final elementType = hasBackground ? DictElementType.label : DictElementType.labelPattern;
+    final result = _parseFormattedText(text, textStyle, context: context, elementType: elementType);
     final richText = RichText(text: TextSpan(children: result.spans));
 
     Widget child;
     if (!hasBackground) {
       child = Container(
-        margin: const EdgeInsets.only(right: 8, top: 4),
+        margin: const EdgeInsets.only(right: 8),
         child: Builder(key: textKey, builder: (context) => richText),
       );
     } else {
       final onSurface = colorScheme.onSurface;
-      final onSurfaceVariant = colorScheme.onSurfaceVariant;
 
       child = Container(
-        margin: const EdgeInsets.only(right: 6, left: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+        margin: const EdgeInsets.only(right: 5, left: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: onSurface.withValues(alpha: 0.08),
+          color: onSurface.withValues(alpha: 0.07),
           border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.5),
+            color: colorScheme.primary.withValues(alpha: 0.45),
             width: 0.7,
           ),
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Builder(key: textKey, builder: (context) => richText),
       );
@@ -3514,8 +3663,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
   Widget _buildSenseWidget(
     BuildContext context,
     Map<String, dynamic> sense,
-    String indexStr,
-  ) {
+    String indexStr, {
+    bool isSubsense = false,
+  }) {
     final screenWidth = MediaQuery.of(context).size.width;
     final senseLeftIndent = screenWidth > 600 ? 30.0 : (screenWidth * 0.06);
 
@@ -3574,7 +3724,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
               context,
               key: 'index',
               child: Builder(
-                builder: (context) => _renderIndex(context, indexStr),
+                builder: (context) => _renderIndex(
+                  context,
+                  indexStr,
+                  baseFontSize: isSubsense ? 13 : 14,
+                  topPadding: isSubsense ? 4 : 3,
+                ),
               ),
             ),
           ),
@@ -3702,6 +3857,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                   context,
                                   subEntry.value as Map<String, dynamic>,
                                   subIndexStr,
+                                  isSubsense: true,
                                 ),
                               ),
                             );
@@ -3804,7 +3960,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         );
       },
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.only(bottom: 2),
         child: RichText(
           text: TextSpan(
             children: _parseFormattedText(
@@ -3839,7 +3995,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           children: [
             if (groupName.isNotEmpty || groupSubName.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(top: 10, bottom: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -3848,11 +4004,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         groupName,
                         '${groupPath}.group_name',
                         'Group Name',
-                        TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                        DictTypography.getBaseStyle(
+                          DictElementType.groupName,
                           color: colorScheme.primary,
-                          letterSpacing: 1.0,
                         ),
                       ),
                     if (groupSubName.isNotEmpty)
@@ -3860,9 +4014,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         groupSubName,
                         '${groupPath}.group_sub_name',
                         'Group Sub Name',
-                        TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                        DictTypography.getBaseStyle(
+                          DictElementType.groupSubName,
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -3977,9 +4130,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (phrases.isEmpty) return const SizedBox.shrink();
 
     final colorScheme = Theme.of(context).colorScheme;
-    final fontScale = _fontScales[_sourceLanguage ?? 'en']?['serif'] ?? 1.0;
-    final titleFontSize = 13 * fontScale;
-    final phraseFontSize = 14 * fontScale;
+    final phraseTitleStyle = DictTypography.getScaledStyle(
+      DictElementType.phraseTitle,
+      language: _sourceLanguage,
+      fontScales: _fontScales,
+      color: colorScheme.primary,
+    );
+    final phraseIconScale = DictTypography.getScale(
+      DictElementType.phraseTitle,
+      language: _sourceLanguage,
+      fontScales: _fontScales,
+    );
 
     // 获取 phrase 的 GlobalKey 用于滚动定位
     final phrasesKey = _getElementKey('phrase');
@@ -4010,18 +4171,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       children: [
                         Icon(
                           Icons.format_quote,
-                          size: 16 * fontScale,
+                          size: 16 * phraseIconScale,
                           color: colorScheme.primary,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'phrase',
-                          style: TextStyle(
-                            fontSize: titleFontSize,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.primary,
-                            letterSpacing: 0.5,
-                          ),
+                          'Phrase',
+                          style: phraseTitleStyle,
                         ),
                       ],
                     ),
@@ -4065,13 +4221,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                     text: TextSpan(
                                       children: parseFormattedText(
                                         phrase,
-                                        TextStyle(
-                                          fontSize: phraseFontSize,
+                                        DictTypography.getBaseStyle(
+                                          DictElementType.phraseWord,
                                           color: colorScheme.onSurface,
                                         ),
                                         sourceLanguage: _sourceLanguage,
                                         fontScales: _fontScales,
-                                        isSerif: true,
+                                        elementType: DictElementType.phraseWord,
                                         isBold: true,
                                       ).spans,
                                     ),
@@ -4264,11 +4420,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<String> path,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textStyle = TextStyle(
-      fontSize: 14,
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.boardContent,
       color: colorScheme.onSurfaceVariant,
-      height: 1.6,
-      letterSpacing: 0.2,
     );
 
     final textKey = GlobalKey();
@@ -4314,11 +4468,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<String> path,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textStyle = TextStyle(
-      fontSize: 14,
+    // plain text item 等价于 boardContent
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.boardContent,
       color: colorScheme.onSurfaceVariant,
-      height: 1.6,
-      letterSpacing: 0.2,
     );
 
     final textKey = GlobalKey();
@@ -4372,42 +4525,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return Builder(key: textKey, builder: (context) => richText);
     }
     return richText;
-  }
-
-  Widget _buildInlineContentItem(
-    BuildContext context,
-    String text,
-    List<String> path,
-  ) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return _buildTappableWidget(
-      context: context,
-      pathData: _PathData(path, 'Inline Item'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-            width: 0.8,
-          ),
-        ),
-        child: RichText(
-          text: TextSpan(
-            children: _parseFormattedText(
-              text,
-              TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurface,
-                letterSpacing: 0.15,
-              ),
-              context: context,
-            ).spans,
-          ),
-        ),
-      ),
-    );
   }
 
   Player? _currentPlayer;
@@ -4574,7 +4691,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            margin: const EdgeInsets.only(top: 4),
+            margin: const EdgeInsets.only(top: 8),
             width: 5,
             height: 5,
             decoration: BoxDecoration(
@@ -4776,21 +4893,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       default:
         return const SizedBox.shrink();
     }
-  }
-
-  Widget _renderAsBoard(
-    BuildContext context,
-    String key,
-    Map<String, dynamic> value,
-    List<String> path,
-  ) {
-    return BoardWidget(
-      board: value,
-      contentBuilder: (board, path) => _buildBoardContent(context, board, path),
-      path: path,
-      fontScales: _fontScales,
-      sourceLanguage: _sourceLanguage,
-    );
   }
 
   Widget _buildImageElement(
@@ -5094,18 +5196,13 @@ class _LazyImageLoaderState extends State<_LazyImageLoader>
   void _loadImageIfNeeded() {
     final cacheKey = '${widget.dictId}_${widget.imageFile}';
     if (_imageCache.containsKey(cacheKey)) {
-      if (!mounted) return;
-      setState(() {
-        _imageBytes = _imageCache[cacheKey];
-        _hasTriedLoading = true;
-      });
+      // 缓存命中：同步赋值，不触发 setState（initState 阶段直接赋值即可）
+      _imageBytes = _imageCache[cacheKey];
+      _hasTriedLoading = true;
     } else if (!_hasTriedLoading && !_isLoading) {
       _hasTriedLoading = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _loadImage();
-        }
-      });
+      // 直接发起异步加载，不推迟到下一帧，避免先渲染无图占位符再重绘
+      _loadImage();
     }
   }
 
@@ -5123,10 +5220,7 @@ class _LazyImageLoaderState extends State<_LazyImageLoader>
     if (_isLoading || _imageBytes != null) return;
 
     final cacheKey = '${widget.dictId}_${widget.imageFile}';
-
-    setState(() {
-      _isLoading = true;
-    });
+    _isLoading = true;
 
     try {
       Uint8List? bytes;
@@ -5231,8 +5325,8 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
               mouseCursor: SystemMouseCursors.click,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
+                  horizontal: 8,
+                  vertical: 2,
                 ),
                 decoration: BoxDecoration(
                   color: isSelected
@@ -5255,19 +5349,19 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                       text: TextSpan(
                         children: parseFormattedText(
                           key,
-                          TextStyle(
-                            fontSize: 11,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.w500,
+                          DictTypography.getBaseStyle(
+                            DictElementType.datasTabLabel,
                             color: isSelected
                                 ? widget.colorScheme.onPrimaryContainer
                                 : widget.colorScheme.onSurface,
+                            fontWeightOverride: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
                           ),
                           context: context,
                           sourceLanguage: widget.sourceLanguage,
                           fontScales: widget.fontScales,
-                          isSerif: true,
+                          elementType: DictElementType.datasTabLabel,
                         ).spans,
                       ),
                     ),

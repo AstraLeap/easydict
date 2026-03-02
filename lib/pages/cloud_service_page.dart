@@ -13,6 +13,7 @@ import '../services/preferences_service.dart';
 import '../services/settings_sync_service.dart';
 import '../services/user_dicts_service.dart';
 import '../services/entry_event_bus.dart';
+import '../core/theme_provider.dart';
 import '../services/zstd_service.dart';
 import '../services/upload_manager.dart';
 import '../data/models/remote_dictionary.dart';
@@ -39,8 +40,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
   final PreferencesService _prefsService = PreferencesService();
   final SettingsSyncService _syncService = SettingsSyncService();
   final UserDictsService _userDictsService = UserDictsService();
-  final DatabaseService _databaseService = DatabaseService();
-  final ZstdService _zstdService = ZstdService();
 
   DictionaryStoreService? _service;
   List<RemoteDictionary> _availableDictionaries = [];
@@ -48,7 +47,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
   bool _isLoggedIn = false;
   User? _currentUser;
   bool _isSyncing = false;
-  bool _isPushing = false;
 
   @override
   void initState() {
@@ -531,9 +529,16 @@ class _CloudServicePageState extends State<CloudServicePage> {
       if (extractResult.success) {
         // 直接解析 JSON 文件并逐键写入内存，确保 LLM 等配置即刻生效而无需重启
         await _syncService.applyPrefsFromFile();
+        // 通知 ThemeProvider 立即应用新主题（深浅色模式、主题色）
+        if (mounted) context.read<ThemeProvider>().reloadFromPrefs();
         // 通知各页面刷新受同步影响的内存状态（如查词历史）
         EntryEventBus().emitSettingsSynced(const SettingsSyncedEvent());
-        if (mounted) showToast(context, '设置已从云端同步');
+        // 等下一帧主题重建完成后再显示气泡，确保气泡使用新主题样式
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) showToast(context, '设置已从云端同步');
+          });
+        }
       } else {
         showToast(context, extractResult.error ?? '解压失败');
       }
@@ -847,19 +852,6 @@ class _CloudServicePageState extends State<CloudServicePage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showPushUpdatesDialog(UserDictionary dict) {
-    showDialog(
-      context: context,
-      builder: (context) => PushUpdatesDialog(
-        dictId: dict.dictId,
-        dictName: dict.name,
-        onPushSuccess: () {
-          showToast(context, '推送更新成功');
-        },
       ),
     );
   }

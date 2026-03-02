@@ -34,6 +34,7 @@ class SettingsSyncService {
     'auto_check_dict_update',    // 词典管理页 - 自动检查更新
     'last_dict_update_check_time', // 词典管理页 - 上次检查时间
     'last_app_update_check_time',  // 应用更新 - 上次检查时间（设备相关）
+    'dictionary_content_scale',    // 设置页 - 软件布局缩放（设备相关）
   ];
 
   bool _isExcludedFromSync(String rawKey) {
@@ -69,15 +70,17 @@ class SettingsSyncService {
       final archive = Archive();
 
       for (final fileName in _syncFiles) {
-        final filePath = join(configDir, fileName);
-        final file = File(filePath);
-
-        if (await file.exists()) {
+        if (fileName == 'shared_preferences.json') {
+          // shared_preferences.json 特殊处理：
+          // 桌面端（Windows/Linux/macOS）插件将数据持久化为该 JSON 文件；
+          // Android/iOS 使用系统原生 API，不产生此文件。
+          // 统一做法：优先读文件，文件不存在时从运行时 SharedPreferences 实例序列化，
+          // 保证跨平台均能将偏好设置写入压缩包。
           List<int> bytes;
-          // 对 shared_preferences.json 过滤不需要同步的键
-          if (fileName == 'shared_preferences.json') {
+          final prefsFile = File(join(configDir, fileName));
+          if (await prefsFile.exists()) {
             try {
-              final jsonStr = await file.readAsString();
+              final jsonStr = await prefsFile.readAsString();
               final raw = jsonDecode(jsonStr);
               if (raw is Map<String, dynamic>) {
                 final filtered = Map<String, dynamic>.fromEntries(
@@ -85,19 +88,51 @@ class SettingsSyncService {
                 );
                 bytes = utf8.encode(jsonEncode(filtered));
                 Logger.i(
-                  '过滤后 shared_preferences.json: ${raw.length} 键 → ${filtered.length} 键',
+                  '过滤后 shared_preferences.json (文件): ${raw.length} 键 → ${filtered.length} 键',
                   tag: 'SettingsSync',
                 );
               } else {
-                bytes = await file.readAsBytes();
+                bytes = await prefsFile.readAsBytes();
               }
             } catch (e) {
               Logger.w('过滤 shared_preferences.json 失败，使用原始文件: $e', tag: 'SettingsSync');
-              bytes = await file.readAsBytes();
+              bytes = await prefsFile.readAsBytes();
             }
           } else {
-            bytes = await file.readAsBytes();
+            // Android/iOS：从运行时实例序列化
+            try {
+              final prefs = await SharedPreferences.getInstance();
+              final all = prefs.getKeys().fold<Map<String, dynamic>>({}, (map, key) {
+                if (!_isExcludedFromSync(key)) {
+                  map[key] = prefs.get(key);
+                }
+                return map;
+              });
+              bytes = utf8.encode(jsonEncode(all));
+              Logger.i(
+                '序列化 shared_preferences (运行时): ${all.length} 键',
+                tag: 'SettingsSync',
+              );
+            } catch (e) {
+              Logger.w('序列化 SharedPreferences 失败，跳过: $e', tag: 'SettingsSync');
+              continue;
+            }
           }
+          final archiveFile = ArchiveFile.noCompress(
+            fileName,
+            bytes.length,
+            bytes,
+          );
+          archive.addFile(archiveFile);
+          Logger.i('添加文件到压缩包: $fileName (${bytes.length} bytes)', tag: 'SettingsSync');
+          continue;
+        }
+
+        final filePath = join(configDir, fileName);
+        final file = File(filePath);
+
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
           final archiveFile = ArchiveFile.noCompress(
             fileName,
             bytes.length,

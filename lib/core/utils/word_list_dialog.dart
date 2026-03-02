@@ -154,43 +154,4 @@ class WordListDialog {
       },
     );
   }
-
-  static Future<String?> _showAddNewListDialog(
-    BuildContext context,
-    String language,
-    WordBankService wordBankService,
-  ) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('新增词表'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 300),
-            child: TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: '词表名称',
-                hintText: '例如：GRE、雅思',
-              ),
-              autofocus: true,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('确定'),
-            ),
-          ],
-        );
-      },
-    );
-    controller.dispose();
-    return result;
-  }
 }

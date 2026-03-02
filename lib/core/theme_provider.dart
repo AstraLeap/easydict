@@ -57,6 +57,13 @@ class ThemeProvider with ChangeNotifier {
     }
   }
 
+  /// 从 SharedPreferences 重新载入所有主题配置并通知监听者。
+  /// 云端同步写入新偏好后调用此方法，使主题即时生效。
+  void reloadFromPrefs() {
+    _loadPreferences();
+    notifyListeners();
+  }
+
   Future<void> setThemeMode(ThemeModeOption mode) async {
     if (_themeMode == mode) return;
     _themeMode = mode;

@@ -639,7 +639,8 @@ class _FontConfigPageState extends State<FontConfigPage>
     required bool isSerif,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fontScale = _fontScales[language]?[isSerif ? 'serif' : 'sans'] ?? 1.0;
+    final fontScale = _fontScales[language]?[isSerif ? 'serif' : 'sans'] ??
+        LanguageUtils.getDefaultFontScale(language);
 
     return Card(
       elevation: 0,
@@ -944,25 +945,42 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
     return _value;
   }
 
+  void _step(int direction) {
+    final step = widget.divisions.toDouble();
+    final newValue = (_value + direction * step).clamp(
+      widget.min,
+      widget.max,
+    );
+    setState(() {
+      _value = newValue;
+      _controller.text = _formatValue(newValue);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final isPercentage = widget.unit == '%';
+    final canDecrease = _value > widget.min;
+    final canIncrease = _value < widget.max;
 
     return AlertDialog(
-      contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       title: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.title),
+          Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           if (widget.subtitle != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               widget.subtitle!,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -971,111 +989,146 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 最小/最大标签行（展示在拖动条上方，左右对齐滑动条轨道两端）
+          const SizedBox(height: 16),
+          // 当前数值可编辑文本框（随滑动条同步），宽度受限居中
+          Center(
+            child: SizedBox(
+              width: 130,
+              child: TextField(
+                controller: _controller,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w300,
+                  color: colorScheme.primary,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  suffixText: widget.unit,
+                  suffixStyle: TextStyle(
+                    fontSize: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  border: const UnderlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+            onChanged: (value) {
+              final parsed = _parseValue(value);
+              if (parsed != _value) {
+                setState(() {
+                  _value = parsed;
+                });
+              }
+            },
+            onSubmitted: (value) {
+              setState(() {
+                _value = _parseValue(value);
+                _controller.text = _formatValue(_value);
+              });
+            },
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 减号 + 滑动条 + 加号
+          Row(
+            children: [
+              IconButton(
+                onPressed: canDecrease ? () => _step(-1) : null,
+                icon: const Icon(Icons.remove),
+                style: IconButton.styleFrom(
+                  foregroundColor: canDecrease
+                      ? colorScheme.primary
+                      : colorScheme.onSurface.withValues(alpha: 0.3),
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    showValueIndicator: ShowValueIndicator.never,
+                  ),
+                  child: Slider(
+                    value: _value.clamp(widget.min, widget.max),
+                    min: widget.min,
+                    max: widget.max,
+                    divisions: ((widget.max - widget.min) / widget.divisions).round(),
+                    onChanged: (value) {
+                      setState(() {
+                        _value = value;
+                        _controller.text = _formatValue(value);
+                      });
+                    },
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: canIncrease ? () => _step(1) : null,
+                icon: const Icon(Icons.add),
+                style: IconButton.styleFrom(
+                  foregroundColor: canIncrease
+                      ? colorScheme.primary
+                      : colorScheme.onSurface.withValues(alpha: 0.3),
+                ),
+              ),
+            ],
+          ),
+          // 范围标签
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-              Text(
-                isPercentage
-                    ? '${widget.min.toInt()}%'
-                    : widget.min.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                Text(
+                  isPercentage ? '${widget.min.toInt()}${widget.unit}' : widget.min.toStringAsFixed(1),
+                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
                 ),
-              ),
-              Text(
-                isPercentage
-                    ? '${widget.max.toInt()}%'
-                    : widget.max.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                Text(
+                  isPercentage ? '${widget.max.toInt()}${widget.unit}' : widget.max.toStringAsFixed(1),
+                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
                 ),
-              ),
-            ],
-          ),
-        ),
-          // 拖动条充满全宽
-          Slider(
-            value: _value.clamp(widget.min, widget.max),
-            min: widget.min,
-            max: widget.max,
-            divisions: ((widget.max - widget.min) / widget.divisions)
-                .round(),
-            label: _formatValue(_value),
-            onChanged: (value) {
-              setState(() {
-                _value = value;
-                _controller.text = _formatValue(value);
-              });
-            },
+              ],
+            ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _value = 100;
-                    _controller.text = _formatValue(100);
-                  });
-                },
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('重置'),
-              ),
-              const Spacer(),
-              const Text('当前数值: '),
-              SizedBox(
-                width: 80,
-                child: TextField(
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                    suffixText: widget.unit,
-                  ),
-                  keyboardType: TextInputType.number,
-                  controller: _controller,
-                  onChanged: (value) {
-                    final parsed = _parseValue(value);
-                    if (parsed != _value) {
-                      setState(() {
-                        _value = parsed;
-                      });
-                    }
-                  },
-                  onSubmitted: (value) {
-                    setState(() {
-                      _value = _parseValue(value);
-                      _controller.text = _formatValue(_value);
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          onPressed: () async {
-            // 保存前先从控制器同步最新值（用户可能输入后未按回车）
-            final latestValue = _parseValue(_controller.text);
-            await widget.onSave(latestValue);
-            if (context.mounted) {
-              Navigator.pop(context);
-            }
-          },
-          child: const Text('确定'),
+        // 整行自定义：重置靠左，取消/确认靠右
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: () {
+                final resetVal = isPercentage ? 100.0 : 1.0;
+                setState(() {
+                  _value = resetVal;
+                  _controller.text = _formatValue(resetVal);
+                });
+              },
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('重置'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                textStyle: const TextStyle(fontSize: 13),
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: () async {
+                final latestValue = _parseValue(_controller.text);
+                await widget.onSave(latestValue);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('确定'),
+            ),
+          ],
         ),
       ],
     );

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
@@ -209,7 +210,6 @@ class ErrorBoundary extends StatefulWidget {
 
 class _ErrorBoundaryState extends State<ErrorBoundary> {
   Object? _error;
-  StackTrace? _stackTrace;
 
   @override
   void initState() {
@@ -364,11 +364,6 @@ class _MyAppState extends State<MyApp>
     }
   }
 
-  void _handleHotRestart() {
-    Logger.i('检测到热重启，开始清理 MediaKit 资源...', tag: 'MyApp');
-    MediaKitManager().disposeAllPlayers();
-  }
-
   /// 把 Flutter 主题的 surface 颜色同步给 Android window background，
   /// 使小窗顶栏/底栏（由系统用 windowBackground 渲染）与 App 内容颜色精确匹配。
   /// 只在颜色真正变化时才发 MethodChannel，避免每帧都通信。
@@ -404,6 +399,18 @@ class _MyAppState extends State<MyApp>
           return MaterialApp(
             title: 'EasyDict',
             debugShowCheckedModeBanner: false,
+            locale: const Locale('zh', 'CN'),
+            // supportedLocales 必须包含 zh-CN，否则 Flutter locale 解析器
+            // 会因找不到匹配而回退到 en-US，导致 CJK 字形选取使用日文变体。
+            supportedLocales: const [
+              Locale('zh', 'CN'),
+              Locale('en', 'US'),
+            ],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             theme: theme,
             darkTheme: AppTheme.darkTheme(seedColor: themeProvider.seedColor),
             themeMode: themeMode,
@@ -443,11 +450,23 @@ class _MyAppState extends State<MyApp>
                 );
               }
 
-              return AnnotatedRegion<SystemUiOverlayStyle>(
-                value: isDark
-                    ? AppTheme.darkSystemUiOverlayStyle()
-                    : AppTheme.lightSystemUiOverlayStyle(),
-                child: content,
+              // 全局 UI 缩放：在最顶层用 ScaleLayoutWrapper（RenderObject 变换）
+              // 统一缩放所有 UI 元素（文字、图标、边距均等比缩放），
+              // 无需在每个页面单独包裹。
+              return ValueListenableBuilder<double>(
+                valueListenable:
+                    FontLoaderService().dictionaryContentScaleNotifier,
+                builder: (context, scale, _) {
+                  // 始终保持 ScaleLayoutWrapper 在树中，避免 scale 在 1.0/非1.0 间切换时
+                  // 因子节点类型变化导致全局 widget 树（包括 _LazyImageLoader）被销毁重建
+                  final scaledContent = ScaleLayoutWrapper(scale: scale, child: content);
+                  return AnnotatedRegion<SystemUiOverlayStyle>(
+                    value: isDark
+                        ? AppTheme.darkSystemUiOverlayStyle()
+                        : AppTheme.lightSystemUiOverlayStyle(),
+                    child: scaledContent,
+                  );
+                },
               );
             },
           );
@@ -472,14 +491,10 @@ class _MainScreenState extends State<MainScreen> {
 
   final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
 
-  final ValueNotifier<double> _contentScaleNotifier = ValueNotifier<double>(
-    FontLoaderService().getDictionaryContentScale(),
-  );
-
   List<Widget> get _pages => [
     const DictionarySearchPage(),
     WordBankPage(key: _wordBankPageKey),
-    SettingsPage(contentScaleNotifier: _contentScaleNotifier),
+    const SettingsPage(),
   ];
 
   @override
@@ -510,15 +525,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _contentScaleNotifier.dispose();
     super.dispose();
-  }
-
-  void _refreshContentScale() {
-    final newScale = FontLoaderService().getDictionaryContentScale();
-    if (_contentScaleNotifier.value != newScale) {
-      _contentScaleNotifier.value = newScale;
-    }
   }
 
   void _onTabSelected(int index) {
@@ -607,21 +614,9 @@ class _MainScreenState extends State<MainScreen> {
       ],
     );
 
-    return ValueListenableBuilder<double>(
-      valueListenable: _contentScaleNotifier,
-      builder: (context, contentScale, child) {
-        return Scaffold(
-          body: IndexedStack(index: _selectedIndex, children: _pages),
-          bottomNavigationBar: contentScale == 1.0
-              ? bottomNav
-              : MediaQuery(
-                  data: MediaQuery.of(
-                    context,
-                  ).copyWith(textScaler: TextScaler.linear(contentScale)),
-                  child: bottomNav,
-                ),
-        );
-      },
+    return Scaffold(
+      body: IndexedStack(index: _selectedIndex, children: _pages),
+      bottomNavigationBar: bottomNav,
     );
   }
 }

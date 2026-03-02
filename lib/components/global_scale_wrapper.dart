@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import '../services/font_loader_service.dart';
 
 /// 全局缩放包装器
 ///
@@ -12,25 +11,21 @@ class GlobalScaleWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scale = FontLoaderService().getDictionaryContentScale();
-
-    if (scale == 1.0) {
-      return child;
-    }
-
-    return MediaQuery(
-      data: MediaQuery.of(
-        context,
-      ).copyWith(textScaler: TextScaler.linear(scale)),
-      child: child,
-    );
+    // 全局缩放已在 MaterialApp.builder 中统一由 ScaleLayoutWrapper 处理，
+    // 此处直接透传，避免重复缩放。
+    return child;
   }
 }
 
 /// 页面级缩放包装器
 ///
-/// 用于单个页面的缩放，使用 RenderObject 实现正确的点击事件处理
-/// 注意：此类监听全局缩放通知器，确保在父组件不重建时也能正确响应缩放变化
+/// 使用 MediaQuery.textScaler 实现缩放，确保文字在任意缩放比例下都以原生
+/// 物理分辨率光栅化（blur-free）。监听全局缩放通知器，缩放值变化时自动重建。
+///
+/// 注意：此包装器只改变 textScaler，padding / icon 尺寸不随之等比缩放，
+/// 这与 iOS 的辅助功能「更大文字」行为一致。
+/// 如需整体布局缩放（含 icon/padding），请使用 ScaleLayoutWrapper，
+/// 但须接受 scale > 1.0 时文字存在放大模糊的已知权衡。
 class PageScaleWrapper extends StatelessWidget {
   final Widget child;
 
@@ -44,22 +39,15 @@ class PageScaleWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: FontLoaderService().dictionaryContentScaleNotifier,
-      builder: (context, effectiveScale, _) {
-        if (effectiveScale == 1.0) {
-          return child;
-        }
-
-        return _ScaleLayoutWrapper(scale: effectiveScale, child: child);
-      },
-    );
+    // 全局缩放已在 MaterialApp.builder 中统一由 ScaleLayoutWrapper 处理，
+    // 此处直接透传，避免重复缩放。
+    return child;
   }
 }
 
 /// 内容缩放包装器
 ///
-/// 与 PageScaleWrapper 相同实现，用于兼容旧代码
+/// 与 PageScaleWrapper 相同实现（textScaler），用于兼容旧代码。
 class ContentScaleWrapper extends StatelessWidget {
   final Widget child;
   final double? scale;
@@ -68,22 +56,19 @@ class ContentScaleWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveScale =
-        scale ?? FontLoaderService().getDictionaryContentScale();
-
-    if (effectiveScale == 1.0) {
-      return child;
-    }
-
-    return _ScaleLayoutWrapper(scale: effectiveScale, child: child);
+    // 全局缩放已在 MaterialApp.builder 中统一由 ScaleLayoutWrapper 处理，
+    // 此处直接透传，避免重复缩放。
+    return child;
   }
 }
 
 /// 底层缩放布局包装器 - 使用RenderObject实现缩放和正确的点击处理
-class _ScaleLayoutWrapper extends SingleChildRenderObjectWidget {
+///
+/// 可直接构造，用于在任意局部位置应用独立缩放（不依赖全局 notifier）
+class ScaleLayoutWrapper extends SingleChildRenderObjectWidget {
   final double scale;
 
-  const _ScaleLayoutWrapper({required this.scale, required Widget super.child});
+  const ScaleLayoutWrapper({super.key, required this.scale, required Widget super.child});
 
   @override
   RenderObject createRenderObject(BuildContext context) {

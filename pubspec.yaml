@@ -114,6 +114,19 @@ flutter:
   assets:
     - assets/word_list.db
     - assets/icon/app_icon.png
+    - assets/fonts/
+
+  fonts:
+    - family: SourceSerif4
+      fonts:
+        - asset: assets/fonts/SourceSerif4-VariableFont_opsz,wght.ttf
+        - asset: assets/fonts/SourceSerif4-Italic-VariableFont_opsz,wght.ttf
+          style: italic
+    - family: SourceSans3
+      fonts:
+        - asset: assets/fonts/SourceSans3-VariableFont_wght.ttf
+        - asset: assets/fonts/SourceSans3-Italic-VariableFont_wght.ttf
+          style: italic
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

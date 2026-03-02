@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dictionary_interaction_scope.dart';
 import '../core/utils/toast_utils.dart';
-import '../services/font_loader_service.dart';
+import '../core/utils/dict_typography.dart';
 
 class BoardWidget extends StatefulWidget {
   final Map<String, dynamic> board;
@@ -33,23 +33,24 @@ class BoardWidget extends StatefulWidget {
 class _BoardWidgetState extends State<BoardWidget> {
   bool _isCollapsed = false;
 
-  double _getBoardTitleFontScale() {
-    if (widget.fontScales == null || widget.fontScales!.isEmpty) {
-      return 1.0;
-    }
-    final effectiveLang = widget.sourceLanguage ?? 'en';
-    return widget.fontScales?[effectiveLang]?['serif'] ?? 1.0;
+  /// 返回 nested board 标题完整决定的 TextStyle（包含字体族和缩放）
+  TextStyle _getBoardTitleStyle(ColorScheme colorScheme) {
+    return DictTypography.getScaledStyle(
+      DictElementType.boardTitle,
+      language: widget.sourceLanguage,
+      fontScales: widget.fontScales ?? {},
+      color: colorScheme.primary,
+    );
   }
 
-  String? _getBoardTitleFontFamily() {
-    final effectiveLang = widget.sourceLanguage ?? 'en';
-    final fontInfo = FontLoaderService().getFontInfo(
-      effectiveLang,
-      isSerif: true,
-      isBold: false,
-      isItalic: false,
+  /// 返回顶层 board header 完整决定的 TextStyle
+  TextStyle _getBoardHeaderStyle(ColorScheme colorScheme) {
+    return DictTypography.getScaledStyle(
+      DictElementType.boardTitle,
+      language: widget.sourceLanguage,
+      fontScales: widget.fontScales ?? {},
+      color: colorScheme.onSecondaryContainer,
     );
-    return fontInfo?.fontFamily;
   }
 
   void _toggleCollapse() {
@@ -97,8 +98,7 @@ class _BoardWidgetState extends State<BoardWidget> {
       ..remove('display');
 
     if (isNested) {
-      final boardTitleFontScale = _getBoardTitleFontScale();
-      final boardTitleFontFamily = _getBoardTitleFontFamily();
+      final boardTitleStyle = _getBoardTitleStyle(colorScheme);
       return Container(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -108,12 +108,7 @@ class _BoardWidgetState extends State<BoardWidget> {
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 13 * boardTitleFontScale,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
-                    fontFamily: boardTitleFontFamily,
-                  ),
+                  style: boardTitleStyle,
                 ),
               ),
             widget.contentBuilder(contentBoard, widget.path),
@@ -145,16 +140,20 @@ class _BoardWidgetState extends State<BoardWidget> {
           InkWell(
             onTap: _toggleCollapse,
             onLongPress: _showPath,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            borderRadius: _isCollapsed
+                ? BorderRadius.circular(12)
+                : const BorderRadius.vertical(top: Radius.circular(12)),
             mouseCursor: SystemMouseCursors.click,
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
                 color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
+                borderRadius: _isCollapsed
+                    ? BorderRadius.circular(12)
+                    : const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
               ),
               child: Row(
                 children: [
@@ -174,12 +173,8 @@ class _BoardWidgetState extends State<BoardWidget> {
                   Expanded(
                     child: Text(
                       title,
-                      style: TextStyle(
-                        fontSize: 13 * _getBoardTitleFontScale(),
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSecondaryContainer,
+                      style: _getBoardHeaderStyle(colorScheme).copyWith(
                         letterSpacing: 0.2,
-                        fontFamily: _getBoardTitleFontFamily(),
                       ),
                     ),
                   ),
