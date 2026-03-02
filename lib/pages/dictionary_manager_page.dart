@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'entries_list_sheet.dart';
 import 'cloud_service_page.dart'
-    show PushUpdatesDialog, UploadDictionaryDialog, EditDictionaryDialog;
+    show PushUpdatesDialog, UploadDictionaryDialog, EditDictionaryDialog, UpdateJsonDialog;
 import '../services/dictionary_manager.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/download_manager.dart';
@@ -1124,6 +1124,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
+                  onPressed: () => _showUpdateJsonDialog(dict),
+                  icon: Icon(Icons.data_object, color: colorScheme.primary),
+                  tooltip: '更新JSON',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
                   onPressed: () => _showPushUpdatesDialog(dict),
                   icon: Icon(
                     Icons.cloud_upload_outlined,
@@ -1185,6 +1191,17 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       context: context,
       builder: (context) =>
           UploadDictionaryDialog(onUploadSuccess: _loadUserDictionaries),
+    );
+  }
+
+  void _showUpdateJsonDialog(UserDictionary dict) {
+    showDialog(
+      context: context,
+      builder: (context) => UpdateJsonDialog(
+        dictId: dict.dictId,
+        dictName: dict.name,
+        onUpdateSuccess: () {},
+      ),
     );
   }
 

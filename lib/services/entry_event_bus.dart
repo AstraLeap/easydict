@@ -44,6 +44,11 @@ class SettingsSyncedEvent {
   const SettingsSyncedEvent({this.includesHistory = true});
 }
 
+/// 词典启用/禁用状态变化事件
+class DictionariesChangedEvent {
+  const DictionariesChangedEvent();
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -59,6 +64,8 @@ class EntryEventBus {
       StreamController<BatchToggleHiddenLanguagesEvent>.broadcast();
   final _settingsSyncedController =
       StreamController<SettingsSyncedEvent>.broadcast();
+  final _dictionariesChangedController =
+      StreamController<DictionariesChangedEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -70,6 +77,8 @@ class EntryEventBus {
       _batchToggleHiddenController.stream;
   Stream<SettingsSyncedEvent> get settingsSynced =>
       _settingsSyncedController.stream;
+  Stream<DictionariesChangedEvent> get dictionariesChanged =>
+      _dictionariesChangedController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -91,11 +100,16 @@ class EntryEventBus {
     _settingsSyncedController.add(event);
   }
 
+  void emitDictionariesChanged() {
+    _dictionariesChangedController.add(const DictionariesChangedEvent());
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
     _toggleHiddenLanguageController.close();
     _batchToggleHiddenController.close();
     _settingsSyncedController.close();
+    _dictionariesChangedController.close();
   }
 }

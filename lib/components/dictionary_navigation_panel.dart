@@ -738,7 +738,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       }
     }
 
-    // 2. 添加 phrase 章节（只显示标题，可点击跳转）
+    // 2. 添加 phrases 章节（只显示标题，可点击跳转）
     if (entry.phrase.isNotEmpty) {
       items.add(
         InkWell(
@@ -748,7 +748,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               section.entry.dictId ?? '',
               currentSectionIndex,
               true,
-              targetPath: 'phrase',
+              targetPath: 'phrases',
             );
           },
           mouseCursor: SystemMouseCursors.click,
@@ -760,7 +760,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 Icon(Icons.format_quote, size: 16, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Phrase',
+                  'Phrases',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -790,9 +790,10 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'frequency',
       'etymology',
       'pronunciation',
+      'phonetic', // 根节点 phonetic 不生成目录
       'sense',
       'sense_group',
-      'phrase',
+      'phrases', // 唯一正确字段名，不生成目录
       'data',
       'hiddenLanguages',
       'hidden_languages',
