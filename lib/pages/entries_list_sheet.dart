@@ -4,7 +4,6 @@ import '../services/dictionary_manager.dart';
 import '../services/font_loader_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/database_service.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
 class EntriesListSheet extends StatefulWidget {

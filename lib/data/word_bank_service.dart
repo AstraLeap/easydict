@@ -195,10 +195,6 @@ class WordBankService {
           .where((l) => l.name != listNameClean)
           .toList();
 
-      // 获取表的所有列
-      final columns = await db.rawQuery('PRAGMA table_info($langLower)');
-      final allColumns = columns.map((c) => c['name'] as String).toList();
-
       // 构建新表的列（保留系统列和要保留的词表列）
       final newColumns = <String>[
         'word',
@@ -298,9 +294,6 @@ class WordBankService {
         }
         return l;
       }).toList();
-
-      // 获取表的所有列
-      final columns = await db.rawQuery('PRAGMA table_info($langLower)');
 
       // 构建新表的列（替换旧列名为新列名）
       final newColumns = <String>['word', 'created_at'];

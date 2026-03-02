@@ -115,7 +115,7 @@ class _HelpPageState extends State<HelpPage> {
                 _buildSettingsTile(
                   context,
                   title: '词典反馈',
-                  subtitle: '任何改进建议尽管提出',
+                  subtitle: '欢迎提出改进建议',
                   icon: Icons.forum_outlined,
                   iconColor: colorScheme.primary,
                   isExternal: true,

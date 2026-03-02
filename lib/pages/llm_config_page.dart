@@ -987,6 +987,8 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   bool _isTestingStandard = false;
   bool _isTestingTts = false;
 
+  bool _standardEnableThinking = false;
+
   String? _testResultFast;
   bool? _testSuccessFast;
   String? _testResultStandard;
@@ -994,27 +996,27 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   String? _testResultTts;
   bool? _testSuccessTts;
 
-  /// 快速模型默认名：速度优先、价格较低、适合简单对话或实时处理
+/// 快速模型默认名 (2026 更新版)：极致响应速度、超低成本、适合简单 Agent 任务
   static const Map<LLMProvider, String> _fastDefaultModels = {
     LLMProvider.openAI: 'gpt-5-mini',
-    LLMProvider.anthropic: 'claude-4-5-haiku-latest',
+    LLMProvider.anthropic: 'claude-haiku-4-5',
     LLMProvider.gemini: 'gemini-3-flash',
-    LLMProvider.deepseek: 'deepseek-chat',
-    LLMProvider.moonshot: 'kimi-k2-turbo',
-    LLMProvider.zhipu: 'glm-4-flash',
-    LLMProvider.ali: 'qwen-flash',
+    LLMProvider.deepseek: 'deepseek-chat', 
+    LLMProvider.moonshot: 'kimi-k2.5-instant', 
+    LLMProvider.zhipu: 'glm-5-flash', 
+    LLMProvider.ali: 'qwen-flash', 
     LLMProvider.custom: '',
   };
 
-  /// 标准模型默认名：质量优先、深度思考能力、适合复杂逻辑和长文本
+  /// 标准模型默认名 (2026 更新版)：卓越推理能力、复杂任务规划、长文本深度分析
   static const Map<LLMProvider, String> _standardDefaultModels = {
-    LLMProvider.openAI: 'gpt-5',
-    LLMProvider.anthropic: 'claude-4-6-sonnet-latest',
+    LLMProvider.openAI: 'gpt-5-chat-latest', 
+    LLMProvider.anthropic: 'claude-opus-4-6',
     LLMProvider.gemini: 'gemini-3-pro',
-    LLMProvider.deepseek: 'deepseek-v4',
-    LLMProvider.moonshot: 'kimi-k2.5',
-    LLMProvider.zhipu: 'glm-5',
-    LLMProvider.ali: 'qwen3-max',
+    LLMProvider.deepseek: 'deepseek-reasoner',
+    LLMProvider.moonshot: 'kimi-k2.5-thinking', 
+    LLMProvider.zhipu: 'glm-5', 
+    LLMProvider.ali: 'qwen-max',
     LLMProvider.custom: '',
   };
 
@@ -1108,6 +1110,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     _standardModelController.text =
         prefs.getString('standard_llm_model') ??
         (_standardDefaultModels[_standardProvider] ?? '');
+
+    _standardEnableThinking =
+        prefs.getBool('standard_llm_enable_thinking') ?? false;
 
     final ttsProviderIndex = prefs.getInt('tts_provider');
     if (ttsProviderIndex != null &&
@@ -1210,13 +1215,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       tag: 'LLMConfig',
     );
     final fastModelText = _fastModelController.text.trim();
-    final fastModelToSave = (fastModelText.isEmpty &&
-            _fastProvider != LLMProvider.custom)
-        ? (_fastDefaultModels[_fastProvider] ?? '')
-        : fastModelText;
-    await prefs.setString('fast_llm_model', fastModelToSave);
+    await prefs.setString('fast_llm_model', fastModelText);
     Logger.i(
-      '  fast_llm_model: $fastModelToSave',
+      '  fast_llm_model: $fastModelText',
       tag: 'LLMConfig',
     );
 
@@ -1250,14 +1251,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       tag: 'LLMConfig',
     );
     final standardModelText = _standardModelController.text.trim();
-    final standardModelToSave = (standardModelText.isEmpty &&
-            _standardProvider != LLMProvider.custom)
-        ? (_standardDefaultModels[_standardProvider] ?? '')
-        : standardModelText;
-    await prefs.setString('standard_llm_model', standardModelToSave);
+    await prefs.setString('standard_llm_model', standardModelText);
     Logger.i(
-      '  standard_llm_model: $standardModelToSave',
+      '  standard_llm_model: $standardModelText',
       tag: 'LLMConfig',
+    );
+    await prefs.setBool(
+      'standard_llm_enable_thinking',
+      _standardEnableThinking,
     );
 
     _showSavedSnackBar();
@@ -1548,6 +1549,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     required VoidCallback onTestConnection,
     required String? testResult,
     required bool? testSuccess,
+    // 深度思考选项（仅标准模型显示）
+    bool? enableThinking,
+    void Function(bool)? onToggleEnableThinking,
   }) {
     return Form(
       key: formKey,
@@ -1732,14 +1736,11 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 minWidth: 48,
                 minHeight: 48,
               ),
-              hintText: provider == LLMProvider.custom
-                  ? ''
-                  : '留空使用默认: ${defaultModels[provider] ?? ''}',
+              hintText: '',
             ),
             validator: (value) {
-              if (provider == LLMProvider.custom &&
-                  (value == null || value.trim().isEmpty)) {
-                return '自定义服务商需要指定模型名称';
+              if (value == null || value.trim().isEmpty) {
+                return '请输入模型名称';
               }
               return null;
             },
@@ -1751,6 +1752,40 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               color: Theme.of(context).colorScheme.outline,
             ),
           ),
+          // 深度思考开关（仅标准模型）
+          if (enableThinking != null && onToggleEnableThinking != null) ...[  
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              child: SwitchListTile(
+                title: const Text('深度思考'),
+                subtitle: Text(
+                  '在支持的模型上开启思考链（CoT）输出，可显示思考过程',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                value: enableThinking,
+                onChanged: onToggleEnableThinking,
+                secondary: Icon(
+                  Icons.psychology_outlined,
+                  color: enableThinking
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.outline,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 32),
           Row(
             children: [
@@ -2174,6 +2209,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       onTestConnection: _testStandardConnection,
                       testResult: _testResultStandard,
                       testSuccess: _testSuccessStandard,
+                      enableThinking: _standardEnableThinking,
+                      onToggleEnableThinking: (val) {
+                        setState(() => _standardEnableThinking = val);
+                      },
                     ),
                   ),
                 ),
@@ -2265,12 +2304,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              lang.langName,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+          Text(
+            lang.langName,
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(width: 12),
           Expanded(

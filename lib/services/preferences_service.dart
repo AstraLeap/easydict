@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/logger.dart';
+import '../core/utils/language_utils.dart';
 import '../pages/llm_config_page.dart';
 
 class LLMConfig {
@@ -9,12 +10,15 @@ class LLMConfig {
   final String apiKey;
   final String baseUrl;
   final String model;
+  /// 是否启用深度思考（仅标准模型有效）
+  final bool enableThinking;
 
   LLMConfig({
     required this.provider,
     required this.apiKey,
     required this.baseUrl,
     required this.model,
+    this.enableThinking = false,
   });
 
   String get effectiveBaseUrl =>
@@ -49,6 +53,7 @@ class PreferencesService {
   static const String _kLlmSuffixApiKey = '_api_key';
   static const String _kLlmSuffixBaseUrl = '_base_url';
   static const String _kLlmSuffixModel = '_model';
+  static const String _kLlmStandardEnableThinking = 'standard_llm_enable_thinking';
 
   // TTS 键名
   static const String _kTtsProvider = 'tts_provider';
@@ -284,11 +289,15 @@ class PreferencesService {
     final baseUrl = p.getString('$prefix${_kLlmSuffixBaseUrl}') ?? '';
     final model = p.getString('$prefix${_kLlmSuffixModel}') ?? '';
 
+    final enableThinking = !isFast &&
+        (p.getBool(_kLlmStandardEnableThinking) ?? false);
+
     return LLMConfig(
       provider: LLMProvider.values[providerIndex],
       apiKey: apiKey,
       baseUrl: baseUrl,
       model: model,
+      enableThinking: enableThinking,
     );
   }
 
@@ -298,6 +307,7 @@ class PreferencesService {
     required String apiKey,
     required String baseUrl,
     required String model,
+    bool enableThinking = false,
   }) async {
     final p = await prefs;
     final prefix = isFast ? _kLlmFastPrefix : _kLlmStandardPrefix;
@@ -306,6 +316,9 @@ class PreferencesService {
     await p.setString('$prefix${_kLlmSuffixApiKey}', apiKey);
     await p.setString('$prefix${_kLlmSuffixBaseUrl}', baseUrl);
     await p.setString('$prefix${_kLlmSuffixModel}', model);
+    if (!isFast) {
+      await p.setBool(_kLlmStandardEnableThinking, enableThinking);
+    }
   }
 
   Future<Map<String, dynamic>?> getTTSConfig() async {
@@ -483,7 +496,7 @@ class PreferencesService {
   Future<double> getFontScale(String language, bool isSerif) async {
     final p = await prefs;
     final key = '$_kFontScalePrefix${language}_${isSerif ? 'serif' : 'sans'}';
-    return p.getDouble(key) ?? 1.0;
+    return p.getDouble(key) ?? LanguageUtils.getDefaultFontScale(language);
   }
 
   Future<void> setFontScale(String language, bool isSerif, double scale) async {
@@ -513,17 +526,13 @@ class PreferencesService {
       final langScales = <String, double>{};
       final serifKey = '$_kFontScalePrefix${lang}_serif';
       final sansKey = '$_kFontScalePrefix${lang}_sans';
-      final serifScale = p.getDouble(serifKey);
-      final sansScale = p.getDouble(sansKey);
-      if (serifScale != null) {
-        langScales['serif'] = serifScale;
-      }
-      if (sansScale != null) {
-        langScales['sans'] = sansScale;
-      }
-      if (langScales.isNotEmpty) {
-        fontScales[lang] = langScales;
-      }
+      final defaultScale = LanguageUtils.getDefaultFontScale(lang);
+      final serifScale = p.getDouble(serifKey) ?? defaultScale;
+      final sansScale = p.getDouble(sansKey) ?? defaultScale;
+      // 始终将所有语言的缩放比例填入 map：未用户设置时使用语言的默认值
+      langScales['serif'] = serifScale;
+      langScales['sans'] = sansScale;
+      fontScales[lang] = langScales;
     }
     return fontScales;
   }

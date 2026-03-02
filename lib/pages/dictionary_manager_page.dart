@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:reorderables/reorderables.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'entries_list_sheet.dart';
 import 'cloud_service_page.dart'
     show PushUpdatesDialog, UploadDictionaryDialog, EditDictionaryDialog;
@@ -1385,51 +1383,6 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     );
   }
 
-  Future<void> _showDeleteDictionaryDialog(DictionaryMetadata metadata) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.delete_forever, color: Colors.red),
-            SizedBox(width: 8),
-            Text('删除词典'),
-          ],
-        ),
-        content: Text(
-          '确定删除「${metadata.name}」？\n\n这将删除该词典的所有文件（包括数据库、媒体、元数据等），且无法恢复。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-    if (!mounted) return;
-
-    try {
-      // 如果已启用，先禁用
-      if (_isEnabled(metadata.id)) {
-        await _dictManager.disableDictionary(metadata.id);
-      }
-      // 删除词典文件夹
-      await _dictManager.deleteDictionary(metadata.id);
-      await _refreshLocalDictionaries();
-      if (mounted) showToast(context, '词典「${metadata.name}」已删除');
-    } catch (e) {
-      if (mounted) showToast(context, '删除失败: $e');
-    }
-  }
-
   /// 显示下载选项对话框
   Future<DownloadOptionsResult?> _showDownloadOptionsDialog(
     RemoteDictionary dict,
@@ -2387,7 +2340,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
   @override
   Widget build(BuildContext context) {
     final metadata = widget.metadata;
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -2573,41 +2525,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
             fontWeight: FontWeight.bold,
             color: colorScheme.onPrimaryContainer,
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLanguageChip(String language, {required bool isSource}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isSourceColor = colorScheme.primary;
-    final isTargetColor = colorScheme.secondary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            (isSource ? isSourceColor : isTargetColor).withValues(alpha: 0.15),
-            (isSource ? isSourceColor : isTargetColor).withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: (isSource ? isSourceColor : isTargetColor).withValues(
-            alpha: 0.3,
-          ),
-        ),
-      ),
-      child: Text(
-        language.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: isSource ? isSourceColor : isTargetColor,
-          letterSpacing: 0.5,
         ),
       ),
     );
@@ -3334,9 +3251,6 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
 
     Navigator.pop(context);
 
-    var successCount = 0;
-    var failCount = 0;
-
     for (final entry in selectedDicts) {
       final dictId = entry.key;
       final updateInfo = entry.value;
@@ -3344,7 +3258,6 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
       try {
         final metadata = await widget.dictManager.getDictionaryMetadata(dictId);
         if (metadata == null) {
-          failCount++;
           continue;
         }
 
@@ -3437,16 +3350,13 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
 
             await widget.dictManager.saveDictionaryMetadata(newMetadata);
             widget.updateCheckService.clearUpdate(dictId);
-            successCount++;
           },
           onError: (error) {
             Logger.e('更新词典 $dictId 失败: $error', tag: 'BatchUpdate');
-            failCount++;
           },
         );
       } catch (e) {
         Logger.e('更新词典 $dictId 异常: $e', tag: 'BatchUpdate');
-        failCount++;
       }
     }
 

@@ -326,86 +326,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     await _searchWord();
   }
 
-  Future<void> _searchWordWithOptions({
-    required bool useFuzzySearch,
-    required bool exactMatch,
-  }) async {
-    final word = _searchController.text.trim();
-    if (word.isEmpty) return;
-
-    _isSearchingWord = true;
-    _debounceTimer?.cancel();
-    _prefixSearchToken++;
-
-    setState(() {
-      _isLoading = true;
-      _showSearchResults = false;
-      _searchResults = [];
-      _selectedResultIndex = -1;
-    });
-
-    // 使用传入的高级选项进行查询，但不添加到历史记录
-    final searchResult = await _dbService.getAllEntries(
-      word,
-      useFuzzySearch: useFuzzySearch,
-      exactMatch: exactMatch,
-    );
-
-    if (searchResult.entries.isNotEmpty) {
-      final entryGroup = DictionaryEntryGroup.groupEntries(
-        searchResult.entries,
-      );
-
-      // 跳转到详情页面
-      if (mounted) {
-        final navResult = await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => EntryDetailPage(
-              entryGroup: entryGroup,
-              initialWord: word,
-              searchRelations: searchResult.hasRelations
-                  ? searchResult.relations
-                  : null,
-            ),
-          ),
-        );
-
-        // 如果返回结果要求选中文本
-        if (navResult != null &&
-            navResult is Map &&
-            navResult['selectText'] == true) {
-          // 延迟执行，确保页面已完全返回
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (mounted) {
-              // 先请求焦点
-              _searchFocusNode.requestFocus();
-              // 然后选中文本
-              _searchController.selection = TextSelection(
-                baseOffset: 0,
-                extentOffset: _searchController.text.length,
-              );
-            }
-          });
-        }
-      }
-    } else {
-      // 查询失败时刷新历史记录显示
-      final history = await _historyService.getSearchHistory();
-      setState(() {
-        _searchHistory = history;
-        _showSearchResults = false;
-      });
-      if (mounted) {
-        showToast(context, '未找到单词: $word');
-      }
-    }
-
-    setState(() {
-      _isLoading = false;
-      _isSearchingWord = false;
-    });
-  }
-
   Future<void> _searchWord() async {
     _debounceTimer?.cancel();
     _prefixSearchToken++;
@@ -901,7 +821,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       },
       onLongPress: () {
         setState(() {
-          _isHistoryEditMode = true;
+          _isHistoryEditMode = !_isHistoryEditMode;
         });
       },
       borderRadius: BorderRadius.circular(12),
@@ -910,7 +830,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
           return GestureDetector(
             onSecondaryTapUp: (details) {
               setState(() {
-                _isHistoryEditMode = true;
+                _isHistoryEditMode = !_isHistoryEditMode;
               });
             },
             child: Container(

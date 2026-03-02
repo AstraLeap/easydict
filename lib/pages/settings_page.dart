@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme_provider.dart';
@@ -115,6 +116,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showDictionaryContentScaleDialog() async {
+    final oldScale = _dictionaryContentScale;
     final contentScale = FontLoaderService().getDictionaryContentScale();
     await showDialog(
       context: context,
@@ -142,6 +144,74 @@ class _SettingsPageState extends State<SettingsPage> {
         return PageScaleWrapper(scale: contentScale, child: dialog);
       },
     );
+    // 如果用户更改了缩放，弹出10秒倒计时确认对话框
+    if (mounted && (_dictionaryContentScale - oldScale).abs() > 0.001) {
+      final newScale = _dictionaryContentScale;
+      final confirmed = await _showScaleConfirmationDialog(newScale);
+      if (!confirmed) {
+        final prefs = PreferencesService();
+        await prefs.setDictionaryContentScale(oldScale);
+        await FontLoaderService().reloadDictionaryContentScale();
+        if (mounted) {
+          setState(() {
+            _dictionaryContentScale = oldScale;
+          });
+        }
+      }
+    }
+  }
+
+  Future<bool> _showScaleConfirmationDialog(double newScale) async {
+    int countdown = 10;
+    Timer? timer;
+    bool? dialogResult;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            timer ??= Timer.periodic(const Duration(seconds: 1), (t) {
+              if (countdown <= 1) {
+                t.cancel();
+                dialogResult = false;
+                Navigator.of(dialogContext).pop();
+              } else {
+                setDialogState(() => countdown--);
+              }
+            });
+            return AlertDialog(
+              title: const Text('保持缩放更改？'),
+              content: Text(
+                '新的缩放比例为 ${(newScale * 100).round()}%。\n将在 $countdown 秒后自动恢复原比例。',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    timer?.cancel();
+                    dialogResult = false;
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('撤销'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    timer?.cancel();
+                    dialogResult = true;
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('确认'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    timer?.cancel();
+    return dialogResult ?? false;
   }
 
   @override
@@ -389,7 +459,7 @@ class _SettingsPageState extends State<SettingsPage> {
       leading: Icon(icon, color: effectiveIconColor, size: 24),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
       ),
       subtitle: subtitle != null
           ? Text(
