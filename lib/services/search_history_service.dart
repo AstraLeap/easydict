@@ -80,10 +80,13 @@ class SearchHistoryService {
 
     final trimmedWord = word.trim();
 
-    // 移除重复的记录
+    // 移除重复记录，但保留已成功搜索时记录的语言信息
+    final existingIdx = records.indexWhere((r) => r.word == trimmedWord);
+    final existingGroup = existingIdx >= 0 ? records[existingIdx].group : null;
     records.removeWhere((r) => r.word == trimmedWord);
 
     // 添加新记录到开头
+    // 若未传入 group（语言），则保留该词已记录的语言，避免覆盖
     records.insert(
       0,
       SearchRecord(
@@ -91,7 +94,7 @@ class SearchHistoryService {
         timestamp: DateTime.now(),
         useFuzzySearch: useFuzzySearch,
         exactMatch: exactMatch,
-        group: group,
+        group: group ?? existingGroup,
       ),
     );
 

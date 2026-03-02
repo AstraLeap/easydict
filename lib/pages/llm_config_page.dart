@@ -9,6 +9,7 @@ import '../core/logger.dart';
 import '../core/utils/toast_utils.dart';
 import '../services/font_loader_service.dart';
 import '../services/dictionary_manager.dart';
+import '../services/entry_event_bus.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
@@ -1035,10 +1036,11 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   final Map<String, String> _languageVoiceSettings = {};
   String? _currentEditingLanguage;
   List<String> _availableLanguages = [];
+  StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
 
   Future<List<String>> _getAvailableLanguages() async {
     final dictManager = DictionaryManager();
-    final allMetadata = await dictManager.getAllDictionariesMetadata();
+    final allMetadata = await dictManager.getEnabledDictionariesMetadata();
     final languageSet = <String>{};
 
     for (final metadata in allMetadata) {
@@ -1061,15 +1063,44 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     return languageSet.toList()..sort();
   }
 
+  /// 词典启用状态变化时，重新加载可用语言列表
+  Future<void> _reloadAvailableLanguages() async {
+    if (!mounted) return;
+    final languages = await _getAvailableLanguages();
+    final effectiveLangs = languages.isEmpty ? ['zh', 'en'] : languages;
+    if (!mounted) return;
+    setState(() {
+      _availableLanguages = effectiveLangs;
+      // 补充新语言的默认音色配置
+      for (final lang in effectiveLangs) {
+        if (!_languageVoiceSettings.containsKey(lang)) {
+          if (_ttsProvider == TTSProvider.google) {
+            final voices = googleTTSVoicesByLanguage[lang];
+            _languageVoiceSettings[lang] =
+                voices != null && voices.isNotEmpty ? voices.first.name : '';
+          } else {
+            final voices = edgeTTSVoicesByLanguage[lang];
+            _languageVoiceSettings[lang] =
+                voices != null && voices.isNotEmpty ? voices.first.name : '';
+          }
+        }
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadConfig();
+    _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
+      _reloadAvailableLanguages();
+    });
   }
 
   @override
   void dispose() {
+    _dictsChangedSubscription?.cancel();
     _tabController.dispose();
 
     _fastApiKeyController.dispose();

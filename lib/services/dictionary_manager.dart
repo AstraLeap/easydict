@@ -10,6 +10,7 @@ import 'package:sqflite/sqflite.dart';
 import '../data/models/dictionary_metadata.dart';
 import '../core/logger.dart';
 import 'advanced_search_settings_service.dart';
+import 'entry_event_bus.dart';
 import 'search_history_service.dart';
 
 class DictionaryManager {
@@ -124,6 +125,7 @@ class DictionaryManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_enabledDictionariesKey, dictionaryIds);
     _enabledDictionariesMetadataCache = null;
+    EntryEventBus().emitDictionariesChanged();
   }
 
   Future<void> enableDictionary(String dictionaryId) async {

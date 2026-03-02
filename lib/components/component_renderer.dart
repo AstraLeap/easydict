@@ -3001,7 +3001,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     key: '$index',
                     child: Builder(
                       builder: (context) {
-                        final path = PathScope.of(context);
+                        final rawPath = PathScope.of(context);
+                        // 当原始 pronunciation 是单个对象（非列表）时，去掉多余的索引路径段
+                        final path = entry.pronunciationIsSingleObject
+                            ? (rawPath.length > 1
+                                ? rawPath.sublist(0, rawPath.length - 1)
+                                : rawPath)
+                            : rawPath;
                         final pathData = _PathData(path, 'Pronunciation');
 
                         return Material(
@@ -3728,7 +3734,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   context,
                   indexStr,
                   baseFontSize: isSubsense ? 13 : 14,
-                  topPadding: isSubsense ? 4 : 3,
+                  topPadding: isSubsense ? 4.5 : 3.5,
                 ),
               ),
             ),
@@ -4096,9 +4102,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'certifications',
     'frequency',
     'pronunciation',
+    'phonetic', // 根节点 phonetic 不单独渲染
     'sense',
     'sense_group',
-    'phrase',
+    'phrases', // 唯一正确字段名，由 _buildPhrases 处理
     'data', // data 单独渲染
   ];
 
@@ -4142,8 +4149,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontScales: _fontScales,
     );
 
-    // 获取 phrase 的 GlobalKey 用于滚动定位
-    final phrasesKey = _getElementKey('phrase');
+    // 获取 phrases 的 GlobalKey 用于滚动定位
+    final phrasesKey = _getElementKey('phrases');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4151,7 +4158,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         const SizedBox(height: 16),
         PathScope.append(
           context,
-          key: 'phrase',
+          key: 'phrases',
           child: Builder(
             builder: (context) {
               return Container(
@@ -4176,7 +4183,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Phrase',
+                          'Phrases',
                           style: phraseTitleStyle,
                         ),
                       ],
@@ -4195,6 +4202,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               onTapDown: (details) {
                                 _handlePhraseTap(
                                   phrase,
+                                  details.globalPosition,
+                                );
+                              },
+                              onSecondaryTapUp: (details) {
+                                _handleElementSecondaryTap(
+                                  _convertPathToString(PathScope.of(context)),
+                                  'Phrase',
+                                  context,
+                                  details.globalPosition,
+                                );
+                              },
+                              onLongPressStart: (details) {
+                                _handleElementSecondaryTap(
+                                  _convertPathToString(PathScope.of(context)),
+                                  'Phrase',
+                                  context,
                                   details.globalPosition,
                                 );
                               },

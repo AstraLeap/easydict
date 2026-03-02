@@ -33,7 +33,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   final DictionaryManager _dictManager = DictionaryManager();
 
   bool _isLoading = false;
-  List<String> _searchHistory = [];
+  List<SearchRecord> _searchRecords = [];
   bool _wasFocused = false;
   bool _isHistoryEditMode = false;
 
@@ -46,6 +46,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   bool _useFuzzySearch = false;
   bool _useAuxiliarySearch = false;
   bool _exactMatch = false;
+  bool _usePinyinSearch = false;
 
   // 搜索结果列表
   List<String> _searchResults = [];
@@ -56,6 +57,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   int _prefixSearchToken = 0;
   bool _isSearchingWord = false;
   StreamSubscription<SettingsSyncedEvent>? _syncSubscription;
+  StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
 
   bool _isInitializing = true;
 
@@ -96,6 +98,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _initData();
     _syncSubscription = EntryEventBus().settingsSynced.listen((event) {
       if (event.includesHistory) _loadSearchHistory();
+    });
+    _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
+      _loadDictionaryGroups();
     });
   }
 
@@ -175,6 +180,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   @override
   void dispose() {
     _syncSubscription?.cancel();
+    _dictsChangedSubscription?.cancel();
     _debounceTimer?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
@@ -202,7 +208,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       if (currentToken != _prefixSearchToken) return;
 
       List<String> results;
-      if (_useFuzzySearch) {
+      if (_usePinyinSearch) {
+        results = await _dbService.searchByPinyin(trimmedText, limit: 30);
+      } else if (_useFuzzySearch) {
         results = await _dbService.searchByWildcard(
           trimmedText,
           limit: 20,
@@ -304,25 +312,32 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   Future<void> _loadSearchHistory() async {
-    final history = await _historyService.getSearchHistory();
+    final records = await _historyService.getSearchRecords();
     setState(() {
-      _searchHistory = history;
+      _searchRecords = records;
     });
   }
 
   Future<void> _clearHistory() async {
     await _historyService.clearHistory();
     setState(() {
-      _searchHistory = [];
+      _searchRecords = [];
     });
     if (mounted) {
       showToast(context, '历史记录已清除');
     }
   }
 
-  Future<void> _onSearchFromHistory(String word) async {
-    // 直接使用搜索框的搜索方法，这样会使用相同的搜索逻辑（包括辅助搜索）
-    _searchController.text = word;
+  Future<void> _onSearchFromHistory(SearchRecord record) async {
+    // 恢复搜索记录中保存的高级选项和成功搜索时的语言
+    _searchController.text = record.word;
+    setState(() {
+      _useFuzzySearch = record.useFuzzySearch;
+      _exactMatch = record.exactMatch;
+      if (record.group != null) {
+        _selectedGroup = record.group!;
+      }
+    });
     await _searchWord();
   }
 
@@ -358,13 +373,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       _selectedResultIndex = -1;
     });
 
+    // 总是更新排序位置，保留已记录的语言；仅在搜索成功后再更新语言
     await _historyService.addSearchRecord(
       word,
       useFuzzySearch: _useFuzzySearch,
       exactMatch: _exactMatch,
-      group: _selectedGroup,
     );
-    final history = await _historyService.getSearchHistory();
 
     final searchResult = await _dbService.getAllEntries(
       word,
@@ -378,9 +392,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         searchResult.entries,
       );
 
+      // 搜索成功时才记录当前语言
+      await _historyService.addSearchRecord(word, group: _selectedGroup);
       // 更新历史记录
+      final records = await _historyService.getSearchRecords();
       setState(() {
-        _searchHistory = history;
+        _searchRecords = records;
       });
 
       // 跳转到详情页面
@@ -416,8 +433,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         }
       }
     } else {
+      final records = await _historyService.getSearchRecords();
       setState(() {
-        _searchHistory = history;
+        _searchRecords = records;
         _showSearchResults = false;
       });
 
@@ -475,6 +493,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                           if (value != 'en' && value != 'auto') {
                             _useAuxiliarySearch = false;
                             _exactMatch = false;
+                          }
+                          if (value != 'zh' && value != 'auto') {
+                            _usePinyinSearch = false;
                           }
                         });
                         await _advancedSettingsService.setLastSelectedGroup(
@@ -597,6 +618,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                     onSelected: (selected) {
                                       setState(() {
                                         _useFuzzySearch = selected;
+                                        // 通配符搜索与拼音搜索互斥
+                                        if (selected) _usePinyinSearch = false;
                                       });
                                       _advancedSettingsService
                                           .setUseFuzzySearch(selected);
@@ -631,6 +654,39 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                         Icons.text_fields,
                                         size: 16,
                                         color: _exactMatch
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimaryContainer
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  // 拼音搜索 - 仅在中文模式下显示
+                                  if (_selectedGroup == 'zh' ||
+                                      _selectedGroup == 'auto')
+                                    FilterChip(
+                                      label: const Text('拼音搜索'),
+                                      selected: _usePinyinSearch,
+                                      onSelected: (selected) {
+                                        setState(() {
+                                          _usePinyinSearch = selected;
+                                          // 拼音搜索与通配符搜索互斥
+                                          if (selected) _useFuzzySearch = false;
+                                        });
+                                        if (selected) {
+                                          _advancedSettingsService
+                                              .setUseFuzzySearch(false);
+                                        }
+                                        // 触发一次搜索以更新候选列表
+                                        _onSearchTextChanged(
+                                          _searchController.text,
+                                        );
+                                      },
+                                      avatar: Icon(
+                                        Icons.spellcheck,
+                                        size: 16,
+                                        color: _usePinyinSearch
                                             ? Theme.of(
                                                 context,
                                               ).colorScheme.onPrimaryContainer
@@ -675,7 +731,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                           child: Text(
-                            '搜索结果',
+                            _usePinyinSearch ? '拼音候选词' : '搜索结果',
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(
                                   fontWeight: FontWeight.bold,
@@ -720,7 +776,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   ),
                 // 历史记录始终显示
                 Expanded(
-                  child: _searchHistory.isNotEmpty
+                child: _searchRecords.isNotEmpty
                       ? _buildHistoryView()
                       : Center(
                           child: Column(
@@ -750,7 +806,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 获取高级搜索提示文本
   String _getAdvancedSearchHint() {
-    if (_useFuzzySearch) {
+    if (_usePinyinSearch) {
+      return '拼音搜索：输入拼音（如 "han"），从候选列表中选择汉字后查词';
+    } else if (_useFuzzySearch) {
       return '通配符搜索：使用 % 作为通配符，如 %tion% 匹配包含tion的单词';
     } else if (_useAuxiliarySearch) {
       return '辅助搜索：使用辅助字段搜索（例如用读音搜索汉字），与精确搜索互斥';
@@ -799,10 +857,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 crossAxisSpacing: 10,
                 mainAxisExtent: 40,
               ),
-              itemCount: _searchHistory.length,
+              itemCount: _searchRecords.length,
               itemBuilder: (context, index) {
-                final word = _searchHistory[index];
-                return _buildHistoryItem(word);
+                final record = _searchRecords[index];
+                return _buildHistoryItem(record);
               },
             ),
           ),
@@ -811,13 +869,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     );
   }
 
-  Widget _buildHistoryItem(String word) {
+  Widget _buildHistoryItem(SearchRecord record) {
     return InkWell(
       onTap: () {
         if (_isHistoryEditMode) {
           return;
         }
-        _onSearchFromHistory(word);
+        _onSearchFromHistory(record);
       },
       onLongPress: () {
         setState(() {
@@ -845,7 +903,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      word,
+                      record.word,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w500,
                         fontSize: 15,
@@ -856,7 +914,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   ),
                   if (_isHistoryEditMode)
                     GestureDetector(
-                      onTap: () => _deleteHistoryItem(word),
+                      onTap: () => _deleteHistoryItem(record),
                       child: Padding(
                         padding: const EdgeInsets.only(left: 8),
                         child: _ShakingDeleteIcon(
@@ -873,11 +931,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     );
   }
 
-  Future<void> _deleteHistoryItem(String word) async {
-    await _historyService.removeSearchRecord(word);
+  Future<void> _deleteHistoryItem(SearchRecord record) async {
+    await _historyService.removeSearchRecord(record.word);
     await _loadSearchHistory();
     if (mounted) {
-      showToast(context, '已删除 "$word"');
+      showToast(context, '已删除 "${record.word}"');
     }
   }
 

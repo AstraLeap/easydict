@@ -13,6 +13,30 @@ Map<String, dynamic> _parseJsonInIsolate(String jsonStr) {
   return Map<String, dynamic>.from(jsonDecode(jsonStr) as Map);
 }
 
+/// 解析 pronunciation 字段，兼容 List / Map / String 三种形式
+List<Map<String, dynamic>> _parsePronunciations(dynamic value) {
+  if (value == null) return [];
+  if (value is List) {
+    return value
+        .map((e) {
+          if (e is Map<String, dynamic>) return e;
+          if (e is Map) return Map<String, dynamic>.from(e);
+          // 字符串形式：当作 phonetic 字段
+          if (e is String) return <String, dynamic>{'phonetic': e};
+          return null;
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+  if (value is Map) {
+    return [Map<String, dynamic>.from(value)];
+  }
+  if (value is String) {
+    return [<String, dynamic>{'phonetic': value}];
+  }
+  return [];
+}
+
 class JsonParseParams {
   final String jsonStr;
   final String dictId;
@@ -130,15 +154,11 @@ class DictionaryEntry {
                   .where((e) => e.isNotEmpty)
                   .toList()
             : [],
-        frequency: json['frequency'] as Map<String, dynamic>? ?? {},
+        frequency: json['frequency'] is Map<String, dynamic>
+            ? json['frequency'] as Map<String, dynamic>
+            : {},
         etymology: json['etymology'],
-        pronunciations: json['pronunciation'] != null
-            ? (json['pronunciation'] as List<dynamic>)
-                  .map((e) => e as Map<String, dynamic>?)
-                  .where((e) => e != null)
-                  .map((e) => e!)
-                  .toList()
-            : [],
+        pronunciations: _parsePronunciations(json['pronunciation']),
         sense: json['sense'] != null
             ? (json['sense'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)
@@ -146,12 +166,15 @@ class DictionaryEntry {
                   .map((e) => e!)
                   .toList()
             : [],
-        phrase: json['phrase'] != null
-            ? (json['phrase'] as List<dynamic>)
-                  .map((e) => e?.toString() ?? '')
-                  .where((e) => e.isNotEmpty)
-                  .toList()
-            : [],
+        phrase: () {
+          // 只支持 'phrases' 字段（唯一正确形式）
+          final p = json['phrases'];
+          if (p == null || p == '' || p is! List) return <String>[];
+          return (p as List<dynamic>)
+              .map((e) => e?.toString() ?? '')
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }(),
         senseGroup: json['sense_group'] != null
             ? (json['sense_group'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)
@@ -190,6 +213,12 @@ class DictionaryEntry {
   int get _pureEntryIdAsInt {
     final pureId = _pureEntryId;
     return int.tryParse(pureId) ?? 0;
+  }
+
+  /// 原始 JSON 中的 pronunciation 字段是否为单个对象（而非列表）
+  bool get pronunciationIsSingleObject {
+    final raw = _rawJson['pronunciation'];
+    return raw != null && raw is Map;
   }
 
   Map<String, dynamic> toJson() {
@@ -345,6 +374,9 @@ class DatabaseService {
   Database? _database;
   String? _currentDictionaryId;
   String? _cachedDatabasePath;
+
+  // 缓存各词典是否为表音（biaoyi）模式（有 phonetic 列，无 headword_normalized 列）
+  final Map<String, bool> _dictHasPhoneticsCache = {};
 
   Future<String> get currentDictionaryId async {
     if (_currentDictionaryId != null) return _currentDictionaryId!;
@@ -606,6 +638,24 @@ class DatabaseService {
     return allEntries;
   }
 
+  /// 检查词典是否为表音（biaoyi）模式：有 phonetic 列，无 headword_normalized 列
+  Future<bool> _isBiaoyiDict(String dictId, Database db) async {
+    if (_dictHasPhoneticsCache.containsKey(dictId)) {
+      return _dictHasPhoneticsCache[dictId]!;
+    }
+    try {
+      final columns = await db.rawQuery('PRAGMA table_info(entries)');
+      final columnNames = columns.map((c) => c['name'] as String).toSet();
+      final isbiaoyi = columnNames.contains('phonetic') &&
+          !columnNames.contains('headword_normalized');
+      _dictHasPhoneticsCache[dictId] = isbiaoyi;
+      return isbiaoyi;
+    } catch (e) {
+      _dictHasPhoneticsCache[dictId] = false;
+      return false;
+    }
+  }
+
   Future<List<DictionaryEntry>> _searchInDictionary(
     String dictId,
     String word, {
@@ -622,10 +672,21 @@ class DatabaseService {
       // 获取该词典的 zstd 字典用于解压
       final zstdDict = await _dictManager.getZstdDictionary(dictId);
 
+      final isbiaoyi = await _isBiaoyiDict(dictId, db);
+
       String whereClause;
       List<dynamic> whereArgs;
 
-      if (useFuzzySearch) {
+      if (isbiaoyi) {
+        // 表音（biaoyi）词典：用 headword 列搜索，中文不需规范化
+        if (useFuzzySearch) {
+          whereClause = 'headword LIKE ?';
+          whereArgs = ['%$word%'];
+        } else {
+          whereClause = 'headword = ?';
+          whereArgs = [word];
+        }
+      } else if (useFuzzySearch) {
         whereClause = 'headword_normalized LIKE ?';
         whereArgs = ['%${_normalizeSearchWord(word)}%'];
       } else {
@@ -673,13 +734,19 @@ class DatabaseService {
               ),
             );
           } catch (e) {
-            final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
-            if (exactMatch) {
-              final headword = jsonData['headword'] as String? ?? '';
-              if (headword != word) continue;
+            Logger.w('compute 解析失败，回退到主线程解析: $e', tag: 'DatabaseService');
+            try {
+              final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
+              if (exactMatch) {
+                final headword = jsonData['headword'] as String? ?? '';
+                if (headword != word) continue;
+              }
+              _ensureEntryId(jsonData, row, dictId);
+              entry = DictionaryEntry.fromJson(jsonData);
+            } catch (e2) {
+              Logger.e('回退解析也失败，跳过此条目: $e2', tag: 'DatabaseService');
+              continue;
             }
-            _ensureEntryId(jsonData, row, dictId);
-            entry = DictionaryEntry.fromJson(jsonData);
           }
         }
 
@@ -688,7 +755,7 @@ class DatabaseService {
         }
       }
     } catch (e) {
-      // Error handling without debug output
+      Logger.e('_searchInDictionary 整体失败: $e', tag: 'DatabaseService');
     }
 
     return entries;
@@ -780,15 +847,21 @@ class DatabaseService {
       try {
         final db = await _dictManager.openDictionaryDatabase(metadata.id);
 
-        const whereClause = 'headword_normalized LIKE ?';
-        final whereArgs = ['${_normalizeSearchWord(prefix)}%'];
+        // 检查是否为表音词典（biaoyi），如是则搜索 headword 列（全词匹配）
+        final isbiaoyi = await _isBiaoyiDict(metadata.id, db);
+        final String column = isbiaoyi ? 'headword' : 'headword_normalized';
+        final String orderByCol = isbiaoyi ? 'headword' : 'headword_normalized';
+        final normalizedPrefix = isbiaoyi ? prefix : _normalizeSearchWord(prefix);
+
+        final whereClause = '$column LIKE ?';
+        final whereArgs = ['$normalizedPrefix%'];
 
         final queryResults = await db.query(
           'entries',
           columns: ['headword'],
           where: whereClause,
           whereArgs: whereArgs,
-          orderBy: 'headword_normalized ASC',
+          orderBy: '$orderByCol ASC',
           limit: limit,
         );
 
@@ -838,14 +911,74 @@ class DatabaseService {
       try {
         final db = await _dictManager.openDictionaryDatabase(metadata.id);
 
-        final whereClause = 'headword_normalized LIKE ?';
-        final whereArgs = ['%${_normalizeSearchWord(pattern)}%'];
+        // 检查是否为表音词典（biaoyi），如是则不能用 headword_normalized
+        final isbiaoyi = await _isBiaoyiDict(metadata.id, db);
+        final String column = isbiaoyi ? 'headword' : 'headword_normalized';
+        final normalizedPattern = isbiaoyi ? pattern : _normalizeSearchWord(pattern);
+
+        final whereClause = '$column LIKE ?';
+        final whereArgs = ['%$normalizedPattern%'];
 
         final queryResults = await db.query(
           'entries',
           columns: ['headword'],
           where: whereClause,
           whereArgs: whereArgs,
+          orderBy: 'headword ASC',
+          limit: limit,
+        );
+
+        return queryResults
+            .map((row) => row['headword'] as String?)
+            .where((h) => h != null && h.isNotEmpty)
+            .cast<String>()
+            .toList();
+      } catch (e) {
+        return <String>[];
+      }
+    }).toList();
+
+    final allResults = await Future.wait(futures);
+    for (final dictResults in allResults) {
+      for (final headword in dictResults) {
+        results.add(headword);
+        if (results.length >= limit) break;
+      }
+      if (results.length >= limit) break;
+    }
+
+    return results.toList()..sort();
+  }
+
+  /// 拼音搜索：搜索已启用中文词典的 phonetic 字段（biaoyi 模式词典）
+  /// 返回 headword 列表供用户选择
+  Future<List<String>> searchByPinyin(
+    String pinyin, {
+    int limit = 30,
+  }) async {
+    if (pinyin.isEmpty) return [];
+
+    final results = <String>{};
+    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
+
+    // 只针对中文词典（sourceLanguage == 'zh'）
+    final chineseDicts = enabledDicts
+        .where((m) => m.sourceLanguage.toLowerCase() == 'zh')
+        .toList();
+
+    final normalizedPinyin = _normalizeSearchWord(pinyin);
+
+    final futures = chineseDicts.map((metadata) async {
+      try {
+        final db = await _dictManager.openDictionaryDatabase(metadata.id);
+        final isbiaoyi = await _isBiaoyiDict(metadata.id, db);
+        if (!isbiaoyi) return <String>[];
+
+        final queryResults = await db.query(
+          'entries',
+          columns: ['headword'],
+          where: 'phonetic LIKE ?',
+          whereArgs: ['$normalizedPinyin%'],
           orderBy: 'headword ASC',
           limit: limit,
         );
@@ -885,7 +1018,8 @@ class DatabaseService {
       CREATE TABLE IF NOT EXISTS commits (
         id TEXT PRIMARY KEY,
         headword TEXT NOT NULL,
-        update_time INTEGER NOT NULL
+        update_time INTEGER NOT NULL,
+        delete INTEGER NOT NULL DEFAULT 0
       )
     ''');
   }
@@ -894,14 +1028,16 @@ class DatabaseService {
   Future<void> _recordUpdate(
     Database db,
     String entryId,
-    String headword,
-  ) async {
+    String headword, {
+    bool isDelete = false,
+  }) async {
     try {
       await _createCommitsTableIfNotExists(db);
       await db.insert('commits', {
         'id': entryId,
         'headword': headword,
         'update_time': DateTime.now().millisecondsSinceEpoch,
+        'delete': isDelete ? 1 : 0,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (e) {
       Logger.e('记录更新操作失败: $e', tag: 'DatabaseService', error: e);
@@ -1039,7 +1175,7 @@ class DatabaseService {
 
       final results = await db.query(
         'commits',
-        columns: ['id', 'headword', 'update_time'],
+        columns: ['id', 'headword', 'update_time', 'delete'],
         orderBy: 'update_time DESC',
       );
       return results;
@@ -1118,6 +1254,57 @@ class DatabaseService {
       return true;
     } catch (e) {
       Logger.e('删除更新记录失败: $e', tag: 'DatabaseService', error: e);
+      return false;
+    }
+  }
+
+  /// 删除词典条目（同时在 commits 表中记录删除操作）
+  Future<bool> deleteEntryById(String dictId, String entryId) async {
+    try {
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+
+      int? entryIdInt = int.tryParse(entryId);
+      if (entryIdInt == null && entryId.contains('_')) {
+        final parts = entryId.split('_');
+        if (parts.length >= 2) {
+          entryIdInt = int.tryParse(parts.last);
+        }
+      }
+
+      if (entryIdInt == null) {
+        Logger.e('无效 entry_id: $entryId', tag: 'DatabaseService');
+        return false;
+      }
+
+      // 先获取 headword，用于 commit 记录
+      final rows = await db.query(
+        'entries',
+        columns: ['headword'],
+        where: 'entry_id = ?',
+        whereArgs: [entryIdInt],
+      );
+
+      if (rows.isEmpty) {
+        Logger.e('未找到 entry_id=$entryId 的条目', tag: 'DatabaseService');
+        return false;
+      }
+
+      final headword = rows.first['headword'] as String? ?? '';
+
+      // 删除条目
+      await db.delete(
+        'entries',
+        where: 'entry_id = ?',
+        whereArgs: [entryIdInt],
+      );
+
+      // 在 commits 表中记录删除操作
+      await _recordUpdate(db, entryId, headword, isDelete: true);
+
+      return true;
+    } catch (e) {
+      Logger.e('删除词条失败: $e', tag: 'DatabaseService', error: e);
       return false;
     }
   }

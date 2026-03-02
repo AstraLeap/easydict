@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -12,6 +13,8 @@ import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
 import '../widgets/search_bar.dart';
 import '../services/advanced_search_settings_service.dart';
+import '../services/dictionary_manager.dart';
+import '../services/entry_event_bus.dart';
 import '../services/font_loader_service.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
@@ -53,6 +56,7 @@ class _WordBankPageState extends State<WordBankPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   bool _wasFocused = false;
+  StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
 
   // 分页相关
   static const int _pageSize = 50;
@@ -63,6 +67,9 @@ class _WordBankPageState extends State<WordBankPage> {
   void initState() {
     super.initState();
     _searchFocusNode.addListener(_onFocusChange);
+    _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
+      _reloadLanguages();
+    });
   }
 
   void _onFocusChange() {
@@ -73,6 +80,7 @@ class _WordBankPageState extends State<WordBankPage> {
 
   @override
   void dispose() {
+    _dictsChangedSubscription?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -87,8 +95,8 @@ class _WordBankPageState extends State<WordBankPage> {
 
   Future<void> _loadData() async {
     try {
-      // 获取所有支持的语言
-      final languages = await _wordBankService.getSupportedLanguages();
+      // 获取所有支持的语言（已有单词的语言 + 已启用词典的源语言）
+      final languages = await _getMergedLanguages();
 
       // 加载上次选择的语言
       String? selectedLanguage;
@@ -117,6 +125,32 @@ class _WordBankPageState extends State<WordBankPage> {
         setState(() => _isInitialLoading = false);
       }
     }
+  }
+
+  /// 获取合并后的语言列表（已有单词的语言 + 启用词典的源语言）
+  Future<List<String>> _getMergedLanguages() async {
+    final wordBankLangs = await _wordBankService.getSupportedLanguages();
+    final enabledDicts = await DictionaryManager().getEnabledDictionariesMetadata();
+    final dictLangs = enabledDicts
+        .map((d) => d.sourceLanguage.toLowerCase())
+        .where((l) => l.isNotEmpty)
+        .toSet();
+    final merged = {...wordBankLangs, ...dictLangs}.toList()..sort();
+    return merged;
+  }
+
+  /// 词典启用状态变化时，重新加载语言列表
+  Future<void> _reloadLanguages() async {
+    if (!mounted) return;
+    final languages = await _getMergedLanguages();
+    if (!mounted) return;
+    setState(() {
+      _languages = languages;
+      // 如果当前选中的语言已不在列表中，重置为 null（全部）
+      if (_selectedLanguage != null && !languages.contains(_selectedLanguage)) {
+        _selectedLanguage = null;
+      }
+    });
   }
 
   Future<void> _loadWords() async {

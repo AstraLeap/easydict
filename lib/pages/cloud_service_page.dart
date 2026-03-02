@@ -961,12 +961,27 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
       for (final record in _updateRecords) {
         final entryId = record['id'] as String;
+        final isDelete = (record['delete'] as int? ?? 0) == 1;
 
         // 去重：如果同一个 entry 被更新多次，只取最新的一次
         if (processedEntryIds.contains(entryId)) {
           continue;
         }
         processedEntryIds.add(entryId);
+
+        if (isDelete) {
+          // 删除记录：只需 {"entry_id": <int>, "_delete": true}
+          // 从 entryId 字符串中提取纯数字部分
+          int? numericId = int.tryParse(entryId);
+          if (numericId == null && entryId.contains('_')) {
+            final parts = entryId.split('_');
+            numericId = int.tryParse(parts.last);
+          }
+          if (numericId != null) {
+            jsonLines.add(jsonEncode({'entry_id': numericId, '_delete': true}));
+          }
+          continue;
+        }
 
         // 获取完整的 entry JSON
         final entryJson = await _databaseService.getEntryJsonById(
@@ -1112,13 +1127,32 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                   itemBuilder: (context, index) {
                     final record = _updateRecords[index];
                     final headword = record['headword'] as String;
+                    final isDelete =
+                        (record['delete'] as int? ?? 0) == 1;
                     final updateTime = DateTime.fromMillisecondsSinceEpoch(
                       record['update_time'] as int,
                     );
                     return ListTile(
                       dense: true,
-                      title: Text(headword),
+                      leading: isDelete
+                          ? Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: colorScheme.error,
+                            )
+                          : Icon(
+                              Icons.edit_outlined,
+                              size: 18,
+                              color: colorScheme.primary,
+                            ),
+                      title: Text(
+                        headword,
+                        style: TextStyle(
+                          color: isDelete ? colorScheme.error : null,
+                        ),
+                      ),
                       subtitle: Text(
+                        '${isDelete ? '[删除] ' : ''}'
                         '${updateTime.year}-${updateTime.month.toString().padLeft(2, '0')}-${updateTime.day.toString().padLeft(2, '0')} '
                         '${updateTime.hour.toString().padLeft(2, '0')}:${updateTime.minute.toString().padLeft(2, '0')}',
                         style: TextStyle(
@@ -1769,5 +1803,428 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
   void dispose() {
     _messageController.dispose();
     super.dispose();
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// UpdateJsonDialog — 导入 JSON/JSONL 以及按 entry_id 删除条目
+// ─────────────────────────────────────────────────────────────────────────────
+
+class UpdateJsonDialog extends StatefulWidget {
+  final String dictId;
+  final String dictName;
+  final VoidCallback onUpdateSuccess;
+
+  const UpdateJsonDialog({
+    super.key,
+    required this.dictId,
+    required this.dictName,
+    required this.onUpdateSuccess,
+  });
+
+  @override
+  State<UpdateJsonDialog> createState() => _UpdateJsonDialogState();
+}
+
+class _UpdateJsonDialogState extends State<UpdateJsonDialog>
+    with SingleTickerProviderStateMixin {
+  final DatabaseService _databaseService = DatabaseService();
+  late TabController _tabController;
+
+  // ── 导入 tab ──
+  final TextEditingController _jsonController = TextEditingController();
+  bool _isImporting = false;
+  String? _importResult;
+  bool _importHasError = false;
+
+  // ── 删除 tab ──
+  final TextEditingController _searchController = TextEditingController();
+  bool _isSearching = false;
+  bool _isDeleting = false;
+  Map<String, dynamic>? _foundEntry;
+  String? _foundEntryId;
+  String? _searchError;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _jsonController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // ── 导入逻辑 ───────────────────────────────────────────────────────────────
+
+  Future<void> _importJson() async {
+    final text = _jsonController.text.trim();
+    if (text.isEmpty) {
+      setState(() {
+        _importResult = '请输入 JSON 内容';
+        _importHasError = true;
+      });
+      return;
+    }
+
+    setState(() {
+      _isImporting = true;
+      _importResult = null;
+      _importHasError = false;
+    });
+
+    try {
+      // 将文本按行拆分为 JSONL，兼容单个 JSON 对象
+      final lines = text
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+
+      int successCount = 0;
+      int errorCount = 0;
+      final errorMessages = <String>[];
+
+      for (int i = 0; i < lines.length; i++) {
+        final line = lines[i];
+        try {
+          final dynamic decoded = jsonDecode(line);
+          if (decoded is! Map<String, dynamic>) {
+            errorCount++;
+            errorMessages.add('第 ${i + 1} 行不是 JSON 对象');
+            continue;
+          }
+
+          final json = Map<String, dynamic>.from(decoded);
+          // 注入当前词典 ID（以便 insertOrUpdateEntry 找到正确的数据库）
+          json['dict_id'] = widget.dictId;
+
+          final entry = DictionaryEntry.fromJson(json);
+          if (entry.id.isEmpty) {
+            errorCount++;
+            final preview =
+                line.length > 60 ? '${line.substring(0, 60)}…' : line;
+            errorMessages.add('第 ${i + 1} 行缺少 entry_id: $preview');
+            continue;
+          }
+
+          final success = await _databaseService.insertOrUpdateEntry(entry);
+          if (success) {
+            successCount++;
+          } else {
+            errorCount++;
+            errorMessages.add(
+              '第 ${i + 1} 行写入失败 (entry_id: ${entry.id}, headword: ${entry.headword})',
+            );
+          }
+        } catch (e) {
+          errorCount++;
+          final preview =
+              line.length > 60 ? '${line.substring(0, 60)}…' : line;
+          errorMessages.add('第 ${i + 1} 行解析失败: $preview');
+        }
+      }
+
+      final buf = StringBuffer('成功导入 $successCount 条');
+      if (errorCount > 0) {
+        buf.write('，失败 $errorCount 条');
+        for (final msg in errorMessages.take(5)) {
+          buf.write('\n• $msg');
+        }
+        if (errorMessages.length > 5) {
+          buf.write('\n… 还有 ${errorMessages.length - 5} 条错误');
+        }
+      }
+
+      setState(() {
+        _importResult = buf.toString();
+        _importHasError = errorCount > 0 && successCount == 0;
+      });
+
+      if (successCount > 0) widget.onUpdateSuccess();
+    } catch (e) {
+      setState(() {
+        _importResult = '导入失败: $e';
+        _importHasError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _isImporting = false);
+    }
+  }
+
+  // ── 删除逻辑 ───────────────────────────────────────────────────────────────
+
+  Future<void> _searchEntry() async {
+    final entryId = _searchController.text.trim();
+    if (entryId.isEmpty) {
+      setState(() => _searchError = '请输入 entry_id');
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _foundEntry = null;
+      _foundEntryId = null;
+      _searchError = null;
+    });
+
+    try {
+      final entry =
+          await _databaseService.getEntryJsonById(widget.dictId, entryId);
+      if (entry == null) {
+        setState(
+          () => _searchError = '未找到 entry_id 为 $entryId 的条目',
+        );
+      } else {
+        setState(() {
+          _foundEntry = entry;
+          _foundEntryId = entryId;
+        });
+      }
+    } catch (e) {
+      setState(() => _searchError = '搜索失败: $e');
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<void> _deleteEntry() async {
+    if (_foundEntryId == null || _foundEntry == null) return;
+
+    final headword =
+        _foundEntry!['headword']?.toString() ?? _foundEntryId!;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text(
+          '确定要删除条目「$headword」（entry_id: $_foundEntryId）吗？\n\n'
+          '此操作会将删除记录写入 commit 表，推送更新后服务器端的该条目也将被删除。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('确认删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      final success = await _databaseService.deleteEntryById(
+        widget.dictId,
+        _foundEntryId!,
+      );
+      if (success) {
+        setState(() {
+          _foundEntry = null;
+          _foundEntryId = null;
+          _searchController.clear();
+          _searchError = null;
+        });
+        if (mounted) {
+          showToast(context, '条目已删除，已记录到 commit 表');
+          widget.onUpdateSuccess();
+        }
+      } else {
+        if (mounted) showToast(context, '删除失败，条目可能不存在');
+      }
+    } catch (e) {
+      if (mounted) showToast(context, '删除失败: $e');
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('更新 JSON — ${widget.dictName}'),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      content: SizedBox(
+        width: 560,
+        height: 480,
+        child: Column(
+          children: [
+            TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: '导入 JSON / JSONL'),
+                Tab(text: '按 entry_id 删除'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildImportTab(),
+                  _buildDeleteTab(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImportTab() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _jsonController,
+            maxLines: null,
+            expands: true,
+            style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText:
+                  '粘贴 JSON 或 JSONL（每行一个 JSON 对象）\n\n注意：每条 JSON 必须含有 entry_id 字段',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+              contentPadding: EdgeInsets.all(12),
+            ),
+          ),
+        ),
+        if (_importResult != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _importHasError
+                  ? colorScheme.errorContainer
+                  : colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _importResult!,
+              style: TextStyle(
+                fontSize: 12,
+                color: _importHasError
+                    ? colorScheme.onErrorContainer
+                    : colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: _isImporting ? null : _importJson,
+          icon: _isImporting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.upload_outlined, size: 18),
+          label: Text(_isImporting ? '导入中…' : '写入数据库'),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Widget _buildDeleteTab() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'entry_id',
+                  hintText: '输入整数 entry_id',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _searchEntry(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: FilledButton(
+                onPressed: _isSearching ? null : _searchEntry,
+                child: _isSearching
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('搜索'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_searchError != null)
+          Text(
+            _searchError!,
+            style: TextStyle(color: colorScheme.error, fontSize: 13),
+          ),
+        if (_foundEntry != null) ...[
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                border: Border.all(color: colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SingleChildScrollView(
+                child: Text(
+                  const JsonEncoder.withIndent('  ').convert(_foundEntry),
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _isDeleting ? null : _deleteEntry,
+            icon: _isDeleting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_outline, size: 18),
+            label: Text(_isDeleting ? '删除中…' : '删除此条目'),
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
   }
 }
