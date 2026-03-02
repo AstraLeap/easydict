@@ -2567,8 +2567,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       ],
                     ),
                   ],
-                  // 渲染 datas（在 sense 之前）
-                  _buildDatasIfExist(context),
+                  // 渲染 data（在 sense 之前）
+                  _buildDataIfExist(context),
                   if (entry.sense.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _buildSenses(context),
@@ -2807,7 +2807,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  Widget _buildDatas(
+  Widget _buildData(
     BuildContext context,
     Map<String, dynamic> value, {
     List<String>? path,
@@ -2819,7 +2819,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return const SizedBox.shrink();
     }
 
-    return _DatasTabWidget(
+    return _DataTabWidget(
       keys: keys,
       value: value,
       path: path ?? PathScope.of(context),
@@ -4099,17 +4099,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'sense',
     'sense_group',
     'phrase',
-    'datas', // datas 单独渲染
+    'data', // data 单独渲染
   ];
 
-  /// 渲染 datas（如果存在），在 sense 之前显示
-  Widget _buildDatasIfExist(BuildContext context) {
+  /// 渲染 data（如果存在），在 sense 之前显示
+  Widget _buildDataIfExist(BuildContext context) {
     final entry = _localEntry;
     final entryJson = entry.toJson();
 
-    if (!entryJson.containsKey('datas')) return const SizedBox.shrink();
+    if (!entryJson.containsKey('data')) return const SizedBox.shrink();
 
-    final value = entryJson['datas'];
+    final value = entryJson['data'];
     if (value is! Map<String, dynamic> || value.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -4118,7 +4118,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        _buildDatas(context, value, path: ['datas']),
+        _buildData(context, value, path: ['data']),
       ],
     );
   }
@@ -4327,10 +4327,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return const SizedBox.shrink();
     }
 
-    // 分离 datas key，它将在最后渲染
-    final hasDatas = keys.contains('datas');
-    final normalKeys = keys.where((k) => k != 'datas').toList();
-    final datasValue = hasDatas ? board['datas'] : null;
+    // 分离 data key，它将在最后渲染
+    final hasData = keys.contains('data');
+    final normalKeys = keys.where((k) => k != 'data').toList();
+    final dataValue = hasData ? board['data'] : null;
 
     // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
     return HiddenLanguagesSelector<String>(
@@ -4395,10 +4395,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
           }
         }
 
-        // 在最后渲染 datas（如果存在）
-        if (datasValue is Map<String, dynamic> && datasValue.isNotEmpty) {
+        // 在最后渲染 data（如果存在）
+        if (dataValue is Map<String, dynamic> && dataValue.isNotEmpty) {
           widgets.add(
-            _buildDatas(context, datasValue, path: [...path, 'datas']),
+            _buildData(context, dataValue, path: [...path, 'data']),
           );
         }
 
@@ -4673,7 +4673,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'certifications': 'certification',
     'sense': 'sense',
     'example': 'example',
-    'datas': 'datas',
+    'data': 'data',
     'note': 'note',
     'image': 'image',
   };
@@ -4874,8 +4874,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         return _buildFrequencyStars(context);
       case 'example':
         return _buildExample(context, value, path: path);
-      case 'datas':
-        return _buildDatas(context, value, path: path);
+      case 'data':
+        return _buildData(context, value, path: path);
       case 'note':
         return _buildnote(context, value, path: path);
       case 'image':
@@ -5267,7 +5267,7 @@ class _LazyImageLoaderState extends State<_LazyImageLoader>
   }
 }
 
-class _DatasTabWidget extends StatefulWidget {
+class _DataTabWidget extends StatefulWidget {
   final List<String> keys;
   final Map<String, dynamic> value;
   final List<String> path;
@@ -5278,7 +5278,7 @@ class _DatasTabWidget extends StatefulWidget {
   final String? sourceLanguage;
   final Map<String, Map<String, double>> fontScales;
 
-  const _DatasTabWidget({
+  const _DataTabWidget({
     required this.keys,
     required this.value,
     required this.path,
@@ -5290,10 +5290,10 @@ class _DatasTabWidget extends StatefulWidget {
   });
 
   @override
-  State<_DatasTabWidget> createState() => _DatasTabWidgetState();
+  State<_DataTabWidget> createState() => _DataTabWidgetState();
 }
 
-class _DatasTabWidgetState extends State<_DatasTabWidget> {
+class _DataTabWidgetState extends State<_DataTabWidget> {
   int? _selectedIndex;
 
   void _selectTab(int? index, String key) {
@@ -5350,7 +5350,7 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                         children: parseFormattedText(
                           key,
                           DictTypography.getBaseStyle(
-                            DictElementType.datasTabLabel,
+                            DictElementType.dataTabLabel,
                             color: isSelected
                                 ? widget.colorScheme.onPrimaryContainer
                                 : widget.colorScheme.onSurface,
@@ -5361,7 +5361,7 @@ class _DatasTabWidgetState extends State<_DatasTabWidget> {
                           context: context,
                           sourceLanguage: widget.sourceLanguage,
                           fontScales: widget.fontScales,
-                          elementType: DictElementType.datasTabLabel,
+                          elementType: DictElementType.dataTabLabel,
                         ).spans,
                       ),
                     ),

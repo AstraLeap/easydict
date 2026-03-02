@@ -652,16 +652,16 @@ class DictionaryManager {
 
   Future<List<DictionaryMetadata>> getAllDictionariesMetadata() async {
     final ids = await getInstalledDictionaries();
-    final metadatas = <DictionaryMetadata>[];
+    final metadata = <DictionaryMetadata>[];
 
     for (final id in ids) {
-      final metadata = await getDictionaryMetadata(id);
-      if (metadata != null) {
-        metadatas.add(metadata);
+      final item = await getDictionaryMetadata(id);
+      if (item != null) {
+        metadata.add(item);
       }
     }
 
-    return metadatas;
+    return metadata;
   }
 
   Future<List<DictionaryMetadata>> getEnabledDictionariesMetadata() async {
@@ -670,20 +670,20 @@ class DictionaryManager {
     }
 
     final enabledIds = await getEnabledDictionaries();
-    final metadatas = <DictionaryMetadata>[];
+    final metadata = <DictionaryMetadata>[];
 
     for (final id in enabledIds) {
-      final metadata = await getDictionaryMetadata(id);
-      if (metadata != null) {
+      final item = await getDictionaryMetadata(id);
+      if (item != null) {
         final dbPath = await getDictionaryDbPath(id);
         if (await File(dbPath).exists()) {
-          metadatas.add(metadata);
+          metadata.add(item);
         }
       }
     }
 
-    _enabledDictionariesMetadataCache = metadatas;
-    return metadatas;
+    _enabledDictionariesMetadataCache = metadata;
+    return metadata;
   }
 
   Future<void> preloadEnabledDictionariesMetadata() async {
