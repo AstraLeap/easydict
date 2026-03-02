@@ -11,6 +11,7 @@ def normalize_text(text, remove_accents=True):
         text = text.lower()
         text = unicodedata.normalize('NFD', text)
         text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    text = text.replace(' ', '')
     return text
 
 
@@ -251,7 +252,7 @@ if __name__ == "__main__":
         print("  db_path: 输出数据库路径")
         print("  dict_size_kb: 字典大小 KB (默认 112)")
         print("  page_size: SQLite 页面大小 (默认 4096)")
-        print("  --biaoyi: 启用表音文字模式 (如汉字等，需要phonetic字段)")
+        print("  --biaoyi: 启用表意文字模式 (如汉字等，需要phonetic字段)")
         sys.exit(1)
 
     jsonl_path = sys.argv[1]
