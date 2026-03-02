@@ -90,8 +90,8 @@ class _BoardWidgetState extends State<BoardWidget> {
     final title = widget.board['title'] as String? ?? '';
 
     final boardCount = widget.path.where((p) => p == 'board').length;
-    final inDatas = widget.path.contains('datas');
-    final isNested = boardCount >= 2 || inDatas || widget.forceNested;
+    final inData = widget.path.contains('data');
+    final isNested = boardCount >= 2 || inData || widget.forceNested;
 
     final contentBoard = Map<String, dynamic>.from(widget.board)
       ..remove('title')

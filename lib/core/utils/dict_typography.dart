@@ -70,8 +70,8 @@ enum DictElementType {
   /// 章节导航标签（section 字段，横向滚动）
   sectionNav,
 
-  /// Datas 标签页标签文字
-  datasTabLabel,
+  /// Data 标签页标签文字
+  dataTabLabel,
 
   /// sense 分组标题（group_name 字段）
   groupName,
@@ -258,8 +258,8 @@ class DictTypography {
       isSerifOrMonospace: false,
     ),
 
-    // ── Datas ──
-    DictElementType.datasTabLabel: _ElementMeta(
+    // ── Data ──
+    DictElementType.dataTabLabel: _ElementMeta(
       baseFontSize: 12.0,
       isSerifOrMonospace: false,
       fontWeight: FontWeight.w500,

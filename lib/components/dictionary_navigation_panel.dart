@@ -793,7 +793,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'sense',
       'sense_group',
       'phrase',
-      'datas',
+      'data',
       'hiddenLanguages',
       'hidden_languages',
     ];
