@@ -11,7 +11,7 @@ def normalize_text(text, remove_accents=True):
         text = text.lower()
         text = unicodedata.normalize('NFD', text)
         text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
-    # text = text.replace(' ', '')
+    text = text.replace(' ', '')
     return text
 
 
