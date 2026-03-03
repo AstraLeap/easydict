@@ -359,6 +359,22 @@ Uint8List compressJsonToBlobWithDict(
   );
 }
 
+/// 查询操作符模式：根据用户输入文本自动检测
+enum _QueryMode { normal, like, glob }
+
+/// 根据查询文本自动检测操作符模式：
+/// - 含 % 或 _ → LIKE
+/// - 含 * ? [ ] ^ → GLOB
+/// - 否则 → 普通精确/前缀匹配
+_QueryMode _detectQueryMode(String query) {
+  if (query.contains('%') || query.contains('_')) return _QueryMode.like;
+  if (query.contains('*') || query.contains('?') ||
+      query.contains('[') || query.contains(']') || query.contains('^')) {
+    return _QueryMode.glob;
+  }
+  return _QueryMode.normal;
+}
+
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
@@ -477,27 +493,34 @@ class DatabaseService {
     return getEntry(word);
   }
 
-  /// 规范化搜索词：小写化并去除音调符号
+  /// 规范化搜索词：小写化、去除音调符号、去除空格
   String _normalizeSearchWord(String word) {
     // 小写化
     String normalized = word.toLowerCase();
     // 去除音调符号（Unicode组合字符）
     normalized = normalized.replaceAll(_diacriticsRegExp, '');
+    // 去除空格（与数据库构建时的 normalize_text 保持一致）
+    normalized = normalized.replaceAll(' ', '');
     return normalized;
   }
 
-  /// 简单的语言检测
-  String _detectLanguage(String text) {
-    if (_chineseRegExp.hasMatch(text)) return 'zh';
-    if (_japaneseRegExp.hasMatch(text)) return 'ja';
-    if (_koreanRegExp.hasMatch(text)) return 'ko';
-    return 'en';
+  /// 自动模式下检测输入文本可能属于的语言列表。
+  /// 返回 null 表示未检测到特定表意文字脚本，应搜索所有表音文字词典。
+  List<String>? _detectPossibleLanguages(String text) {
+    final hasKana = _japaneseRegExp.hasMatch(text);
+    final hasCJK = _chineseRegExp.hasMatch(text);
+    final hasHangul = _koreanRegExp.hasMatch(text);
+
+    if (hasHangul) return ['ko'];
+    if (hasKana) return ['ja']; // 有假名（含汉字）→ 日语
+    if (hasCJK) return ['zh', 'ja']; // 纯汉字 → 中文或日文均可
+    return null; // 拉丁字母等表音文字 → 搜索所有非表意词典
   }
 
   Future<SearchResult> getAllEntries(
     String word, {
-    bool useFuzzySearch = false,
     bool exactMatch = false,
+    bool usePhoneticSearch = false,
     String? sourceLanguage,
   }) async {
     var entries = <DictionaryEntry>[];
@@ -505,18 +528,23 @@ class DatabaseService {
 
     entries = await _searchEntriesInternal(
       word,
-      useFuzzySearch: useFuzzySearch,
       exactMatch: exactMatch,
+      usePhoneticSearch: usePhoneticSearch,
       sourceLanguage: sourceLanguage,
     );
 
-    if (entries.isEmpty && !useFuzzySearch) {
-      String? targetLang = sourceLanguage;
-      if (targetLang == 'auto') {
-        targetLang = _detectLanguage(word);
+    if (entries.isEmpty && _detectQueryMode(word) == _QueryMode.normal && !usePhoneticSearch) {
+      // 判断是否需要调用英语关系词搜索
+      bool shouldSearchEnglish;
+      if (sourceLanguage == 'auto') {
+        final possibleLangs = _detectPossibleLanguages(word);
+        // possibleLangs == null 表示表音文字（可能含英语）；包含 'en' 则明确含英语
+        shouldSearchEnglish = possibleLangs == null;
+      } else {
+        shouldSearchEnglish = sourceLanguage == 'en' || sourceLanguage == null;
       }
 
-      if (targetLang == 'en' || targetLang == 'auto') {
+      if (shouldSearchEnglish) {
         Logger.d(
           'DatabaseService: 检测到英语，调用 EnglishSearchService',
           tag: 'EnglishDB',
@@ -545,8 +573,8 @@ class DatabaseService {
           final futures = limitedWords.map((relatedWord) {
             return _searchEntriesInternal(
               relatedWord,
-              useFuzzySearch: false,
               exactMatch: exactMatch,
+              usePhoneticSearch: false,
               sourceLanguage: sourceLanguage,
             ).timeout(
               const Duration(seconds: 2),
@@ -582,8 +610,8 @@ class DatabaseService {
 
   Future<List<DictionaryEntry>> _searchEntriesInternal(
     String word, {
-    required bool useFuzzySearch,
     required bool exactMatch,
+    bool usePhoneticSearch = false,
     String? sourceLanguage,
   }) async {
     final dictManager = DictionaryManager();
@@ -601,14 +629,44 @@ class DatabaseService {
     }
 
     String? targetLang = sourceLanguage;
+    List<String>? possibleLangs;
+
     if (targetLang == 'auto') {
-      targetLang = _detectLanguage(word);
+      possibleLangs = _detectPossibleLanguages(word);
+      Logger.i(
+        '自动模式检测到可能语言: ${possibleLangs ?? "(表音文字，搜索所有非表意词典)"}',
+        tag: 'DatabaseService',
+      );
+    } else {
+      Logger.i('指定语言: $targetLang', tag: 'DatabaseService');
     }
 
-    Logger.i('检测到的目标语言: $targetLang', tag: 'DatabaseService');
-
     final filteredDicts = enabledDicts.where((metadata) {
-      if (targetLang != null && targetLang != metadata.sourceLanguage) {
+      if (targetLang == 'auto') {
+        final lang = metadata.sourceLanguage;
+        if (possibleLangs != null) {
+          // 检测到表意文字：只搜索匹配的语言
+          final match = possibleLangs.contains(lang);
+          if (!match) {
+            Logger.i(
+              '  过滤掉词典 ${metadata.name}: 语言 $lang 不在候选列表 $possibleLangs',
+              tag: 'DatabaseService',
+            );
+          }
+          return match;
+        } else {
+          // 表音文字：搜索所有非表意文字词典
+          const logographic = {'zh', 'ja', 'ko'};
+          final match = !logographic.contains(lang);
+          if (!match) {
+            Logger.i(
+              '  过滤掉词典 ${metadata.name}: 表音文字模式下跳过表意词典 $lang',
+              tag: 'DatabaseService',
+            );
+          }
+          return match;
+        }
+      } else if (targetLang != null && targetLang != metadata.sourceLanguage) {
         Logger.i(
           '  过滤掉词典 ${metadata.name}: 语言不匹配 (${metadata.sourceLanguage} != $targetLang)',
           tag: 'DatabaseService',
@@ -627,8 +685,8 @@ class DatabaseService {
       return await _searchInDictionary(
         metadata.id,
         word,
-        useFuzzySearch: useFuzzySearch,
         exactMatch: exactMatch,
+        usePhoneticSearch: usePhoneticSearch,
       );
     }).toList();
 
@@ -659,8 +717,8 @@ class DatabaseService {
   Future<List<DictionaryEntry>> _searchInDictionary(
     String dictId,
     String word, {
-    required bool useFuzzySearch,
     required bool exactMatch,
+    bool usePhoneticSearch = false,
   }) async {
     final entries = <DictionaryEntry>[];
 
@@ -677,21 +735,45 @@ class DatabaseService {
       String whereClause;
       List<dynamic> whereArgs;
 
+      final qMode = _detectQueryMode(word);
+      final normWord = _normalizeSearchWord(word);
+
       if (isbiaoyi) {
-        // 表音（biaoyi）词典：用 headword 列搜索，中文不需规范化
-        if (useFuzzySearch) {
-          whereClause = 'headword LIKE ?';
-          whereArgs = ['%$word%'];
+        // 表意文字词典：支持 headword 字段搜索及 phonetic 读音搜索
+        if (usePhoneticSearch) {
+          if (qMode == _QueryMode.like) {
+            whereClause = 'phonetic LIKE ?';
+            whereArgs = [normWord];
+          } else if (qMode == _QueryMode.glob) {
+            whereClause = 'phonetic GLOB ?';
+            whereArgs = [normWord];
+          } else {
+            whereClause = 'phonetic = ?';
+            whereArgs = [normWord];
+          }
         } else {
-          whereClause = 'headword = ?';
-          whereArgs = [word];
+          if (qMode == _QueryMode.like) {
+            whereClause = 'headword LIKE ?';
+            whereArgs = [word];
+          } else if (qMode == _QueryMode.glob) {
+            whereClause = 'headword GLOB ?';
+            whereArgs = [word];
+          } else {
+            whereClause = 'headword = ?';
+            whereArgs = [word];
+          }
         }
-      } else if (useFuzzySearch) {
-        whereClause = 'headword_normalized LIKE ?';
-        whereArgs = ['%${_normalizeSearchWord(word)}%'];
       } else {
-        whereClause = 'headword_normalized = ?';
-        whereArgs = [_normalizeSearchWord(word)];
+        if (qMode == _QueryMode.like) {
+          whereClause = 'headword_normalized LIKE ?';
+          whereArgs = [normWord];
+        } else if (qMode == _QueryMode.glob) {
+          whereClause = 'headword_normalized GLOB ?';
+          whereArgs = [normWord];
+        } else {
+          whereClause = 'headword_normalized = ?';
+          whereArgs = [normWord];
+        }
       }
 
       final results = await db.query(
@@ -821,189 +903,267 @@ class DatabaseService {
     }
   }
 
-  Future<List<String>> searchByPrefix(
-    String prefix, {
-    int limit = 10,
-    String? sourceLanguage,
-  }) async {
-    if (prefix.isEmpty) return [];
+  // ─────────────────────────────────────────────────────────────────
+  // 边打边搜候选词
+  // ─────────────────────────────────────────────────────────────────
 
-    final results = <String>{};
+  /// 统一的边打边搜候选词入口。
+  ///
+  /// [sourceLanguage] 可以是具体语言代码或 'auto'。
+  /// 返回已排序、去重、不超过 [limit] 条的候选 headword 列表。
+  Future<List<String>> getPreSearchCandidates(
+    String query, {
+    required String sourceLanguage,
+    bool exactMatch = false,
+    bool usePhoneticSearch = false,
+    int limit = 8,
+  }) async {
+    if (query.isEmpty) return [];
+
+    final normalizedQuery = _normalizeSearchWord(query);
     final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
 
-    String? targetLang = sourceLanguage;
-    if (targetLang == 'auto') {
-      targetLang = _detectLanguage(prefix);
+    // ── 过滤要搜索的词典 ────────────────────────────────────────────
+    List<String>? possibleLangs;
+    if (sourceLanguage == 'auto') {
+      possibleLangs = _detectPossibleLanguages(query);
     }
 
-    final filteredDicts = enabledDicts.where((metadata) {
-      if (targetLang != null && targetLang != metadata.sourceLanguage) {
-        return false;
+    final filteredDicts = enabledDicts.where((m) {
+      if (sourceLanguage == 'auto') {
+        final lang = m.sourceLanguage;
+        if (possibleLangs != null) return possibleLangs.contains(lang);
+        const logographic = {'zh', 'ja', 'ko'};
+        return !logographic.contains(lang); // 表音输入只搜非表意词典
       }
-      return true;
+      return m.sourceLanguage == sourceLanguage;
     }).toList();
 
+    if (filteredDicts.isEmpty) return [];
+
+    // ── 并行搜索各词典 ──────────────────────────────────────────────
     final futures = filteredDicts.map((metadata) async {
       try {
         final db = await _dictManager.openDictionaryDatabase(metadata.id);
-
-        // 检查是否为表音词典（biaoyi），如是则搜索 headword 列（全词匹配）
         final isbiaoyi = await _isBiaoyiDict(metadata.id, db);
-        final String column = isbiaoyi ? 'headword' : 'headword_normalized';
-        final String orderByCol = isbiaoyi ? 'headword' : 'headword_normalized';
-        final normalizedPrefix = isbiaoyi ? prefix : _normalizeSearchWord(prefix);
 
-        final whereClause = '$column LIKE ?';
-        final whereArgs = ['$normalizedPrefix%'];
-
-        final queryResults = await db.query(
-          'entries',
-          columns: ['headword'],
-          where: whereClause,
-          whereArgs: whereArgs,
-          orderBy: '$orderByCol ASC',
-          limit: limit,
-        );
-
-        return queryResults
-            .map((row) => row['headword'] as String?)
-            .where((h) => h != null && h.isNotEmpty)
-            .cast<String>()
-            .toList();
+        if (isbiaoyi) {
+          return _prefixFromBiaoyiDict(
+            db, query, normalizedQuery,
+            usePhoneticSearch: usePhoneticSearch,
+            limit: limit,
+          );
+        } else if (sourceLanguage == 'auto') {
+          // auto 模式：简单前缀匹配，不做排名分级
+          return _prefixFromPhoneticDictAuto(db, normalizedQuery, limit: limit);
+        } else {
+          return _prefixFromPhoneticDict(
+            db, query, normalizedQuery,
+            exactMatch: exactMatch,
+            limit: limit,
+          );
+        }
       } catch (e) {
-        return <String>[];
+        return <MapEntry<String, int>>[];
       }
     }).toList();
 
-    final allResults = await Future.wait(futures);
-    for (final dictResults in allResults) {
-      for (final headword in dictResults) {
-        results.add(headword);
+    final allCandidates = await Future.wait(futures);
+
+    // ── 合并、去重、排序 ────────────────────────────────────────────
+    final seen = <String>{};
+    final merged = <MapEntry<String, int>>[];
+    for (final candidates in allCandidates) {
+      for (final c in candidates) {
+        if (seen.add(c.key)) {
+          merged.add(c);
+        }
       }
     }
 
-    return results.toList();
+    merged.sort((a, b) {
+      final rankCmp = a.value.compareTo(b.value);
+      if (rankCmp != 0) return rankCmp;
+      final lenCmp = a.key.length.compareTo(b.key.length);
+      if (lenCmp != 0) return lenCmp;
+      return a.key.toLowerCase().compareTo(b.key.toLowerCase());
+    });
+
+    return merged.take(limit).map((e) => e.key).toList();
   }
 
-  Future<List<String>> searchByWildcard(
-    String pattern, {
-    int limit = 20,
-    String? sourceLanguage,
+  /// 表意文字词典（biaoyi）的前缀候选词搜索。
+  /// 自动从查询文本检测通配符模式（LIKE / GLOB / 前缀匹配）。
+  Future<List<MapEntry<String, int>>> _prefixFromBiaoyiDict(
+    Database db,
+    String query,
+    String normalizedQuery, {
+    bool usePhoneticSearch = false,
+    required int limit,
   }) async {
-    if (pattern.isEmpty) return [];
+    final qMode = _detectQueryMode(query);
+    String whereClause;
+    List<dynamic> whereArgs;
 
-    final results = <String>{};
-    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
-
-    String? targetLang = sourceLanguage;
-    if (targetLang == 'auto') {
-      targetLang = _detectLanguage(pattern);
+    if (usePhoneticSearch) {
+      // 读音搜索：在 phonetic 字段上搜索
+      if (qMode == _QueryMode.like) {
+        whereClause = 'phonetic LIKE ?';
+        whereArgs = [normalizedQuery];
+      } else if (qMode == _QueryMode.glob) {
+        whereClause = 'phonetic GLOB ?';
+        whereArgs = [normalizedQuery];
+      } else {
+        // 默认前缀匹配
+        whereClause = 'phonetic LIKE ?';
+        whereArgs = ['$normalizedQuery%'];
+      }
+    } else {
+      // headword 字段搜索
+      if (qMode == _QueryMode.like) {
+        whereClause = 'headword LIKE ?';
+        whereArgs = [query];
+      } else if (qMode == _QueryMode.glob) {
+        whereClause = 'headword GLOB ?';
+        whereArgs = [query];
+      } else {
+        // 默认前缀匹配
+        whereClause = 'headword LIKE ?';
+        whereArgs = ['$query%'];
+      }
     }
 
-    final filteredDicts = enabledDicts.where((metadata) {
-      if (targetLang != null && targetLang != metadata.sourceLanguage) {
-        return false;
-      }
-      return true;
-    }).toList();
+    // 读音搜索时按 phonetic 排序，否则按 headword 排序
+    final orderBy = usePhoneticSearch ? 'phonetic ASC' : 'headword ASC';
 
-    final futures = filteredDicts.map((metadata) async {
-      try {
-        final db = await _dictManager.openDictionaryDatabase(metadata.id);
+    final results = await db.query(
+      'entries',
+      columns: ['headword'],
+      where: whereClause,
+      whereArgs: whereArgs,
+      orderBy: orderBy,
+      limit: limit,
+    );
 
-        // 检查是否为表音词典（biaoyi），如是则不能用 headword_normalized
-        final isbiaoyi = await _isBiaoyiDict(metadata.id, db);
-        final String column = isbiaoyi ? 'headword' : 'headword_normalized';
-        final normalizedPattern = isbiaoyi ? pattern : _normalizeSearchWord(pattern);
-
-        final whereClause = '$column LIKE ?';
-        final whereArgs = ['%$normalizedPattern%'];
-
-        final queryResults = await db.query(
-          'entries',
-          columns: ['headword'],
-          where: whereClause,
-          whereArgs: whereArgs,
-          orderBy: 'headword ASC',
-          limit: limit,
-        );
-
-        return queryResults
-            .map((row) => row['headword'] as String?)
-            .where((h) => h != null && h.isNotEmpty)
-            .cast<String>()
-            .toList();
-      } catch (e) {
-        return <String>[];
-      }
-    }).toList();
-
-    final allResults = await Future.wait(futures);
-    for (final dictResults in allResults) {
-      for (final headword in dictResults) {
-        results.add(headword);
-        if (results.length >= limit) break;
-      }
-      if (results.length >= limit) break;
-    }
-
-    return results.toList()..sort();
-  }
-
-  /// 拼音搜索：搜索已启用中文词典的 phonetic 字段（biaoyi 模式词典）
-  /// 返回 headword 列表供用户选择
-  Future<List<String>> searchByPinyin(
-    String pinyin, {
-    int limit = 30,
-  }) async {
-    if (pinyin.isEmpty) return [];
-
-    final results = <String>{};
-    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
-
-    // 只针对中文词典（sourceLanguage == 'zh'）
-    final chineseDicts = enabledDicts
-        .where((m) => m.sourceLanguage.toLowerCase() == 'zh')
+    return results
+        .map((r) => r['headword'] as String?)
+        .where((h) => h != null && h.isNotEmpty)
+        .cast<String>()
+        .map((h) => MapEntry(h, 1))
         .toList();
+  }
 
-    final normalizedPinyin = _normalizeSearchWord(pinyin);
+  /// Auto 模式下的表音词典前缀候选词搜索（简单前缀，无分级排名）。
+  /// 自动从查询文本检测通配符模式。
+  Future<List<MapEntry<String, int>>> _prefixFromPhoneticDictAuto(
+    Database db,
+    String normalizedQuery, {
+    required int limit,
+  }) async {
+    final qMode = _detectQueryMode(normalizedQuery);
+    final String whereStr;
+    final List<dynamic> whereArgsList;
+    if (qMode == _QueryMode.like) {
+      whereStr = 'headword_normalized LIKE ?';
+      whereArgsList = [normalizedQuery];
+    } else if (qMode == _QueryMode.glob) {
+      whereStr = 'headword_normalized GLOB ?';
+      whereArgsList = [normalizedQuery];
+    } else {
+      whereStr = 'headword_normalized LIKE ?';
+      whereArgsList = ['$normalizedQuery%'];
+    }
+    final results = await db.query(
+      'entries',
+      columns: ['headword'],
+      where: whereStr,
+      whereArgs: whereArgsList,
+      orderBy: 'headword_normalized ASC',
+      limit: limit,
+    );
 
-    final futures = chineseDicts.map((metadata) async {
-      try {
-        final db = await _dictManager.openDictionaryDatabase(metadata.id);
-        final isbiaoyi = await _isBiaoyiDict(metadata.id, db);
-        if (!isbiaoyi) return <String>[];
+    return results
+        .map((r) => r['headword'] as String?)
+        .where((h) => h != null && h.isNotEmpty)
+        .cast<String>()
+        .map((h) => MapEntry(h, 3)) // 统一 rank=3，后续按长度/字母排序
+        .toList();
+  }
 
-        final queryResults = await db.query(
-          'entries',
-          columns: ['headword'],
-          where: 'phonetic LIKE ?',
-          whereArgs: ['$normalizedPinyin%'],
-          orderBy: 'headword ASC',
-          limit: limit,
-        );
+  /// 表音字母文字词典的前缀候选词搜索，支持精确匹配和自动通配符检测。
+  ///
+  /// LIKE/GLOB 通配符（输入含 % _ * ? [ ] ^）：直接用对应操作符搜索 headword_normalized。
+  /// 仅精确：前缀取 limit*2 条，过滤 headword.startsWith(query)（区分大小写前缀匹配）。
+  /// 默认：前缀搜索，Dart 侧按 rank(精确/空格前缀/纯前缀) 分级。
+  Future<List<MapEntry<String, int>>> _prefixFromPhoneticDict(
+    Database db,
+    String query,
+    String normalizedQuery, {
+    bool exactMatch = false,
+    required int limit,
+  }) async {
+    final qMode = _detectQueryMode(query);
+    List<String> headwords;
 
-        return queryResults
-            .map((row) => row['headword'] as String?)
-            .where((h) => h != null && h.isNotEmpty)
-            .cast<String>()
-            .toList();
-      } catch (e) {
-        return <String>[];
-      }
-    }).toList();
-
-    final allResults = await Future.wait(futures);
-    for (final dictResults in allResults) {
-      for (final headword in dictResults) {
-        results.add(headword);
-        if (results.length >= limit) break;
-      }
-      if (results.length >= limit) break;
+    if (qMode == _QueryMode.like || qMode == _QueryMode.glob) {
+      // 通配符模式：直接使用用户模式匹配 headword_normalized
+      final fetchLimit = exactMatch ? limit * 2 : limit;
+      final results = await db.query(
+        'entries',
+        columns: ['headword'],
+        where: qMode == _QueryMode.like
+            ? 'headword_normalized LIKE ?'
+            : 'headword_normalized GLOB ?',
+        whereArgs: [normalizedQuery],
+        orderBy: 'headword_normalized ASC',
+        limit: fetchLimit,
+      );
+      headwords = results
+          .map((r) => r['headword'] as String?)
+          .where((h) => h != null && h.isNotEmpty)
+          .cast<String>()
+          .toList();
+    } else {
+      // 默认：带分级排名的前缀搜索，多取一些，Dart 侧排序
+      final fetchLimit = limit * 2;
+      final results = await db.query(
+        'entries',
+        columns: ['headword'],
+        where: 'headword_normalized LIKE ?',
+        whereArgs: ['$normalizedQuery%'],
+        orderBy: 'headword_normalized ASC',
+        limit: fetchLimit,
+      );
+      headwords = results
+          .map((r) => r['headword'] as String?)
+          .where((h) => h != null && h.isNotEmpty)
+          .cast<String>()
+          .toList();
     }
 
-    return results.toList()..sort();
+    // 精确前缀过滤：候选词的前 X 个字符（X = query长度）必须与原始查询完全匹配（区分大小写）
+    if (exactMatch) {
+      headwords = headwords.where((h) => h.startsWith(query)).take(limit).toList();
+    }
+
+    if (qMode != _QueryMode.normal || exactMatch) {
+      // 通配符 / 精确模式：已按 headword_normalized ASC 排序，rank 统一为 1
+      return headwords.take(limit).map((h) => MapEntry(h, 1)).toList();
+    }
+
+    // 默认分级排名
+    final queryLower = query.toLowerCase();
+    final queryLowerSpace = '$queryLower ';
+    return headwords.map((h) {
+      final hl = h.toLowerCase();
+      final rank = hl == queryLower ? 1 : (hl.startsWith(queryLowerSpace) ? 2 : 3);
+      return MapEntry(h, rank);
+    }).toList();
   }
+
+  // ─────────────────────────────────────────────────────────────────
+
+
 
   Future<void> close() async {
     if (_database != null && _database!.isOpen) {

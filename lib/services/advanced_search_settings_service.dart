@@ -2,22 +2,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 语言默认搜索选项配置
 class LanguageDefaultSearchOptions {
-  final bool useFuzzySearch;
   final bool exactMatch;
 
   const LanguageDefaultSearchOptions({
-    this.useFuzzySearch = false,
     this.exactMatch = false,
   });
 
   Map<String, dynamic> toJson() => {
-    'useFuzzySearch': useFuzzySearch,
     'exactMatch': exactMatch,
   };
 
   factory LanguageDefaultSearchOptions.fromJson(Map<String, dynamic> json) {
     return LanguageDefaultSearchOptions(
-      useFuzzySearch: json['useFuzzySearch'] ?? false,
       exactMatch: json['exactMatch'] ?? false,
     );
   }
@@ -30,7 +26,6 @@ class AdvancedSearchSettingsService {
   factory AdvancedSearchSettingsService() => _instance;
   AdvancedSearchSettingsService._internal();
 
-  static const String _useFuzzySearchKey = 'advanced_search_use_fuzzy';
   static const String _exactMatchKey = 'advanced_search_exact_match';
   static const String _lastSelectedGroupKey = 'last_selected_group';
   static const String _languageDefaultOptionsKey = 'language_default_options';
@@ -39,24 +34,23 @@ class AdvancedSearchSettingsService {
   /// 英语: 关闭通配符搜索, 关闭区分大小写 (exactMatch = false)
   /// 其他语言可以根据需要配置
   static const Map<String, LanguageDefaultSearchOptions> _defaultOptionsByLanguage = {
-    'en': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'zh': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'ja': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'ko': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'fr': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'de': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'es': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'it': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'ru': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'pt': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
-    'ar': LanguageDefaultSearchOptions(useFuzzySearch: false, exactMatch: false),
+    'en': LanguageDefaultSearchOptions(exactMatch: false),
+    'zh': LanguageDefaultSearchOptions(exactMatch: false),
+    'ja': LanguageDefaultSearchOptions(exactMatch: false),
+    'ko': LanguageDefaultSearchOptions(exactMatch: false),
+    'fr': LanguageDefaultSearchOptions(exactMatch: false),
+    'de': LanguageDefaultSearchOptions(exactMatch: false),
+    'es': LanguageDefaultSearchOptions(exactMatch: false),
+    'it': LanguageDefaultSearchOptions(exactMatch: false),
+    'ru': LanguageDefaultSearchOptions(exactMatch: false),
+    'pt': LanguageDefaultSearchOptions(exactMatch: false),
+    'ar': LanguageDefaultSearchOptions(exactMatch: false),
   };
 
   /// 加载所有高级搜索设置
   Future<Map<String, bool>> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     return {
-      'useFuzzySearch': prefs.getBool(_useFuzzySearchKey) ?? false,
       'exactMatch': prefs.getBool(_exactMatchKey) ?? false,
     };
   }
@@ -73,11 +67,6 @@ class AdvancedSearchSettingsService {
     await prefs.setString(_lastSelectedGroupKey, group);
   }
 
-  /// 保存模糊搜索设置
-  Future<void> setUseFuzzySearch(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_useFuzzySearchKey, value);
-  }
 
   /// 保存精确搜索设置
   Future<void> setExactMatch(bool value) async {

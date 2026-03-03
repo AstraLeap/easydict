@@ -853,6 +853,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
       _isVisible = false;
       _hasBeenVisible = false;
       _initSourceLanguage();
+    } else if (!identical(oldWidget.entry, widget.entry)) {
+      // 同一条目内容被更新（如编辑 JSON 后），同步 _localEntry 但保留其余是态
+      setState(() {
+        _localEntry = widget.entry;
+      });
     }
   }
 
@@ -1145,7 +1150,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final dbService = DatabaseService();
     final searchResult = await dbService.getAllEntries(
       word,
-      useFuzzySearch: defaultOptions.useFuzzySearch,
       exactMatch: defaultOptions.exactMatch,
       sourceLanguage: _sourceLanguage,
     );
@@ -2076,7 +2080,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final dbService = DatabaseService();
     final searchResult = await dbService.getAllEntries(
       plainPhrase,
-      useFuzzySearch: false,
       exactMatch: true,
       sourceLanguage: _sourceLanguage,
     );
