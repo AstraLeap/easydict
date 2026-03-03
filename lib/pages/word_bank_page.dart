@@ -1378,7 +1378,6 @@ class _WordBankPageState extends State<WordBankPage> {
     // 查询词典，使用默认高级选项
     final searchResult = await _dictionaryService.getAllEntries(
       word,
-      useFuzzySearch: defaultOptions.useFuzzySearch,
       exactMatch: defaultOptions.exactMatch,
       sourceLanguage: language == 'auto' ? null : language,
     );

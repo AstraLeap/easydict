@@ -6,14 +6,12 @@ import 'preferences_service.dart';
 class SearchRecord {
   final String word;
   final DateTime timestamp;
-  final bool useFuzzySearch;
   final bool exactMatch;
   final String? group;
 
   SearchRecord({
     required this.word,
     required this.timestamp,
-    this.useFuzzySearch = false,
     this.exactMatch = false,
     this.group,
   });
@@ -21,7 +19,6 @@ class SearchRecord {
   Map<String, dynamic> toJson() => {
     'word': word,
     'timestamp': timestamp.toIso8601String(),
-    'useFuzzySearch': useFuzzySearch,
     'exactMatch': exactMatch,
     if (group != null) 'group': group,
   };
@@ -31,7 +28,6 @@ class SearchRecord {
     timestamp: DateTime.parse(
       json['timestamp'] ?? DateTime.now().toIso8601String(),
     ),
-    useFuzzySearch: json['useFuzzySearch'] ?? false,
     exactMatch: json['exactMatch'] ?? json['caseSensitive'] ?? false,
     group: json['group'],
   );
@@ -69,7 +65,6 @@ class SearchHistoryService {
   /// 添加搜索记录（带高级搜索选项）
   Future<void> addSearchRecord(
     String word, {
-    bool useFuzzySearch = false,
     bool exactMatch = false,
     String? group,
   }) async {
@@ -92,7 +87,6 @@ class SearchHistoryService {
       SearchRecord(
         word: trimmedWord,
         timestamp: DateTime.now(),
-        useFuzzySearch: useFuzzySearch,
         exactMatch: exactMatch,
         group: group ?? existingGroup,
       ),
