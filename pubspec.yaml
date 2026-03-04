@@ -76,29 +76,31 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.14.3
+  icons_launcher: ^3.0.3
 
-# flutter_launcher_icons 配置
-# 使用方式：
-# 1. 准备一张 1024x1024 的图标图片，放到 assets/icon/app_icon.png
-# 2. 运行：flutter pub get && flutter pub run flutter_launcher_icons:main
-flutter_launcher_icons:
-  android: true
-  ios: true
-  linux: true
+icons_launcher:
   image_path: "assets/icon/app_icon.png"
-  # Android 自适应图标背景色（可选）
-  adaptive_icon_background: "#1A2149"
-  adaptive_icon_foreground: "assets/icon/app_icon.png"
-  # Windows 图标配置
-  windows:
-    generate: true
-    image_path: "assets/icon/app_icon.png"
-    icon_size: 48
-  # macOS 图标配置
-  macos:
-    generate: true
-    image_path: "assets/icon/app_icon.png"
+  platforms:
+    android:
+      enable: true
+      image_path: "assets/icon/app_icon.png"
+      adaptive_background_color: "#1A2149"
+      adaptive_foreground_image: "assets/icon/icon_foreground.png"
+    ios:
+      enable: true
+      image_path: "assets/icon/app_icon.png"
+    web:
+      enable: true
+      image_path: "assets/icon/app_icon.png"
+    windows:
+      enable: true
+      image_path: "assets/icon/app_icon.png"
+    macos:
+      enable: true
+      image_path: "assets/icon/app_icon.png"
+    linux:
+      enable: true
+      image_path: "assets/icon/app_icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
