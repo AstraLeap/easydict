@@ -978,6 +978,12 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   LLMProvider _standardProvider = LLMProvider.openAI;
   TTSProvider _ttsProvider = TTSProvider.edge;
 
+  // ValueNotifiers for dropdown_button2 3.0.0 compatibility
+  late ValueNotifier<LLMProvider?> _fastProviderNotifier;
+  late ValueNotifier<LLMProvider?> _standardProviderNotifier;
+  late ValueNotifier<TTSProvider?> _ttsProviderNotifier;
+  final Map<String, ValueNotifier<String?>> _voiceNotifiers = {};
+
   // Google TTS 音色配置
   GoogleTTSVoice? _selectedGoogleVoice;
 
@@ -1095,12 +1101,18 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           }
         }
       }
+      _syncAllVoiceNotifiers();
     });
   }
 
   @override
   void initState() {
     super.initState();
+    // Initialize ValueNotifiers
+    _fastProviderNotifier = ValueNotifier<LLMProvider?>(_fastProvider);
+    _standardProviderNotifier = ValueNotifier<LLMProvider?>(_standardProvider);
+    _ttsProviderNotifier = ValueNotifier<TTSProvider?>(_ttsProvider);
+    
     _tabController = TabController(length: 3, vsync: this);
     _loadConfig();
     _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
@@ -1129,6 +1141,12 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     _ttsBaseUrlController.dispose();
     _ttsModelController.dispose();
     _ttsVoiceController.dispose();
+    _fastProviderNotifier.dispose();
+    _standardProviderNotifier.dispose();
+    _ttsProviderNotifier.dispose();
+    for (final n in _voiceNotifiers.values) {
+      n.dispose();
+    }
 
     super.dispose();
   }
@@ -1226,6 +1244,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     setState(() {
       _isLoading = false;
+      _fastProviderNotifier.value = _fastProvider;
+      _standardProviderNotifier.value = _standardProvider;
+      _ttsProviderNotifier.value = _ttsProvider;
+      _syncAllVoiceNotifiers();
     });
   }
 
@@ -1345,6 +1367,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
   void _onFastProviderChanged(LLMProvider? provider) {
     if (provider == null) return;
+    _fastProviderNotifier.value = provider;
     setState(() {
       _fastProvider = provider;
       _fastBaseUrlController.text = provider.defaultBaseUrl;
@@ -1356,6 +1379,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
   void _onStandardProviderChanged(LLMProvider? provider) {
     if (provider == null) return;
+    _standardProviderNotifier.value = provider;
     setState(() {
       _standardProvider = provider;
       _standardBaseUrlController.text = provider.defaultBaseUrl;
@@ -1383,6 +1407,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       }
     }
 
+    _ttsProviderNotifier.value = provider;
     setState(() {
       _ttsProvider = provider;
       _ttsBaseUrlController.text = provider.defaultBaseUrl;
@@ -1397,7 +1422,26 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           orElse: () => googleTTSVoices.first,
         );
       }
+      _syncAllVoiceNotifiers();
     });
+  }
+
+  /// Sync all language voice notifiers from [_languageVoiceSettings].
+  void _syncAllVoiceNotifiers() {
+    for (final entry in _languageVoiceSettings.entries) {
+      final notifier = _voiceNotifiers[entry.key];
+      if (notifier != null) {
+        notifier.value = entry.value;
+      }
+    }
+  }
+
+  /// Return (and lazily create) the ValueNotifier for [langCode].
+  ValueNotifier<String?> _voiceNotifierFor(String langCode) {
+    return _voiceNotifiers.putIfAbsent(
+      langCode,
+      () => ValueNotifier<String?>(_languageVoiceSettings[langCode]),
+    );
   }
 
   void _onGoogleVoiceChanged(GoogleTTSVoice? voice) {
@@ -1582,6 +1626,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     required String subtitle,
     required GlobalKey<FormState> formKey,
     required LLMProvider provider,
+    required ValueNotifier<LLMProvider?> providerNotifier,
     required Map<LLMProvider, String> defaultModels,
     required void Function(LLMProvider?) onProviderChanged,
     required TextEditingController apiKeyController,
@@ -1611,7 +1656,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField2<LLMProvider>(
-            value: provider,
+            valueListenable: providerNotifier,
             isExpanded: true,
             decoration: InputDecoration(
               labelText: '选择服务商',
@@ -1657,7 +1702,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               padding: EdgeInsets.symmetric(horizontal: 16),
             ),
             items: LLMProvider.values.map((p) {
-              return DropdownMenuItem(
+              return DropdownItem<LLMProvider>(
                 value: p,
                 child: Text(
                   p.displayName,
@@ -1926,7 +1971,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField2<TTSProvider>(
-            value: _ttsProvider,
+            valueListenable: _ttsProviderNotifier,
             isExpanded: true,
             decoration: InputDecoration(
               labelText: '选择服务商',
@@ -1972,7 +2017,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               padding: EdgeInsets.symmetric(horizontal: 16),
             ),
             items: TTSProvider.values.map((p) {
-              return DropdownMenuItem(
+              return DropdownItem<TTSProvider>(
                 value: p,
                 child: Text(
                   p.displayName,
@@ -2214,6 +2259,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       subtitle: '适用于日常查询，速度优先',
                       formKey: _fastFormKey,
                       provider: _fastProvider,
+                      providerNotifier: _fastProviderNotifier,
                       defaultModels: _fastDefaultModels,
                       onProviderChanged: _onFastProviderChanged,
                       apiKeyController: _fastApiKeyController,
@@ -2244,6 +2290,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       subtitle: '适用于高质量翻译和解释',
                       formKey: _standardFormKey,
                       provider: _standardProvider,
+                      providerNotifier: _standardProviderNotifier,
                       defaultModels: _standardDefaultModels,
                       onProviderChanged: _onStandardProviderChanged,
                       apiKeyController: _standardApiKeyController,
@@ -2318,11 +2365,11 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ? (googleVoices.isNotEmpty ? googleVoices.first.name : '')
             : (edgeVoices.isNotEmpty ? edgeVoices.first.name : ''));
 
-    List<DropdownMenuItem<String>> voiceItems = [];
+    List<DropdownItem<String>> voiceItems = [];
 
     if (_ttsProvider == TTSProvider.google) {
       voiceItems = googleVoices.map((voice) {
-        return DropdownMenuItem(
+        return DropdownItem<String>(
           value: voice.name,
           child: Text(
             '${voice.name} (${voice.gender})',
@@ -2332,7 +2379,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       }).toList();
     } else {
       voiceItems = edgeVoices.map((voice) {
-        return DropdownMenuItem(
+        return DropdownItem<String>(
           value: voice.name,
           child: Text(
             '${voice.name} (${voice.gender})',
@@ -2344,7 +2391,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     if (voiceItems.isEmpty) {
       voiceItems.add(
-        DropdownMenuItem(
+        DropdownItem<String>(
           value: currentVoice,
           child: Text(currentVoice.isEmpty ? '无可用音色' : currentVoice),
         ),
@@ -2362,9 +2409,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           const SizedBox(width: 12),
           Expanded(
             child: DropdownButtonFormField2<String>(
-              value: voiceItems.any((item) => item.value == currentVoice)
-                  ? currentVoice
-                  : (voiceItems.isNotEmpty ? voiceItems.first.value : ''),
+              valueListenable: _voiceNotifierFor(lang.langCode),
               isExpanded: true,
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(
@@ -2411,9 +2456,8 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               items: voiceItems,
               onChanged: (voice) {
                 if (voice != null) {
-                  setState(() {
-                    _languageVoiceSettings[lang.langCode] = voice;
-                  });
+                  _languageVoiceSettings[lang.langCode] = voice;
+                  _voiceNotifierFor(lang.langCode).value = voice;
                 }
               },
             ),
