@@ -2,103 +2,111 @@ import json
 import sqlite3
 import zstandard as zstd
 import random
+import unicodedata
 from pathlib import Path
 
+# --- 全局配置与工具函数 ---
+
+def get_base_lang_code(lang_code):
+    """从语言代码中提取主语言前缀，例如 zh-CN -> zh"""
+    if not lang_code:
+        return None
+    return lang_code.split('-')[0].lower()
+
+def is_ideographic_lang(lang_code):
+    base_lang = get_base_lang_code(lang_code)
+    return base_lang in {'zh', 'ja'} if base_lang else False
+
+def is_traditional_chinese(lang_code):
+    if not lang_code:
+        return False
+    return lang_code in {'zh-tw', 'zh-hk', 'zh-mo', 'zh-hant'}
+
+def normalize_headword(text, lang_code):
+    """
+    根据语言类型对 headword 进行规范化处理。
+    - 默认：使用 normalize_text
+    - 繁体中文：使用 OpenCC 进行繁对简转换后，再使用 normalize_text
+    - 简体中文：不处理
+    """
+    if not text:
+        return ""
+
+    if is_traditional_chinese(lang_code):
+        import opencc
+        converter = opencc.OpenCC('t2s.json')
+        text = converter.convert(text)
+
+    return normalize_text(text)
 
 def normalize_text(text, remove_accents=True):
-    import unicodedata
+    """基础文本规范化：转小写、去除重音、去除空格"""
+    if not text:
+        return ""
+    text = text.lower()
     if remove_accents:
-        text = text.lower()
         text = unicodedata.normalize('NFD', text)
         text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
-    text = text.replace(' ', '')
-    return text
+    return text.replace(' ', '')
 
-
-def train_dictionary_from_jsonl(jsonl_path, db_path, dict_size=112*1024, page_size=4096, is_biaoyi=False):
-    word_lines = []
-    phrase_lines = []
-
-    has_phonetic = False
-
+def reservoir_sampling(jsonl_path, sample_size=10000):
+    """
+    水库采样算法：在不加载整个文件到内存的情况下，随机抽取样本。
+    适合处理 GB 级别的 JSONL 文件。
+    """
+    samples = []
+    print(f"Sampling {sample_size} entries for dictionary training...")
     with open(jsonl_path, 'r', encoding='utf-8') as f:
-        for line in f:
+        for i, line in enumerate(f):
             line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            entry_type = data.get('entry_type', 'word')
-            if entry_type == 'phrase':
-                phrase_lines.append(line)
+            if not line: continue
+            if i < sample_size:
+                samples.append(line.encode('utf-8'))
             else:
-                word_lines.append(line)
+                r = random.randint(0, i)
+                if r < sample_size:
+                    samples[r] = line.encode('utf-8')
+    return samples
 
-            if not has_phonetic and 'phonetic' in data:
-                has_phonetic = True
+def build_database_from_jsonl(jsonl_path, db_path, dict_size_kb=112, compress_level=7, page_size=4096, lang_code=None):
+    if lang_code:
+        lang_code = lang_code.lower()
 
-    word_count = len(word_lines)
-    phrase_count = len(phrase_lines)
-    total_count = word_count + phrase_count
+    dict_size = dict_size_kb * 1024
+    is_biaoyi = is_ideographic_lang(lang_code)
+    
+    # 1. 采样与字典训练
+    samples = reservoir_sampling(jsonl_path, 10000)
+    if not samples:
+        print("Error: No data found in JSONL.")
+        return
+    
+    print("Training Zstd dictionary...")
+    dict_data = zstd.train_dictionary(dict_size, samples)
+    dict_bytes = dict_data.as_bytes()
+    del samples # 释放内存
 
-    if total_count == 0:
-        raise ValueError("No entries found in JSONL file")
-
-    if is_biaoyi and has_phonetic:
-        print("Phonetic mode enabled: will create phonetic index, no headword_normalized")
-    elif is_biaoyi:
-        print("Phonetic mode enabled but no phonetic field found in data")
-
-    sample_count = min(total_count, 10000, max(2000, total_count // 50))
-    word_sample_count = int(sample_count * word_count / total_count)
-    phrase_sample_count = sample_count - word_sample_count
-
-    print(f"Total entries: {total_count} (words: {word_count}, phrases: {phrase_count})")
-    print(f"Dynamic sample count: {sample_count} (2% of total, min 2000, max total)")
-    print(f"Sampling {word_sample_count} words and {phrase_sample_count} phrases")
-
-    random.seed(42)
-
-    if len(word_lines) > word_sample_count:
-        word_samples = random.sample(word_lines, word_sample_count)
-    else:
-        word_samples = word_lines
-
-    if len(phrase_lines) > phrase_sample_count:
-        phrase_samples = random.sample(phrase_lines, phrase_sample_count)
-    else:
-        phrase_samples = phrase_lines
-
-    all_samples = word_samples + phrase_samples
-    random.shuffle(all_samples)
-
-    print(f"Total samples for training: {len(all_samples)}")
-
-    sample_bytes = [s.encode('utf-8') for s in all_samples]
-
-    print("Training dictionary...")
-    dict_data = zstd.train_dictionary(dict_size, sample_bytes)
-
-    print(f"Dictionary trained, size: {len(dict_data)} bytes")
-
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-
+    # 2. 初始化数据库
+    if Path(db_path).exists():
+        Path(db_path).unlink()
+    
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
+    
+    # 极致性能 PRAGMA
     cursor.execute(f"PRAGMA page_size = {page_size}")
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS config (
-            key TEXT PRIMARY KEY,
-            value BLOB
-        )
-    ''')
-
+    cursor.execute("PRAGMA synchronous = OFF")
+    cursor.execute("PRAGMA journal_mode = WAL")
+    cursor.execute("PRAGMA cache_size = -64000") # 64MB 缓存
+    
+    cursor.execute('CREATE TABLE config (key TEXT PRIMARY KEY, value BLOB)')
+    
     if is_biaoyi:
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS entries (
+            CREATE TABLE entries (
                 entry_id INTEGER PRIMARY KEY,
                 headword TEXT,
+                headword_normalized TEXT,
                 phonetic TEXT,
                 entry_type TEXT,
                 page TEXT,
@@ -108,7 +116,7 @@ def train_dictionary_from_jsonl(jsonl_path, db_path, dict_size=112*1024, page_si
         ''')
     else:
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS entries (
+            CREATE TABLE entries (
                 entry_id INTEGER PRIMARY KEY,
                 headword TEXT,
                 headword_normalized TEXT,
@@ -118,150 +126,103 @@ def train_dictionary_from_jsonl(jsonl_path, db_path, dict_size=112*1024, page_si
                 json_data BLOB
             )
         ''')
+    
+    # 存储字典
+    cursor.execute('INSERT INTO config (key, value) VALUES (?, ?)', ('zstd_dict', dict_bytes))
 
-    conn.commit()
-    conn.close()
+    # 3. 压缩并批量写入数据
+    print("Compressing and inserting data...")
+    cctx = zstd.ZstdCompressor(dict_data=dict_data, level=compress_level)
+    
+    if is_biaoyi:
+        sql = 'INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    else:
+        sql = 'INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?)'
 
-    print(f"Database structure saved: {db_path}")
-
-    return dict_data, is_biaoyi
-
-
-def compress_and_write_to_db(jsonl_path, db_path, dict_data, batch_size=500, is_biaoyi=False):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    dict_compressed = dict_data
-    dict_bytes = dict_compressed.as_bytes()
-
-    cctx = zstd.ZstdCompressor(dict_data=dict_compressed, level=7)
-
-    print(f"Using dictionary for compression, size: {len(dict_bytes)} bytes")
-
-    cursor.execute('''
-        INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)
-    ''', ('zstd_dict', dict_bytes))
-
-    conn.commit()
-
+    batch = []
     total_count = 0
-
+    
     with open(jsonl_path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            if not line:
-                continue
-
+            if not line: continue
+            
             data = json.loads(line)
+            # 序列化并压缩
+            json_bytes = json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            compressed_data = cctx.compress(json_bytes)
+            
+            # 准备元数据
+            eid = int(data['entry_id'])
+            hw = data.get('headword', '')
+            etype = data.get('entry_type', 'word')
+            pg = data.get('page', '')
+            sec = data.get('section', '')
 
-            json_str = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
-            compressed_data = cctx.compress(json_str.encode('utf-8'))
-
-            entry_id_int = int(data['entry_id'])
-            headword = data.get('headword', '')
+            hw_norm = normalize_headword(hw, lang_code)
 
             if is_biaoyi:
                 phonetic_raw = data.get('phonetic', '')
-                phonetic_normalized = normalize_text(phonetic_raw, remove_accents=True)
-
-                cursor.execute('''
-                    INSERT OR REPLACE INTO entries (entry_id, headword, phonetic, entry_type, page, section, json_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (entry_id_int, headword, phonetic_normalized, data.get('entry_type', 'word'),
-                      data['page'], data.get('section', ''), compressed_data))
+                phonetic_norm = normalize_text(phonetic_raw)
+                batch.append((eid, hw, hw_norm, phonetic_norm, etype, pg, sec, compressed_data))
             else:
-                headword_normalized = normalize_text(headword)
+                batch.append((eid, hw, hw_norm, etype, pg, sec, compressed_data))
 
-                cursor.execute('''
-                    INSERT OR REPLACE INTO entries (entry_id, headword, headword_normalized, entry_type, page, section, json_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (entry_id_int, headword, headword_normalized, data.get('entry_type', 'word'),
-                      data['page'], data.get('section', ''), compressed_data))
+            if len(batch) >= 1000:
+                cursor.executemany(sql, batch)
+                total_count += len(batch)
+                batch = []
+                if total_count % 5000 == 0:
+                    print(f"Processed {total_count} entries...")
+        
+        if batch:
+            cursor.executemany(sql, batch)
+            total_count += len(batch)
 
-            total_count += 1
-
-            if total_count % batch_size == 0:
-                conn.commit()
-                print(f"Processed {total_count} entries...")
-
-    conn.commit()
-
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_entry_id ON entries(entry_id)")
-
+    # 后置创建索引（速度比插入时带索引快得多）
+    print("Creating indexes...")
+    cursor.execute("CREATE INDEX idx_entry_id ON entries(entry_id)")
     if is_biaoyi:
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_headword ON entries(headword)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_phonetic ON entries(phonetic)")
+        cursor.execute("CREATE INDEX idx_phonetic ON entries(phonetic, headword_normalized, headword)")
+        cursor.execute("CREATE INDEX idx_headword ON entries(headword_normalized, phonetic, headword)")
     else:
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_headword_normalized ON entries(headword_normalized)")
+        cursor.execute("CREATE INDEX idx_headword ON entries(headword_normalized, headword)")
 
     conn.commit()
-
-    conn.close()
-
-    print(f"Total entries written to database: {total_count}")
-
-    return total_count
-
-
-def vacuum_database(db_path):
-    import os
-    size_before = os.path.getsize(db_path)
-
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    
+    # 5. 收尾：Vacuum
+    print("Vacuuming database...")
+    size_before = Path(db_path).stat().st_size
     cursor.execute("VACUUM")
-    conn.commit()
     conn.close()
+    size_after = Path(db_path).stat().st_size
+    
+    print(f"\nBuild Complete!")
+    print(f"Total Entries: {total_count}")
+    print(f"Final Size: {size_after/1024/1024:.2f} MB (Saved {(size_before-size_after)/1024/1024:.2f} MB)")
 
-    size_after = os.path.getsize(db_path)
-    print(f"Database vacuumed: {size_before/1024/1024:.2f}MB -> {size_after/1024/1024:.2f}MB (saved {(size_before-size_after)/1024/1024:.2f}MB)")
-
-
-def build_database_from_jsonl(jsonl_path, db_path, dict_size=112*1024, page_size=4096, is_biaoyi=False):
-    import os
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print(f"Removed existing database: {db_path}")
-
-    print("=" * 50)
-    print("Phase 1: Training dictionary and creating database...")
-    print("=" * 50)
-    dict_data, phonetic_flag = train_dictionary_from_jsonl(jsonl_path, db_path, dict_size, page_size, is_biaoyi)
-
-    print("\n" + "=" * 50)
-    print("Phase 2: Compressing and writing to database...")
-    print("=" * 50)
-    compress_and_write_to_db(jsonl_path, db_path, dict_data, is_biaoyi=phonetic_flag)
-
-    print("\n" + "=" * 50)
-    print("Phase 3: Vacuuming database...")
-    print("=" * 50)
-    vacuum_database(db_path)
-
-    print("\n" + "=" * 50)
-    print("Database build complete!")
-    print("=" * 50)
-
+# --- 命令行入口 ---
 
 if __name__ == "__main__":
-    import sys
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="JSONL to Optimized SQLite Dictionary Builder")
+    parser.add_argument("jsonl_path", help="Input JSONL file path")
+    parser.add_argument("lang", help="Language code (e.g., zh, ja, en)")
+    parser.add_argument("dict_size", nargs='?', type=int, default=112, help="Zstd dict size in KB (default: 112)")
+    parser.add_argument("compress_level", nargs='?', type=int, default=7, help="Zstd compression level (default: 7)")
+    parser.add_argument("page_size", nargs='?', type=int, default=4096, help="SQLite page size (default: 4096)")
 
-    if len(sys.argv) < 3:
-        print("Usage: python build_db_from_jsonl.py <jsonl_path> <db_path> [dict_size_kb] [page_size] [--biaoyi]")
-        print("  jsonl_path: 输入JSONL文件路径")
-        print("  db_path: 输出数据库路径")
-        print("  dict_size_kb: 字典大小 KB (默认 112)")
-        print("  page_size: SQLite 页面大小 (默认 4096)")
-        print("  --biaoyi: 启用表意文字模式 (如汉字等，需要phonetic字段)")
-        sys.exit(1)
+    args = parser.parse_args()
 
-    jsonl_path = sys.argv[1]
-    db_path = sys.argv[2]
+    jsonl_path = Path(args.jsonl_path)
+    db_path = jsonl_path.with_suffix('.db')
 
-    is_biaoyi = '--biaoyi' in sys.argv
-
-    argv_without_flags = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
-    dict_size = int(argv_without_flags[2]) * 1024 if len(argv_without_flags) > 2 else 112 * 1024
-    page_size = int(argv_without_flags[3]) if len(argv_without_flags) > 3 else 4096
-
-    build_database_from_jsonl(jsonl_path, db_path, dict_size, page_size, is_biaoyi)
+    build_database_from_jsonl(
+        jsonl_path=str(jsonl_path),
+        db_path=str(db_path),
+        dict_size_kb=args.dict_size,
+        compress_level=args.compress_level,
+        page_size=args.page_size,
+        lang_code=args.lang
+    )

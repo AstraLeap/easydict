@@ -7,12 +7,16 @@ class SearchRecord {
   final String word;
   final DateTime timestamp;
   final bool exactMatch;
+  final bool biaoyiExactMatch;
+  final bool usePhoneticSearch;
   final String? group;
 
   SearchRecord({
     required this.word,
     required this.timestamp,
     this.exactMatch = false,
+    this.biaoyiExactMatch = false,
+    this.usePhoneticSearch = false,
     this.group,
   });
 
@@ -20,6 +24,8 @@ class SearchRecord {
     'word': word,
     'timestamp': timestamp.toIso8601String(),
     'exactMatch': exactMatch,
+    'biaoyiExactMatch': biaoyiExactMatch,
+    'usePhoneticSearch': usePhoneticSearch,
     if (group != null) 'group': group,
   };
 
@@ -29,6 +35,8 @@ class SearchRecord {
       json['timestamp'] ?? DateTime.now().toIso8601String(),
     ),
     exactMatch: json['exactMatch'] ?? json['caseSensitive'] ?? false,
+    biaoyiExactMatch: json['biaoyiExactMatch'] ?? false,
+    usePhoneticSearch: json['usePhoneticSearch'] ?? false,
     group: json['group'],
   );
 }
@@ -66,6 +74,8 @@ class SearchHistoryService {
   Future<void> addSearchRecord(
     String word, {
     bool exactMatch = false,
+    bool biaoyiExactMatch = false,
+    bool usePhoneticSearch = false,
     String? group,
   }) async {
     if (word.trim().isEmpty) return;
@@ -88,6 +98,8 @@ class SearchHistoryService {
         word: trimmedWord,
         timestamp: DateTime.now(),
         exactMatch: exactMatch,
+        biaoyiExactMatch: biaoyiExactMatch,
+        usePhoneticSearch: usePhoneticSearch,
         group: group ?? existingGroup,
       ),
     );

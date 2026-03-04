@@ -307,16 +307,23 @@ class _FontConfigPageState extends State<FontConfigPage>
 
     for (final metadata in allMetadata) {
       if (metadata.sourceLanguage.isNotEmpty) {
-        final lang = metadata.sourceLanguage.toLowerCase();
-        if (_isValidLanguage(lang)) {
-          languageSet.add(lang);
+        // 源语言：规范化后再映射到字体分组 key（与目标语言路径一致）
+        // 这样 'zh' 会映射到 'zh-hans'，不产生独立的 'zh' tab
+        final lang = LanguageUtils.normalizeSourceLanguage(
+          metadata.sourceLanguage,
+        );
+        final mapped = _mapToFontGroupKey(lang);
+        if (_isValidFontGroupKey(mapped)) {
+          languageSet.add(mapped);
         }
       }
       for (final targetLang in metadata.targetLanguages) {
         if (targetLang.isNotEmpty) {
+          // 目标语言：仅小写，保留地区子标签（如 zh-hans、zh-hk），再映射到字体分组 key
           final lang = targetLang.toLowerCase();
-          if (_isValidLanguage(lang)) {
-            languageSet.add(lang);
+          final mappedLang = _mapToFontGroupKey(lang);
+          if (_isValidFontGroupKey(mappedLang)) {
+            languageSet.add(mappedLang);
           }
         }
       }
@@ -326,7 +333,8 @@ class _FontConfigPageState extends State<FontConfigPage>
     languageList.sort((a, b) {
       final order = [
         'en',
-        'zh',
+        'zh-hans',
+        'zh-hant',
         'ja',
         'ko',
         'fr',
@@ -348,8 +356,35 @@ class _FontConfigPageState extends State<FontConfigPage>
     return languageList;
   }
 
-  bool _isValidLanguage(String langCode) {
-    final validLanguages = [
+  /// 将目标语言代码映射到字体配置分组键。
+  ///
+  /// 中文变体统一映射到简体或繁体两种分组：
+  ///   zh-hans → zh-hans（简体）
+  ///   zh-hant / zh-hk / zh-tw / zh-mo → zh-hant（繁体）
+  ///   zh（无子标签）→ zh-hans（默认简体）
+  ///
+  /// 其他语言：小写并取基础语言代码。
+  static String _mapToFontGroupKey(String langLower) {
+    // 已是基础代码（无横杠）
+    if (!langLower.contains('-')) {
+      if (langLower == 'zh') return 'zh-hans'; // 无子标签中文默认简体
+      return langLower;
+    }
+    // 有横杠
+    if (langLower == 'zh-hans') return 'zh-hans';
+    if (langLower == 'zh-hant' ||
+        langLower == 'zh-hk' ||
+        langLower == 'zh-tw' ||
+        langLower == 'zh-mo') {
+      return 'zh-hant';
+    }
+    // 其他带地区子标签的语言：取基础部分
+    final idx = langLower.indexOf('-');
+    return langLower.substring(0, idx);
+  }
+
+  bool _isValidBaseLanguage(String langCode) {
+    const validLanguages = {
       'en',
       'zh',
       'ja',
@@ -362,8 +397,27 @@ class _FontConfigPageState extends State<FontConfigPage>
       'pt',
       'ar',
       'text',
-    ];
-    return validLanguages.contains(langCode.toLowerCase());
+    };
+    return validLanguages.contains(langCode);
+  }
+
+  bool _isValidFontGroupKey(String key) {
+    const validKeys = {
+      'en',
+      'zh-hans',
+      'zh-hant',
+      'ja',
+      'ko',
+      'fr',
+      'de',
+      'es',
+      'it',
+      'ru',
+      'pt',
+      'ar',
+      'text',
+    };
+    return validKeys.contains(key);
   }
 
   Future<void> _selectFolder() async {
@@ -451,7 +505,7 @@ class _FontConfigPageState extends State<FontConfigPage>
     final selectedFont = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: Text('选择 ${LanguageUtils.getLanguageDisplayName(language)} 字体'),
+        title: Text('选择 ${LanguageUtils.getLanguageDisplayNameExtended(language)} 字体'),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop<Map<String, String>>(context, {}),
@@ -564,7 +618,7 @@ class _FontConfigPageState extends State<FontConfigPage>
                       tabs: _languages
                           .map(
                             (lang) => Tab(
-                              text: LanguageUtils.getLanguageDisplayName(lang),
+                              text: LanguageUtils.getLanguageDisplayNameExtended(lang),
                             ),
                           )
                           .toList(),

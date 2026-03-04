@@ -71,6 +71,20 @@ class FontLoaderService {
     return _cachedFontScales;
   }
 
+  /// 解析指定语言的字体缩放值。
+  ///
+  /// 对 "zh" 等存在子分组的语言，按候选顺序（zh-hans → zh-hant → zh）查找；
+  /// 找不到时返回 null。
+  double? resolveFontScale(String language, {required bool isSerif}) {
+    final candidates = _getLanguageCandidates(language);
+    final key = isSerif ? 'serif' : 'sans';
+    for (final lang in candidates) {
+      final scale = _cachedFontScales[lang]?[key];
+      if (scale != null) return scale;
+    }
+    return null;
+  }
+
   /// 刷新字体缩放配置缓存
   Future<void> reloadFontScales() async {
     await _loadFontScales();
@@ -203,31 +217,66 @@ class FontLoaderService {
           : (isItalic ? 'sans_italic' : 'sans_regular');
     }
 
-    final fontKey = '${language}_$fontType';
-    if (_loadedFonts[fontKey] == true) {
-      return FontInfo(
-        fontFamily: _getFontFamilyName(language, fontType),
-        fontWeight: _getFontWeight(fontType),
-        fontStyle: _getFontStyle(fontType),
-        fontPath: _fontPaths[fontKey] ?? '',
-      );
+    // 查找顺序：原始 language key → 语言扩展候选 key（如 zh → zh-hans → zh-hant）
+    final candidates = _getLanguageCandidates(language);
+    for (final lang in candidates) {
+      final fontKey = '${lang}_$fontType';
+      if (_loadedFonts[fontKey] == true) {
+        return FontInfo(
+          fontFamily: _getFontFamilyName(lang, fontType),
+          fontWeight: _getFontWeight(fontType),
+          fontStyle: _getFontStyle(fontType),
+          fontPath: _fontPaths[fontKey] ?? '',
+        );
+      }
     }
 
-    // 回退逻辑：尝试找到同类型的其他可用字体
-    final fallbackFontType = _findFallbackFontType(language, isSerif: isSerif);
-    if (fallbackFontType != null) {
-      final fallbackKey = '${language}_$fallbackFontType';
-      Logger.d('字体回退: 请求 $fontKey -> 使用 $fallbackKey', tag: 'FontLoader');
-      return FontInfo(
-        fontFamily: _getFontFamilyName(language, fallbackFontType),
-        fontWeight: _getFontWeight(fallbackFontType),
-        fontStyle: _getFontStyle(fallbackFontType),
-        fontPath: _fontPaths[fallbackKey] ?? '',
-      );
+    // 回退逻辑：尝试找到同类型的其他可用字体（对每个候选语言）
+    for (final lang in candidates) {
+      final fallbackFontType = _findFallbackFontType(lang, isSerif: isSerif);
+      if (fallbackFontType != null) {
+        final fallbackKey = '${lang}_$fallbackFontType';
+        Logger.d('字体回退: 请求 ${language}_$fontType -> 使用 $fallbackKey', tag: 'FontLoader');
+        return FontInfo(
+          fontFamily: _getFontFamilyName(lang, fallbackFontType),
+          fontWeight: _getFontWeight(fallbackFontType),
+          fontStyle: _getFontStyle(fallbackFontType),
+          fontPath: _fontPaths[fallbackKey] ?? '',
+        );
+      }
     }
 
     // 最终回退：使用内置 bundled 字体（SourceSerif4 / SourceSans3）
     return _getBundledFontInfo(isSerif: isSerif, isItalic: isItalic);
+  }
+
+  /// 返回查找字体时的候选语言代码列表（按优先级从高到低）。
+  ///
+  /// 对于 "zh"：先尝试 zh-hans（简体），再尝试 zh-hant（繁体），最后 zh 本身。
+  /// 其他语言：仅自身。
+  /// 将语言代码映射为字体查找候选列表（按优先级排列）。
+  ///
+  /// 规则：
+  ///   zh / zh-hans          → ['zh-hans']      简体中文字体
+  ///   zh-hant / zh-hk 等繁体 → ['zh-hant']      繁体中文字体
+  ///   其他语言               → [小写基础代码]
+  ///
+  /// 当最优候选无字体时，调用方的循环会依次尝试后续候选。
+  static List<String> _getLanguageCandidates(String language) {
+    final lower = language.toLowerCase();
+    // 处理所有中文变体
+    if (lower == 'zh' || lower == 'zh-hans') return ['zh-hans'];
+    if (lower == 'zh-hant' ||
+        lower == 'zh-hk' ||
+        lower == 'zh-tw' ||
+        lower == 'zh-mo') {
+      return ['zh-hant'];
+    }
+    // 带子标签的中文（如 zh-sg 等未明确分类的）默认简体
+    if (lower.startsWith('zh-')) return ['zh-hans', 'zh-hant'];
+    // 其他语言：取基础语言代码（去除地区子标签）
+    final base = lower.contains('-') ? lower.substring(0, lower.indexOf('-')) : lower;
+    return [base];
   }
 
   /// 返回内置 bundled 字体信息（SourceSerif4 衬线 / SourceSans3 非衬线）

@@ -95,7 +95,7 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
       "definition": {
         "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
         "en": "A state of mental confusion or uncertainty.",
-      }, //必填，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
+      }, //释义字段，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
       "images": {
         "image_file": "fog.jpg",
       }, //可选
@@ -117,7 +117,20 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
             },
           ], //可选，例句音频
         }, //必填，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
-        {},
+        {
+          "usage": "take courage/guts",//例句的用法
+          "en": "[It takes](bold) courage to admit you are wrong."
+        },
+        {
+          "usage_group": "take (sb) sth (to do sth)",//一个例句用法中有多组例句
+          "example ": [
+            { "en": "Repairs take time to carry out." },
+            {
+              "en": "[It took](bold) a few minutes for his eyes to adjust to the dark."
+            }
+          ]
+        }
+
       ], //可选
       "subsense": [
         {
@@ -216,9 +229,9 @@ CREATE TABLE config (
 
 CREATE TABLE entries (
     entry_id INTEGER PRIMARY KEY,--必要字段
-    headword TEXT,--必要字段，仅表意文字需建立此索引
-    phonetic TEXT,--非必要字段。表意文字可选择使用此字段并建立索引
-    headword_normalized TEXT,--非必要字段。表音文字必须使用此字段并建立索引
+    headword TEXT,--必要字段，不需要建立索引
+    headword_normalized TEXT,--必要字段。建立索引
+    phonetic TEXT,--非必要字段，仅表意文字使用此字段。建立索引
     entry_type TEXT,--必要字段
     page TEXT,--必要字段
     section TEXT,--必要字段
@@ -226,7 +239,11 @@ CREATE TABLE entries (
 );--必要的表
 
 CREATE INDEX idx_entry_id ON entries(entry_id);
---还需根据词典特性创建一些字段的索引
+if "表意文字":
+    CREATE INDEX idx_phonetic ON entries(phonetic, headword_normalized, headword)
+    CREATE INDEX idx_headword ON entries(headword_normalized, phonetic, headword)
+else:
+    CREATE INDEX idx_headword ON entries(headword_normalized, headword)
 ```
 
 ## media.db

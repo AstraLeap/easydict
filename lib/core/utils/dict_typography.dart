@@ -296,6 +296,11 @@ class DictTypography {
     return _meta[type]?.baseFontSize ?? 14.0;
   }
 
+  /// 返回该元素类型的行高倍率。若未设置则返回 1.0。
+  static double lineHeightMultiplier(DictElementType type) {
+    return _meta[type]?.lineHeight ?? 1.0;
+  }
+
   // ── 核心方法 ────────────────────────────────────────────────────────────────
 
   /// 返回基础 TextStyle（含字号、字重、行高等），但**不含字体族**。

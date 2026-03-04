@@ -17,6 +17,15 @@ class LanguageUtils {
     'ar',
   };
 
+  /// 将语言代码规范化用于词典分组（前四处分组场合）：
+  /// 先小写化，再去除地区子标签（横杠及其后面部分），
+  /// 例如 "zh-Hans" → "zh"，"Zh-HK" → "zh"，"EN" → "en"。
+  static String normalizeSourceLanguage(String langCode) {
+    final lower = langCode.toLowerCase();
+    final hyphenIdx = lower.indexOf('-');
+    return hyphenIdx == -1 ? lower : lower.substring(0, hyphenIdx);
+  }
+
   /// 未设置字体缩放倍率时的默认值。
   ///
   /// 字母文字语言（拉丁/西里尔/阿拉伯）返回 1.15；
@@ -43,5 +52,38 @@ class LanguageUtils {
       'text': '文本',
     };
     return languageNames[langCode.toLowerCase()] ?? langCode.toUpperCase();
+  }
+
+  /// 获取语言代码的显示名称，支持带地区子标签的完整代码。
+  /// 用于字体配置界面，可区分简繁中文及其他地区变体。
+  ///
+  /// 对中文的处理：
+  ///   zh-hans → 中文（简体）
+  ///   zh-hant / zh-hk / zh-tw / zh-mo → 中文（繁体）
+  ///
+  /// 其他语言：先在扩展表中查找，找不到则回退到 [getLanguageDisplayName]
+  /// 以基础语言代码（去掉地区子标签后）查找。
+  static String getLanguageDisplayNameExtended(String langCode) {
+    const extendedNames = <String, String>{
+      // 中文地区变体
+      'zh-hans': '中文（简体）',
+      'zh-hant': '中文（繁体）',
+      'zh-hk': '中文（繁体）',
+      'zh-tw': '中文（繁体）',
+      'zh-mo': '中文（繁体）',
+      // 其他常见地区变体——沿用基础语言名
+      'en-us': '英语',
+      'en-gb': '英语',
+      'pt-br': '葡萄牙语',
+      'pt-pt': '葡萄牙语',
+      'es-419': '西班牙语',
+    };
+
+    final lower = langCode.toLowerCase();
+    if (lower == 'auto') return '自动';
+    final extended = extendedNames[lower];
+    if (extended != null) return extended;
+    // 回退：使用基础语言代码
+    return getLanguageDisplayName(normalizeSourceLanguage(lower));
   }
 }
