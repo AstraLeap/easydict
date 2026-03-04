@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../data/models/dictionary_metadata.dart';
 import '../core/logger.dart';
+import '../core/utils/language_utils.dart';
 import 'advanced_search_settings_service.dart';
 import 'entry_event_bus.dart';
 import 'search_history_service.dart';
@@ -717,7 +718,11 @@ class DictionaryManager {
       // 2. 获取该语言下启用的词典（保持用户配置的顺序）
       final enabledDicts = await getEnabledDictionariesMetadata();
       final languageDicts = enabledDicts
-          .where((dict) => dict.sourceLanguage == activeLanguage)
+          .where(
+            (dict) =>
+                LanguageUtils.normalizeSourceLanguage(dict.sourceLanguage) ==
+                LanguageUtils.normalizeSourceLanguage(activeLanguage),
+          )
           .take(3) // 最多前3本
           .toList();
 

@@ -68,6 +68,8 @@ dependencies:
   edge_tts_dart:
     git:
       url: https://github.com/twn39/edgetts-dart.git
+  # 中文繁转简（纯 Dart 实现，无 native-assets 依赖，see lib/services/t2s_map.dart）
+  # opencc: ^1.1.0  # 已移除：该包依赖 native-assets 特性，在稳定渠道 Flutter 中无法正常加载
 
 dev_dependencies:
   flutter_test:

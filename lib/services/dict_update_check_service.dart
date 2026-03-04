@@ -19,6 +19,7 @@ class DictUpdateCheckService extends ChangeNotifier {
   Map<String, user_dict.DictUpdateInfo> _updatableDicts = {};
   bool _isChecking = false;
   DateTime? _lastCheckTime;
+  bool _hasCheckedOnStartup = false;
 
   Map<String, user_dict.DictUpdateInfo> get updatableDicts => _updatableDicts;
   int get updatableCount => _updatableDicts.length;
@@ -29,22 +30,27 @@ class DictUpdateCheckService extends ChangeNotifier {
     _userDictsService.setBaseUrl(url);
   }
 
-  /// 启动时检查：如果上次检查距今已超过24小时，则在后台触发一次更新检查。
+  /// 应用启动时调用：仅在首次启动时检查更新一次
   /// 此方法本身是非阻塞的，不需要 await。
   Future<void> startDailyCheck() async {
     final enabled = await _preferencesService.getAutoCheckDictUpdate();
     if (!enabled) return;
+
+    // 如果已经在本启动过程中检查过，就不再检查
+    if (_hasCheckedOnStartup) {
+      return;
+    }
 
     final lastCheck = await _preferencesService.getLastDictUpdateCheckTime();
     if (lastCheck != null) {
       _lastCheckTime = lastCheck;
     }
 
-    final now = DateTime.now();
-    if (lastCheck == null || now.difference(lastCheck).inHours >= 24) {
-      // 不提前 await，让检查在后台运行不阻塞 UI
-      checkForUpdates();
-    }
+    // 标记为已检查过本次启动
+    _hasCheckedOnStartup = true;
+    
+    // 不提前 await，让检查在后台运行不阻塞 UI
+    checkForUpdates();
   }
 
   void stopDailyCheck() {

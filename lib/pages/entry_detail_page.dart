@@ -369,7 +369,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final metadata = await DictionaryManager().getDictionaryMetadata(
       currentDictId,
     );
-    return metadata?.sourceLanguage ?? 'en';
+    final raw = metadata?.sourceLanguage ?? 'en';
+    return LanguageUtils.normalizeSourceLanguage(raw);
   }
 
   Future<void> _loadFavoriteStatus() async {
@@ -1729,7 +1730,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final dbService = DatabaseService();
     final historyService = SearchHistoryService();
 
-    final result = await dbService.getAllEntries(word);
+    final result = await dbService.getAllEntries(word, sourceLanguage: 'auto');
 
     if (result.entries.isNotEmpty) {
       final entryGroup = DictionaryEntryGroup.groupEntries(result.entries);
@@ -2152,8 +2153,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
 
       if (needTranslation && textToTranslate.isNotEmpty) {
-        // 去除格式标记后再进行翻译
-        final plainText = _removeFormatting(textToTranslate);
+        // 去除格式标记并替换波浪线后再进行翻译
+        final plainText = _substituteHeadword(_removeFormatting(textToTranslate), entry);
         _performTranslation(
           entry,
           pathParts,
@@ -2427,9 +2428,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     }
 
-    // 去除格式化文本中的格式标记
+    // 去除格式化文本中的格式标记并替换波浪线
     if (currentValue is String) {
-      currentValue = _removeFormatting(currentValue);
+      currentValue = _substituteHeadword(_removeFormatting(currentValue), entry);
     } else if (currentValue is Map) {
       // 如果是对象，递归处理所有字符串字段
       currentValue = _removeFormattingFromMap(currentValue);
@@ -2476,6 +2477,18 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   String _removeFormatting(String text) {
     final RegExp pattern = RegExp(r'\[([^\]]*?)\]\([^\)]*?\)');
     return text.replaceAllMapped(pattern, (match) => match.group(1) ?? '');
+  }
+
+  /// 对中文词典的文本，将波浪线（～、～）替换为 entry 的 headword
+  String _substituteHeadword(String text, DictionaryEntry entry) {
+    final dictId = entry.dictId ?? '';
+    final meta = DictionaryManager().getCachedMetadata(dictId);
+    if (LanguageUtils.normalizeSourceLanguage(meta?.sourceLanguage ?? '') == 'zh') {
+      return text
+          .replaceAll('～', entry.headword)
+          .replaceAll('\u301c', entry.headword);
+    }
+    return text;
   }
 
   /// 显示AI元素对话框

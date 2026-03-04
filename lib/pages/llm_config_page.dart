@@ -6,10 +6,12 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../core/logger.dart';
+import '../core/utils/language_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../services/font_loader_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/entry_event_bus.dart';
+import '../services/advanced_search_settings_service.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
@@ -1037,6 +1039,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   String? _currentEditingLanguage;
   List<String> _availableLanguages = [];
   StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
+  StreamSubscription<LanguageOrderChangedEvent>? _langOrderSubscription;
 
   Future<List<String>> _getAvailableLanguages() async {
     final dictManager = DictionaryManager();
@@ -1045,14 +1048,16 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     for (final metadata in allMetadata) {
       if (metadata.sourceLanguage.isNotEmpty) {
-        final lang = metadata.sourceLanguage.toLowerCase();
+        final lang = LanguageUtils.normalizeSourceLanguage(
+          metadata.sourceLanguage,
+        );
         if (supportedLanguages.any((l) => l.langCode == lang)) {
           languageSet.add(lang);
         }
       }
       for (final targetLang in metadata.targetLanguages) {
         if (targetLang.isNotEmpty) {
-          final lang = targetLang.toLowerCase();
+          final lang = LanguageUtils.normalizeSourceLanguage(targetLang);
           if (supportedLanguages.any((l) => l.langCode == lang)) {
             languageSet.add(lang);
           }
@@ -1060,7 +1065,12 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       }
     }
 
-    return languageSet.toList()..sort();
+    final rawLanguages = languageSet.toList();
+    final savedOrder = await AdvancedSearchSettingsService().getLanguageOrder();
+    return AdvancedSearchSettingsService.sortLanguagesByOrder(
+      rawLanguages,
+      savedOrder,
+    );
   }
 
   /// 词典启用状态变化时，重新加载可用语言列表
@@ -1096,11 +1106,15 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
       _reloadAvailableLanguages();
     });
+    _langOrderSubscription = EntryEventBus().languageOrderChanged.listen((_) {
+      _reloadAvailableLanguages();
+    });
   }
 
   @override
   void dispose() {
     _dictsChangedSubscription?.cancel();
+    _langOrderSubscription?.cancel();
     _tabController.dispose();
 
     _fastApiKeyController.dispose();
@@ -2093,8 +2107,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
           ),
           const SizedBox(height: 16),
-          ...supportedLanguages
-              .where((lang) => _availableLanguages.contains(lang.langCode))
+          // 按 _availableLanguages 的顺序（即词典管理页设定的语言顺序）渲染
+          ..._availableLanguages
+              .map(
+                (code) => supportedLanguages.where(
+                  (l) => l.langCode == code,
+                ).firstOrNull,
+              )
+              .whereType<LanguageVoiceMapping>()
               .map((lang) => _buildLanguageVoiceSetting(lang)),
           const SizedBox(height: 32),
           Row(

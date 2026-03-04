@@ -29,6 +29,8 @@ import 'package:path/path.dart' as path;
 import '../components/global_scale_wrapper.dart';
 import '../components/transfer_progress_panel.dart';
 import '../services/external_storage_service.dart';
+import '../services/advanced_search_settings_service.dart';
+import '../services/entry_event_bus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
@@ -41,6 +43,8 @@ class DictionaryManagerPage extends StatefulWidget {
 class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   final DictionaryManager _dictManager = DictionaryManager();
   final UserDictsService _userDictsService = UserDictsService();
+  final AdvancedSearchSettingsService _advancedSettingsService =
+      AdvancedSearchSettingsService();
 
   List<DictionaryMetadata> _allDictionaries = [];
   List<String> _enabledDictionaryIds = [];
@@ -49,6 +53,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   bool _isLoadingOnline = false;
   String? _onlineError;
   DictionaryStoreService? _storeService;
+
+  // 语言分组 tab 顺序（可拖拽排序）
+  List<String> _languageOrder = [];
+  String? _selectedDictLang;
 
   // 创作者中心相关状态
   final AuthService _authService = AuthService();
@@ -81,6 +89,17 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       final allDicts = await _dictManager.getAllDictionariesMetadata();
       final enabledIds = await _dictManager.getEnabledDictionaries();
 
+      // 加载已保存的语言顺序
+      final savedOrder = await _advancedSettingsService.getLanguageOrder();
+      final allLangs = allDicts
+          .map((d) => LanguageUtils.normalizeSourceLanguage(d.sourceLanguage))
+          .toSet()
+          .toList();
+      final orderedLangs = AdvancedSearchSettingsService.sortLanguagesByOrder(
+        allLangs,
+        savedOrder,
+      );
+
       // 加载在线订阅URL
       final url = await _dictManager.onlineSubscriptionUrl;
       if (url.isNotEmpty) {
@@ -95,6 +114,11 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       setState(() {
         _allDictionaries = allDicts;
         _enabledDictionaryIds = enabledIds;
+        _languageOrder = orderedLangs;
+        // 如果当前选中语言不在列表中，重置为空（会自动选首个）
+        if (!orderedLangs.contains(_selectedDictLang)) {
+          _selectedDictLang = null;
+        }
         _isLoading = false;
       });
 
@@ -107,6 +131,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       Logger.e('加载设置失败: $e', tag: 'DictionaryManagerPage');
       setState(() => _isLoading = false);
     }
+  }
+
+  /// 保存语言显示顺序到持久化存储，并通知消费方页面刷新
+  Future<void> _saveLanguageOrder() async {
+    await _advancedSettingsService.setLanguageOrder(_languageOrder);
+    EntryEventBus().emitLanguageOrderChanged();
   }
 
   Future<void> _loadOnlineDictionaries() async {
@@ -595,7 +625,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     return PageScaleWrapper(child: content);
   }
 
-  /// Tab1: 词典牌序 - 按语言分组
+  /// Tab1: 词典排序 - 按语言分组（语言 tab 本身支持长按拖动排序）
   Widget _buildDictionaryManagementTab() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -605,48 +635,131 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       return _buildEmptyState();
     }
 
-    // 获取所有源语言
-    final languages =
-        _allDictionaries.map((d) => d.sourceLanguage).toSet().toList()..sort();
+    // 获取所有源语言（规范化后去重）
+    final allLangs = _allDictionaries
+        .map((d) => LanguageUtils.normalizeSourceLanguage(d.sourceLanguage))
+        .toSet()
+        .toList();
 
-    if (languages.isEmpty) {
+    // 按已保存顺序排序（新增语言追加到末尾）
+    final displayLangs = AdvancedSearchSettingsService.sortLanguagesByOrder(
+      allLangs,
+      _languageOrder,
+    );
+
+    if (displayLangs.isEmpty) {
       return _buildEmptyState();
     }
 
-    return DefaultTabController(
-      length: languages.length,
-      child: Column(
-        children: [
-          Container(
-            color: Theme.of(context).colorScheme.surface,
-            child: TabBar(
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              tabs: languages
-                  .map(
-                    (lang) =>
-                        Tab(text: LanguageUtils.getLanguageDisplayName(lang)),
-                  )
-                  .toList(),
-            ),
-          ),
-          Expanded(
-            child: TabBarView(
-              children: languages.map((lang) {
-                final dicts = _allDictionaries
-                    .where((d) => d.sourceLanguage == lang)
-                    .toList();
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 800),
-                    child: _buildLanguageDictionaryList(dicts),
+    // 确定当前选中的语言
+    final currentLang = displayLangs.contains(_selectedDictLang)
+        ? _selectedDictLang!
+        : displayLangs.first;
+
+    return Column(
+      children: [
+        // 可拖动排序的语言 tab 栏
+        Container(
+          color: Theme.of(context).colorScheme.surface,
+          height: 48,
+          child: Row(
+            children: [
+              Expanded(
+                child: ReorderableListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  buildDefaultDragHandles: false,
+                  padding: EdgeInsets.zero,
+                  onReorder: (oldIndex, newIndex) {
+                    if (newIndex > oldIndex) newIndex--;
+                    final newOrder = List<String>.from(displayLangs);
+                    final item = newOrder.removeAt(oldIndex);
+                    newOrder.insert(newIndex, item);
+                    setState(() {
+                      _languageOrder = newOrder;
+                    });
+                    _saveLanguageOrder();
+                  },
+                  itemCount: displayLangs.length,
+                  itemBuilder: (context, index) {
+                    final lang = displayLangs[index];
+                    final isSelected = lang == currentLang;
+                    return ReorderableDragStartListener(
+                      key: ValueKey(lang),
+                      index: index,
+                      child: InkWell(
+                        onTap: () =>
+                            setState(() => _selectedDictLang = lang),
+                        child: Container(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: isSelected
+                                    ? Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                    : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              LanguageUtils.getLanguageDisplayName(lang),
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: isSelected
+                                    ? Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // 长按拖动提示图标
+              Tooltip(
+                message: '长按语言标签可拖动排序',
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(
+                    Icons.swap_horiz,
+                    size: 18,
+                    color: Colors.grey[400],
                   ),
-                );
-              }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 当前语言的词典列表
+        Expanded(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: _buildLanguageDictionaryList(
+                _allDictionaries
+                    .where(
+                      (d) =>
+                          LanguageUtils.normalizeSourceLanguage(
+                            d.sourceLanguage,
+                          ) ==
+                          currentLang,
+                    )
+                    .toList(),
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1081,6 +1194,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     UserDictionary dict,
     ColorScheme colorScheme,
   ) {
+    final metadata = _allDictionaries
+        .where((m) => m.id == dict.dictId)
+        .firstOrNull;
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
@@ -1100,33 +1216,24 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               dict.name,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
             Row(
               children: [
-                Icon(
-                  Icons.access_time,
-                  size: 14,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
                 Text(
-                  '更新于 ${_formatDateTime(dict.updatedAt)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+                  metadata != null ? 'v${metadata.version}' : '',
+                  style: TextStyle(fontSize: 12, color: colorScheme.outline),
                 ),
                 const Spacer(),
-                IconButton(
-                  onPressed: () => _showEditFilesDialog(dict),
-                  icon: Icon(Icons.swap_horiz, color: colorScheme.primary),
-                  tooltip: '替换文件',
-                  visualDensity: VisualDensity.compact,
-                ),
                 IconButton(
                   onPressed: () => _showUpdateJsonDialog(dict),
                   icon: Icon(Icons.data_object, color: colorScheme.primary),
                   tooltip: '更新JSON',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: () => _showEditFilesDialog(dict),
+                  icon: Icon(Icons.swap_horiz, color: colorScheme.primary),
+                  tooltip: '替换文件',
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
@@ -1205,13 +1312,18 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     );
   }
 
-  void _showEditFilesDialog(UserDictionary dict) {
+  Future<void> _showEditFilesDialog(UserDictionary dict) async {
+    final dbPath = await _dictManager.getDictionaryDbPath(dict.dictId);
+    // 获取数据库文件所在的目录（跨平台）
+    final localPath = path.dirname(dbPath);
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => EditDictionaryDialog(
         dictId: dict.dictId,
         dictName: dict.name,
         onUpdateSuccess: _loadUserDictionaries,
+        localPath: localPath,
       ),
     );
   }
@@ -1222,8 +1334,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       builder: (context) => PushUpdatesDialog(
         dictId: dict.dictId,
         dictName: dict.name,
-        onPushSuccess: () {
-          showToast(context, '推送更新成功');
+        onPushSuccess: () async {
+          await _refreshLocalDictionaries();
+          if (mounted) showToast(context, '推送更新成功');
         },
       ),
     );

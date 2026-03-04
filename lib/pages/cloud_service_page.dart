@@ -961,7 +961,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
       for (final record in _updateRecords) {
         final entryId = record['id'] as String;
-        final isDelete = (record['delete'] as int? ?? 0) == 1;
+        final isDelete = (record['is_delete'] as int? ?? 0) == 1;
 
         // 去重：如果同一个 entry 被更新多次，只取最新的一次
         if (processedEntryIds.contains(entryId)) {
@@ -1099,7 +1099,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AlertDialog(
-      title: Text('推送更新 - ${widget.dictName}'),
+      title: const Text('推送更新'),
       content: SizedBox(
         width: 500,
         child: Column(
@@ -1128,7 +1128,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                     final record = _updateRecords[index];
                     final headword = record['headword'] as String;
                     final isDelete =
-                        (record['delete'] as int? ?? 0) == 1;
+                        (record['is_delete'] as int? ?? 0) == 1;
                     final updateTime = DateTime.fromMillisecondsSinceEpoch(
                       record['update_time'] as int,
                     );
@@ -1481,12 +1481,14 @@ class EditDictionaryDialog extends StatefulWidget {
   final String dictId;
   final String dictName;
   final VoidCallback onUpdateSuccess;
+  final String? localPath;
 
   const EditDictionaryDialog({
     super.key,
     required this.dictId,
     required this.dictName,
     required this.onUpdateSuccess,
+    this.localPath,
   });
 
   @override
@@ -1531,9 +1533,20 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
         break;
     }
 
+    // 确保初始目录有效且存在
+    String? initialDir = widget.localPath;
+    if (initialDir != null && initialDir.isNotEmpty) {
+      final dir = Directory(initialDir);
+      if (!await dir.exists()) {
+        // 如果目录不存在，尝试使用其父目录
+        initialDir = null;
+      }
+    }
+
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: extension != null ? [extension] : null,
+      initialDirectory: initialDir,
     );
 
     if (result != null && result.files.single.path != null) {
@@ -1730,7 +1743,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
     final isUploading = uploadManager.isUploading;
 
     return AlertDialog(
-      title: Text('替换文件 - ${widget.dictName}'),
+      title: const Text('替换文件'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1838,10 +1851,14 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
 
   // ── 删除 tab ──
   final TextEditingController _searchController = TextEditingController();
+  String _searchMode = 'id'; // 'id' | 'headword'
   bool _isSearching = false;
   bool _isDeleting = false;
+  // 单条结果（by ID 或 headword 精确匹配唯一条）
   Map<String, dynamic>? _foundEntry;
   String? _foundEntryId;
+  // 多条结果（headword 匹配多条时）
+  List<Map<String, dynamic>> _foundEntries = [];
   String? _searchError;
 
   @override
@@ -1877,24 +1894,82 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     });
 
     try {
-      // 将文本按行拆分为 JSONL，兼容单个 JSON 对象
-      final lines = text
-          .split('\n')
-          .map((l) => l.trim())
-          .where((l) => l.isNotEmpty)
-          .toList();
+      // ① 先尝试整段解析为 JSON（处理格式化 JSON 对象或数组）
+      // ② 若失败再按 JSONL（每行一个 JSON 对象）处理
+      List<Map<String, dynamic>> objectsToParse = [];
+      bool usedJsonMode = false;
+
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map<String, dynamic>) {
+          objectsToParse = [decoded];
+          usedJsonMode = true;
+        } else if (decoded is List) {
+          objectsToParse = decoded
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          usedJsonMode = true;
+        }
+      } catch (_) {
+        // 整段解析失败 → JSONL 模式
+      }
+
+      if (!usedJsonMode) {
+        final lines = text
+            .split('\n')
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .toList();
+        for (int i = 0; i < lines.length; i++) {
+          try {
+            final decoded = jsonDecode(lines[i]);
+            if (decoded is Map<String, dynamic>) {
+              objectsToParse.add(decoded);
+            }
+          } catch (_) {
+            // 单行解析失败时忽略（下面的循环会统计错误）
+          }
+        }
+        // 若 JSONL 也完全无法解析，报错
+        if (objectsToParse.isEmpty) {
+          // 重新逐行以收集错误信息
+          final lines2 = text
+              .split('\n')
+              .map((l) => l.trim())
+              .where((l) => l.isNotEmpty)
+              .toList();
+          final errorMessages2 = <String>[];
+          for (int i = 0; i < lines2.length; i++) {
+            try {
+              jsonDecode(lines2[i]);
+            } catch (e) {
+              final preview = lines2[i].length > 50
+                  ? '${lines2[i].substring(0, 50)}…'
+                  : lines2[i];
+              errorMessages2.add('第 ${i + 1} 行: $preview');
+              if (errorMessages2.length >= 3) break;
+            }
+          }
+          setState(() {
+            _importResult =
+                'JSON 解析失败，请检查格式（格式化 JSON 或每行一个对象的 JSONL）。\n'
+                '${errorMessages2.join("\n")}';
+            _importHasError = true;
+          });
+          return;
+        }
+      }
 
       int successCount = 0;
       int errorCount = 0;
       final errorMessages = <String>[];
 
-      for (int i = 0; i < lines.length; i++) {
-        final line = lines[i];
+      for (int i = 0; i < objectsToParse.length; i++) {
+        final decoded = objectsToParse[i];
         try {
-          final dynamic decoded = jsonDecode(line);
           if (decoded is! Map<String, dynamic>) {
             errorCount++;
-            errorMessages.add('第 ${i + 1} 行不是 JSON 对象');
+            errorMessages.add('第 ${i + 1} 条不是 JSON 对象');
             continue;
           }
 
@@ -1905,9 +1980,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           final entry = DictionaryEntry.fromJson(json);
           if (entry.id.isEmpty) {
             errorCount++;
-            final preview =
-                line.length > 60 ? '${line.substring(0, 60)}…' : line;
-            errorMessages.add('第 ${i + 1} 行缺少 entry_id: $preview');
+            errorMessages.add('第 ${i + 1} 条缺少 entry_id');
             continue;
           }
 
@@ -1917,14 +1990,12 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           } else {
             errorCount++;
             errorMessages.add(
-              '第 ${i + 1} 行写入失败 (entry_id: ${entry.id}, headword: ${entry.headword})',
+              '第 ${i + 1} 条写入失败 (entry_id: ${entry.id}, headword: ${entry.headword})',
             );
           }
         } catch (e) {
           errorCount++;
-          final preview =
-              line.length > 60 ? '${line.substring(0, 60)}…' : line;
-          errorMessages.add('第 ${i + 1} 行解析失败: $preview');
+          errorMessages.add('第 ${i + 1} 条处理失败: $e');
         }
       }
 
@@ -1958,9 +2029,10 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
   // ── 删除逻辑 ───────────────────────────────────────────────────────────────
 
   Future<void> _searchEntry() async {
-    final entryId = _searchController.text.trim();
-    if (entryId.isEmpty) {
-      setState(() => _searchError = '请输入 entry_id');
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() => _searchError =
+          _searchMode == 'id' ? '请输入 entry_id' : '请输入词头');
       return;
     }
 
@@ -1968,21 +2040,43 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       _isSearching = true;
       _foundEntry = null;
       _foundEntryId = null;
+      _foundEntries = [];
       _searchError = null;
     });
 
     try {
-      final entry =
-          await _databaseService.getEntryJsonById(widget.dictId, entryId);
-      if (entry == null) {
-        setState(
-          () => _searchError = '未找到 entry_id 为 $entryId 的条目',
-        );
+      if (_searchMode == 'id') {
+        final entry =
+            await _databaseService.getEntryJsonById(widget.dictId, query);
+        if (entry == null) {
+          setState(() => _searchError = '未找到 entry_id 为 $query 的条目');
+        } else {
+          // 从 entry JSON 中提取 entry_id
+          final eid = (entry['entry_id'] ?? entry['id'])?.toString() ?? query;
+          setState(() {
+            _foundEntry = entry;
+            _foundEntryId = eid;
+          });
+        }
       } else {
-        setState(() {
-          _foundEntry = entry;
-          _foundEntryId = entryId;
-        });
+        // headword 搜索
+        final entries = await _databaseService.searchEntriesByHeadword(
+          widget.dictId,
+          query,
+        );
+        if (entries.isEmpty) {
+          setState(() => _searchError = '未找到词头为「$query」的条目');
+        } else if (entries.length == 1) {
+          final entry = entries.first;
+          final eid =
+              (entry['entry_id'] ?? entry['id'])?.toString() ?? query;
+          setState(() {
+            _foundEntry = entry;
+            _foundEntryId = eid;
+          });
+        } else {
+          setState(() => _foundEntries = entries);
+        }
       }
     } catch (e) {
       setState(() => _searchError = '搜索失败: $e');
@@ -2030,6 +2124,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
         setState(() {
           _foundEntry = null;
           _foundEntryId = null;
+          _foundEntries = [];
           _searchController.clear();
           _searchError = null;
         });
@@ -2051,22 +2146,46 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return AlertDialog(
-      title: Text('更新 JSON — ${widget.dictName}'),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      title: const Text('更新 JSON'),
+      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
       content: SizedBox(
         width: 560,
-        height: 480,
+        height: 520,
         child: Column(
           children: [
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: '导入 JSON / JSONL'),
-                Tab(text: '按 entry_id 删除'),
-              ],
+            Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                dividerColor: Colors.transparent,
+                indicator: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.shadow.withValues(alpha: 0.08),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                indicatorPadding: const EdgeInsets.all(3),
+                labelColor: colorScheme.primary,
+                unselectedLabelColor: colorScheme.onSurfaceVariant,
+                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                unselectedLabelStyle: const TextStyle(fontSize: 13),
+                tabs: const [
+                  Tab(text: '导入 JSON / JSONL'),
+                  Tab(text: '搜索删除条目'),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -2095,52 +2214,106 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: TextField(
-            controller: _jsonController,
-            maxLines: null,
-            expands: true,
-            style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              hintText:
-                  '粘贴 JSON 或 JSONL（每行一个 JSON 对象）\n\n注意：每条 JSON 必须含有 entry_id 字段',
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
-              contentPadding: EdgeInsets.all(12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: TextField(
+              controller: _jsonController,
+              maxLines: null,
+              expands: true,
+              style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+              decoration: InputDecoration(
+                hintText:
+                    '粘贴 JSON 或 JSONL（每行一个 JSON 对象）\n\n注意：每条 JSON 必须含有 entry_id 字段',
+                hintStyle: TextStyle(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+                border: InputBorder.none,
+                alignLabelWithHint: true,
+                contentPadding: const EdgeInsets.all(12),
+              ),
             ),
           ),
         ),
         if (_importResult != null) ...[
           const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: _importHasError
                   ? colorScheme.errorContainer
                   : colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(
-              _importResult!,
-              style: TextStyle(
-                fontSize: 12,
-                color: _importHasError
-                    ? colorScheme.onErrorContainer
-                    : colorScheme.onSecondaryContainer,
-              ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  _importHasError
+                      ? Icons.error_outline
+                      : Icons.check_circle_outline,
+                  size: 16,
+                  color: _importHasError
+                      ? colorScheme.onErrorContainer
+                      : colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _importResult!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _importHasError
+                          ? colorScheme.onErrorContainer
+                          : colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
-        const SizedBox(height: 8),
-        FilledButton.icon(
-          onPressed: _isImporting ? null : _importJson,
-          icon: _isImporting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.upload_outlined, size: 18),
-          label: Text(_isImporting ? '导入中…' : '写入数据库'),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            if (_jsonController.text.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: OutlinedButton.icon(
+                  onPressed: _isImporting
+                      ? null
+                      : () {
+                          setState(() {
+                            _jsonController.clear();
+                            _importResult = null;
+                            _importHasError = false;
+                          });
+                        },
+                  icon: const Icon(Icons.clear, size: 16),
+                  label: const Text('清空'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _isImporting ? null : _importJson,
+                icon: _isImporting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.upload_outlined, size: 18),
+                label: Text(_isImporting ? '导入中…' : '写入数据库'),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
       ],
@@ -2153,74 +2326,211 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 搜索模式切换
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(
+              value: 'id',
+              label: Text('ID 搜索'),
+              icon: Icon(Icons.tag, size: 15),
+            ),
+            ButtonSegment(
+              value: 'headword',
+              label: Text('词头搜索'),
+              icon: Icon(Icons.search, size: 15),
+            ),
+          ],
+          selected: {_searchMode},
+          onSelectionChanged: (sel) {
+            setState(() {
+              _searchMode = sel.first;
+              _foundEntry = null;
+              _foundEntryId = null;
+              _foundEntries = [];
+              _searchError = null;
+            });
+          },
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: WidgetStateProperty.all(
+              const TextStyle(fontSize: 13),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        // 搜索栏
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: TextField(
                 controller: _searchController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'entry_id',
-                  hintText: '输入整数 entry_id',
-                  border: OutlineInputBorder(),
+                keyboardType: _searchMode == 'id'
+                    ? TextInputType.number
+                    : TextInputType.text,
+                decoration: InputDecoration(
+                  labelText: _searchMode == 'id' ? 'entry_id' : '词头',
+                  hintText: _searchMode == 'id'
+                      ? '输入整数 entry_id'
+                      : '输入词头（自动规范化匹配）',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide:
+                        BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 12),
+                  isDense: true,
                 ),
                 onSubmitted: (_) => _searchEntry(),
               ),
             ),
             const SizedBox(width: 8),
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: FilledButton(
-                onPressed: _isSearching ? null : _searchEntry,
-                child: _isSearching
+            FilledButton(
+              onPressed: _isSearching ? null : _searchEntry,
+              child: _isSearching
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('搜索'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // 错误提示
+        if (_searchError != null)
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline,
+                    size: 16, color: colorScheme.onErrorContainer),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _searchError!,
+                    style: TextStyle(
+                        color: colorScheme.onErrorContainer, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // 多条匹配结果列表
+        if (_foundEntries.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              '找到 ${_foundEntries.length} 条匹配条目，点击选择要删除的条目：',
+              style:
+                  TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: ListView.separated(
+                padding: const EdgeInsets.all(4),
+                itemCount: _foundEntries.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: colorScheme.outlineVariant),
+                itemBuilder: (context, index) {
+                  final e = _foundEntries[index];
+                  final hw = e['headword']?.toString() ?? '';
+                  final eid =
+                      (e['entry_id'] ?? e['id'])?.toString() ?? '';
+                  return ListTile(
+                    dense: true,
+                    title: Text(hw, style: const TextStyle(fontSize: 13)),
+                    subtitle: Text(
+                      'entry_id: $eid',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.onSurfaceVariant),
+                    ),
+                    trailing: Icon(Icons.chevron_right,
+                        size: 18, color: colorScheme.outline),
+                    onTap: () {
+                      setState(() {
+                        _foundEntry = e;
+                        _foundEntryId = eid;
+                        _foundEntries = [];
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        // 单条结果预览
+        if (_foundEntry != null) ...[
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLowest,
+                border: Border.all(color: colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: SingleChildScrollView(
+                child: Text(
+                  const JsonEncoder.withIndent('  ').convert(_foundEntry),
+                  style: const TextStyle(
+                      fontSize: 11, fontFamily: 'monospace'),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _foundEntry = null;
+                    _foundEntryId = null;
+                  });
+                },
+                icon: const Icon(Icons.arrow_back, size: 15),
+                label: const Text('返回'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
+                ),
+              ),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: _isDeleting ? null : _deleteEntry,
+                icon: _isDeleting
                     ? const SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('搜索'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_searchError != null)
-          Text(
-            _searchError!,
-            style: TextStyle(color: colorScheme.error, fontSize: 13),
-          ),
-        if (_foundEntry != null) ...[
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SingleChildScrollView(
-                child: Text(
-                  const JsonEncoder.withIndent('  ').convert(_foundEntry),
-                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                    : const Icon(Icons.delete_outline, size: 18),
+                label: Text(_isDeleting ? '删除中…' : '删除此条目'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: colorScheme.error,
+                  foregroundColor: colorScheme.onError,
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _isDeleting ? null : _deleteEntry,
-            icon: _isDeleting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.delete_outline, size: 18),
-            label: Text(_isDeleting ? '删除中…' : '删除此条目'),
-            style: FilledButton.styleFrom(
-              backgroundColor: colorScheme.error,
-              foregroundColor: colorScheme.onError,
-            ),
+            ],
           ),
           const SizedBox(height: 12),
         ],

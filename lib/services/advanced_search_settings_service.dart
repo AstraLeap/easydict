@@ -3,18 +3,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 语言默认搜索选项配置
 class LanguageDefaultSearchOptions {
   final bool exactMatch;
+  final bool biaoyiExactMatch;
 
   const LanguageDefaultSearchOptions({
     this.exactMatch = false,
+    this.biaoyiExactMatch = false,
   });
 
   Map<String, dynamic> toJson() => {
     'exactMatch': exactMatch,
+    'biaoyiExactMatch': biaoyiExactMatch,
   };
 
   factory LanguageDefaultSearchOptions.fromJson(Map<String, dynamic> json) {
     return LanguageDefaultSearchOptions(
       exactMatch: json['exactMatch'] ?? false,
+      biaoyiExactMatch: json['biaoyiExactMatch'] ?? false,
     );
   }
 }
@@ -27,8 +31,10 @@ class AdvancedSearchSettingsService {
   AdvancedSearchSettingsService._internal();
 
   static const String _exactMatchKey = 'advanced_search_exact_match';
+  static const String _biaoyiExactMatchKey = 'advanced_search_biaoyi_exact_match';
   static const String _lastSelectedGroupKey = 'last_selected_group';
   static const String _languageDefaultOptionsKey = 'language_default_options';
+  static const String _languageOrderKey = 'language_display_order';
 
   /// 各语言默认搜索选项
   /// 英语: 关闭通配符搜索, 关闭区分大小写 (exactMatch = false)
@@ -52,6 +58,7 @@ class AdvancedSearchSettingsService {
     final prefs = await SharedPreferences.getInstance();
     return {
       'exactMatch': prefs.getBool(_exactMatchKey) ?? false,
+      'biaoyiExactMatch': prefs.getBool(_biaoyiExactMatchKey) ?? false,
     };
   }
 
@@ -67,11 +74,47 @@ class AdvancedSearchSettingsService {
     await prefs.setString(_lastSelectedGroupKey, group);
   }
 
+  /// 获取保存的语言显示顺序
+  Future<List<String>?> getLanguageOrder() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_languageOrderKey);
+  }
+
+  /// 保存语言显示顺序
+  Future<void> setLanguageOrder(List<String> order) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_languageOrderKey, order);
+  }
+
+  /// 按照已保存的语言顺序对语言列表进行排序。
+  ///
+  /// 已保存顺序中的语言按顺序排列，未在保存顺序中的语言排在后面（保持字母排序）。
+  static List<String> sortLanguagesByOrder(
+    List<String> languages,
+    List<String>? savedOrder,
+  ) {
+    if (savedOrder == null || savedOrder.isEmpty) return languages;
+    return [...languages]..sort((a, b) {
+      final ia = savedOrder.indexOf(a);
+      final ib = savedOrder.indexOf(b);
+      if (ia == -1 && ib == -1) return a.compareTo(b);
+      if (ia == -1) return 1;
+      if (ib == -1) return -1;
+      return ia.compareTo(ib);
+    });
+  }
+
 
   /// 保存精确搜索设置
   Future<void> setExactMatch(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_exactMatchKey, value);
+  }
+
+  /// 保存简繁区分设置
+  Future<void> setBiaoyiExactMatch(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_biaoyiExactMatchKey, value);
   }
 
   /// 获取指定语言的默认搜索选项

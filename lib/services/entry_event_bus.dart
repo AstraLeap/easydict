@@ -49,6 +49,11 @@ class DictionariesChangedEvent {
   const DictionariesChangedEvent();
 }
 
+/// 语言显示顺序变化事件（词典管理页拖拽排序后触发）
+class LanguageOrderChangedEvent {
+  const LanguageOrderChangedEvent();
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -66,6 +71,8 @@ class EntryEventBus {
       StreamController<SettingsSyncedEvent>.broadcast();
   final _dictionariesChangedController =
       StreamController<DictionariesChangedEvent>.broadcast();
+  final _languageOrderChangedController =
+      StreamController<LanguageOrderChangedEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -79,6 +86,8 @@ class EntryEventBus {
       _settingsSyncedController.stream;
   Stream<DictionariesChangedEvent> get dictionariesChanged =>
       _dictionariesChangedController.stream;
+  Stream<LanguageOrderChangedEvent> get languageOrderChanged =>
+      _languageOrderChangedController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -104,6 +113,10 @@ class EntryEventBus {
     _dictionariesChangedController.add(const DictionariesChangedEvent());
   }
 
+  void emitLanguageOrderChanged() {
+    _languageOrderChangedController.add(const LanguageOrderChangedEvent());
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
@@ -111,5 +124,6 @@ class EntryEventBus {
     _batchToggleHiddenController.close();
     _settingsSyncedController.close();
     _dictionariesChangedController.close();
+    _languageOrderChangedController.close();
   }
 }

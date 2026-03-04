@@ -355,8 +355,14 @@ FormattedTextResult parseFormattedText(
       isBold: isBold,
     );
 
-    final fontScale =
-        fontScales?[effectiveLanguage]?[effectiveIsSerif ? 'serif' : 'sans'] ?? 1.0;
+    final fontScale = fontScales != null
+        ? (FontLoaderService().resolveFontScale(
+              effectiveLanguage,
+              isSerif: effectiveIsSerif,
+            ) ??
+            fontScales[effectiveLanguage]?[effectiveIsSerif ? 'serif' : 'sans'] ??
+            1.0)
+        : 1.0;
 
     // 只有当 baseStyle 没有指定 fontFamily 时，才应用自定义字体
     if (fontInfo != null && baseStyle.fontFamily == null) {
@@ -805,7 +811,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (dictId != null && dictId.isNotEmpty) {
       final cachedMetadata = DictionaryManager().getCachedMetadata(dictId);
       if (cachedMetadata != null) {
-        _sourceLanguage = cachedMetadata.sourceLanguage;
+        _sourceLanguage = LanguageUtils.normalizeSourceLanguage(cachedMetadata.sourceLanguage);
         _targetLanguages = cachedMetadata.targetLanguages;
       }
     }
@@ -1470,7 +1476,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
       if (mounted && metadata != null) {
         setState(() {
-          _sourceLanguage = metadata.sourceLanguage;
+          _sourceLanguage = LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
           _targetLanguages = metadata.targetLanguages;
         });
       }
@@ -1685,7 +1691,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final textToCopy = _extractTextToCopy(currentValue);
     if (textToCopy != null) {
-      Clipboard.setData(ClipboardData(text: textToCopy));
+      Clipboard.setData(ClipboardData(text: _substituteHeadword(textToCopy)));
       showToast(context, '文本已复制');
     } else {
       showToast(context, '无法提取文本内容');
@@ -1730,11 +1736,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    final textToSpeak = _extractTextToCopy(currentValue);
-    if (textToSpeak == null || textToSpeak.isEmpty) {
+    final textToSpeakRaw = _extractTextToCopy(currentValue);
+    if (textToSpeakRaw == null || textToSpeakRaw.isEmpty) {
       showToast(context, '无法提取文本内容');
       return;
     }
+    final textToSpeak = _substituteHeadword(textToSpeakRaw);
 
     // 尝试从路径中提取语言代码（路径的最后一部分通常是语言代码）
     String? languageCode;
@@ -1778,6 +1785,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
       Logger.e('TTS失败: $e', tag: '_performSpeak', error: e);
       showToast(context, '朗读失败: $e');
     }
+  }
+
+  /// 对中文词典的文本，将波浪线（～、～）替换为当前 entry 的 headword
+  String _substituteHeadword(String text) {
+    if (_sourceLanguage != null && LanguageUtils.normalizeSourceLanguage(_sourceLanguage!) == 'zh') {
+      return text
+          .replaceAll('～', _localEntry.headword)
+          .replaceAll('\u301c', _localEntry.headword);
+    }
+    return text;
   }
 
   Future<void> _playTtsAudio(List<int> audioData) async {
@@ -2078,10 +2095,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Logger.d('Phrase tapped: $plainPhrase', tag: 'PhraseTap');
 
     final dbService = DatabaseService();
+    final currentDictId = _localEntry.dictId;
+
+    // 只搜索当前词典
     final searchResult = await dbService.getAllEntries(
       plainPhrase,
-      exactMatch: true,
+      exactMatch: false,
       sourceLanguage: _sourceLanguage,
+      dictId: currentDictId,
     );
 
     if (searchResult.entries.isEmpty) {
@@ -2091,19 +2112,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
-    final entryGroup = DictionaryEntryGroup.groupEntries(searchResult.entries);
     if (mounted) {
-      _showPhraseOverlay(
-        entryGroup,
-        searchResult.entries,
-        plainPhrase,
-        position,
-      );
+      _showPhraseOverlay(searchResult.entries, plainPhrase, position);
     }
   }
 
   void _showPhraseOverlay(
-    DictionaryEntryGroup entryGroup,
     List<DictionaryEntry> entries,
     String phrase,
     Offset position,
@@ -2111,7 +2125,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final colorScheme = Theme.of(context).colorScheme;
     final overlay = Overlay.of(context);
 
-    final fontScale = _fontScales[_sourceLanguage ?? 'en']?['serif'] ?? 1.0;
+    final fontScale = (FontLoaderService().resolveFontScale(
+          _sourceLanguage ?? 'en',
+          isSerif: true,
+        ) ??
+        _fontScales[_sourceLanguage ?? 'en']?['serif'] ??
+        1.0);
     final dictionaryContentScale = FontLoaderService()
         .getDictionaryContentScale();
     final iconSize = 18 * fontScale * dictionaryContentScale;
@@ -2209,16 +2228,33 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               12 * fontScale * dictionaryContentScale,
                             ),
                             child: PageScaleWrapper(
-                              child: ComponentRenderer(
-                                entry: entryGroup.currentEntry ?? entries.first,
-                                topPadding: 8,
-                                bottomPadding: 8,
-                                onElementTap: (path, label) {
-                                  Logger.d(
-                                    'Phrase overlay element tapped: $path',
-                                    tag: 'PhraseOverlay',
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: entries.asMap().entries.map((e) {
+                                  final isLast = e.key == entries.length - 1;
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ComponentRenderer(
+                                        entry: e.value,
+                                        topPadding: 8,
+                                        bottomPadding: 8,
+                                        onElementTap: (path, label) {
+                                          Logger.d(
+                                            'Phrase overlay element tapped: $path',
+                                            tag: 'PhraseOverlay',
+                                          );
+                                        },
+                                      ),
+                                      if (!isLast)
+                                        Divider(
+                                          height: 1,
+                                          color: colorScheme.outlineVariant
+                                              .withValues(alpha: 0.4),
+                                        ),
+                                    ],
                                   );
-                                },
+                                }).toList(),
                               ),
                             ),
                           ),
@@ -2233,13 +2269,25 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
                           mouseCursor: SystemMouseCursors.click,
-                          onTap: () {
+                          onTap: () async {
                             _removePhraseOverlay();
+                            // 放大时搜索所有词典并跳转全屏查词
+                            final dbService = DatabaseService();
+                            final allResult = await dbService.getAllEntries(
+                              phrase,
+                              exactMatch: false,
+                            );
+                            if (!mounted) return;
+                            final allEntryGroup = allResult.entries.isNotEmpty
+                                ? DictionaryEntryGroup.groupEntries(
+                                    allResult.entries,
+                                  )
+                                : DictionaryEntryGroup.groupEntries(entries);
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => EntryDetailPage(
-                                  entryGroup: entryGroup,
+                                  entryGroup: allEntryGroup,
                                   initialWord: phrase,
                                 ),
                               ),
@@ -3165,9 +3213,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
     BuildContext context,
     String indexStr, {
     double baseFontSize = 14,
-    double topPadding = 4,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+
+    // 计算 index 与 definition 首行文字垂直居中对齐所需的顶部偏移。
+    // Definition 的 lineHeight > 1 会在首行上方留出 halfLeading 的空白：
+    //   halfLeading = defFontSize × (lineHeight − 1) / 2
+    // 额外加一个小量来补偿 definition 与 index 之间的字号差，
+    // 使两者的文字视觉中心更接近对齐。
+    final defFontSize =
+        DictTypography.baseFontSize(DictElementType.definition);
+    final defLineHeight =
+        DictTypography.lineHeightMultiplier(DictElementType.definition);
+    final defHalfLeading = defFontSize * (defLineHeight - 1.0) / 2.0;
+    final topPadding = defHalfLeading + (defFontSize - baseFontSize) * 0.2 - 1.0;
 
     return _buildTappableWidget(
       context: context,
@@ -3737,7 +3796,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   context,
                   indexStr,
                   baseFontSize: isSubsense ? 13 : 14,
-                  topPadding: isSubsense ? 4.5 : 3.5,
                 ),
               ),
             ),
