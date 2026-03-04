@@ -1317,6 +1317,32 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
         if (!result.success) {
           throw Exception(result.error ?? '上传失败');
         }
+
+        // 上传成功后，用服务器返回的 version 更新本地 metadata 文件
+        if (result.dictId != null && result.version != null) {
+          final metadataFile = await _dictManager.getMetadataFile(
+            result.dictId!,
+          );
+          if (await metadataFile.exists()) {
+            final metadataJson =
+                jsonDecode(await metadataFile.readAsString());
+            final updatedMetadata =
+                DictionaryMetadata.fromJson(metadataJson);
+            final newMetadata = DictionaryMetadata(
+              id: updatedMetadata.id,
+              name: updatedMetadata.name,
+              version: result.version!,
+              description: updatedMetadata.description,
+              sourceLanguage: updatedMetadata.sourceLanguage,
+              targetLanguages: updatedMetadata.targetLanguages,
+              publisher: updatedMetadata.publisher,
+              maintainer: updatedMetadata.maintainer,
+              contactMaintainer: updatedMetadata.contactMaintainer,
+              updatedAt: DateTime.now(),
+            );
+            await _dictManager.saveDictionaryMetadata(newMetadata);
+          }
+        }
       },
       onComplete: () {
         onUploadSuccess();
