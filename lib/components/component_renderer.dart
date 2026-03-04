@@ -1233,6 +1233,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
   String _extractWordAtOffset(String text, int offset) {
     if (offset < 0 || offset >= text.length) return '';
 
+    // 如果当前字符是 CJK 汉字，直接返回单个汉字（词语识别待后续实现）
+    final cu = text.codeUnitAt(offset);
+    if (_isCjkCodeUnit(cu)) {
+      return text[offset];
+    }
+
     int start = offset;
     int end = offset;
 
@@ -1245,6 +1251,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     return text.substring(start, end);
+  }
+
+  /// 判断一个 UTF-16 code unit 是否属于 CJK 范围
+  /// （仅判断基本区 + 扩展A，足够覆盖常用充字）
+  static bool _isCjkCodeUnit(int cu) {
+    return (cu >= 0x4E00 && cu <= 0x9FFF) || // CJK 基本区
+        (cu >= 0x3400 && cu <= 0x4DBF) || // CJK 扩展A
+        (cu >= 0xF900 && cu <= 0xFAFF) || // CJK 兼容区
+        (cu >= 0x2E80 && cu <= 0x2EFF) || // CJK 部首拓展
+        (cu >= 0x3000 && cu <= 0x303F); // CJK 标点符号
   }
 
   Widget _buildExampleItem({
@@ -2096,6 +2112,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final dbService = DatabaseService();
     final currentDictId = _localEntry.dictId;
+    final currentPage = _localEntry.page;
 
     // 只搜索当前词典
     final searchResult = await dbService.getAllEntries(
@@ -2105,7 +2122,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       dictId: currentDictId,
     );
 
-    if (searchResult.entries.isEmpty) {
+    // 只保留与当前page相同的词条
+    final filteredEntries = searchResult.entries
+        .where((entry) => entry.page == currentPage)
+        .toList();
+
+    if (filteredEntries.isEmpty) {
       if (mounted) {
         showToast(context, '未找到短语: $plainPhrase');
       }
@@ -2113,7 +2135,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     if (mounted) {
-      _showPhraseOverlay(searchResult.entries, plainPhrase, position);
+      _showPhraseOverlay(filteredEntries, plainPhrase, position);
     }
   }
 
@@ -2232,18 +2254,45 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: entries.asMap().entries.map((e) {
                                   final isLast = e.key == entries.length - 1;
+                                  final phraseEntry = e.value;
+
+                                  // 当短语弹窗中需要对 AI 翻译、编辑或询问AI时，导航到该短语词条的全屏详情页
+                                  void navigateToPhraseDetail() {
+                                    _removePhraseOverlay();
+                                    if (mounted) {
+                                      final entryGroup =
+                                          DictionaryEntryGroup.groupEntries(
+                                            entries,
+                                          );
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => EntryDetailPage(
+                                            entryGroup: entryGroup,
+                                            initialWord: phrase,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+
                                   return Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       ComponentRenderer(
-                                        entry: e.value,
+                                        entry: phraseEntry,
                                         topPadding: 8,
                                         bottomPadding: 8,
+                                        // 切换翻译：导航到短语词条的全屏详情页（在那里可正常操作）
                                         onElementTap: (path, label) {
-                                          Logger.d(
-                                            'Phrase overlay element tapped: $path',
-                                            tag: 'PhraseOverlay',
-                                          );
+                                          navigateToPhraseDetail();
+                                        },
+                                        // 编辑、询问AI：同样导航到全屏页
+                                        onEditElement: (path, label) {
+                                          navigateToPhraseDetail();
+                                        },
+                                        onAiAsk: (path, label) {
+                                          navigateToPhraseDetail();
                                         },
                                       ),
                                       if (!isLast)

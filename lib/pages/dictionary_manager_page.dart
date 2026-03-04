@@ -1286,16 +1286,26 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       ),
     );
     if (confirm == true) {
-      await _userDictsService.deleteDictionary(dict.dictId);
-      _loadUserDictionaries();
+      try {
+        await _userDictsService.deleteDictionary(dict.dictId);
+        _loadUserDictionaries();
+        if (mounted) showToast(context, '词典已删除');
+      } catch (e) {
+        if (mounted) showToast(context, '删除失败: $e');
+      }
     }
   }
 
   void _showUploadDialog() {
     showDialog(
       context: context,
-      builder: (context) =>
-          UploadDictionaryDialog(onUploadSuccess: _loadUserDictionaries),
+      builder: (context) => UploadDictionaryDialog(
+        onUploadSuccess: () {
+          _loadUserDictionaries();
+          _refreshLocalDictionaries();
+          if (mounted) showToast(context, '词典上传成功');
+        },
+      ),
     );
   }
 
@@ -1305,7 +1315,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       builder: (context) => UpdateJsonDialog(
         dictId: dict.dictId,
         dictName: dict.name,
-        onUpdateSuccess: () {},
+        onUpdateSuccess: () {
+          if (mounted) showToast(context, '词典内容已更新');
+        },
       ),
     );
   }
@@ -1320,7 +1332,11 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       builder: (context) => EditDictionaryDialog(
         dictId: dict.dictId,
         dictName: dict.name,
-        onUpdateSuccess: _loadUserDictionaries,
+        onUpdateSuccess: () {
+          _loadUserDictionaries();
+          _refreshLocalDictionaries();
+          if (mounted) showToast(context, '词典文件更新成功');
+        },
         localPath: localPath,
       ),
     );

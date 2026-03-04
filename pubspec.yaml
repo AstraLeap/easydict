@@ -1,5 +1,5 @@
 name: easydict
-description: "EasyDict - 本地词典查词工具，支持多词典、AI 辅助、单词本等功能。"
+description: "EasyDict - 新时代json词典工具"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.3+1
+version: 1.2.1+1
 
 environment:
   sdk: ^3.10.7
@@ -60,7 +60,7 @@ dependencies:
   googleapis: ^16.0.0
   scrollable_positioned_list: ^0.3.8
   package_info_plus: ^9.0.0
-  dropdown_button2: ^2.3.9
+  dropdown_button2: ^3.0.0
   visibility_detector: ^0.4.0+2
   es_compression: ^2.0.12
   window_manager: ^0.5.1
@@ -68,8 +68,6 @@ dependencies:
   edge_tts_dart:
     git:
       url: https://github.com/twn39/edgetts-dart.git
-  # 中文繁转简（纯 Dart 实现，无 native-assets 依赖，see lib/services/t2s_map.dart）
-  # opencc: ^1.1.0  # 已移除：该包依赖 native-assets 特性，在稳定渠道 Flutter 中无法正常加载
 
 dev_dependencies:
   flutter_test:
