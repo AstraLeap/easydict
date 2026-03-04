@@ -236,7 +236,6 @@ class FontLoaderService {
       final fallbackFontType = _findFallbackFontType(lang, isSerif: isSerif);
       if (fallbackFontType != null) {
         final fallbackKey = '${lang}_$fallbackFontType';
-        Logger.d('字体回退: 请求 ${language}_$fontType -> 使用 $fallbackKey', tag: 'FontLoader');
         return FontInfo(
           fontFamily: _getFontFamilyName(lang, fallbackFontType),
           fontWeight: _getFontWeight(fallbackFontType),
