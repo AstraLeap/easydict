@@ -1076,7 +1076,9 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
         if (mounted) {
           Navigator.pop(context);
-          widget.onPushSuccess();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.onPushSuccess();
+          });
         }
       } else {
         if (mounted) {
@@ -1299,6 +1301,10 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
     final onUploadSuccess = widget.onUploadSuccess;
 
     Navigator.pop(context);
+
+    // 等待 Navigator 完成 pop 并从树中移除对话框，
+    // 避免 UploadManager.notifyListeners() 触发对话框 context 的 rebuild
+    await Future.delayed(Duration.zero);
 
     await uploadManager.startUpload(
       'new_dict_$dictName',
@@ -1622,6 +1628,9 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
     final mediaFile = _mediaFile;
 
     Navigator.pop(context);
+
+    // 等待 Navigator 完成 pop，避免 notifyListeners 触发已销毁元素的重建
+    await Future.delayed(Duration.zero);
 
     await uploadManager.startUpload(
       dictId,

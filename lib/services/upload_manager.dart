@@ -169,7 +169,6 @@ class UploadManager with ChangeNotifier {
       task.overallProgress = 1.0;
       task.currentFileName = null;
       notifyListeners();
-      task.onComplete?.call();
     } catch (e) {
       Logger.e('上传失败: $e', tag: 'UploadManager');
       task.state = UploadState.error;
@@ -179,6 +178,15 @@ class UploadManager with ChangeNotifier {
       task.onError?.call(e.toString());
     } finally {
       _currentUploadId = null;
+    }
+
+    // 在 try/catch 外调用 onComplete，避免回调异常被误报为上传失败
+    if (task.state == UploadState.completed) {
+      try {
+        task.onComplete?.call();
+      } catch (e) {
+        Logger.e('上传完成回调失败: $e', tag: 'UploadManager');
+      }
     }
   }
 
