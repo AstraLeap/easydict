@@ -75,12 +75,13 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
     "key1": {},
     "key2": {},
   }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。data可以放在词典的任何地方
-  customKey:{}//除了规范里给定的键值外，还可以添加自定义键值，这会被渲染为board元素。board标题为customKey，customKey对应的值需要是一个map，map里的键值对会被渲染为board的内容。
+  customKey:{},//除了规范里给定的键值外，还可以添加自定义键值，这会被渲染为board元素。board标题为customKey，customKey对应的值需要是一个map，map里的键值对会被渲染为board的内容。
 
   "sense": [
     {
       "index": 1, //必选
       "label": {
+        "signpost":"same opinion",
         "pos": "n",
         "pattern": ["in a ~", "mental ~"],
         "grammar": ["U", "S"],
@@ -90,7 +91,7 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
         "usage": ["figurative"],
         "tone": "neutral",
         "topic": ["psychology"],
-        "others": "other label",//这里可以使用自定义的键名
+        others: "other label",//这里可以使用自定义的键名
       }, //里面统统是可选
       "definition": {
         "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
