@@ -1492,24 +1492,42 @@ class DatabaseService {
     }
   }
 
-  /// 创建 commits 表（如果不存在）
+  /// 创建 commits 表（如果不存在）并运行迁移升级
   Future<void> _createCommitsTableIfNotExists(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS commits (
         id TEXT PRIMARY KEY,
         headword TEXT NOT NULL,
         update_time INTEGER NOT NULL,
-        is_delete INTEGER NOT NULL DEFAULT 0
+        operation_type TEXT NOT NULL DEFAULT 'update'
       )
     ''');
+    // 迁移：对旧数据库添加 operation_type 列
+    try {
+      final tableInfo = await db.rawQuery('PRAGMA table_info(commits)');
+      final hasOpType = tableInfo.any((col) => col['name'] == 'operation_type');
+      if (!hasOpType) {
+        await db.execute(
+          "ALTER TABLE commits ADD COLUMN operation_type TEXT NOT NULL DEFAULT 'update'",
+        );
+        // 将旧记录中 is_delete=1 的映射为 'delete'
+        try {
+          await db.rawUpdate(
+            "UPDATE commits SET operation_type='delete' WHERE is_delete=1",
+          );
+        } catch (_) {}
+      }
+    } catch (e) {
+      Logger.d('迁移 commits 表失败: $e', tag: 'DatabaseService');
+    }
   }
 
-  /// 在 commits 表中记录更新操作
+  /// 在 commits 表中记录操作（operationType: 'insert' | 'update' | 'delete'）
   Future<void> _recordUpdate(
     Database db,
     String entryId,
     String headword, {
-    bool isDelete = false,
+    String operationType = 'update',
   }) async {
     try {
       await _createCommitsTableIfNotExists(db);
@@ -1517,10 +1535,30 @@ class DatabaseService {
         'id': entryId,
         'headword': headword,
         'update_time': DateTime.now().millisecondsSinceEpoch,
-        'is_delete': isDelete ? 1 : 0,
+        'operation_type': operationType,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (e) {
       Logger.e('记录更新操作失败: $e', tag: 'DatabaseService', error: e);
+    }
+  }
+
+  /// 获取指定条目在 commits 表中的当前操作类型，不存在返回 null。
+  Future<String?> _getExistingCommitType(Database db, String entryId) async {
+    try {
+      final tableExists = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='commits'",
+      );
+      if (tableExists.isEmpty) return null;
+      final rows = await db.query(
+        'commits',
+        columns: ['operation_type'],
+        where: 'id = ?',
+        whereArgs: [entryId],
+        limit: 1,
+      );
+      return rows.isEmpty ? null : rows.first['operation_type'] as String?;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1568,9 +1606,12 @@ class DatabaseService {
         whereArgs: [entryId],
       );
 
-      // 如果更新成功，记录到 update 表
+      // 如果更新成功，记录到 commits 表
       if (result > 0 && !skipCommit) {
-        await _recordUpdate(db, entry.id, entry.headword);
+        // 保留已有 insert 记录（不能把未进入服务器的 insert 覆盖为 update）
+        final existingType = await _getExistingCommitType(db, entry.id);
+        final operationType = existingType == 'insert' ? 'insert' : 'update';
+        await _recordUpdate(db, entry.id, entry.headword, operationType: operationType);
       }
 
       return result > 0;
@@ -1618,6 +1659,16 @@ class DatabaseService {
 
       final headwordNormalized = _normalizeSearchWord(entry.headword);
 
+      // 在 INSERT 之前检查条目是否已存在，用于区分 insert 和 update
+      final existingRows = await db.query(
+        'entries',
+        columns: ['entry_id'],
+        where: 'entry_id = ?',
+        whereArgs: [entryId],
+        limit: 1,
+      );
+      final isNewEntry = existingRows.isEmpty;
+
       await db.insert('entries', {
         'entry_id': entryId,
         'headword': entry.headword,
@@ -1629,7 +1680,12 @@ class DatabaseService {
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       if (!skipCommit) {
-        await _recordUpdate(db, entry.id, entry.headword);
+        // 若已有 insert 记录（尚未推送）则保持 insert；
+        // 若是全新条目，记为 insert；否则记为 update
+        final existingType = await _getExistingCommitType(db, entry.id);
+        final operationType =
+            (isNewEntry || existingType == 'insert') ? 'insert' : 'update';
+        await _recordUpdate(db, entry.id, entry.headword, operationType: operationType);
       }
 
       return true;
@@ -1655,7 +1711,7 @@ class DatabaseService {
 
       final results = await db.query(
         'commits',
-        columns: ['id', 'headword', 'update_time', 'is_delete'],
+        columns: ['id', 'headword', 'update_time', 'operation_type'],
         orderBy: 'update_time DESC',
       );
       return results;
@@ -1813,8 +1869,15 @@ class DatabaseService {
         whereArgs: [entryIdInt],
       );
 
-      // 在 commits 表中记录删除操作
-      await _recordUpdate(db, entryId, headword, isDelete: true);
+      // 处理 commits 记录：
+      // - 若该条目的 commit 类型是 'insert'（尚未推送服务器），直接移除记录即可
+      // - 否则记录为 'delete'，等待推送
+      final existingCommitType = await _getExistingCommitType(db, entryId);
+      if (existingCommitType == 'insert') {
+        await db.delete('commits', where: 'id = ?', whereArgs: [entryId]);
+      } else {
+        await _recordUpdate(db, entryId, headword, operationType: 'delete');
+      }
 
       return true;
     } catch (e) {

@@ -2858,6 +2858,72 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
+  /// 渲染带 [usage_group] 分组的例句块。
+  /// [item] 须同时含有 "usage_group"（字符串）和 "example"（列表）字段。
+  Widget _buildUsageGroupExample(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final usageGroup = item['usage_group'] as String? ?? '';
+    final subExamples = (item['example'] as List<dynamic>?) ?? [];
+
+    final usageGroupStyle = DictTypography.getScaledStyle(
+      DictElementType.exampleUsage,
+      language: _sourceLanguage,
+      fontScales: _fontScales,
+      color: colorScheme.primary,
+      fontStyleOverride: FontStyle.italic,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 左侧浅色竖线
+            Container(
+              width: 2,
+              margin: const EdgeInsets.symmetric(vertical: 1),
+              decoration: BoxDecoration(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // 内容区
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (usageGroup.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(usageGroup, style: usageGroupStyle),
+                    ),
+                  ...subExamples.asMap().entries.map((entry) {
+                    return PathScope.append(
+                      context,
+                      key: '${entry.key}',
+                      child: Builder(
+                        builder: (context) => _buildExample(
+                          context,
+                          entry.value,
+                          leftMargin: 0,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildData(
     BuildContext context,
     Map<String, dynamic> value, {
@@ -3542,6 +3608,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
+    if (spans.isEmpty) return const SizedBox.shrink();
     return Builder(
       key: definitionTextKey,
       builder: (context) => RichText(text: TextSpan(children: spans)),
@@ -3555,6 +3622,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (label == null || label.isEmpty) return [];
 
     final spans = <InlineSpan>[];
+
+    // signpost 显示在所有 label 元素之前
+    final signpostValue = label['signpost'];
+    if (signpostValue != null) {
+      final signpostText = _capitalizeFirst(
+        signpostValue is String ? signpostValue : '$signpostValue',
+      );
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: _buildSignpostWidget(context, signpostText),
+        ),
+      );
+    }
 
     final order = [
       'pattern',
@@ -3610,9 +3691,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    // 渲染 order 中未包含的额外 label key（pos 除外）
+    // 渲染 order 中未包含的额外 label key（pos、signpost 除外）
     for (final key in label.keys) {
       if (key == 'pos') continue;
+      if (key == 'signpost') continue; // signpost 已在最前单独处理
       if (order.contains(key)) continue;
       final value = label[key];
       if (value == null) continue;
@@ -3640,6 +3722,55 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     return spans;
+  }
+
+  /// 渲染 signpost 标签：背景为 onSurface（普通文本色），文字为 surface（背景色），形成反色效果
+  Widget _buildSignpostWidget(BuildContext context, String text) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final bgColor = colorScheme.onSurface;
+    final fgColor = colorScheme.surface;
+    final textKey = GlobalKey();
+
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.label,
+      color: fgColor,
+    );
+
+    final result = _parseFormattedText(
+      text,
+      textStyle,
+      context: context,
+      elementType: DictElementType.label,
+    );
+
+    final richText = RichText(text: TextSpan(children: result.spans));
+
+    final child = Container(
+      margin: const EdgeInsets.only(right: 8, left: 0),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Builder(key: textKey, builder: (context) => richText),
+    );
+
+    return PathScope.append(
+      context,
+      key: 'label.signpost',
+      child: Builder(
+        builder: (context) {
+          return _buildTappableWidget(
+            context: context,
+            pathData: _PathData(PathScope.of(context), 'Signpost'),
+            text: text,
+            textStyle: textStyle,
+            customTextKey: textKey,
+            child: child,
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildLabelWidget(
@@ -3869,9 +4000,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           key: 'example.${exampleEntry.key}',
                           child: Builder(
                             builder: (context) {
+                              final val = exampleEntry.value;
+                              if (val is Map<String, dynamic> &&
+                                  val.containsKey('usage_group') &&
+                                  val.containsKey('example')) {
+                                return _buildUsageGroupExample(
+                                  context,
+                                  val,
+                                );
+                              }
                               return _buildExample(
                                 context,
-                                exampleEntry.value,
+                                val,
                                 leftMargin: 0,
                               );
                             },
@@ -3895,7 +4035,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   ),
                 ),
               if (subSenses != null && subSenses.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                // 仅当 sense 中有其他内容时才添加上边距
+                if (definitions.isNotEmpty ||
+                    (example != null && example.isNotEmpty) ||
+                    (note != null && note.isNotEmpty) ||
+                    (image != null && image.isNotEmpty) ||
+                    extraWidgets.isNotEmpty)
+                  const SizedBox(height: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: subSenses.asMap().entries.expand((subEntry) {

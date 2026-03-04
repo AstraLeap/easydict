@@ -390,22 +390,26 @@ class PreferencesService {
 
   static const String _kFontConfigPrefix = 'font_config_';
 
+  /// 字体配置支持的所有语言分组键，需与 font_config_page.dart 的 _mapToFontGroupKey 保持一致。
+  static const List<String> kFontLanguages = [
+    'en',
+    'zh-hans',
+    'zh-hant',
+    'ja',
+    'ko',
+    'fr',
+    'de',
+    'es',
+    'it',
+    'ru',
+    'pt',
+    'ar',
+  ];
+
   Future<Map<String, Map<String, String>>> getFontConfigs() async {
     final p = await prefs;
     final fontConfigs = <String, Map<String, String>>{};
-    final languages = [
-      'en',
-      'zh',
-      'ja',
-      'ko',
-      'fr',
-      'de',
-      'es',
-      'it',
-      'ru',
-      'pt',
-      'ar',
-    ];
+    final languages = kFontLanguages;
     final fontTypes = [
       'serif_regular',
       'serif_bold',
@@ -460,19 +464,7 @@ class PreferencesService {
 
   Future<void> clearAllFontConfigs() async {
     final p = await prefs;
-    final languages = [
-      'en',
-      'zh',
-      'ja',
-      'ko',
-      'fr',
-      'de',
-      'es',
-      'it',
-      'ru',
-      'pt',
-      'ar',
-    ];
+    final languages = kFontLanguages;
     final fontTypes = [
       'serif_regular',
       'serif_bold',
@@ -508,19 +500,7 @@ class PreferencesService {
   Future<Map<String, Map<String, double>>> getAllFontScales() async {
     final p = await prefs;
     final fontScales = <String, Map<String, double>>{};
-    final languages = [
-      'en',
-      'zh',
-      'ja',
-      'ko',
-      'fr',
-      'de',
-      'es',
-      'it',
-      'ru',
-      'pt',
-      'ar',
-    ];
+    final languages = kFontLanguages;
 
     for (final lang in languages) {
       final langScales = <String, double>{};

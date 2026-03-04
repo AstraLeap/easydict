@@ -961,7 +961,8 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
       for (final record in _updateRecords) {
         final entryId = record['id'] as String;
-        final isDelete = (record['is_delete'] as int? ?? 0) == 1;
+        final opType = record['operation_type'] as String? ?? 'update';
+        final isDelete = opType == 'delete';
 
         // 去重：如果同一个 entry 被更新多次，只取最新的一次
         if (processedEntryIds.contains(entryId)) {
@@ -1127,32 +1128,37 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                   itemBuilder: (context, index) {
                     final record = _updateRecords[index];
                     final headword = record['headword'] as String;
-                    final isDelete =
-                        (record['is_delete'] as int? ?? 0) == 1;
+                    final opType = record['operation_type'] as String? ?? 'update';
+                    final isDelete = opType == 'delete';
+                    final isInsert = opType == 'insert';
                     final updateTime = DateTime.fromMillisecondsSinceEpoch(
                       record['update_time'] as int,
                     );
+                    IconData opIcon;
+                    Color opColor;
+                    String opLabel;
+                    if (isDelete) {
+                      opIcon = Icons.delete_outline;
+                      opColor = colorScheme.error;
+                      opLabel = '[删除] ';
+                    } else if (isInsert) {
+                      opIcon = Icons.add_circle_outline;
+                      opColor = colorScheme.tertiary;
+                      opLabel = '[新增] ';
+                    } else {
+                      opIcon = Icons.edit_outlined;
+                      opColor = colorScheme.primary;
+                      opLabel = '';
+                    }
                     return ListTile(
                       dense: true,
-                      leading: isDelete
-                          ? Icon(
-                              Icons.delete_outline,
-                              size: 18,
-                              color: colorScheme.error,
-                            )
-                          : Icon(
-                              Icons.edit_outlined,
-                              size: 18,
-                              color: colorScheme.primary,
-                            ),
+                      leading: Icon(opIcon, size: 18, color: opColor),
                       title: Text(
                         headword,
-                        style: TextStyle(
-                          color: isDelete ? colorScheme.error : null,
-                        ),
+                        style: TextStyle(color: isDelete ? colorScheme.error : null),
                       ),
                       subtitle: Text(
-                        '${isDelete ? '[删除] ' : ''}'
+                        '$opLabel'
                         '${updateTime.year}-${updateTime.month.toString().padLeft(2, '0')}-${updateTime.day.toString().padLeft(2, '0')} '
                         '${updateTime.hour.toString().padLeft(2, '0')}:${updateTime.minute.toString().padLeft(2, '0')}',
                         style: TextStyle(
@@ -1533,20 +1539,9 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
         break;
     }
 
-    // 确保初始目录有效且存在
-    String? initialDir = widget.localPath;
-    if (initialDir != null && initialDir.isNotEmpty) {
-      final dir = Directory(initialDir);
-      if (!await dir.exists()) {
-        // 如果目录不存在，尝试使用其父目录
-        initialDir = null;
-      }
-    }
-
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: extension != null ? [extension] : null,
-      initialDirectory: initialDir,
     );
 
     if (result != null && result.files.single.path != null) {

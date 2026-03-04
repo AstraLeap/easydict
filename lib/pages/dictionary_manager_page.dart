@@ -261,9 +261,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         if (mounted) showToast(context, '词典目录已设置: $targetDir');
 
       case 2: // 自定义路径
-        final picked = await FilePicker.platform.getDirectoryPath(
-          initialDirectory: ExternalStorageService.defaultPersistentDir,
-        );
+        final picked = await FilePicker.platform.getDirectoryPath();
         if (picked == null || !mounted) return;
         final ok = await extService.isPathWritable(picked);
         if (!ok) {
@@ -1709,6 +1707,28 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     user_dict.DictUpdateInfo updateInfo,
     DictionaryMetadata metadata,
   ) async {
+    // 若既无文件更新也无条目更新，则只更新本地版本号
+    if (updateInfo.required.files.isEmpty && updateInfo.required.entries.isEmpty) {
+      final newMetadata = DictionaryMetadata(
+        id: metadata.id,
+        name: metadata.name,
+        version: updateInfo.to,
+        description: metadata.description,
+        sourceLanguage: metadata.sourceLanguage,
+        targetLanguages: metadata.targetLanguages,
+        publisher: metadata.publisher,
+        maintainer: metadata.maintainer,
+        contactMaintainer: metadata.contactMaintainer,
+        updatedAt: DateTime.now(),
+      );
+      await _dictManager.saveDictionaryMetadata(newMetadata);
+      if (mounted) {
+        showToast(context, '版本已更新至 ${updateInfo.to}，无需下载文件');
+        await _refreshLocalDictionaries();
+      }
+      return;
+    }
+
     final downloadManager = context.read<DownloadManager>();
     final dictDir = await _dictManager.getDictionaryDir(dict.id);
     final totalSteps =
