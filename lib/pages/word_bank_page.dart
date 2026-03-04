@@ -38,6 +38,8 @@ class WordBankPage extends StatefulWidget {
 class _WordBankPageState extends State<WordBankPage> {
   final WordBankService _wordBankService = WordBankService();
   final DatabaseService _dictionaryService = DatabaseService();
+  final AdvancedSearchSettingsService _advancedSettingsService =
+      AdvancedSearchSettingsService();
 
   // 数据
   List<String> _languages = [];
@@ -57,6 +59,7 @@ class _WordBankPageState extends State<WordBankPage> {
   final FocusNode _searchFocusNode = FocusNode();
   bool _wasFocused = false;
   StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
+  StreamSubscription<LanguageOrderChangedEvent>? _langOrderSubscription;
 
   // 分页相关
   static const int _pageSize = 50;
@@ -70,6 +73,9 @@ class _WordBankPageState extends State<WordBankPage> {
     _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
       _reloadLanguages();
     });
+    _langOrderSubscription = EntryEventBus().languageOrderChanged.listen((_) {
+      _reloadLanguages();
+    });
   }
 
   void _onFocusChange() {
@@ -81,6 +87,7 @@ class _WordBankPageState extends State<WordBankPage> {
   @override
   void dispose() {
     _dictsChangedSubscription?.cancel();
+    _langOrderSubscription?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -129,14 +136,18 @@ class _WordBankPageState extends State<WordBankPage> {
 
   /// 获取合并后的语言列表（已有单词的语言 + 启用词典的源语言）
   Future<List<String>> _getMergedLanguages() async {
-    final wordBankLangs = await _wordBankService.getSupportedLanguages();
-    final enabledDicts = await DictionaryManager().getEnabledDictionariesMetadata();
-    final dictLangs = enabledDicts
-        .map((d) => d.sourceLanguage.toLowerCase())
+    final wordBankLangs = (await _wordBankService.getSupportedLanguages())
+        .map(LanguageUtils.normalizeSourceLanguage)
         .where((l) => l.isNotEmpty)
         .toSet();
-    final merged = {...wordBankLangs, ...dictLangs}.toList()..sort();
-    return merged;
+    final enabledDicts = await DictionaryManager().getEnabledDictionariesMetadata();
+    final dictLangs = enabledDicts
+        .map((d) => LanguageUtils.normalizeSourceLanguage(d.sourceLanguage))
+        .where((l) => l.isNotEmpty)
+        .toSet();
+    final merged = {...wordBankLangs, ...dictLangs}.toList();
+    final savedOrder = await _advancedSettingsService.getLanguageOrder();
+    return AdvancedSearchSettingsService.sortLanguagesByOrder(merged, savedOrder);
   }
 
   /// 词典启用状态变化时，重新加载语言列表

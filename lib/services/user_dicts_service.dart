@@ -549,16 +549,6 @@ class UserDictsService {
         tag: 'UserDictsService',
       );
 
-      // 手动构建 multipart body 来查看 Content-Type
-      final boundary =
-          'dart-http-boundary-${DateTime.now().millisecondsSinceEpoch}';
-      request.headers['Content-Type'] =
-          'multipart/form-data; boundary=$boundary';
-      Logger.d(
-        'Content-Type: ${request.headers['Content-Type']}',
-        tag: 'UserDictsService',
-      );
-
       final streamedResponse = await request.send().timeout(
         const Duration(minutes: 100),
       );

@@ -43,6 +43,7 @@ class AppUpdateService extends ChangeNotifier {
   bool _isChecking = false;
   String? _errorMessage;
   DateTime? _lastCheckTime;
+  bool _hasCheckedOnStartup = false;
 
   GitHubRelease? get latestRelease => _latestRelease;
   String? get currentVersion => _currentVersion;
@@ -51,17 +52,23 @@ class AppUpdateService extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   DateTime? get lastCheckTime => _lastCheckTime;
 
-  /// 启动时检查：若超过 24 小时未检查则在后台触发
+  /// 应用启动时调用：仅在首次启动时检查更新一次
   Future<void> checkOnStartup() async {
     try {
+      // 如果已经在本启动过程中检查过，就不再检查
+      if (_hasCheckedOnStartup) {
+        return;
+      }
+      
       final lastCheck = await _preferencesService.getLastAppUpdateCheckTime();
       if (lastCheck != null) {
         _lastCheckTime = lastCheck;
       }
-      final now = DateTime.now();
-      if (lastCheck == null || now.difference(lastCheck).inHours >= 24) {
-        checkForUpdates();
-      }
+      
+      // 标记为已检查过本次启动
+      _hasCheckedOnStartup = true;
+      
+      checkForUpdates();
     } catch (e) {
       Logger.w('AppUpdateService.checkOnStartup 失败: $e', tag: 'AppUpdate');
     }

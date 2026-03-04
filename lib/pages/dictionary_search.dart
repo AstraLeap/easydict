@@ -11,6 +11,7 @@ import '../services/font_loader_service.dart';
 import '../services/entry_event_bus.dart';
 import 'entry_detail_page.dart';
 import '../core/utils/toast_utils.dart';
+import '../core/utils/language_utils.dart';
 import '../widgets/search_bar.dart';
 import '../components/english_db_download_dialog.dart';
 import '../components/global_scale_wrapper.dart';
@@ -44,6 +45,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   // 高级搜索选项
   bool _showAdvancedOptions = false;
   bool _exactMatch = false;
+  bool _biaoyiExactMatch = false;
   bool _usePhoneticSearch = false;
 
   // 搜索结果列表
@@ -56,6 +58,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   bool _isSearchingWord = false;
   StreamSubscription<SettingsSyncedEvent>? _syncSubscription;
   StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
+  StreamSubscription<LanguageOrderChangedEvent>? _langOrderSubscription;
 
   bool _isInitializing = true;
 
@@ -98,6 +101,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       if (event.includesHistory) _loadSearchHistory();
     });
     _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
+      _loadDictionaryGroups();
+    });
+    _langOrderSubscription = EntryEventBus().languageOrderChanged.listen((_) {
       _loadDictionaryGroups();
     });
   }
@@ -146,8 +152,16 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   Future<void> _loadDictionaryGroups() async {
     final dicts = await _dictManager.getEnabledDictionariesMetadata();
-    final languages = dicts.map((d) => d.sourceLanguage).toSet().toList()
-      ..sort();
+    final rawLanguages = dicts
+        .map((d) => LanguageUtils.normalizeSourceLanguage(d.sourceLanguage))
+        .toSet()
+        .toList();
+
+    final savedOrder = await _advancedSettingsService.getLanguageOrder();
+    final languages = AdvancedSearchSettingsService.sortLanguagesByOrder(
+      rawLanguages,
+      savedOrder,
+    );
 
     final availableGroups = ['auto', ...languages];
 
@@ -170,6 +184,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final settings = await _advancedSettingsService.loadSettings();
     setState(() {
       _exactMatch = settings['exactMatch'] ?? false;
+      _biaoyiExactMatch = settings['biaoyiExactMatch'] ?? false;
     });
   }
 
@@ -177,6 +192,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   void dispose() {
     _syncSubscription?.cancel();
     _dictsChangedSubscription?.cancel();
+    _langOrderSubscription?.cancel();
     _debounceTimer?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
@@ -185,9 +201,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   /// 判断当前语言是否需要至少输入2个字符才启动边打边搜（字母文字）。
-  /// auto 模式始终需要；表意文字（zh/ja/ko）不需要；其余字母文字需要。
-  bool _prefixSearchNeedsMinTwoChars() {
-    if (_selectedGroup == 'auto') return true;
+  /// auto 模式且含表意文字单字符时不需要；其余字母文字需要 2 个字符。
+  bool _prefixSearchNeedsMinTwoChars(String text) {
+    if (_selectedGroup == 'auto') {
+      // 含汉字/假名/谚文时，1 个字符就足够触发搜索
+      if (DatabaseService.containsIdeographic(text)) return false;
+      return true;
+    }
     const logographic = {'zh', 'ja', 'ko'};
     return !logographic.contains(_selectedGroup);
   }
@@ -207,8 +227,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       return;
     }
 
-    // 字母文字 / auto 模式：至少2个字符才触发
-    if (_prefixSearchNeedsMinTwoChars() && trimmedText.length < 2) {
+    // 字母文字 / auto 模式：至少2个字符才触发（表意文字单字符除外）
+    if (_prefixSearchNeedsMinTwoChars(trimmedText) && trimmedText.length < 2) {
       _prefixSearchToken++;
       setState(() {
         _searchResults = [];
@@ -222,11 +242,18 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     () async {
       if (currentToken != _prefixSearchToken) return;
 
+      Logger.i(
+        '_onSearchTextChanged → getPreSearchCandidates text=|$text| lang=$_selectedGroup exactMatch=$_exactMatch token=$currentToken',
+        tag: 'PrefixSearch',
+      );
+      // 传入原始文本（含大小写、尾部空格），供 Dart 层 startsWith 比较；
+      // DatabaseService 内部会 trim 后再用于 SQL 查询。
       final results = await _dbService.getPreSearchCandidates(
-        trimmedText,
+        text,
         sourceLanguage: _selectedGroup,
         exactMatch: _exactMatch,
         usePhoneticSearch: _usePhoneticSearch,
+        biaoyiExactMatch: _biaoyiExactMatch,
         limit: 8,
       );
 
@@ -308,6 +335,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _searchController.text = record.word;
     setState(() {
       _exactMatch = record.exactMatch;
+      _biaoyiExactMatch = record.biaoyiExactMatch;
+      _usePhoneticSearch = record.usePhoneticSearch;
       if (record.group != null) {
         _selectedGroup = record.group!;
       }
@@ -320,6 +349,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _prefixSearchToken++;
     final word = _searchController.text.trim();
     if (word.isEmpty) return;
+
+    // LIKE/GLOB 通配符模式下禁止直接查词，必须从候选词列表点击进入
+    if (_isWildcardMode(word)) {
+      if (mounted) {
+        showToast(context, '通配符模式下请从候选词列表中选择词条');
+      }
+      return;
+    }
 
     _isSearchingWord = true;
 
@@ -351,12 +388,15 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     await _historyService.addSearchRecord(
       word,
       exactMatch: _exactMatch,
+      biaoyiExactMatch: _biaoyiExactMatch,
+      usePhoneticSearch: _usePhoneticSearch,
     );
 
     final searchResult = await _dbService.getAllEntries(
       word,
       exactMatch: _exactMatch,
       usePhoneticSearch: _usePhoneticSearch,
+      biaoyiExactMatch: _biaoyiExactMatch,
       sourceLanguage: _selectedGroup,
     );
 
@@ -365,8 +405,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         searchResult.entries,
       );
 
-      // 搜索成功时才记录当前语言
-      await _historyService.addSearchRecord(word, group: _selectedGroup);
+      // 搜索成功时才记录当前语言及所有高级选项
+      await _historyService.addSearchRecord(
+        word,
+        exactMatch: _exactMatch,
+        biaoyiExactMatch: _biaoyiExactMatch,
+        usePhoneticSearch: _usePhoneticSearch,
+        group: _selectedGroup,
+      );
       // 更新历史记录
       final records = await _historyService.getSearchRecords();
       setState(() {
@@ -463,17 +509,21 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       if (value != null) {
                         setState(() {
                           _selectedGroup = value;
-                          // 表意文字（汉字、日文）：清除不适用的精确搜索选项
-                          if (value == 'zh' || value == 'ja') {
+                          // 表意文字（汉字、日文、韩文）：清除不适用的表音选项
+                          if (_isLogographicLang(value)) {
                             _exactMatch = false;
+                            _usePhoneticSearch = false;
                           } else {
-                            // 表音文字：清除不适用的读音搜索选项
+                            // 表音文字：清除不适用的简繁区分和读音搜索选项
+                            _biaoyiExactMatch = false;
                             _usePhoneticSearch = false;
                           }
                         });
                         await _advancedSettingsService.setLastSelectedGroup(
                           value,
                         );
+                        // 语言切换后立即更新边打边搜预览列表
+                        _onSearchTextChanged(_searchController.text);
                       }
                     },
                     hintText: '输入单词',
@@ -520,7 +570,16 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                 ).colorScheme.onSurfaceVariant.withOpacity(0.38)
                               : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                        onPressed: _isLoading ? null : _searchWord,
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                // 通配符模式或有搜索结果时，查询第一个候选词；否则直接查词
+                                if (_searchResults.isNotEmpty) {
+                                  _onSearchResultTap(_searchResults.first);
+                                } else if (!_isWildcardMode(_searchController.text.trim())) {
+                                  _searchWord();
+                                }
+                              },
                         tooltip: '查询',
                         visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
@@ -531,7 +590,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       ),
                     ],
                     onChanged: (text) {
-                      setState(() {});
                       _onSearchTextChanged(text);
                     },
                     onSubmitted: (_) {
@@ -546,7 +604,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         );
                       } else if (_searchResults.isNotEmpty) {
                         _onSearchResultTap(_searchResults.first);
-                      } else {
+                      } else if (!_isWildcardMode(_searchController.text.trim())) {
+                        // 通配符模式下无候选词时不允许直接查词
                         _searchWord();
                       }
                     },
@@ -582,62 +641,69 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                               const SizedBox(height: 12),
                               if (_selectedGroup == 'auto')
                                 _buildAutoModeAdvancedOptions(context)
+                              // 表意文字（zh/ja/ko）：显示简繁区分选项
+                              else if (_isLogographicLang(_selectedGroup))
+                                Wrap(
+                                  spacing: 16,
+                                  runSpacing: 8,
+                                  children: [
+                                    FilterChip(
+                                      label: const Text('简繁区分'),
+                                      selected: _biaoyiExactMatch,
+                                      onSelected: (selected) {
+                                        setState(() {
+                                          _biaoyiExactMatch = selected;
+                                        });
+                                        _advancedSettingsService
+                                            .setBiaoyiExactMatch(selected);
+                                        _onSearchTextChanged(
+                                            _searchController.text);
+                                      },
+                                      avatar: Icon(
+                                        Icons.filter_alt_outlined,
+                                        size: 16,
+                                        color: _biaoyiExactMatch
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimaryContainer
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              // 表音文字：显示精确搜索选项
                               else
                                 Wrap(
                                   spacing: 16,
                                   runSpacing: 8,
                                   children: [
-                                    // 精确搜索 - 仅表音文字语言（非汉字/日文）显示
-                                    if (_selectedGroup != 'zh' &&
-                                        _selectedGroup != 'ja')
-                                      FilterChip(
-                                        label: const Text('精确搜索'),
-                                        selected: _exactMatch,
-                                        onSelected: (selected) {
-                                          setState(() {
-                                            _exactMatch = selected;
-                                          });
-                                          _advancedSettingsService
-                                              .setExactMatch(selected);
-                                        },
-                                        avatar: Icon(
-                                          Icons.text_fields,
-                                          size: 16,
-                                          color: _exactMatch
-                                              ? Theme.of(
-                                                  context,
-                                                ).colorScheme.onPrimaryContainer
-                                              : Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
-                                        ),
+                                    // 精确搜索 - 仅表音文字语言显示
+                                    FilterChip(
+                                      label: const Text('精确搜索'),
+                                      selected: _exactMatch,
+                                      onSelected: (selected) {
+                                        setState(() {
+                                          _exactMatch = selected;
+                                        });
+                                        _advancedSettingsService
+                                            .setExactMatch(selected);
+                                        _onSearchTextChanged(
+                                            _searchController.text);
+                                      },
+                                      avatar: Icon(
+                                        Icons.text_fields,
+                                        size: 16,
+                                        color: _exactMatch
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimaryContainer
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
                                       ),
-                                    // 读音搜索 - 仅表意文字语言（中文、日文）显示
-                                    if (_selectedGroup == 'zh' ||
-                                        _selectedGroup == 'ja')
-                                      FilterChip(
-                                        label: const Text('读音搜索'),
-                                        selected: _usePhoneticSearch,
-                                        onSelected: (selected) {
-                                          setState(() {
-                                            _usePhoneticSearch = selected;
-                                          });
-                                          _onSearchTextChanged(
-                                            _searchController.text,
-                                          );
-                                        },
-                                        avatar: Icon(
-                                          Icons.spellcheck,
-                                          size: 16,
-                                          color: _usePhoneticSearch
-                                              ? Theme.of(
-                                                  context,
-                                                ).colorScheme.onPrimaryContainer
-                                              : Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
+                                    ),
                                   ],
                                 ),
                               const SizedBox(height: 12),
@@ -760,7 +826,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   bool _isLogographicLang(String lang) => lang == 'zh' || lang == 'ja' || lang == 'ko';
 
-  /// 自动模式下的分语言高级搜索选项
+  /// 自动模式下的高级搜索选项（inline 布局，语言标签附着在选项左上方）
   Widget _buildAutoModeAdvancedOptions(BuildContext context) {
     final languages = _availableGroups.where((g) => g != 'auto').toList();
     if (languages.isEmpty) {
@@ -770,120 +836,104 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       );
     }
 
-    Widget buildChip({
+    Widget buildChipWithLangLabel({
       required String lang,
-      required String label,
+      required String optionLabel,
       required IconData icon,
       required bool selected,
       required VoidCallback onTap,
     }) {
-      return FilterChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        avatar: Icon(
-          icon,
-          size: 16,
-          color: selected
-              ? Theme.of(context).colorScheme.onPrimaryContainer
-              : Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final lang in languages) ...[
-          // 语言分组标签行
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            FilterChip(
+              label: Text(optionLabel),
+              selected: selected,
+              onSelected: (_) => onTap(),
+              avatar: Icon(
+                icon,
+                size: 16,
+                color: selected
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            Positioned(
+              top: -8,
+              left: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   _langDisplayName(lang),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSecondaryContainer,
                     fontWeight: FontWeight.bold,
+                    fontSize: 9,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Divider(
-                  height: 1,
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          // 该语言的搜索选项
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              if (_isLogographicLang(lang))
-                buildChip(
-                  lang: lang,
-                  label: '读音搜索',
-                  icon: Icons.spellcheck,
-                  selected: false,
-                  onTap: () {
-                    setState(() {
-                      _selectedGroup = lang;
-                      _usePhoneticSearch = true;
-                      _exactMatch = false;
-                    });
-                    _advancedSettingsService.setLastSelectedGroup(lang);
-                    _onSearchTextChanged(_searchController.text);
-                  },
-                )
-              else
-                buildChip(
-                  lang: lang,
-                  label: '精确搜索',
-                  icon: Icons.text_fields,
-                  selected: false,
-                  onTap: () {
-                    setState(() {
-                      _selectedGroup = lang;
-                      _exactMatch = true;
-                      _usePhoneticSearch = false;
-                    });
-                    _advancedSettingsService.setLastSelectedGroup(lang);
-                    _advancedSettingsService.setExactMatch(true);
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-        ],
-      ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    final chips = <Widget>[];
+    for (final lang in languages) {
+      if (!_isLogographicLang(lang)) {
+        chips.add(buildChipWithLangLabel(
+          lang: lang,
+          optionLabel: '精确搜索',
+          icon: Icons.text_fields,
+          selected: _selectedGroup == lang && _exactMatch,
+          onTap: () {
+            setState(() {
+              _selectedGroup = lang;
+              _exactMatch = true;
+              _usePhoneticSearch = false;
+            });
+            _advancedSettingsService.setLastSelectedGroup(lang);
+            _onSearchTextChanged(_searchController.text);
+          },
+        ));
+      } else {
+        chips.add(buildChipWithLangLabel(
+          lang: lang,
+          optionLabel: '简繁区分',
+          icon: Icons.filter_alt_outlined,
+          selected: _biaoyiExactMatch,
+          onTap: () {
+            setState(() {
+              _biaoyiExactMatch = !_biaoyiExactMatch;
+            });
+            _onSearchTextChanged(_searchController.text);
+          },
+        ));
+      }
+    }
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 4,
+      children: chips,
     );
   }
 
   /// 获取高级搜索提示文本
   String _getAdvancedSearchHint() {
-    const wildcardNote =
-        '\n输入含 % 或 _ 的文本自动使用 LIKE 通配符，含 * ? [ ] ^ 的文本自动使用 GLOB 通配符';
-    if (_selectedGroup == 'auto') {
-      return '自动模式：选择上方选项后将切换到对应语言并启用该搜索选项$wildcardNote';
-    }
-    final isLogographic = _selectedGroup == 'zh' || _selectedGroup == 'ja';
-    if (_usePhoneticSearch) {
-      return '读音搜索：匹配词条的读音字段（如拼音、假名等）$wildcardNote';
-    } else if (_exactMatch) {
-      return '精确搜索：规范化匹配后，额外筛选headword与原始输入前缀完全相同的结果$wildcardNote';
-    }
-    if (isLogographic) {
-      return '默认搜索：与headword字段精确匹配$wildcardNote';
-    }
-    return '默认搜索：将输入词小写化并去除音调符号后匹配headword_normalized字段$wildcardNote';
+    return 'LIKE 模式（输入含 % 或 _）：\n'
+        '  % 匹配任意个字符，_ 匹配恰好一个字符\n'
+        '  例：hel% → hello、help；%字 → 汉字、生字；h_llo → hello、hallo\n'
+        '\nGLOB 模式（输入含 * ? [ ] ^），区分大小写：\n'
+        '  * 匹配任意个字符，? 匹配单个字符\n'
+        '  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符\n'
+        '  例：h?llo → hello、hallo；[aeiou]* → 所有元音字母开头的词';
   }
 
   Widget _buildHistoryView() {
@@ -1012,6 +1062,17 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     if (RegExp(r'[\u3040-\u309f\u30a0-\u30ff]').hasMatch(text)) return 'ja';
     if (RegExp(r'[\uac00-\ud7af]').hasMatch(text)) return 'ko';
     return 'en';
+  }
+
+  /// 检测输入文本是否为 LIKE/GLOB 通配符模式。
+  /// 含 % 或 _ → LIKE；含 * ? [ ] ^ → GLOB。
+  bool _isWildcardMode(String text) {
+    if (text.contains('%') || text.contains('_')) return true;
+    if (text.contains('*') || text.contains('?') ||
+        text.contains('[') || text.contains(']') || text.contains('^')) {
+      return true;
+    }
+    return false;
   }
 
 }
