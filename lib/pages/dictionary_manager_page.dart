@@ -1165,6 +1165,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   Future<void> _loadUserDictionaries() async {
     if (_storeService == null) return;
 
+    if (!mounted) return;
     setState(() {
       _isLoadingUserDicts = true;
       _userDictsError = null;
@@ -1299,11 +1300,14 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   void _showUploadDialog() {
     showDialog(
       context: context,
-      builder: (context) => UploadDictionaryDialog(
+      builder: (_) => UploadDictionaryDialog(
         onUploadSuccess: () {
-          _loadUserDictionaries();
-          _refreshLocalDictionaries();
-          if (mounted) showToast(context, '词典上传成功');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _loadUserDictionaries();
+            _refreshLocalDictionaries();
+            showToast(context, '词典上传成功');
+          });
         },
       ),
     );
@@ -1329,13 +1333,16 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     if (!mounted) return;
     showDialog(
       context: context,
-      builder: (context) => EditDictionaryDialog(
+      builder: (_) => EditDictionaryDialog(
         dictId: dict.dictId,
         dictName: dict.name,
         onUpdateSuccess: () {
-          _loadUserDictionaries();
-          _refreshLocalDictionaries();
-          if (mounted) showToast(context, '词典文件更新成功');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _loadUserDictionaries();
+            _refreshLocalDictionaries();
+            showToast(context, '词典文件更新成功');
+          });
         },
         localPath: localPath,
       ),
@@ -1345,12 +1352,15 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   void _showPushUpdatesDialog(UserDictionary dict) {
     showDialog(
       context: context,
-      builder: (context) => PushUpdatesDialog(
+      builder: (_) => PushUpdatesDialog(
         dictId: dict.dictId,
         dictName: dict.name,
-        onPushSuccess: () async {
-          await _refreshLocalDictionaries();
-          if (mounted) showToast(context, '推送更新成功');
+        onPushSuccess: () {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _refreshLocalDictionaries();
+            showToast(context, '推送更新成功');
+          });
         },
       ),
     );

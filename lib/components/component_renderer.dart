@@ -3138,16 +3138,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       key: 'pronunciation',
       child: Builder(
         builder: (context) {
-          final dictManager = DictionaryManager();
-          return FutureBuilder<List<String>>(
-            future: dictManager.getEnabledDictionaries(),
-            builder: (context, snapshot) {
-              final enabledDicts = snapshot.data ?? [];
-              final currentDictId = enabledDicts.isNotEmpty
-                  ? enabledDicts.first
-                  : '';
-
-              return Wrap(
+          return Wrap(
                 spacing: 8,
                 runSpacing: 4,
                 children: entry.pronunciations.asMap().entries.map((entryMap) {
@@ -3198,7 +3189,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                             child: InkWell(
                               onTap: audioFile.isNotEmpty
                                   ? () {
-                                      _playAudio(currentDictId, audioFile);
+                                      _playAudio(entry.dictId ?? '', audioFile);
                                     }
                                   : null,
                               borderRadius: BorderRadius.circular(12),
@@ -3276,8 +3267,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   );
                 }).toList(),
               );
-            },
-          );
         },
       ),
     );
@@ -4857,36 +4846,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
         audioSource = tempFile.path;
         isLocal = true;
         Logger.d('从media.db读取本地音频成功: $audioSource', tag: '_playAudio');
-      }
-
-      if (audioSource == null) {
-        // 尝试从 zip 读取
-        final dictDir = await dictManager.getDictionaryDir(dictionaryId);
-        final zipPath = path.join(dictDir, 'audios.zip');
-        final zipFile = File(zipPath);
-
-        Logger.d('从zip读取音频: $zipPath', tag: '_playAudio');
-
-        if (await zipFile.exists()) {
-          final audioBytesFromZip = await dictManager.readFromUncompressedZip(
-            zipPath,
-            'audios/$audioFileName',
-          );
-
-          Logger.d(
-            '从zip读取结果: ${audioBytesFromZip?.length ?? 0} bytes',
-            tag: '_playAudio',
-          );
-
-          if (audioBytesFromZip != null && audioBytesFromZip.isNotEmpty) {
-            final tempDir = await dictManager.getTempDirectory();
-            final tempFile = File(path.join(tempDir, audioFileName));
-            await tempFile.writeAsBytes(audioBytesFromZip);
-            audioSource = tempFile.path;
-            isLocal = true;
-            Logger.d('从zip读取本地音频成功: $audioSource', tag: '_playAudio');
-          }
-        }
       }
 
       if (audioSource == null) {
