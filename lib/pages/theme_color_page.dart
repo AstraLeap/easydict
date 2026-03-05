@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme_provider.dart';
+import '../i18n/strings.g.dart';
 import '../services/font_loader_service.dart';
 import '../components/global_scale_wrapper.dart';
 
@@ -99,15 +100,15 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             bottom: 16,
           ),
           children: [
-            _buildSectionTitle(context, '外观模式'),
+            _buildSectionTitle(context, context.t.theme.appearanceMode),
             const SizedBox(height: 8),
             _buildThemeModeSection(context, themeProvider),
             const SizedBox(height: 24),
-            _buildSectionTitle(context, '主题颜色'),
+            _buildSectionTitle(context, context.t.theme.themeColor),
             const SizedBox(height: 8),
             _buildColorGrid(context, themeProvider),
             const SizedBox(height: 24),
-            _buildSectionTitle(context, '预览效果'),
+            _buildSectionTitle(context, context.t.theme.preview),
             const SizedBox(height: 8),
             _buildPreviewCard(context, themeProvider),
           ],
@@ -117,7 +118,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('主题设置'),
+        title: Text(context.t.theme.title),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
@@ -162,7 +163,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             context,
             themeProvider,
             ThemeModeOption.system,
-            '跟随系统',
+            context.t.theme.followSystem,
             Icons.settings_suggest_outlined,
           ),
         ),
@@ -172,7 +173,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             context,
             themeProvider,
             ThemeModeOption.light,
-            '浅色模式',
+            context.t.theme.lightMode,
             Icons.light_mode_outlined,
           ),
         ),
@@ -182,7 +183,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             context,
             themeProvider,
             ThemeModeOption.dark,
-            '深色模式',
+            context.t.theme.darkMode,
             Icons.dark_mode_outlined,
           ),
         ),
@@ -376,10 +377,10 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildColorCircle(context, previewScheme.primary, '主色'),
-            _buildColorCircle(context, previewScheme.primaryContainer, '主容器'),
-            _buildColorCircle(context, previewScheme.secondary, '辅色'),
-            _buildColorCircle(context, previewScheme.tertiary, '强调'),
+            _buildColorCircle(context, previewScheme.primary, context.t.theme.primaryColor),
+            _buildColorCircle(context, previewScheme.primaryContainer, context.t.theme.primaryContainer),
+            _buildColorCircle(context, previewScheme.secondary, context.t.theme.secondary),
+            _buildColorCircle(context, previewScheme.tertiary, context.t.theme.tertiary),
           ],
         ),
         const SizedBox(height: 16),
@@ -389,7 +390,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               child: _buildSmallColorDot(
                 previewScheme.surface,
                 previewScheme.onSurface,
-                '背景',
+                context.t.theme.surface,
               ),
             ),
             const SizedBox(width: 8),
@@ -397,7 +398,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               child: _buildSmallColorDot(
                 previewScheme.surfaceContainerHighest,
                 previewScheme.onSurface,
-                '卡片',
+                context.t.theme.card,
               ),
             ),
             const SizedBox(width: 8),
@@ -405,7 +406,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               child: _buildSmallColorDot(
                 previewScheme.error,
                 previewScheme.onError,
-                '错误',
+                context.t.theme.error,
               ),
             ),
             const SizedBox(width: 8),
@@ -413,7 +414,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
               child: _buildOutlineColorDot(
                 previewScheme.outline,
                 previewScheme.surface,
-                '边框',
+                context.t.theme.outline,
               ),
             ),
           ],
@@ -427,7 +428,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
-            '这是一段示例文字，展示应用的主题效果预览。',
+            context.t.theme.previewText,
             style: TextStyle(
               fontSize: 14,
               color: previewScheme.onSurface.withValues(alpha: 0.8),

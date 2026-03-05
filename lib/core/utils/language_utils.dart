@@ -1,3 +1,5 @@
+import '../../i18n/strings.g.dart';
+
 class LanguageUtils {
   /// 使用字母文字（拉丁、西里尔、阿拉伯等拼音字母书写系统）的语言代码集合。
   ///
@@ -85,5 +87,41 @@ class LanguageUtils {
     if (extended != null) return extended;
     // 回退：使用基础语言代码
     return getLanguageDisplayName(normalizeSourceLanguage(lower));
+  }
+
+  /// I18n-aware display name for a basic language code.
+  /// Falls back to [getLanguageDisplayName] for unknown codes.
+  static String getDisplayName(String langCode, Translations t) {
+    final lc = langCode.toLowerCase();
+    final ln = t.langNames;
+    switch (lc) {
+      case 'auto': return ln.auto;
+      case 'en':   return ln.en;
+      case 'zh':   return ln.zh;
+      case 'ja':   return ln.ja;
+      case 'ko':   return ln.ko;
+      case 'fr':   return ln.fr;
+      case 'de':   return ln.de;
+      case 'es':   return ln.es;
+      case 'it':   return ln.it;
+      case 'ru':   return ln.ru;
+      case 'pt':   return ln.pt;
+      case 'ar':   return ln.ar;
+      case 'text': return ln.text;
+      default:     return langCode.toUpperCase();
+    }
+  }
+
+  /// I18n-aware display name supporting extended codes (zh-hans, zh-hant …).
+  static String getDisplayNameExtended(String langCode, Translations t) {
+    final lower = langCode.toLowerCase();
+    switch (lower) {
+      case 'zh-hans': return t.langNames.zhHans;
+      case 'zh-hant':
+      case 'zh-hk':
+      case 'zh-tw':
+      case 'zh-mo': return t.langNames.zhHant;
+      default: return getDisplayName(normalizeSourceLanguage(lower), t);
+    }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/utils/language_utils.dart';
+import '../i18n/strings.g.dart';
 
 class LanguageDropdown extends StatelessWidget {
   final String? selectedLanguage;
@@ -15,12 +16,12 @@ class LanguageDropdown extends StatelessWidget {
     this.showAllOption = true,
   });
 
-  String _getSelectedLabel() {
+  String _getSelectedLabel(Translations t) {
     if (selectedLanguage == null ||
         (showAllOption && selectedLanguage == 'ALL')) {
       return '';
     }
-    return LanguageUtils.getLanguageDisplayName(selectedLanguage!);
+    return LanguageUtils.getDisplayName(selectedLanguage!, t);
   }
 
   @override
@@ -56,7 +57,7 @@ class LanguageDropdown extends StatelessWidget {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 12),
-                    const Text('全部'),
+                    Text(context.t.common.all),
                   ],
                 ),
               ),
@@ -76,7 +77,7 @@ class LanguageDropdown extends StatelessWidget {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 12),
-                    Text(LanguageUtils.getLanguageDisplayName(lang)),
+                    Text(LanguageUtils.getDisplayName(lang, context.t)),
                   ],
                 ),
               ),
@@ -110,7 +111,7 @@ class LanguageDropdown extends StatelessWidget {
                 )
               else
                 Text(
-                  _getSelectedLabel(),
+                  _getSelectedLabel(context.t),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 12,

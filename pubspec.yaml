@@ -68,6 +68,7 @@ dependencies:
   edge_tts_dart:
     git:
       url: https://github.com/twn39/edgetts-dart.git
+  slang_flutter: ^4.0.0
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +76,7 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  slang: ^4.0.0
 
 flutter_launcher_icons:
   android: true

@@ -28,6 +28,7 @@ import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
 import '../data/models/ai_chat_record.dart';
 import 'json_editor_bottom_sheet.dart';
+import '../i18n/strings.g.dart';
 
 part 'entry_detail_page_private_widgets.dart';
 
@@ -690,7 +691,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     if (selectedLists.contains('__REMOVE__')) {
       await _wordBankService.removeWord(word, language);
       if (mounted) {
-        showToast(context, '已将 "$word" 从单词本移除');
+        showToast(context, context.t.entry.wordRemoved(word: word));
         setState(() => _isFavorite = false);
       }
       return;
@@ -704,12 +705,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
       await _wordBankService.updateWordLists(word, language, listChanges);
       if (mounted) {
-        showToast(context, '已更新 "$word" 的词表归属');
+        showToast(context, context.t.entry.wordListUpdated(word: word));
       }
     } else {
       if (selectedLists.isEmpty) {
         if (mounted) {
-          showToast(context, '请至少选择一个词表');
+          showToast(context, context.t.entry.selectAtLeastOne);
         }
       } else {
         final success = await _wordBankService.addWord(
@@ -719,10 +720,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         );
         if (mounted) {
           if (success) {
-            showToast(context, '已将 "$word" 加入单词本');
+            showToast(context, context.t.entry.wordAdded(word: word));
             setState(() => _isFavorite = true);
           } else {
-            showToast(context, '添加失败');
+            showToast(context, context.t.entry.addFailed);
           }
         }
       }
@@ -732,14 +733,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Future<void> _resetCurrentEntry() async {
     final currentEntry = _entryGroup.currentDictionaryGroup.currentEntry;
     if (currentEntry == null) {
-      showToast(context, '无法获取当前词条');
+      showToast(context, context.t.entry.noEntry);
       return;
     }
 
     final dictId = currentEntry.dictId;
     var entryId = currentEntry.id;
     if (dictId == null || entryId.isEmpty) {
-      showToast(context, '词条信息不完整');
+      showToast(context, context.t.entry.entryIncomplete);
       return;
     }
 
@@ -748,7 +749,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       entryId = entryId.substring(prefix.length);
     }
 
-    showToast(context, '正在重置词条...');
+    showToast(context, context.t.entry.resetting);
 
     try {
       final userDictsService = UserDictsService();
@@ -756,7 +757,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
       if (entryData == null) {
         if (mounted) {
-          showToast(context, '服务器上未找到该词条');
+          showToast(context, context.t.entry.notFoundOnServer);
         }
         return;
       }
@@ -788,15 +789,15 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
           setState(() {});
 
-          showToast(context, '词条已重置');
+          showToast(context, context.t.entry.resetSuccess);
         }
       } else if (mounted) {
-        showToast(context, '重置失败');
+        showToast(context, context.t.entry.resetFailed);
       }
     } catch (e) {
       Logger.e('重置词条失败: $e', tag: 'EntryDetailPage');
       if (mounted) {
-        showToast(context, '重置失败: $e');
+        showToast(context, context.t.entry.resetFailed);
       }
     }
   }
@@ -1321,23 +1322,23 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
 
     // 列名显示标签
-    const Map<String, String> _colLabels = {
+    final Map<String, String> _colLabels = {
       'word1': '',
       'word2': '',
-      'base': '原形',
-      'nominal': '名词形',
-      'plural': '复数',
-      'past': '过去式',
-      'past_part': '过去分词',
-      'pres_part': '现在分词',
-      'third_sing': '三单',
-      'comp': '比较级',
-      'superl': '最高级',
+      'base': context.t.entry.morphBase,
+      'nominal': context.t.entry.morphNominal,
+      'plural': context.t.entry.morphPlural,
+      'past': context.t.entry.morphPast,
+      'past_part': context.t.entry.morphPastPart,
+      'pres_part': context.t.entry.morphPresPart,
+      'third_sing': context.t.entry.morphThirdSing,
+      'comp': context.t.entry.morphComp,
+      'superl': context.t.entry.morphSuperl,
     };
-    const Map<String, String> _tableLabels = {
-      'spelling_variant': '变体',
-      'nominalization': '名词化',
-      'inflection': '屈折词',
+    final Map<String, String> _tableLabels = {
+      'spelling_variant': context.t.entry.morphSpellingVariant,
+      'nominalization': context.t.entry.morphNominalization,
+      'inflection': context.t.entry.morphInflection,
     };
 
     return FutureBuilder<List<WordRelationRow>>(
@@ -1476,7 +1477,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               );
                             }
                             Widget tokenWidget = Text(
-                              token,
+                              isNotCount ? context.t.entry.uncountable : token,
                               style: TextStyle(
                                 fontSize: isNotCount ? 11 : 13,
                                 height: 1.2,
@@ -1746,7 +1747,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     } else {
       if (mounted) {
-        showToast(context, '未找到单词: $word');
+        showToast(context, context.t.entry.wordNotFound(word: word));
       }
     }
   }
@@ -1799,7 +1800,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         'Error in _showJsonElementEditorFromPath: $e',
         tag: 'EntryDetailPage',
       );
-      showToast(context, '无法编辑此元素: $e');
+      showToast(context, context.t.entry.processFailed(error: '$e'));
     }
   }
 
@@ -2024,7 +2025,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       if (success) {
         _updateEntryInGroup(newEntry);
         if (mounted) {
-          showToast(toastContext ?? context, '保存成功');
+          showToast(toastContext ?? context, context.t.entry.saveSuccess);
         }
         return newEntry;
       } else {
@@ -2032,7 +2033,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     } catch (e) {
       if (mounted) {
-        showToast(toastContext ?? context, '保存失败: $e');
+        showToast(toastContext ?? context, context.t.entry.saveFailed(error: '$e'));
       }
       return null;
     }
@@ -2173,7 +2174,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         );
       }
     } catch (e) {
-      showToast(context, '处理失败: $e');
+      showToast(context, context.t.entry.processFailed(error: '$e'));
     }
   }
 
@@ -2212,7 +2213,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     String targetLang,
     String sourceLang,
   ) async {
-    showToast(context, '正在翻译...');
+    showToast(context, context.t.entry.translating);
 
     try {
       final systemPrompt = _getTranslationSystemPrompt(pathParts);
@@ -2260,7 +2261,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     } catch (e) {
       if (mounted) {
-        showToast(context, '翻译失败: $e');
+        showToast(context, context.t.entry.translateFailed(error: '$e'));
       }
     }
   }
@@ -2291,7 +2292,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     } catch (e) {
       Logger.d('Error in _toggleTranslationVisibility: $e', tag: 'Translation');
       if (mounted) {
-        showToast(context, '切换失败: $e');
+        showToast(context, context.t.entry.toggleFailed(error: '$e'));
       }
     }
   }
@@ -2337,7 +2338,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     } catch (e) {
       Logger.d('Error in _toggleAllNonTargetLanguages: $e', tag: 'Translation');
       if (mounted) {
-        showToast(context, '切换失败: $e');
+        showToast(context, context.t.entry.toggleFailed(error: '$e'));
       }
     }
   }
@@ -2569,7 +2570,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                           currentValue,
                           initialPath: startPath, // 传递初始路径
                         );
-                      }, title: '路径'),
+                      }, title: context.t.entry.path),
                     ),
                     // 返回初始路径按钮
                     if (startPath != null &&
@@ -2611,7 +2612,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         icon: const Icon(
                           Icons.first_page,
                         ), // 使用 first_page 图标表示返回初始位置
-                        tooltip: '返回初始路径',
+                        tooltip: context.t.entry.returnToStart,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                   ],
@@ -2650,7 +2651,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         : Theme.of(context).colorScheme.onSurface,
                   ),
                   decoration: InputDecoration(
-                    hintText: '这是词典中单词"${entry.headword}"的一部分，请解释这部分内容。',
+                    hintText: context.t.entry.explainPrompt(word: entry.headword),
                     hintStyle: TextStyle(
                       color: Theme.of(
                         context,
@@ -2663,7 +2664,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         final inputText = questionController.text.trim();
                         // 如果用户输入为空，使用默认问题
                         final question = inputText.isEmpty
-                            ? '这是词典中单词"${entry.headword}"的一部分，请解释这部分内容'
+                            ? context.t.entry.explainPrompt(word: entry.headword)
                             : inputText;
                         Navigator.pop(context);
                         await _askAiAboutElement(
@@ -2682,7 +2683,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
+                      child: Text(context.t.common.cancel),
                     ),
                   ],
                 ),
@@ -2791,13 +2792,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = '请求失败: $e';
+          _aiChatHistory[idx].answer = context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: targetWord,
               question: question,
-              answer: '请求失败: $e',
+              answer: context.t.entry.aiRequestFailedShort + ' $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: path,
               elementJson: compactJson,
@@ -2807,7 +2808,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         if (mounted) {
           setState(() {});
           _modalSetState?.call(() {});
-          showToast(context, 'AI请求失败: $e');
+          showToast(context, context.t.entry.aiRequestFailed(error: '$e'));
         }
       },
       cancelOnError: true,
@@ -2933,7 +2934,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               color: Theme.of(context).colorScheme.primary,
                             ),
                             label: Text(
-                              '总结当前页',
+                              context.t.entry.summarizePage,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Theme.of(context).colorScheme.primary,
@@ -2966,7 +2967,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               size: 20,
                             ),
                             visualDensity: VisualDensity.compact,
-                            tooltip: isFullScreen ? '退出全屏' : '全屏',
+                            tooltip: isFullScreen ? context.t.common.exitFullscreen : context.t.common.fullscreen,
                           ),
                           IconButton(
                             onPressed: () {
@@ -2983,19 +2984,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     // 聊天记录列表
                     Expanded(
                       child: _aiChatHistory.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.chat_bubble_outline,
                                     size: 48,
                                     color: Colors.grey,
                                   ),
-                                  SizedBox(height: 16),
+                                  const SizedBox(height: 16),
                                   Text(
-                                    '暂无聊天记录',
-                                    style: TextStyle(color: Colors.grey),
+                                    context.t.entry.noChatHistory,
+                                    style: const TextStyle(color: Colors.grey),
                                   ),
                                 ],
                               ),
@@ -3013,7 +3014,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                 final isLoading =
                                     record.answer.isEmpty && isStreaming;
                                 final isError = record.answer.startsWith(
-                                  '请求失败:',
+                                  context.t.entry.aiRequestFailedShort,
                                 );
 
                                 return Card(
@@ -3140,7 +3141,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                     ),
                                                     const SizedBox(width: 4),
                                                     Text(
-                                                      '思考过程',
+                                                      context.t.entry.thinkingProcess,
                                                       style: TextStyle(
                                                         fontSize: 12,
                                                         color: Theme.of(context).colorScheme.outline,
@@ -3207,7 +3208,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                   ),
                                                   const SizedBox(width: 8),
                                                   Text(
-                                                    'AI正在思考中...',
+                                                    context.t.entry.aiThinking,
                                                     style: TextStyle(
                                                       color: Theme.of(
                                                         context,
@@ -3246,7 +3247,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                     ),
                                                     const SizedBox(width: 6),
                                                     Text(
-                                                      '正在输出...',
+                                                      context.t.entry.outputting,
                                                       style: TextStyle(
                                                         fontSize: 11,
                                                         color: Theme.of(context).colorScheme.outline,
@@ -3270,14 +3271,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                       );
                                                       showToast(
                                                         context,
-                                                        '已复制到剪贴板',
+                                                        context.t.entry.copiedToClipboard,
                                                       );
                                                     },
                                                     icon: const Icon(
                                                       Icons.copy,
                                                       size: 16,
                                                     ),
-                                                    label: const Text('复制'),
+                                                    label: Text(context.t.common.copy),
                                                     style: TextButton.styleFrom(
                                                       visualDensity:
                                                           VisualDensity.compact,
@@ -3302,7 +3303,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                       Icons.chat,
                                                       size: 16,
                                                     ),
-                                                    label: const Text('继续'),
+                                                    label: Text(context.t.common.continue_),
                                                     style: TextButton.styleFrom(
                                                       visualDensity:
                                                           VisualDensity.compact,
@@ -3317,11 +3318,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                     final confirm = await showDialog<bool>(
                                                       context: context,
                                                       builder: (context) => AlertDialog(
-                                                        title: const Text(
-                                                          '删除记录',
+                                                        title: Text(
+                                                          context.t.entry.deleteRecord,
                                                         ),
-                                                        content: const Text(
-                                                          '确定删除这条AI聊天记录吗？',
+                                                        content: Text(
+                                                          context.t.entry.deleteRecordConfirm,
                                                         ),
                                                         actions: [
                                                           TextButton(
@@ -3330,8 +3331,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                                   context,
                                                                   false,
                                                                 ),
-                                                            child: const Text(
-                                                              '取消',
+                                                            child: Text(
+                                                              context.t.common.cancel,
                                                             ),
                                                           ),
                                                           TextButton(
@@ -3348,8 +3349,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                                       .colorScheme
                                                                       .error,
                                                             ),
-                                                            child: const Text(
-                                                              '删除',
+                                                            child: Text(
+                                                              context.t.common.delete,
                                                             ),
                                                           ),
                                                         ],
@@ -3381,7 +3382,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                   ),
                                                   visualDensity:
                                                       VisualDensity.compact,
-                                                  tooltip: '删除',
+                                                  tooltip: context.t.common.delete,
                                                 ),
                                               ],
                                             ),
@@ -3411,7 +3412,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               maxLines: 3,
                               minLines: 1,
                               decoration: InputDecoration(
-                                hintText: '输入任意问题...',
+                                hintText: context.t.entry.chatInputHint,
                                 hintStyle: TextStyle(
                                   fontSize: 13,
                                   color: Theme.of(context).colorScheme.outline,
@@ -3624,13 +3625,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = '请求失败: $e';
+          _aiChatHistory[idx].answer = this.context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
               question: message,
-              answer: '请求失败: $e',
+              answer: this.context.t.entry.aiRequestFailedShort + ' $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: null,
               elementJson: null,
@@ -3652,7 +3653,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final history = <Map<String, String>>[];
     // 取最近5轮对话（最多10条消息）
     final recentRecords = _aiChatHistory
-        .where((r) => r.answer.isNotEmpty && !r.answer.startsWith('请求失败:'))
+        .where((r) => r.answer.isNotEmpty && !r.answer.startsWith(context.t.entry.aiRequestFailedShort))
         .toList();
 
     final startIndex = recentRecords.length > 5 ? recentRecords.length - 5 : 0;
@@ -3697,7 +3698,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '继续对话',
+                            context.t.entry.continueChatTitle,
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ),
@@ -3722,7 +3723,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '原始问题',
+                                    context.t.entry.originalQuestion,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Theme.of(
@@ -3749,7 +3750,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'AI回答',
+                                    context.t.entry.aiAnswer,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Theme.of(
@@ -3850,7 +3851,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                           const Divider(),
                           const SizedBox(height: 8),
                           Text(
-                            '继续提问',
+                            context.t.entry.continueAsk,
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           const SizedBox(height: 8),
@@ -3873,7 +3874,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               maxLines: 3,
                               minLines: 1,
                               decoration: InputDecoration(
-                                hintText: '基于以上对话继续提问...',
+                                hintText: context.t.entry.continueAskHint,
                                 hintStyle: TextStyle(
                                   fontSize: 13,
                                   color: Theme.of(context).colorScheme.outline,
@@ -4058,13 +4059,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = '请求失败: $e';
+          _aiChatHistory[idx].answer = this.context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: currentWord,
               question: message,
-              answer: '请求失败: $e',
+              answer: this.context.t.entry.aiRequestFailedShort + ' $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: parentRecord.path,
               elementJson: parentRecord.elementJson,
@@ -4087,13 +4088,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final diff = now.difference(timestamp);
 
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return context.t.entry.justNow;
     } else if (diff.inHours < 1) {
-      return '${diff.inMinutes}分钟前';
+      return context.t.entry.minutesAgo(n: diff.inMinutes);
     } else if (diff.inDays < 1) {
-      return '${diff.inHours}小时前';
+      return context.t.entry.hoursAgo(n: diff.inHours);
     } else if (diff.inDays < 7) {
-      return '${diff.inDays}天前';
+      return context.t.entry.daysAgo(n: diff.inDays);
     } else {
       return '${timestamp.month}/${timestamp.day} ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
     }
@@ -4108,7 +4109,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 获取当前词典当前页的所有entries
     if (currentDict.pageGroups.isEmpty ||
         currentPageIndex >= currentDict.pageGroups.length) {
-      showToast(context, '当前页没有内容');
+      showToast(context, context.t.entry.noPageContent);
       return;
     }
 
@@ -4116,19 +4117,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final entries = currentPage.sections.map((s) => s.entry).toList();
 
     if (entries.isEmpty) {
-      showToast(context, '当前页没有内容');
+      showToast(context, context.t.entry.noPageContent);
       return;
     }
 
     final targetWord = entries.length == 1
         ? entries[0].headword
-        : '${entries[0].headword}等${entries.length}个词条';
+        : context.t.entry.summaryEntriesLabel(first: entries[0].headword, count: entries.length);
 
     // 创建记录
     final record = AiChatRecord(
       id: requestId,
       word: targetWord,
-      question: '请总结当前页的所有词典内容',
+      question: context.t.entry.summaryQuestion,
       answer: '',
       timestamp: DateTime.now(),
       path: null,
@@ -4142,7 +4143,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       AiChatRecordModel(
         id: requestId,
         word: targetWord,
-        question: '请总结当前页的所有词典内容',
+        question: context.t.entry.summaryQuestion,
         answer: '',
         timestamp: record.timestamp,
         path: null,
@@ -4199,7 +4200,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           _aiChatHistory[idx] = AiChatRecord(
             id: requestId,
             word: targetWord,
-            question: '当前页内容总结',
+            question: context.t.entry.summaryTitle,
             answer: finalAnswer,
             thinkingContent: _aiChatHistory[idx].thinkingContent,
             timestamp: _aiChatHistory[idx].timestamp,
@@ -4209,7 +4210,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             AiChatRecordModel(
               id: requestId,
               word: targetWord,
-              question: '当前页内容总结',
+              question: context.t.entry.summaryTitle,
               answer: finalAnswer,
               timestamp: _aiChatHistory[idx].timestamp,
               path: null,
@@ -4227,13 +4228,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = '请求失败: $e';
+          _aiChatHistory[idx].answer = context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               word: targetWord,
-              question: '当前页内容总结',
-              answer: '请求失败: $e',
+              question: context.t.entry.summaryQuestion,
+              answer: context.t.entry.aiRequestFailedShort + ' $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: null,
               elementJson: null,
@@ -4243,7 +4244,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         if (mounted) {
           setState(() {});
           _modalSetState?.call(() {});
-          showToast(context, 'AI总结失败: $e');
+          showToast(context, context.t.entry.aiSumFailed(error: '$e'));
         }
       },
       cancelOnError: true,
