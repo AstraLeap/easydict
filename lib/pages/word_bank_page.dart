@@ -18,14 +18,20 @@ import '../services/entry_event_bus.dart';
 import '../services/font_loader_service.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 enum SortMode {
-  addTimeDesc('添加顺序'),
-  alphabetical('字母顺序'),
-  random('随机排序');
+  addTimeDesc,
+  alphabetical,
+  random;
 
-  final String label;
-  const SortMode(this.label);
+  String label(BuildContext context) {
+    switch (this) {
+      case SortMode.addTimeDesc: return context.t.wordBank.sortAddTimeDesc;
+      case SortMode.alphabetical: return context.t.wordBank.sortAlphabetical;
+      case SortMode.random: return context.t.wordBank.sortRandom;
+    }
+  }
 }
 
 class WordBankPage extends StatefulWidget {
@@ -505,7 +511,7 @@ class _WordBankPageState extends State<WordBankPage> {
       await _wordBankService.removeWord(word, targetLanguage);
       await _loadWords();
       if (mounted) {
-        showToast(context, '已移除单词');
+        showToast(context, context.t.wordBank.wordRemoved);
       }
       return;
     }
@@ -518,7 +524,7 @@ class _WordBankPageState extends State<WordBankPage> {
     await _wordBankService.updateWordLists(word, targetLanguage, listChanges);
     await _loadWords();
     if (mounted) {
-      showToast(context, '已更新词表归属');
+      showToast(context, context.t.wordBank.wordListUpdated);
     }
   }
 
@@ -543,7 +549,7 @@ class _WordBankPageState extends State<WordBankPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '导入到 ${LanguageUtils.getLanguageDisplayName(language)}',
+                      context.t.wordBank.importToLanguage(language: LanguageUtils.getDisplayName(language, context.t)),
                     ),
                   ),
                 ],
@@ -555,16 +561,16 @@ class _WordBankPageState extends State<WordBankPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // 词表名称输入
-                    const Text(
-                      '词表名称：',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    Text(
+                      context.t.wordBank.listNameLabel,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     TextField(
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: '例如：托福、雅思、GRE',
-                        contentPadding: EdgeInsets.symmetric(
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        hintText: context.t.wordBank.listNameHint,
+                        contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 8,
                         ),
@@ -605,15 +611,15 @@ class _WordBankPageState extends State<WordBankPage> {
                         }
                       },
                       icon: const Icon(Icons.file_open),
-                      label: const Text('选择文件'),
+                      label: Text(context.t.wordBank.pickFile),
                     ),
                     const SizedBox(height: 8),
 
                     // 预览区域
                     if (previewWords.isNotEmpty) ...[
-                      const Text(
-                        '预览前10个单词：',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      Text(
+                        context.t.wordBank.previewWords,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Container(
@@ -637,8 +643,8 @@ class _WordBankPageState extends State<WordBankPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '共识别到 ${previewWords.length} 个单词预览',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        context.t.wordBank.previewCount(count: previewWords.length),
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                   ],
@@ -647,7 +653,7 @@ class _WordBankPageState extends State<WordBankPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('取消'),
+                  child: Text(context.t.common.cancel),
                 ),
                 ElevatedButton(
                   onPressed:
@@ -678,7 +684,7 @@ class _WordBankPageState extends State<WordBankPage> {
                               Navigator.pop(context, true);
                               showToast(
                                 context,
-                                '成功导入 $count 个单词到 "$listName"',
+                                context.t.wordBank.importSuccess(count: count, list: listName),
                               );
 
                               // 刷新数据
@@ -686,13 +692,13 @@ class _WordBankPageState extends State<WordBankPage> {
                             }
                           } catch (e) {
                             if (mounted) {
-                              String errorMessage = '导入失败';
+                              String errorMessage = context.t.wordBank.importFailed;
                               if (e.toString().contains('已存在')) {
-                                errorMessage = '词表 "$listName" 已存在，请使用其他名称';
+                                errorMessage = context.t.wordBank.importListExists(list: listName);
                               } else if (e.toString().contains(
                                 'No such file',
                               )) {
-                                errorMessage = '文件读取失败';
+                                errorMessage = context.t.wordBank.importFileError;
                               }
                               showToast(context, errorMessage);
                             }
@@ -708,7 +714,7 @@ class _WordBankPageState extends State<WordBankPage> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('导入'),
+                      : Text(context.t.common.import),
                 ),
               ],
             );
@@ -748,7 +754,7 @@ class _WordBankPageState extends State<WordBankPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '编辑 ${LanguageUtils.getLanguageDisplayName(_selectedLanguage!)} 词表',
+                      context.t.wordBank.editListsTitle(language: LanguageUtils.getDisplayName(_selectedLanguage!, context.t)),
                     ),
                   ),
                 ],
@@ -806,7 +812,7 @@ class _WordBankPageState extends State<WordBankPage> {
                                         context,
                                       ).colorScheme.primary,
                                     ),
-                                    tooltip: '重命名',
+                                    tooltip: context.t.common.rename,
                                     onPressed: () async {
                                       final controller = TextEditingController(
                                         text: list.currentName,
@@ -815,12 +821,12 @@ class _WordBankPageState extends State<WordBankPage> {
                                         context: context,
                                         builder: (context) {
                                           return AlertDialog(
-                                            title: const Text('重命名词表'),
+                                            title: Text(context.t.wordBank.renameList),
                                             content: TextField(
                                               controller: controller,
-                                              decoration: const InputDecoration(
-                                                labelText: '词表名称',
-                                                hintText: '输入新名称',
+                                              decoration: InputDecoration(
+                                                labelText: context.t.wordBank.listNameFieldLabel,
+                                                hintText: context.t.wordBank.listNameFieldHint,
                                               ),
                                               autofocus: true,
                                             ),
@@ -828,14 +834,14 @@ class _WordBankPageState extends State<WordBankPage> {
                                               TextButton(
                                                 onPressed: () =>
                                                     Navigator.pop(context),
-                                                child: const Text('取消'),
+                                                child: Text(context.t.common.cancel),
                                               ),
                                               TextButton(
                                                 onPressed: () => Navigator.pop(
                                                   context,
                                                   controller.text.trim(),
                                                 ),
-                                                child: const Text('确定'),
+                                                child: Text(context.t.common.ok),
                                               ),
                                             ],
                                           );
@@ -860,7 +866,7 @@ class _WordBankPageState extends State<WordBankPage> {
                                         context,
                                       ).colorScheme.error,
                                     ),
-                                    tooltip: '删除',
+                                    tooltip: context.t.common.delete,
                                     onPressed: () async {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
@@ -875,11 +881,11 @@ class _WordBankPageState extends State<WordBankPage> {
                                                   ).colorScheme.error,
                                                 ),
                                                 const SizedBox(width: 8),
-                                                const Text('删除词表'),
+                                                Text(context.t.wordBank.deleteList),
                                               ],
                                             ),
                                             content: Text(
-                                              '确定要删除词表 "${list.currentName}" 吗？\n\n这将删除该词表及其所有数据。如果一个单词不属于任何其他词表，也会被删除。',
+                                              context.t.wordBank.deleteListConfirm(name: list.currentName),
                                             ),
                                             actions: [
                                               TextButton(
@@ -887,7 +893,7 @@ class _WordBankPageState extends State<WordBankPage> {
                                                   context,
                                                   false,
                                                 ),
-                                                child: const Text('取消'),
+                                                child: Text(context.t.common.cancel),
                                               ),
                                               TextButton(
                                                 onPressed: () => Navigator.pop(
@@ -899,7 +905,7 @@ class _WordBankPageState extends State<WordBankPage> {
                                                     context,
                                                   ).colorScheme.error,
                                                 ),
-                                                child: const Text('删除'),
+                                                child: Text(context.t.common.delete),
                                               ),
                                             ],
                                           );
@@ -934,12 +940,12 @@ class _WordBankPageState extends State<WordBankPage> {
                         );
                       },
                       icon: const Icon(Icons.file_download),
-                      label: const Text('导入词表'),
+                      label: Text(context.t.wordBank.importListBtn),
                     ),
                     const Spacer(),
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: const Text('取消'),
+                      child: Text(context.t.common.cancel),
                     ),
                     FilledButton(
                       onPressed: () async {
@@ -976,20 +982,20 @@ class _WordBankPageState extends State<WordBankPage> {
 
                           if (mounted) {
                             Navigator.pop(context, true);
-                            showToast(context, '词表已更新');
+                            showToast(context, context.t.wordBank.listSaved);
                             await _loadData();
                           }
                         } catch (e) {
                           if (mounted) {
-                            String errorMsg = '操作失败';
+                            String errorMsg = context.t.wordBank.listOpFailed;
                             if (e.toString().contains('已存在')) {
-                              errorMsg = '词表名称已存在，请使用其他名称';
+                              errorMsg = context.t.wordBank.listNameExists;
                             }
                             showToast(context, errorMsg);
                           }
                         }
                       },
-                      child: const Text('保存'),
+                      child: Text(context.t.common.save),
                     ),
                   ],
                 ),
@@ -1017,7 +1023,7 @@ class _WordBankPageState extends State<WordBankPage> {
           padding: const EdgeInsets.only(right: 8),
           child: FilterChip(
             selected: _selectedList == null,
-            label: const Text('全部', style: TextStyle(fontSize: 13)),
+            label: Text(context.t.common.all, style: const TextStyle(fontSize: 13)),
             onSelected: (selected) {
               setState(() {
                 _selectedList = null;
@@ -1027,7 +1033,6 @@ class _WordBankPageState extends State<WordBankPage> {
         ),
       );
 
-      // 每个语言的词表
       for (final lang in _languages) {
         final wordLists = _wordBankService.getWordListsSync(lang);
         for (final list in wordLists) {
@@ -1042,7 +1047,7 @@ class _WordBankPageState extends State<WordBankPage> {
                 child: FilterChip(
                   selected: isSelected,
                   label: Text(
-                    '${LanguageUtils.getLanguageDisplayName(lang)}-${list.displayName}',
+                    '${LanguageUtils.getDisplayName(lang, context.t)}-${list.displayName}',
                     style: const TextStyle(fontSize: 13),
                   ),
                   onSelected: (selected) {
@@ -1104,7 +1109,7 @@ class _WordBankPageState extends State<WordBankPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
                         selected: isSelected,
-                        label: const Text('全部', style: TextStyle(fontSize: 13)),
+                        label: Text(context.t.common.all, style: const TextStyle(fontSize: 13)),
                         onSelected: (selected) {
                           setState(() {
                             _selectedList = null;
@@ -1139,7 +1144,7 @@ class _WordBankPageState extends State<WordBankPage> {
           const SizedBox(width: 8),
           // 圆形按钮：轮廓线以内不透明，轮廓线向外渐变至透明，遮住底部词表 chip
           Tooltip(
-            message: '管理词表',
+            message: context.t.wordBank.manageLists,
             child: SizedBox(
               width: 56,
               height: 56,
@@ -1266,7 +1271,7 @@ class _WordBankPageState extends State<WordBankPage> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                LanguageUtils.getLanguageDisplayName(lang),
+                LanguageUtils.getDisplayName(lang, context.t),
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -1311,11 +1316,11 @@ class _WordBankPageState extends State<WordBankPage> {
 
       if (filteredWords.isEmpty) {
         widgets.add(
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Center(
               child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('没有找到单词'),
+                padding: const EdgeInsets.all(32),
+                child: Text(context.t.wordBank.noWordsFound),
               ),
             ),
           ),
@@ -1410,7 +1415,7 @@ class _WordBankPageState extends State<WordBankPage> {
         ),
       );
     } else if (mounted) {
-      showToast(context, '未找到单词: $word');
+      showToast(context, context.t.wordBank.wordNotFound(word: word));
     }
   }
 
@@ -1467,7 +1472,7 @@ class _WordBankPageState extends State<WordBankPage> {
                         }
                         await _loadWords();
                       },
-                      hintText: '搜索单词本',
+                      hintText: context.t.search.hintWordBank,
                       showAllOption: true,
                       onTap: () {
                         if (!_wasFocused && _searchController.text.isNotEmpty) {
@@ -1482,7 +1487,7 @@ class _WordBankPageState extends State<WordBankPage> {
                       },
                       extraSuffixIcons: [
                         PopupMenuButton<SortMode>(
-                          tooltip: '排序方式',
+                          tooltip: context.t.wordBank.sortTooltip,
                           offset: const Offset(0, 40),
                           icon: Icon(
                             Icons.swap_vert,
@@ -1505,7 +1510,7 @@ class _WordBankPageState extends State<WordBankPage> {
                                         size: 18,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(mode.label),
+                                      Text(mode.label(context)),
                                     ],
                                   ),
                                 ),
@@ -1599,7 +1604,7 @@ class _WordBankPageState extends State<WordBankPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            '单词本还是空的',
+            context.t.wordBank.empty,
             style: TextStyle(
               fontSize: 18,
               color: Theme.of(context).colorScheme.outline,
@@ -1607,7 +1612,7 @@ class _WordBankPageState extends State<WordBankPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '在查词时点击收藏按钮添加单词',
+            context.t.wordBank.emptyHint,
             style: TextStyle(
               fontSize: 14,
               color: Theme.of(context).colorScheme.outline,

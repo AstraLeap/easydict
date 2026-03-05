@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 import '../services/dictionary_manager.dart';
 import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
@@ -427,7 +428,7 @@ class _FontConfigPageState extends State<FontConfigPage>
       final dir = Directory(result);
       if (!await dir.exists()) {
         if (mounted) {
-          showToast(context, '文件夹不存在');
+          showToast(context, context.t.font.folderDoesNotExist);
         }
         return;
       }
@@ -442,7 +443,7 @@ class _FontConfigPageState extends State<FontConfigPage>
       await _loadData(forceRescan: true);
 
       if (mounted) {
-        showToast(context, '字体文件夹已设置，已自动创建语言子文件夹');
+        showToast(context, context.t.font.folderSetSuccess);
       }
     }
   }
@@ -470,13 +471,13 @@ class _FontConfigPageState extends State<FontConfigPage>
     bool isSerif,
   ) async {
     if (_fontFolderPath == null || _fontFolderPath!.isEmpty) {
-      showToast(context, '请先设置字体文件夹');
+      showToast(context, context.t.font.setFolderFirst);
       return;
     }
 
     final fontDir = Directory(p.join(_fontFolderPath!, language));
     if (!await fontDir.exists()) {
-      showToast(context, '语言文件夹不存在: $language');
+      showToast(context, context.t.font.folderNotExist(lang: language));
       return;
     }
 
@@ -491,7 +492,7 @@ class _FontConfigPageState extends State<FontConfigPage>
     }).toList();
 
     if (files.isEmpty) {
-      showToast(context, '语言文件夹 $language 中没有字体文件');
+      showToast(context, context.t.font.noFontFiles(lang: language));
       return;
     }
 
@@ -505,11 +506,11 @@ class _FontConfigPageState extends State<FontConfigPage>
     final selectedFont = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: Text('选择 ${LanguageUtils.getLanguageDisplayNameExtended(language)} 字体'),
+        title: Text(context.t.font.selectFont(language: LanguageUtils.getDisplayNameExtended(language, context.t))),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop<Map<String, String>>(context, {}),
-            child: const Text('清除自定义字体'),
+            child: Text(context.t.font.clearFont),
           ),
           ...fontFiles.map(
             (font) => SimpleDialogOption(
@@ -548,7 +549,7 @@ class _FontConfigPageState extends State<FontConfigPage>
       await _loadData(skipAutoSave: true);
 
       if (mounted) {
-        showToast(context, '字体配置已保存');
+        showToast(context, context.t.font.fontSaved);
       }
     }
   }
@@ -560,7 +561,7 @@ class _FontConfigPageState extends State<FontConfigPage>
         : CustomScrollView(
             slivers: [
               SliverAppBar(
-                title: const Text('字体配置'),
+                title: Text(context.t.font.title),
                 pinned: true,
                 backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                 surfaceTintColor: Colors.transparent,
@@ -569,14 +570,14 @@ class _FontConfigPageState extends State<FontConfigPage>
                     padding: const EdgeInsets.only(right: 8),
                     child: IconButton(
                       icon: const Icon(Icons.refresh),
-                      tooltip: '刷新字体',
+                      tooltip: context.t.font.refreshTooltip,
                       onPressed: () async {
                         setState(() => _isLoading = true);
                         await PreferencesService().clearAllFontConfigs();
                         await _loadData(forceRescan: true);
                         await FontLoaderService().reloadFonts();
                         if (mounted) {
-                          showToast(context, '字体已刷新');
+                          showToast(context, context.t.font.refreshSuccess);
                         }
                       },
                     ),
@@ -588,9 +589,9 @@ class _FontConfigPageState extends State<FontConfigPage>
                   margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: ListTile(
                     leading: const Icon(Icons.folder_outlined),
-                    title: const Text('字体文件夹'),
+                    title: Text(context.t.font.folderLabel),
                     subtitle: Text(
-                      _fontFolderPath ?? '未设置',
+                      _fontFolderPath ?? context.t.font.folderNotSet,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -602,7 +603,7 @@ class _FontConfigPageState extends State<FontConfigPage>
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: _selectFolder,
-                      tooltip: _fontFolderPath == null ? '设置' : '修改',
+                      tooltip: _fontFolderPath == null ? context.t.font.folderSet : context.t.font.folderChange,
                     ),
                   ),
                 ),
@@ -618,7 +619,7 @@ class _FontConfigPageState extends State<FontConfigPage>
                       tabs: _languages
                           .map(
                             (lang) => Tab(
-                              text: LanguageUtils.getLanguageDisplayNameExtended(lang),
+                              text: LanguageUtils.getDisplayNameExtended(lang, context.t),
                             ),
                           )
                           .toList(),
@@ -640,8 +641,8 @@ class _FontConfigPageState extends State<FontConfigPage>
                   }, childCount: 1),
                 ),
               ] else if (!_isLoading)
-                const SliverFillRemaining(
-                  child: Center(child: Text('未找到包含语言信息的词典')),
+                SliverFillRemaining(
+                  child: Center(child: Text(context.t.font.noDicts)),
                 ),
             ],
           );
@@ -663,7 +664,7 @@ class _FontConfigPageState extends State<FontConfigPage>
       child: Column(
         children: [
           _buildFontCategorySection(
-            '无衬线字体',
+            context.t.font.sansSerif,
             Icons.text_format,
             detected.sans,
             userConfigs,
@@ -672,7 +673,7 @@ class _FontConfigPageState extends State<FontConfigPage>
           ),
           const SizedBox(height: 16),
           _buildFontCategorySection(
-            '衬线字体',
+            context.t.font.serif,
             Icons.format_textdirection_l_to_r,
             detected.serif,
             userConfigs,
@@ -729,7 +730,7 @@ class _FontConfigPageState extends State<FontConfigPage>
             if (isSerif) ...[
               _buildFontStatusRow(
                 'regular',
-                '常规',
+                context.t.font.regular,
                 userFonts.serifRegular,
                 language: language,
                 isSerif: isSerif,
@@ -737,7 +738,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               const SizedBox(height: 8),
               _buildFontStatusRow(
                 'bold',
-                '粗体',
+                context.t.font.bold,
                 userFonts.serifBold,
                 language: language,
                 isSerif: isSerif,
@@ -745,7 +746,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               const SizedBox(height: 8),
               _buildFontStatusRow(
                 'italic',
-                '斜体',
+                context.t.font.italic,
                 userFonts.serifItalic,
                 language: language,
                 isSerif: isSerif,
@@ -753,7 +754,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               const SizedBox(height: 8),
               _buildFontStatusRow(
                 'bold_italic',
-                '粗斜体',
+                context.t.font.boldItalic,
                 userFonts.serifBoldItalic,
                 language: language,
                 isSerif: isSerif,
@@ -761,7 +762,7 @@ class _FontConfigPageState extends State<FontConfigPage>
             ] else ...[
               _buildFontStatusRow(
                 'regular',
-                '常规',
+                context.t.font.regular,
                 userFonts.sansRegular,
                 language: language,
                 isSerif: isSerif,
@@ -769,7 +770,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               const SizedBox(height: 8),
               _buildFontStatusRow(
                 'bold',
-                '粗体',
+                context.t.font.bold,
                 userFonts.sansBold,
                 language: language,
                 isSerif: isSerif,
@@ -777,7 +778,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               const SizedBox(height: 8),
               _buildFontStatusRow(
                 'italic',
-                '斜体',
+                context.t.font.italic,
                 userFonts.sansItalic,
                 language: language,
                 isSerif: isSerif,
@@ -785,7 +786,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               const SizedBox(height: 8),
               _buildFontStatusRow(
                 'bold_italic',
-                '粗斜体',
+                context.t.font.boldItalic,
                 userFonts.sansBoldItalic,
                 language: language,
                 isSerif: isSerif,
@@ -841,8 +842,8 @@ class _FontConfigPageState extends State<FontConfigPage>
       context: context,
       builder: (context) {
         return ScaleDialogWidget(
-          title: '${isSerif ? '衬线字体' : '无衬线字体'}缩放倍率',
-          subtitle: '仅用于调整不同字体的尺寸一致性',
+          title: context.t.font.scaleDialogTitle(type: isSerif ? context.t.font.serif : context.t.font.sansSerif),
+          subtitle: context.t.font.scaleDialogSubtitle,
           currentValue: (currentScale * 100).round().toDouble(),
           min: 75,
           max: 150,
@@ -921,7 +922,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               ),
             ] else
               Text(
-                '未配置',
+                context.t.font.notConfigured,
                 style: TextStyle(fontSize: 12, color: colorScheme.outline),
               ),
           ],
@@ -1160,7 +1161,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                 });
               },
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('重置'),
+              label: Text(context.t.common.reset),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 textStyle: const TextStyle(fontSize: 13),
@@ -1169,7 +1170,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
             const Spacer(),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(context.t.common.cancel),
             ),
             const SizedBox(width: 8),
             FilledButton(
@@ -1180,7 +1181,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                   Navigator.pop(context);
                 }
               },
-              child: const Text('确定'),
+              child: Text(context.t.common.ok),
             ),
           ],
         ),

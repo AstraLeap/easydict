@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme_provider.dart';
 import '../core/utils/toast_utils.dart';
 import '../data/services/ai_chat_database_service.dart';
+import '../i18n/strings.g.dart';
 import '../services/dict_update_check_service.dart';
 import '../services/app_update_service.dart';
 import '../services/english_db_service.dart';
@@ -16,6 +18,27 @@ import 'font_config_page.dart';
 import 'help_page.dart';
 import 'llm_config_page.dart';
 import 'theme_color_page.dart';
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+
+String _getLocalizedActionLabel(BuildContext context, String action) {
+  final t = context.t.settings.actionLabel;
+  switch (action) {
+    case PreferencesService.actionAiTranslate: return t.aiTranslate;
+    case PreferencesService.actionCopy: return t.copy;
+    case PreferencesService.actionAskAi: return t.askAi;
+    case PreferencesService.actionEdit: return t.edit;
+    case PreferencesService.actionSpeak: return t.speak;
+    case PreferencesService.actionBack: return t.back;
+    case PreferencesService.actionFavorite: return t.favorite;
+    case PreferencesService.actionToggleTranslate: return t.toggleTranslate;
+    case PreferencesService.actionAiHistory: return t.aiHistory;
+    case PreferencesService.actionResetEntry: return t.resetEntry;
+    default: return action;
+  }
+}
 
 // ─────────────────────────────────────────────
 // SettingsPage
@@ -60,33 +83,41 @@ class _SettingsPageState extends State<SettingsPage> {
     });
   }
 
-  String _getClickActionLabel(String action) {
-    final label = PreferencesService.getActionLabel(action);
-    return label == action ? '切换翻译' : label;
+  String _getThemeColorName(BuildContext context, Color color) {
+    if (color.toARGB32() == ThemeProvider.systemAccentColor.toARGB32()) {
+      return context.t.theme.systemAccent;
+    }
+    final n = context.t.theme.colorNames;
+    final colorNames = {
+      Colors.blue.toARGB32(): n.blue,
+      Colors.indigo.toARGB32(): n.indigo,
+      Colors.purple.toARGB32(): n.purple,
+      Colors.deepPurple.toARGB32(): n.deepPurple,
+      Colors.pink.toARGB32(): n.pink,
+      Colors.red.toARGB32(): n.red,
+      Colors.deepOrange.toARGB32(): n.deepOrange,
+      Colors.orange.toARGB32(): n.orange,
+      Colors.amber.toARGB32(): n.amber,
+      Colors.yellow.toARGB32(): n.yellow,
+      Colors.lime.toARGB32(): n.lime,
+      Colors.lightGreen.toARGB32(): n.lightGreen,
+      Colors.green.toARGB32(): n.green,
+      Colors.teal.toARGB32(): n.teal,
+      Colors.cyan.toARGB32(): n.cyan,
+    };
+    return colorNames[color.toARGB32()] ?? context.t.theme.custom;
   }
 
-  String _getThemeColorName(Color color) {
-    if (color.toARGB32() == ThemeProvider.systemAccentColor.toARGB32()) {
-      return '系统主题色';
+  String _getLocaleLabel(BuildContext context) {
+    final localeProvider = context.read<LocaleProvider>();
+    switch (localeProvider.currentOption) {
+      case AppLocaleOption.auto:
+        return context.t.language.auto;
+      case AppLocaleOption.zh:
+        return context.t.language.zh;
+      case AppLocaleOption.en:
+        return context.t.language.en;
     }
-    final colorNames = {
-      Colors.blue.toARGB32(): '蓝色',
-      Colors.indigo.toARGB32(): '靛蓝色',
-      Colors.purple.toARGB32(): '紫色',
-      Colors.deepPurple.toARGB32(): '深紫色',
-      Colors.pink.toARGB32(): '粉色',
-      Colors.red.toARGB32(): '红色',
-      Colors.deepOrange.toARGB32(): '深橙色',
-      Colors.orange.toARGB32(): '橙色',
-      Colors.amber.toARGB32(): '琥珀色',
-      Colors.yellow.toARGB32(): '黄色',
-      Colors.lime.toARGB32(): '青柠色',
-      Colors.lightGreen.toARGB32(): '浅绿色',
-      Colors.green.toARGB32(): '绿色',
-      Colors.teal.toARGB32(): '青色',
-      Colors.cyan.toARGB32(): '天蓝色',
-    };
-    return colorNames[color.toARGB32()] ?? '自定义';
   }
 
   void _showClickActionDialog() async {
@@ -115,6 +146,21 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  void _showLanguageDialog() {
+    final localeProvider = context.read<LocaleProvider>();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return _LanguagePickerDialog(
+          currentOption: localeProvider.currentOption,
+          onSelected: (option) {
+            localeProvider.setLocaleOption(option);
+          },
+        );
+      },
+    );
+  }
+
   void _showDictionaryContentScaleDialog() async {
     final oldScale = _dictionaryContentScale;
     final contentScale = FontLoaderService().getDictionaryContentScale();
@@ -122,8 +168,8 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (context) {
         final dialog = ScaleDialogWidget(
-          title: '软件布局缩放',
-          subtitle: '调整词典内容显示的整体缩放比例',
+          title: context.t.settings.scaleDialog.title,
+          subtitle: context.t.settings.scaleDialog.subtitle,
           currentValue: (_dictionaryContentScale * 100).round().toDouble(),
           min: 50,
           max: 200,
@@ -182,9 +228,9 @@ class _SettingsPageState extends State<SettingsPage> {
               }
             });
             return AlertDialog(
-              title: const Text('保持缩放更改？'),
+              title: Text(context.t.settings.scaleDialog.confirmTitle),
               content: Text(
-                '新的缩放比例为 ${(newScale * 100).round()}%。\n将在 $countdown 秒后自动恢复原比例。',
+                context.t.settings.scaleDialog.confirmBody(percent: (newScale * 100).round(), seconds: countdown),
               ),
               actions: [
                 TextButton(
@@ -193,7 +239,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     dialogResult = false;
                     Navigator.of(dialogContext).pop();
                   },
-                  child: const Text('撤销'),
+                  child: Text(context.t.common.undo),
                 ),
                 FilledButton(
                   onPressed: () {
@@ -201,7 +247,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     dialogResult = true;
                     Navigator.of(dialogContext).pop();
                   },
-                  child: const Text('确认'),
+                  child: Text(context.t.common.confirm),
                 ),
               ],
             );
@@ -219,6 +265,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final updateCheckService = context.watch<DictUpdateCheckService>();
     final appUpdateService = context.watch<AppUpdateService>();
+    // watch LocaleProvider so the language subtitle rebuilds on locale change
+    context.watch<LocaleProvider>();
     final colorScheme = Theme.of(context).colorScheme;
     final contentScale = FontLoaderService().getDictionaryContentScale();
     return Scaffold(
@@ -238,7 +286,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         _buildSettingsTile(
                           context,
-                          title: '云服务',
+                          title: context.t.settings.cloudService,
                           icon: Icons.cloud_outlined,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -260,7 +308,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         _buildSettingsTile(
                           context,
-                          title: '词典管理',
+                          title: context.t.settings.dictionaryManager,
                           icon: Icons.folder_outlined,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -277,7 +325,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         _buildSettingsTile(
                           context,
-                          title: 'AI 配置',
+                          title: context.t.settings.aiConfig,
                           icon: Icons.auto_awesome,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -292,7 +340,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         _buildSettingsTile(
                           context,
-                          title: '字体配置',
+                          title: context.t.settings.fontConfig,
                           icon: Icons.font_download_outlined,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -320,7 +368,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         _buildSettingsTile(
                           context,
-                          title: '主题设置',
+                          title: context.t.settings.appLanguage,
+                          icon: Icons.language_outlined,
+                          iconColor: colorScheme.primary,
+                          subtitle: _getLocaleLabel(context),
+                          onTap: _showLanguageDialog,
+                        ),
+                        _buildSettingsTile(
+                          context,
+                          title: context.t.settings.themeSettings,
                           icon: Icons.palette_outlined,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -335,7 +391,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         _buildSettingsTile(
                           context,
-                          title: '软件布局缩放',
+                          title: context.t.settings.layoutScale,
                           icon: Icons.zoom_in,
                           iconColor: colorScheme.primary,
                           onTap: _showDictionaryContentScaleDialog,
@@ -343,21 +399,21 @@ class _SettingsPageState extends State<SettingsPage> {
                         if (!_isLoading)
                           _buildSettingsTile(
                             context,
-                            title: '点击动作设置',
+                            title: context.t.settings.clickAction,
                             icon: Icons.touch_app_outlined,
                             iconColor: colorScheme.primary,
                             onTap: _showClickActionDialog,
                           ),
                         _buildSettingsTile(
                           context,
-                          title: '底部工具栏设置',
+                          title: context.t.settings.toolbar,
                           icon: Icons.apps,
                           iconColor: colorScheme.primary,
                           onTap: _showToolbarConfigDialog,
                         ),
                         _buildSettingsTile(
                           context,
-                          title: '其他设置',
+                          title: context.t.settings.misc,
                           icon: Icons.settings_suggest_outlined,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -379,7 +435,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         _buildSettingsTile(
                           context,
-                          title: '关于软件',
+                          title: context.t.settings.about,
                           icon: Icons.help_outline,
                           iconColor: colorScheme.primary,
                           showArrow: true,
@@ -502,6 +558,71 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 // ─────────────────────────────────────────────
+// _LanguagePickerDialog
+// ─────────────────────────────────────────────
+
+class _LanguagePickerDialog extends StatefulWidget {
+  const _LanguagePickerDialog({
+    required this.currentOption,
+    required this.onSelected,
+  });
+
+  final AppLocaleOption currentOption;
+  final void Function(AppLocaleOption) onSelected;
+
+  @override
+  State<_LanguagePickerDialog> createState() => _LanguagePickerDialogState();
+}
+
+class _LanguagePickerDialogState extends State<_LanguagePickerDialog> {
+  late AppLocaleOption _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.currentOption;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.t;
+    final options = [
+      (AppLocaleOption.auto, t.language.auto),
+      (AppLocaleOption.zh, t.language.zh),
+      (AppLocaleOption.en, t.language.en),
+    ];
+
+    return AlertDialog(
+      title: Text(t.language.dialogTitle),
+      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: options.map((entry) {
+          final (option, label) = entry;
+          return RadioListTile<AppLocaleOption>(
+            title: Text(label),
+            value: option,
+            groupValue: _selected,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _selected = v);
+              widget.onSelected(v);
+              Navigator.of(context).pop();
+            },
+          );
+        }).toList(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.common.cancel),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // MiscSettingsPage
 // ─────────────────────────────────────────────
 
@@ -553,7 +674,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('其它设置'),
+        title: Text(context.t.settings.misc_page.title),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
@@ -568,7 +689,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                     padding: const EdgeInsets.all(16),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
-                        _buildSectionTitle(context, 'AI 聊天记录管理'),
+                        _buildSectionTitle(context, context.t.settings.misc_page.aiChatTitle),
                         const SizedBox(height: 8),
                         Card(
                           elevation: 0,
@@ -592,8 +713,8 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                   Icons.chat_bubble_outline,
                                   color: colorScheme.primary,
                                 ),
-                                title: const Text('聊天记录总数'),
-                                subtitle: Text('$_recordCount 条记录'),
+                                title: Text(context.t.settings.misc_page.recordCount),
+                                subtitle: Text(context.t.settings.misc_page.records(count: _recordCount)),
                               ),
                               Divider(
                                 height: 1,
@@ -611,11 +732,11 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                   Icons.auto_delete_outlined,
                                   color: colorScheme.primary,
                                 ),
-                                title: const Text('自动清理设置'),
+                                title: Text(context.t.settings.misc_page.autoCleanup),
                                 subtitle: Text(
                                   _autoCleanupDays == 0
-                                      ? '不自动清理'
-                                      : '保留最近 $_autoCleanupDays 天的记录',
+                                      ? context.t.settings.misc_page.noAutoCleanup
+                                      : context.t.settings.misc_page.keepRecentDays(days: _autoCleanupDays),
                                 ),
                                 trailing: const Icon(Icons.chevron_right),
                                 onTap: _showAutoCleanupDialog,
@@ -637,17 +758,17 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                   color: colorScheme.error,
                                 ),
                                 title: Text(
-                                  '清除所有聊天记录',
+                                  context.t.settings.misc_page.clearAll,
                                   style: TextStyle(color: colorScheme.error),
                                 ),
-                                subtitle: const Text('此操作不可恢复'),
+                                subtitle: Text(context.t.common.irreversible),
                                 onTap: _showClearAllConfirmDialog,
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildSectionTitle(context, '辅助查词数据库设置'),
+                        _buildSectionTitle(context, context.t.settings.misc_page.auxDbTitle),
                         const SizedBox(height: 8),
                         Card(
                           elevation: 0,
@@ -671,9 +792,9 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                   Icons.translate,
                                   color: colorScheme.primary,
                                 ),
-                                title: const Text('不询问查词重定向数据库'),
+                                title: Text(context.t.settings.misc_page.skipAskRedirect),
                                 subtitle: Text(
-                                  _neverAskAgain ? '已选择不再询问' : '已恢复询问',
+                                  _neverAskAgain ? context.t.settings.misc_page.skipAskEnabled : context.t.settings.misc_page.skipAskDisabled,
                                 ),
                                 trailing: Switch(
                                   value: _neverAskAgain,
@@ -710,7 +831,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                       : colorScheme.outline,
                                 ),
                                 title: Text(
-                                  '删除辅助查词数据库',
+                                  context.t.settings.misc_page.deleteAuxDb,
                                   style: TextStyle(
                                     color: _englishDbExists
                                         ? colorScheme.error
@@ -719,8 +840,8 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                 ),
                                 subtitle: Text(
                                   _englishDbExists
-                                      ? '英语数据库已安装，点击删除'
-                                      : '暂未安裁任何辅助查词数据库',
+                                      ? context.t.settings.misc_page.auxDbInstalled
+                                      : context.t.settings.misc_page.auxDbNotInstalled,
                                 ),
                                 onTap: _englishDbExists
                                     ? () => _showDeleteAuxDbDialog()
@@ -730,7 +851,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildSectionTitle(context, '词典更新设置'),
+                        _buildSectionTitle(context, context.t.settings.misc_page.dictUpdateTitle),
                         const SizedBox(height: 8),
                         Card(
                           elevation: 0,
@@ -752,8 +873,8 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                               Icons.update,
                               color: colorScheme.primary,
                             ),
-                            title: const Text('自动检查词典更新'),
-                            subtitle: const Text('每天检查本地词典是否有更新'),
+                            title: Text(context.t.settings.misc_page.autoCheckDictUpdate),
+                            subtitle: Text(context.t.settings.misc_page.autoCheckDictUpdateSubtitle),
                             trailing: Switch(
                               value: _autoCheckDictUpdate,
                               onChanged: (value) async {
@@ -797,15 +918,15 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   void _showAutoCleanupDialog() {
     final colorScheme = Theme.of(context).colorScheme;
     final options = [
-      (0, '不自动清理'),
-      (7, '保留最近 7 天'),
-      (30, '保留最近 30 天'),
-      (90, '保留最近 90 天'),
+      (0, context.t.settings.misc_page.noAutoCleanup),
+      (7, context.t.settings.misc_page.keep7Days),
+      (30, context.t.settings.misc_page.keep30Days),
+      (90, context.t.settings.misc_page.keep90Days),
     ];
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('自动清理设置'),
+        title: Text(context.t.settings.misc_page.autoCleanupDialogTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: options.map((option) {
@@ -828,7 +949,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
         ],
       ),
@@ -844,24 +965,24 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
           children: [
             Icon(Icons.warning_amber_rounded, color: colorScheme.error),
             const SizedBox(width: 8),
-            const Text('确认清除'),
+            Text(context.t.settings.misc_page.clearAllConfirmTitle),
           ],
         ),
-        content: const Text('确定要清除所有 AI 聊天记录吗？此操作不可恢复。'),
+        content: Text(context.t.settings.misc_page.clearAllConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           FilledButton(
             onPressed: () async {
               await _chatService.clearAllRecords();
               setState(() => _recordCount = 0);
               Navigator.pop(context);
-              showToast(context, '已清除所有聊天记录');
+              showToast(context, context.t.settings.misc_page.clearAllSuccess);
             },
             style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
-            child: const Text('清除'),
+            child: Text(context.t.common.clear),
           ),
         ],
       ),
@@ -877,14 +998,14 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
           children: [
             Icon(Icons.warning_amber_rounded, color: colorScheme.error),
             const SizedBox(width: 8),
-            const Text('删除数据库'),
+            Text(context.t.settings.misc_page.deleteAuxDbConfirmTitle),
           ],
         ),
-        content: const Text('确定要删除辅助查词数据库吗？删除后可重新下载。'),
+        content: Text(context.t.settings.misc_page.deleteAuxDbConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -893,14 +1014,14 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                 Navigator.pop(context);
                 if (deleted) {
                   setState(() => _englishDbExists = false);
-                  showToast(context, '辅助查词数据库已删除');
+                  showToast(context, context.t.settings.misc_page.deleteAuxDbSuccess);
                 } else {
-                  showToast(context, '数据库文件不存在');
+                  showToast(context, context.t.settings.misc_page.deleteAuxDbNotExist);
                 }
               }
             },
             style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
-            child: const Text('删除'),
+            child: Text(context.t.common.delete),
           ),
         ],
       ),
@@ -941,7 +1062,7 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
     final contentScale = FontLoaderService().getDictionaryContentScale();
 
     final dialog = AlertDialog(
-      title: const Text('点击动作设置'),
+      title: Text(context.t.settings.clickActionDialog.title),
       contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       content: SizedBox(
         width: 450,
@@ -952,7 +1073,7 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
-                '列表第一项将作为点击时的功能，其它通过右键/长按触发',
+                context.t.settings.clickActionDialog.hint,
                 style: TextStyle(
                   fontSize: 13,
                   color: colorScheme.onSurfaceVariant,
@@ -972,7 +1093,7 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
                           horizontal: 16,
                         ),
                         title: Text(
-                          PreferencesService.getActionLabel(_order[index]),
+                          _getLocalizedActionLabel(context, _order[index]),
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -991,7 +1112,7 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
                                     ),
                                     color: colorScheme.surface,
                                     child: Text(
-                                      '点击功能',
+                                      context.t.settings.clickActionDialog.primaryLabel,
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: colorScheme.primary,
@@ -1022,14 +1143,14 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.t.common.cancel),
         ),
         FilledButton(
           onPressed: () {
             widget.onSave(_order);
             Navigator.pop(context);
           },
-          child: const Text('保存'),
+          child: Text(context.t.common.save),
         ),
       ],
     );
@@ -1116,7 +1237,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
   }
 
   void _showMaxItemsError() {
-    showToast(context, '工具栏最多只能有 ${PreferencesService.maxToolbarItems} 个功能');
+    showToast(context, context.t.settings.toolbarDialog.maxItemsError(max: PreferencesService.maxToolbarItems));
   }
 
   @override
@@ -1127,7 +1248,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
 
     final dialog = AlertDialog(
-      title: const Text('底部工具栏设置'),
+      title: Text(context.t.settings.toolbarDialog.title),
       contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       content: SizedBox(
         width: 450,
@@ -1138,7 +1259,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                '拖动调整，分割线以下合并到菜单中，工具栏至多${PreferencesService.maxToolbarItems}个图标',
+                context.t.settings.toolbarDialog.hint(max: PreferencesService.maxToolbarItems),
                 style: TextStyle(
                   fontSize: 12,
                   color: colorScheme.onSurfaceVariant,
@@ -1179,7 +1300,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('完成'),
+          child: Text(context.t.common.done),
         ),
       ],
     );
@@ -1214,7 +1335,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Text(
-                        '分割线 (拖动调整)',
+                        context.t.settings.toolbarDialog.dividerLabel,
                         style: TextStyle(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w500,
@@ -1265,7 +1386,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              isInToolbar ? '工具栏' : '更多菜单',
+              isInToolbar ? context.t.settings.toolbarDialog.toolbar : context.t.settings.toolbarDialog.overflow,
               style: TextStyle(
                 fontSize: 10,
                 color: isInToolbar

@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'pages/dictionary_search.dart';
 import 'core/theme_provider.dart';
+import 'core/locale_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'pages/word_bank_page.dart';
 import 'pages/settings_page.dart';
@@ -28,6 +29,7 @@ import 'services/zstd_service.dart';
 import 'core/utils/toast_utils.dart';
 import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
+import 'i18n/strings.g.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +59,9 @@ void main() async {
     );
     return true;
   };
+
+  // 初始化 slang 翻译（必须在所有 UI 创建之前）
+  LocaleSettings.useDeviceLocaleSync();
 
   Logger.i('========== 应用启动 ==========', tag: 'Startup');
 
@@ -149,6 +154,14 @@ void main() async {
     return;
   }
 
+  // 初始化语言设置（读取用户存储的偏好并应用）
+  try {
+    await LocaleProvider().initialize();
+    Logger.i('语言设置初始化完成', tag: 'Startup');
+  } catch (e) {
+    Logger.w('语言设置初始化失败: $e', tag: 'Startup');
+  }
+
   // 初始化窗口管理器（仅桌面平台）
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
     try {
@@ -187,15 +200,18 @@ void main() async {
   }
 
   runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (context) => ThemeProvider(prefs!)),
-        ChangeNotifierProvider(create: (context) => DownloadManager()),
-        ChangeNotifierProvider(create: (context) => UploadManager()),
-        ChangeNotifierProvider(create: (context) => DictUpdateCheckService()),
-        ChangeNotifierProvider(create: (context) => AppUpdateService()),
-      ],
-      child: const MyApp(),
+    TranslationProvider(
+      child: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (context) => ThemeProvider(prefs!)),
+          ChangeNotifierProvider(create: (_) => LocaleProvider()),
+          ChangeNotifierProvider(create: (context) => DownloadManager()),
+          ChangeNotifierProvider(create: (context) => UploadManager()),
+          ChangeNotifierProvider(create: (context) => DictUpdateCheckService()),
+          ChangeNotifierProvider(create: (context) => AppUpdateService()),
+        ],
+        child: const MyApp(),
+      ),
     ),
   );
 }
@@ -384,8 +400,8 @@ class _MyAppState extends State<MyApp>
   Widget build(BuildContext context) {
     Logger.i('MyApp build 开始', tag: 'MyApp');
     try {
-      return Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
+      return Consumer2<ThemeProvider, LocaleProvider>(
+        builder: (context, themeProvider, localeProvider, child) {
           Logger.i(
             'ThemeProvider Consumer build, themeMode: ${themeProvider.getThemeMode()}',
             tag: 'MyApp',
@@ -399,13 +415,9 @@ class _MyAppState extends State<MyApp>
           return MaterialApp(
             title: 'EasyDict',
             debugShowCheckedModeBanner: false,
-            locale: const Locale('zh', 'CN'),
-            // supportedLocales 必须包含 zh-CN，否则 Flutter locale 解析器
-            // 会因找不到匹配而回退到 en-US，导致 CJK 字形选取使用日文变体。
-            supportedLocales: const [
-              Locale('zh', 'CN'),
-              Locale('en', 'US'),
-            ],
+            locale: localeProvider.flutterLocale,
+            // supportedLocales 由 slang 自动维护，始终包含全部已配置语种
+            supportedLocales: AppLocaleUtils.supportedLocales,
             localizationsDelegates: const [
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
@@ -594,19 +606,19 @@ class _MainScreenState extends State<MainScreen> {
         _buildNavigationDestination(
           icon: Icons.search_outlined,
           selectedIcon: Icons.search,
-          label: '查词',
+          label: context.t.nav.search,
           index: 0,
         ),
         _buildNavigationDestination(
           icon: Icons.style_outlined,
           selectedIcon: Icons.style,
-          label: '单词本',
+          label: context.t.nav.wordBank,
           index: 1,
         ),
         _buildNavigationDestination(
           icon: Icons.tune_outlined,
           selectedIcon: Icons.tune,
-          label: '设置',
+          label: context.t.nav.settings,
           index: 2,
           badgeCount: hasAnyUpdate ? 1 : null,
           showBadgeDot: true,

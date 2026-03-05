@@ -16,6 +16,7 @@ import '../widgets/search_bar.dart';
 import '../components/english_db_download_dialog.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 class DictionarySearchPage extends StatefulWidget {
   const DictionarySearchPage({super.key});
@@ -326,7 +327,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       _searchRecords = [];
     });
     if (mounted) {
-      showToast(context, '历史记录已清除');
+      showToast(context, context.t.search.historyCleared);
     }
   }
 
@@ -353,7 +354,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     // LIKE/GLOB 通配符模式下禁止直接查词，必须从候选词列表点击进入
     if (_isWildcardMode(word)) {
       if (mounted) {
-        showToast(context, '通配符模式下请从候选词列表中选择词条');
+        showToast(context, context.t.search.wildcardNoEntry);
       }
       return;
     }
@@ -370,7 +371,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         if (shouldShow && mounted) {
           final result = await EnglishDbDownloadDialog.show(context);
           if (result == EnglishDbDownloadResult.downloaded && mounted) {
-            showToast(context, '下载完成，搜索 "$word" 以测试功能');
+          showToast(context, context.t.search.dbDownloaded(word: word));
           }
           // 下载弹窗关闭后继续执行查词
         }
@@ -459,7 +460,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       });
 
       if (mounted) {
-        showToast(context, '未找到单词: $word');
+        showToast(context, context.t.search.noResult(word: word));
       }
     }
 
@@ -526,7 +527,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         _onSearchTextChanged(_searchController.text);
                       }
                     },
-                    hintText: '输入单词',
+                    hintText: context.t.search.hint,
                     onTap: () {
                       if (!_wasFocused && _searchController.text.isNotEmpty) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -552,7 +553,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             _showAdvancedOptions = !_showAdvancedOptions;
                           });
                         },
-                        tooltip: '高级选项',
+                        tooltip: context.t.search.advancedOptions,
                         visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
@@ -580,7 +581,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                   _searchWord();
                                 }
                               },
-                        tooltip: '查询',
+                        tooltip: context.t.search.searchBtn,
                         visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
@@ -634,7 +635,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '搜索选项',
+                                context.t.search.searchOptionsTitle,
                                 style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.bold),
                               ),
@@ -648,7 +649,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                   runSpacing: 8,
                                   children: [
                                     FilterChip(
-                                      label: const Text('简繁区分'),
+                                      label: Text(context.t.search.toneExact),
                                       selected: _biaoyiExactMatch,
                                       onSelected: (selected) {
                                         setState(() {
@@ -681,7 +682,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                   children: [
                                     // 精确搜索 - 仅表音文字语言显示
                                     FilterChip(
-                                      label: const Text('精确搜索'),
+                                      label: Text(context.t.search.exactMatch),
                                       selected: _exactMatch,
                                       onSelected: (selected) {
                                         setState(() {
@@ -740,7 +741,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                           child: Text(
-                            _usePhoneticSearch ? '读音候选词' : '搜索结果',
+                            _usePhoneticSearch ? context.t.search.phoneticCandidates : context.t.search.searchResults,
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(
                                   fontWeight: FontWeight.bold,
@@ -798,7 +799,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                '输入单词开始查询',
+                                context.t.search.startHint,
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                             ],
@@ -815,13 +816,21 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 语言代码 → 显示名称
   String _langDisplayName(String lang) {
-    const names = {
-      'zh': '中文', 'ja': '日语', 'ko': '韩语',
-      'en': '英语', 'fr': '法语', 'de': '德语',
-      'es': '西班牙语', 'it': '意大利语', 'ru': '俄语',
-      'pt': '葡萄牙语', 'ar': '阿拉伯语',
-    };
-    return names[lang] ?? lang.toUpperCase();
+    final names = context.t.langNames;
+    switch (lang) {
+      case 'zh': return names.zh;
+      case 'ja': return names.ja;
+      case 'ko': return names.ko;
+      case 'en': return names.en;
+      case 'fr': return names.fr;
+      case 'de': return names.de;
+      case 'es': return names.es;
+      case 'it': return names.it;
+      case 'ru': return names.ru;
+      case 'pt': return names.pt;
+      case 'ar': return names.ar;
+      default: return lang.toUpperCase();
+    }
   }
 
   bool _isLogographicLang(String lang) => lang == 'zh' || lang == 'ja' || lang == 'ko';
@@ -831,7 +840,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final languages = _availableGroups.where((g) => g != 'auto').toList();
     if (languages.isEmpty) {
       return Text(
-        '当前没有已启用的词典',
+        context.t.search.noEnabledDicts,
         style: Theme.of(context).textTheme.bodySmall,
       );
     }
@@ -889,7 +898,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       if (!_isLogographicLang(lang)) {
         chips.add(buildChipWithLangLabel(
           lang: lang,
-          optionLabel: '精确搜索',
+          optionLabel: context.t.search.exactMatch,
           icon: Icons.text_fields,
           selected: _selectedGroup == lang && _exactMatch,
           onTap: () {
@@ -905,7 +914,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       } else {
         chips.add(buildChipWithLangLabel(
           lang: lang,
-          optionLabel: '简繁区分',
+          optionLabel: context.t.search.toneExact,
           icon: Icons.filter_alt_outlined,
           selected: _biaoyiExactMatch,
           onTap: () {
@@ -927,13 +936,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 获取高级搜索提示文本
   String _getAdvancedSearchHint() {
-    return 'LIKE 模式（输入含 % 或 _）：\n'
-        '  % 匹配任意个字符，_ 匹配恰好一个字符\n'
-        '  例：hel% → hello、help；%字 → 汉字、生字；h_llo → hello、hallo\n'
-        '\nGLOB 模式（输入含 * ? [ ] ^），区分大小写：\n'
-        '  * 匹配任意个字符，? 匹配单个字符\n'
-        '  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符\n'
-        '  例：h?llo → hello、hallo；[aeiou]* → 所有元音字母开头的词';
+    return context.t.search.wildcardHint;
   }
 
   Widget _buildHistoryView() {
@@ -953,7 +956,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '历史记录',
+                  context.t.search.historyTitle,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -961,7 +964,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 TextButton.icon(
                   onPressed: _clearHistory,
                   icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('清除'),
+                  label: Text(context.t.search.historyClear),
                 ),
               ],
             ),
@@ -1053,7 +1056,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     await _historyService.removeSearchRecord(record.word);
     await _loadSearchHistory();
     if (mounted) {
-      showToast(context, '已删除 "${record.word}"');
+      showToast(context, context.t.search.historyDeleted(word: record.word));
     }
   }
 

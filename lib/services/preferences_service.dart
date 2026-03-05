@@ -625,4 +625,26 @@ class PreferencesService {
     final p = await prefs;
     await p.setString(_kLastAppUpdateCheckTime, time.toIso8601String());
   }
+
+  // ── 应用语言 ──────────────────────────────────────────────────────────────
+  // 存储值: null / "auto" = 跟随系统；"zh" / "en" = 用户手动选择的语言代码
+  static const String _kAppLocale = 'app_locale';
+
+  /// 读取已存储的语言设置。返回 null 表示"跟随系统"（未配置或已设为 auto）。
+  Future<String?> getAppLocale() async {
+    final p = await prefs;
+    final value = p.getString(_kAppLocale);
+    if (value == null || value == 'auto') return null;
+    return value;
+  }
+
+  /// 保存语言设置。传入 null 表示"跟随系统"。
+  Future<void> setAppLocale(String? localeCode) async {
+    final p = await prefs;
+    if (localeCode == null || localeCode == 'auto') {
+      await p.remove(_kAppLocale);
+    } else {
+      await p.setString(_kAppLocale, localeCode);
+    }
+  }
 }

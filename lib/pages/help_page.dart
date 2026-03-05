@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../services/font_loader_service.dart';
 import '../services/app_update_service.dart';
 import '../components/global_scale_wrapper.dart';
+import '../i18n/strings.g.dart';
 
 class HelpPage extends StatefulWidget {
   const HelpPage({super.key});
@@ -46,7 +47,7 @@ class _HelpPageState extends State<HelpPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('关于软件'),
+        title: Text(context.t.help.title),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
@@ -97,7 +98,7 @@ class _HelpPageState extends State<HelpPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '查词，不折腾',
+                    context.t.help.tagline,
                     style: TextStyle(
                       fontSize: 16,
                       color: colorScheme.onSurfaceVariant,
@@ -114,8 +115,8 @@ class _HelpPageState extends State<HelpPage> {
               children: [
                 _buildSettingsTile(
                   context,
-                  title: '词典反馈',
-                  subtitle: '欢迎提出改进建议',
+                  title: context.t.help.forumTitle,
+                  subtitle: context.t.help.forumSubtitle,
                   icon: Icons.forum_outlined,
                   iconColor: colorScheme.primary,
                   isExternal: true,
@@ -134,7 +135,7 @@ class _HelpPageState extends State<HelpPage> {
                 _buildSettingsTile(
                   context,
                   title: 'GitHub',
-                  subtitle: '查看源码、提交 Issue',
+                  subtitle: context.t.help.githubSubtitle,
                   icon: Icons.code,
                   iconColor: colorScheme.primary,
                   isExternal: true,
@@ -152,8 +153,8 @@ class _HelpPageState extends State<HelpPage> {
                 ),
                 _buildSettingsTile(
                   context,
-                  title: '爱发电',
-                  subtitle: '支持开发者',
+                  title: context.t.help.afdianTitle,
+                  subtitle: context.t.help.afdianSubtitle,
                   icon: Icons.favorite_border,
                   iconColor: colorScheme.primary,
                   isExternal: true,
@@ -299,15 +300,14 @@ class _HelpPageState extends State<HelpPage> {
     VoidCallback? onTap;
 
     if (service.isChecking) {
-      subtitle = '正在检查…';
+      subtitle = context.t.help.checking;
       trailing = const SizedBox(
         width: 18,
         height: 18,
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     } else if (service.hasUpdate) {
-      subtitle =
-          '发现新版本 ${service.latestRelease?.version ?? ''} · 点击前往 GitHub 下载';
+      subtitle = context.t.help.updateAvailable(version: service.latestRelease?.version ?? '');
       trailing = Icon(Icons.open_in_new, color: colorScheme.error, size: 18);
       onTap = () async {
         final url = Uri.tryParse(service.latestRelease?.htmlUrl ?? '');
@@ -316,7 +316,7 @@ class _HelpPageState extends State<HelpPage> {
         }
       };
     } else if (service.latestRelease != null) {
-      subtitle = '已是最新版本 ${service.currentVersion ?? ''}';
+      subtitle = context.t.help.upToDate(version: service.currentVersion ?? '');
       trailing = Icon(
         Icons.check_circle_outline,
         color: colorScheme.primary,
@@ -328,8 +328,7 @@ class _HelpPageState extends State<HelpPage> {
       trailing = const Icon(Icons.refresh, size: 18);
       onTap = () => service.checkForUpdates();
     } else {
-      subtitle =
-          '当前版本 ${service.currentVersion ?? (_packageInfo?.version ?? '')}';
+      subtitle = context.t.help.currentVersion(version: service.currentVersion ?? (_packageInfo?.version ?? ''));
       trailing = const Icon(Icons.refresh, size: 18);
       onTap = () => service.checkForUpdates();
     }
@@ -360,7 +359,7 @@ class _HelpPageState extends State<HelpPage> {
         ],
       ),
       title: Text(
-        '检查更新',
+        context.t.help.checkUpdate,
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(

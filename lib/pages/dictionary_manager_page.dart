@@ -32,6 +32,7 @@ import '../services/external_storage_service.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../services/entry_event_bus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../i18n/strings.g.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
   const DictionaryManagerPage({super.key});
@@ -177,7 +178,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         await _dictManager.setBaseDirectory(dir);
         _enabledDictionaryIds = [];
         await _loadSettings();
-        if (mounted) showToast(context, '词典目录已设置: $dir');
+        if (mounted) showToast(context, context.t.dict.dirSet(dir: dir));
       }
       return;
     }
@@ -210,21 +211,16 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       final goRequest = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('需要文件访问权限'),
-          content: const Text(
-            '访问外部目录需要「所有文件访问」权限。\n\n'
-            '点击「去授权」后，系统将跳转到设置页面，'
-            '请在「管理所有文件」中找到本应用并开启权限，'
-            '然后返回应用即可生效。',
-          ),
+          title: Text(ctx.t.cloud.permissionTitle),
+          content: Text(ctx.t.cloud.permissionBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(ctx.t.common.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('去授权'),
+              child: Text(ctx.t.cloud.goAuthorize),
             ),
           ],
         ),
@@ -234,7 +230,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       final status = await extService.requestManageStoragePermission();
       if (!status.isGranted) {
         if (mounted) {
-          showToast(context, '未获得文件访问权限，操作已取消');
+          showToast(context, context.t.cloud.permissionDenied);
         }
         return;
       }
@@ -246,32 +242,32 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         await _dictManager.setBaseDirectory(appSpecificDir);
         _enabledDictionaryIds = [];
         await _loadSettings();
-        if (mounted) showToast(context, '词典目录已设置: $appSpecificDir');
+        if (mounted) showToast(context, context.t.dict.dirSet(dir: appSpecificDir));
 
       case 1: // 外部公共目录（默认持久路径）
         final targetDir = ExternalStorageService.defaultPersistentDir;
         final ok = await extService.isPathWritable(targetDir);
         if (!ok) {
-          if (mounted) showToast(context, '无法写入 $targetDir，请检查权限');
+          if (mounted) showToast(context, context.t.dict.cantWrite(dir: targetDir));
           return;
         }
         await _dictManager.setBaseDirectory(targetDir);
         _enabledDictionaryIds = [];
         await _loadSettings();
-        if (mounted) showToast(context, '词典目录已设置: $targetDir');
+        if (mounted) showToast(context, context.t.dict.dirSet(dir: targetDir));
 
       case 2: // 自定义路径
         final picked = await FilePicker.platform.getDirectoryPath();
         if (picked == null || !mounted) return;
         final ok = await extService.isPathWritable(picked);
         if (!ok) {
-          if (mounted) showToast(context, '无法写入所选目录，请重新选择');
+          if (mounted) showToast(context, context.t.dict.cantWritePicked);
           return;
         }
         await _dictManager.setBaseDirectory(picked);
         _enabledDictionaryIds = [];
         await _loadSettings();
-        if (mounted) showToast(context, '词典目录已设置: $picked');
+        if (mounted) showToast(context, context.t.dict.dirSet(dir: picked));
     }
   }
 
@@ -301,7 +297,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '权限已授予',
+                      ctx.t.dict.permissionGranted,
                       style: TextStyle(fontSize: 12, color: Colors.green[700]),
                     ),
                   ],
@@ -317,7 +313,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '需申请「所有文件访问」权限',
+                    ctx.t.dict.permissionNeeded,
                     style: TextStyle(fontSize: 12, color: colorScheme.error),
                   ),
                 ],
@@ -325,7 +321,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
             }
 
             return AlertDialog(
-              title: const Text('词典存储位置'),
+              title: Text(context.t.dict.androidChoiceTitle),
               contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               content: SingleChildScrollView(
                 child: Column(
@@ -337,7 +333,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                       value: 0,
                       groupValue: _selected,
                       onChanged: (v) => setLocalState(() => _selected = v!),
-                      title: const Text('应用专属目录'),
+                      title: Text(context.t.dict.androidAppDir),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -356,7 +352,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  '卸载应用后词典数据将被删除',
+                                  context.t.dict.androidAppDirWarning,
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: colorScheme.error,
@@ -380,7 +376,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                       onChanged: (v) => setLocalState(() => _selected = v!),
                       title: Row(
                         children: [
-                          const Text('外部公共目录'),
+                          Text(ctx.t.dict.androidExtDir),
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -392,7 +388,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              '推荐',
+                              ctx.t.dict.androidRecommended,
                               style: TextStyle(
                                 fontSize: 10,
                                 color: colorScheme.onPrimaryContainer,
@@ -418,10 +414,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                                 color: Colors.green[700],
                               ),
                               const SizedBox(width: 4),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
-                                  '卸载或更新应用后词典仍可保留',
-                                  style: TextStyle(fontSize: 11),
+                                  ctx.t.dict.androidExtDirNote,
+                                  style: const TextStyle(fontSize: 11),
                                 ),
                               ),
                             ],
@@ -441,13 +437,13 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                       value: 2,
                       groupValue: _selected,
                       onChanged: (v) => setLocalState(() => _selected = v!),
-                      title: const Text('自定义路径'),
+                      title: Text(ctx.t.dict.androidCustomDir),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '手动选择任意外部目录',
-                            style: TextStyle(fontSize: 11),
+                          Text(
+                            ctx.t.dict.androidCustomDirNote,
+                            style: const TextStyle(fontSize: 11),
                           ),
                           const SizedBox(height: 2),
                           _permBadge(),
@@ -476,8 +472,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                '点击「确定」后系统将跳转到设置页面，'
-                                '请开启「管理所有文件」权限后返回应用。',
+                                ctx.t.dict.permissionDialogBody,
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: colorScheme.onErrorContainer,
@@ -495,11 +490,11 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('取消'),
+                  child: Text(ctx.t.common.cancel),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, {'choice': _selected}),
-                  child: const Text('确定'),
+                  child: Text(ctx.t.common.ok),
                 ),
               ],
             );
@@ -568,15 +563,15 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('词典管理'),
+          title: Text(context.t.dict.title),
           bottom: TabBar(
             tabs: [
-              const Tab(text: '词典排序'),
+              Tab(text: context.t.dict.tabSort),
               Tab(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('词典来源'),
+                    Text(context.t.dict.tabSource),
                     if (updateCount > 0) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -601,7 +596,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   ],
                 ),
               ),
-              const Tab(text: '创作者中心'),
+              Tab(text: context.t.dict.tabCreator),
             ],
           ),
         ),
@@ -704,7 +699,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                           ),
                           child: Center(
                             child: Text(
-                              LanguageUtils.getLanguageDisplayName(lang),
+                              LanguageUtils.getDisplayName(lang, context.t),
                               style: TextStyle(
                                 fontWeight: isSelected
                                     ? FontWeight.bold
@@ -725,7 +720,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               ),
               // 长按拖动提示图标
               Tooltip(
-                message: '长按语言标签可拖动排序',
+                message: context.t.dict.dragHint,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Icon(
@@ -787,9 +782,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 children: [
                   const Icon(Icons.check_circle, color: Colors.green, size: 18),
                   const SizedBox(width: 8),
-                  const Text(
-                    '已启用（长按拖动排序）',
-                    style: TextStyle(
+                  Text(
+                    context.t.dict.enabled,
+                    style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                       color: Colors.green,
@@ -797,7 +792,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   ),
                   const Spacer(),
                   Text(
-                    '${enabledDicts.length} 个',
+                    context.t.dict.enabledCount(count: enabledDicts.length),
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
@@ -820,7 +815,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   Icon(Icons.cancel, color: Colors.grey[600], size: 18),
                   const SizedBox(width: 8),
                   Text(
-                    '已禁用',
+                    context.t.dict.disabled,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -829,7 +824,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   ),
                   const Spacer(),
                   Text(
-                    '${disabledDicts.length} 个',
+                    context.t.dict.disabledCount(count: disabledDicts.length),
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
@@ -870,9 +865,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   children: [
                     // const Icon(Icons.cloud, color: Colors.blue, size: 20),
                     const SizedBox(width: 4),
-                    const Text(
-                      '在线词典列表',
-                      style: TextStyle(
+                    Text(
+                      context.t.dict.onlineDicts,
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -887,7 +882,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                     else ...[
                       if (_onlineDictionaries.isNotEmpty)
                         Text(
-                          '${_onlineDictionaries.length} 个',
+                          context.t.dict.onlineCount(count: _onlineDictionaries.length),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -914,7 +909,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                     child: ListTile(
                       leading: const Icon(Icons.error, color: Colors.red),
                       title: Text(
-                        '加载失败',
+                        context.t.dict.loadFailed,
                         style: TextStyle(color: Colors.red[700]),
                       ),
                       subtitle: Text(_onlineError!),
@@ -942,12 +937,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          '暂无在线词典',
+                          context.t.dict.noOnlineDicts,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '请先在"设置 - 云服务"中配置订阅地址',
+                          context.t.dict.noOnlineDictsHint,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.outline,
@@ -1018,7 +1013,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
-                                      '请先在"词典来源"页面配置云服务并登录',
+                                      context.t.dict.noCreatorDictsHint,
                                       style: TextStyle(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
@@ -1054,7 +1049,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '加载失败',
+                                    context.t.dict.loadFailed,
                                     style: TextStyle(color: colorScheme.error),
                                   ),
                                   const SizedBox(height: 8),
@@ -1070,7 +1065,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                                   FilledButton.icon(
                                     onPressed: _loadUserDictionaries,
                                     icon: const Icon(Icons.refresh),
-                                    label: const Text('重试'),
+                                    label: Text(context.t.common.retry),
                                   ),
                                 ],
                               ),
@@ -1100,7 +1095,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
-                                      '暂无上传的词典',
+                                      context.t.dict.noCreatorDicts,
                                       style: TextStyle(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
@@ -1226,13 +1221,13 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 IconButton(
                   onPressed: () => _showUpdateJsonDialog(dict),
                   icon: Icon(Icons.data_object, color: colorScheme.primary),
-                  tooltip: '更新JSON',
+                  tooltip: context.t.dict.tooltipUpdateJson,
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
                   onPressed: () => _showEditFilesDialog(dict),
                   icon: Icon(Icons.swap_horiz, color: colorScheme.primary),
-                  tooltip: '替换文件',
+                  tooltip: context.t.dict.tooltipReplaceFile,
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
@@ -1241,13 +1236,13 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                     Icons.cloud_upload_outlined,
                     color: colorScheme.primary,
                   ),
-                  tooltip: '推送更新',
+                  tooltip: context.t.dict.tooltipPushUpdate,
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
                   onPressed: () => _handleDeleteDictionary(dict),
                   icon: Icon(Icons.delete_outline, color: colorScheme.error),
-                  tooltip: '删除',
+                  tooltip: context.t.dict.tooltipDelete,
                   visualDensity: VisualDensity.compact,
                 ),
               ],
@@ -1272,16 +1267,16 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定要删除词典 "${dict.name}" 吗？'),
+        title: Text(context.t.dict.deleteConfirmTitle),
+        content: Text(context.t.dict.deleteConfirmBody(name: dict.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
+            child: Text(context.t.common.delete),
           ),
         ],
       ),
@@ -1290,9 +1285,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       try {
         await _userDictsService.deleteDictionary(dict.dictId);
         _loadUserDictionaries();
-        if (mounted) showToast(context, '词典已删除');
+        if (mounted) showToast(context, context.t.dict.deleteSuccess);
       } catch (e) {
-        if (mounted) showToast(context, '删除失败: $e');
+        if (mounted) showToast(context, context.t.dict.deleteFailed(error: '$e'));
       }
     }
   }
@@ -1306,7 +1301,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
             if (!mounted) return;
             _loadUserDictionaries();
             _refreshLocalDictionaries();
-            showToast(context, '词典上传成功');
+            showToast(context, context.t.cloud.uploadSuccess);
           });
         },
       ),
@@ -1320,7 +1315,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         dictId: dict.dictId,
         dictName: dict.name,
         onUpdateSuccess: () {
-          if (mounted) showToast(context, '词典内容已更新');
+          if (mounted) showToast(context, context.t.cloud.uploadSuccess);
         },
       ),
     );
@@ -1341,7 +1336,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
             if (!mounted) return;
             _loadUserDictionaries();
             _refreshLocalDictionaries();
-            showToast(context, '词典文件更新成功');
+            showToast(context, context.t.cloud.updateEntry);
           });
         },
         localPath: localPath,
@@ -1359,7 +1354,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _refreshLocalDictionaries();
-            showToast(context, '推送更新成功');
+            showToast(context, context.t.cloud.pushSuccess);
           });
         },
       ),
@@ -1383,7 +1378,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           color: colorScheme.onPrimary,
         ),
         label: Text(
-          '更新 ($updateCount)',
+          context.t.dict.updateCount(count: updateCount),
           style: TextStyle(color: colorScheme.onPrimary),
         ),
         style: TextButton.styleFrom(
@@ -1402,10 +1397,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               if (updateCheckService.updatableCount > 0 && mounted) {
                 showToast(
                   context,
-                  '发现 ${updateCheckService.updatableCount} 个词典有更新',
+                  context.t.dict.hasUpdates(count: updateCheckService.updatableCount),
                 );
               } else if (mounted) {
-                showToast(context, '所有词典已是最新版本');
+                showToast(context, context.t.dict.allUpToDate);
               }
             },
       icon: isChecking
@@ -1418,7 +1413,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               ),
             )
           : Icon(Icons.refresh, size: 18),
-      label: Text(isChecking ? '检查中...' : '检查更新'),
+      label: Text(isChecking ? context.t.dict.checking : context.t.dict.checkUpdates),
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1445,13 +1440,13 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     return FutureBuilder<String>(
       future: _dictManager.baseDirectory,
       builder: (context, snapshot) {
-        final directory = snapshot.data ?? '加载中...';
+        final directory = snapshot.data ?? context.t.common.loading;
 
         return Card(
           margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: ListTile(
             leading: const Icon(Icons.folder_outlined),
-            title: const Text('本地词典目录'),
+            title: Text(context.t.dict.localDir),
             subtitle: Text(
               directory,
               maxLines: 2,
@@ -1460,7 +1455,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
             trailing: IconButton(
               icon: const Icon(Icons.edit),
               onPressed: _selectDictionaryDirectory,
-              tooltip: '更改目录',
+              tooltip: context.t.dict.changeDirTooltip,
             ),
           ),
         );
@@ -1479,10 +1474,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
             color: Theme.of(context).colorScheme.outline,
           ),
           const SizedBox(height: 16),
-          Text('还没有词典', style: Theme.of(context).textTheme.titleMedium),
+          Text(context.t.dict.noDict, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            '切换到"在线订阅"Tab设置订阅地址\n或点击右下角的商店按钮浏览在线词典',
+            context.t.dict.noDictHint,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).colorScheme.outline,
@@ -1559,7 +1554,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '下载: ${dict.name}',
+                      context.t.dict.downloadDict(name: dict.name),
                       style: const TextStyle(fontSize: 18),
                     ),
                   ),
@@ -1570,15 +1565,15 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '选择要下载的内容:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    Text(
+                      context.t.dict.selectContent,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     CheckboxListTile(
                       dense: true,
                       title: const Text('metadata.json'),
-                      subtitle: const Text('[必选]词典元数据'),
+                      subtitle: Text(context.t.dict.dictMeta),
                       secondary: const Icon(
                         Icons.description,
                         color: Colors.grey,
@@ -1594,7 +1589,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                       CheckboxListTile(
                         dense: true,
                         title: const Text('logo.png'),
-                        subtitle: const Text('[必选]词典图标'),
+                        subtitle: Text(context.t.dict.dictIcon),
                         secondary: const Icon(Icons.image, color: Colors.grey),
                         value: includeLogo,
                         onChanged: (value) {
@@ -1608,7 +1603,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                         dense: true,
                         title: const Text('dictionary.db'),
                         subtitle: Text(
-                          '[必选]词典数据库${dict.formattedDictSize.isNotEmpty ? '（${dict.formattedDictSize}）' : ''}',
+                          dict.formattedDictSize.isNotEmpty
+                              ? context.t.dict.dictDbWithSize(size: dict.formattedDictSize)
+                              : context.t.dict.dictDb,
                         ),
                         secondary: const Icon(
                           Icons.storage,
@@ -1626,7 +1623,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                         dense: true,
                         title: const Text('media.db'),
                         subtitle: Text(
-                          '媒体数据库${dict.formattedMediaSize.isNotEmpty ? '（${dict.formattedMediaSize}）' : ''}',
+                          dict.formattedMediaSize.isNotEmpty
+                              ? context.t.dict.mediaDbWithSize(size: dict.formattedMediaSize)
+                              : context.t.dict.mediaDb,
                         ),
                         secondary: const Icon(
                           Icons.library_music,
@@ -1645,7 +1644,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
+                  child: Text(context.t.common.cancel),
                 ),
                 FilledButton.icon(
                   onPressed: () {
@@ -1659,7 +1658,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                     );
                   },
                   icon: const Icon(Icons.download),
-                  label: const Text('开始下载'),
+                  label: Text(context.t.dict.startDownload),
                 ),
               ],
             );
@@ -1671,7 +1670,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   Future<void> _checkAndUpdateDictionary(RemoteDictionary dict) async {
     if (_storeService == null) {
-      showToast(context, '请先配置云服务地址');
+      showToast(context, context.t.dict.configCloudFirst);
       return;
     }
 
@@ -1679,7 +1678,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       _dictManager.clearMetadataCache(dict.id);
       final metadata = await _dictManager.getDictionaryMetadata(dict.id);
       if (metadata == null) {
-        showToast(context, '无法获取词典信息');
+        showToast(context, context.t.dict.getDictInfoFailed);
         return;
       }
 
@@ -1723,7 +1722,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         await _executeManualUpdate(dict, result, metadata, updateInfo);
       }
     } catch (e) {
-      showToast(context, '更新失败: $e');
+      showToast(context, context.t.dict.updateFailed(error: '$e'));
       Logger.e('更新词典失败: $e', tag: 'DictionaryManager');
     }
   }
@@ -1749,7 +1748,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       );
       await _dictManager.saveDictionaryMetadata(newMetadata);
       if (mounted) {
-        showToast(context, '版本已更新至 ${updateInfo.to}，无需下载文件');
+        showToast(context, context.t.dict.versionUpdated(version: updateInfo.to));
         await _refreshLocalDictionaries();
       }
       return;
@@ -1770,7 +1769,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         for (final fileName in updateInfo.required.files) {
           currentStep++;
           onProgress(
-            '[$currentStep/$totalSteps] 下载 $fileName',
+            context.t.dict.downloading(step: currentStep, total: totalSteps, name: fileName),
             currentStep,
             totalSteps,
           );
@@ -1784,7 +1783,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           )) {
             if (event['type'] == 'progress') {
               onProgress(
-                '[$currentStep/$totalSteps] 下载 $fileName',
+                context.t.dict.downloading(step: currentStep, total: totalSteps, name: fileName),
                 currentStep,
                 totalSteps,
                 receivedBytes: (event['receivedBytes'] as num).toInt(),
@@ -1805,7 +1804,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         if (updateInfo.required.entries.isNotEmpty) {
           currentStep++;
           onProgress(
-            '[$currentStep/$totalSteps] 下载条目更新',
+            context.t.dict.downloadingEntries(step: currentStep, total: totalSteps),
             currentStep,
             totalSteps,
           );
@@ -1853,12 +1852,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         );
         await _dictManager.saveDictionaryMetadata(newMetadata);
 
-        showToast(context, '更新成功');
+        showToast(context, context.t.dict.updateSuccess);
         await _refreshLocalDictionaries();
       },
       onError: (error) {
         if (!mounted) return;
-        showToast(context, '更新失败: $error');
+        showToast(context, context.t.dict.updateFailed(error: '$error'));
       },
     );
   }
@@ -1881,7 +1880,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     if (includeMedia) filesToDownload.add('media.db');
 
     if (filesToDownload.isEmpty) {
-      showToast(context, '没有选择要更新的文件');
+      showToast(context, context.t.dict.noFileSelected);
       return;
     }
 
@@ -1896,7 +1895,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         for (var i = 0; i < filesToDownload.length; i++) {
           final fileName = filesToDownload[i];
           final step = i + 1;
-          onProgress('[$step/$totalSteps] 下载 $fileName', step, totalSteps);
+          onProgress(context.t.dict.downloading(step: step, total: totalSteps, name: fileName), step, totalSteps);
 
           final savePath = path.join(dictDir, fileName);
           bool downloadOk = false;
@@ -1907,7 +1906,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           )) {
             if (event['type'] == 'progress') {
               onProgress(
-                '[$step/$totalSteps] 下载 $fileName',
+                context.t.dict.downloading(step: step, total: totalSteps, name: fileName),
                 step,
                 totalSteps,
                 receivedBytes: (event['receivedBytes'] as num).toInt(),
@@ -1932,12 +1931,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           _dictManager.clearMetadataCache(dict.id);
         }
 
-        showToast(context, '更新成功');
+        showToast(context, context.t.dict.updateSuccess);
         await _refreshLocalDictionaries();
       },
       onError: (error) {
         if (!mounted) return;
-        showToast(context, '更新失败: $error');
+        showToast(context, context.t.dict.updateFailed(error: '$error'));
       },
     );
   }
@@ -2061,7 +2060,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                 : Icons.download_outlined,
             color: colorScheme.primary,
           ),
-          tooltip: dict.isDownloaded ? '更新词典' : '下载词典',
+          tooltip: dict.isDownloaded ? context.t.dict.tooltipUpdate : context.t.dict.tooltipDownload,
           onPressed: () {
             if (dict.isDownloaded) {
               _checkAndUpdateDictionary(dict);
@@ -2076,22 +2075,22 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   // 格式化更新时间
   String _formatUpdateTime(DateTime? dateTime) {
-    if (dateTime == null) return '未知';
+    if (dateTime == null) return context.t.dict.dateUnknown;
     final now = DateTime.now();
     final diff = now.difference(dateTime);
 
     if (diff.inDays > 365) {
-      return '${(diff.inDays / 365).floor()}年前';
+      return context.t.dict.yearsAgo(n: (diff.inDays / 365).floor());
     } else if (diff.inDays > 30) {
-      return '${(diff.inDays / 30).floor()}个月前';
+      return context.t.dict.monthsAgo(n: (diff.inDays / 30).floor());
     } else if (diff.inDays > 0) {
-      return '${diff.inDays}天前';
+      return context.t.dict.daysAgo(n: diff.inDays);
     } else if (diff.inHours > 0) {
-      return '${diff.inHours}小时前';
+      return context.t.dict.hoursAgo(n: diff.inHours);
     } else if (diff.inMinutes > 0) {
-      return '${diff.inMinutes}分钟前';
+      return context.t.dict.minutesAgo(n: diff.inMinutes);
     } else {
-      return '刚刚';
+      return context.t.dict.justNow;
     }
   }
 }
@@ -2147,7 +2146,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '更新词典 - ${widget.dictName}',
+              context.t.dict.updateDictTitle(name: widget.dictName),
               style: const TextStyle(fontSize: 18),
             ),
           ),
@@ -2160,9 +2159,9 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
           children: [
             TabBar(
               controller: _tabController,
-              tabs: const [
-                Tab(text: '智能更新'),
-                Tab(text: '手动选择'),
+              tabs: [
+                Tab(text: context.t.dict.smartUpdate),
+                Tab(text: context.t.dict.manualSelect),
               ],
               labelColor: colorScheme.primary,
               unselectedLabelColor: colorScheme.onSurfaceVariant,
@@ -2185,12 +2184,12 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, null),
-          child: const Text('取消'),
+          child: Text(context.t.common.cancel),
         ),
         FilledButton.icon(
           onPressed: () => _handleUpdate(info),
           icon: const Icon(Icons.update),
-          label: const Text('开始更新'),
+          label: Text(context.t.dict.startDownload),
         ),
       ],
     );
@@ -2220,7 +2219,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
             ),
             const SizedBox(height: 16),
             Text(
-              '已是最新版本',
+              context.t.dict.upToDate,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -2235,7 +2234,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '当前词典没有可用的更新',
+                context.t.dict.noUpdates,
                 style: TextStyle(
                   fontSize: 13,
                   color: colorScheme.onSurfaceVariant,
@@ -2268,7 +2267,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
             ),
             const SizedBox(height: 16),
             Text(
-              '已是最新版本',
+              context.t.dict.upToDate,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -2283,7 +2282,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '当前版本: v${info.to}',
+                context.t.dict.currentVersion(version: info.to),
                 style: TextStyle(
                   fontSize: 13,
                   color: colorScheme.primary,
@@ -2318,7 +2317,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
             ),
           ),
           const SizedBox(height: 16),
-          const Text('更新历史:', style: TextStyle(fontWeight: FontWeight.w500)),
+          Text(context.t.dict.updateHistory, style: const TextStyle(fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           ...info.history.map(
             (h) => Padding(
@@ -2347,7 +2346,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
             ),
           ),
           const SizedBox(height: 16),
-          const Text('需要下载:', style: TextStyle(fontWeight: FontWeight.w500)),
+          Text(context.t.dict.filesToDownload, style: const TextStyle(fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           if (info.required.files.isNotEmpty)
             Padding(
@@ -2356,7 +2355,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
                 children: [
                   const Icon(Icons.insert_drive_file, size: 16),
                   const SizedBox(width: 4),
-                  Text('文件: ${info.required.files.join(", ")}'),
+                  Text(context.t.dict.fileLabel(files: info.required.files.join(', '))),
                 ],
               ),
             ),
@@ -2367,7 +2366,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
                 children: [
                   const Icon(Icons.list, size: 16),
                   const SizedBox(width: 4),
-                  Text('条目: ${info.required.entries.length} 个'),
+                  Text(context.t.dict.entryLabel(count: info.required.entries.length)),
                 ],
               ),
             ),
@@ -2384,15 +2383,15 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 8),
-              const Text(
-                '选择要更新的内容:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Text(
+                context.t.dict.selectContent,
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               CheckboxListTile(
                 dense: true,
                 title: const Text('metadata.json'),
-                subtitle: const Text('词典元数据'),
+                subtitle: Text(context.t.dict.dictMeta),
                 secondary: const Icon(Icons.description, color: Colors.grey),
                 value: _includeMetadata,
                 onChanged: (value) {
@@ -2404,7 +2403,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
               CheckboxListTile(
                 dense: true,
                 title: const Text('logo.png'),
-                subtitle: const Text('词典图标'),
+                subtitle: Text(context.t.dict.dictIcon),
                 secondary: const Icon(Icons.image, color: Colors.grey),
                 value: _includeLogo,
                 onChanged: (value) {
@@ -2416,7 +2415,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
               CheckboxListTile(
                 dense: true,
                 title: const Text('dictionary.db'),
-                subtitle: const Text('词典数据库'),
+                subtitle: Text(context.t.dict.dictDb),
                 secondary: const Icon(Icons.storage, color: Colors.blue),
                 value: _includeDb,
                 onChanged: (value) {
@@ -2428,7 +2427,7 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
               CheckboxListTile(
                 dense: true,
                 title: const Text('media.db'),
-                subtitle: const Text('媒体数据库'),
+                subtitle: Text(context.t.dict.mediaDb),
                 secondary: const Icon(
                   Icons.library_music,
                   color: Colors.purple,
@@ -2452,13 +2451,13 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
       if (info == null ||
           info.from == info.to ||
           (info.required.files.isEmpty && info.required.entries.isEmpty)) {
-        showToast(context, '没有可用的智能更新');
+        showToast(context, context.t.dict.noSmartUpdate);
         return;
       }
       Navigator.pop(context, {'type': 'smart'});
     } else {
       if (!_includeMetadata && !_includeLogo && !_includeDb && !_includeMedia) {
-        showToast(context, '请至少选择一项要更新的内容');
+        showToast(context, context.t.dict.selectAtLeastOneItem);
         return;
       }
       Navigator.pop(context, {
@@ -2519,7 +2518,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('词典详情'),
+        title: Text(context.t.dict.detailTitle),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
@@ -2559,9 +2558,9 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                             Icons.delete_forever,
                             color: Colors.red,
                           ),
-                          label: const Text(
-                            '删除词典',
-                            style: TextStyle(color: Colors.red),
+                          label: Text(
+                            context.t.dict.deleteDictTitle,
+                            style: const TextStyle(color: Colors.red),
                           ),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: Colors.red),
@@ -2779,7 +2778,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
               ),
               const SizedBox(width: 8),
               Text(
-                '统计信息',
+                context.t.dict.statsTitle,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -2796,7 +2795,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 Expanded(
                   child: _buildStatItem(
                     icon: Icons.text_fields,
-                    label: '词条数',
+                    label: context.t.dict.entryCount,
                     value: '${_stats!.entryCount}',
                     color: colorScheme.primary,
                     onTap: _stats!.entryCount > 0
@@ -2808,7 +2807,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 Expanded(
                   child: _buildStatItem(
                     icon: Icons.music_note,
-                    label: '音频文件',
+                    label: context.t.dict.audioFiles,
                     value: '${_stats!.audioCount}',
                     color: colorScheme.tertiary,
                   ),
@@ -2817,7 +2816,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 Expanded(
                   child: _buildStatItem(
                     icon: Icons.image,
-                    label: '图片文件',
+                    label: context.t.dict.imageFiles,
                     value: '${_stats!.imageCount}',
                     color: colorScheme.secondary,
                   ),
@@ -2926,7 +2925,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
               Icon(Icons.info_outline, size: 20, color: colorScheme.primary),
               const SizedBox(width: 8),
               Text(
-                '词典信息',
+                context.t.dict.dictInfoTitle,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -2942,7 +2941,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
               Expanded(
                 child: _buildMetaChip(
                   icon: Icons.tag,
-                  label: '版本',
+                  label: context.t.dict.versionLabel,
                   value: 'v${metadata.version}',
                   colorScheme: colorScheme,
                 ),
@@ -2951,7 +2950,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
               Expanded(
                 child: _buildMetaChip(
                   icon: Icons.update,
-                  label: '更新',
+                  label: context.t.dict.updatedLabel,
                   value: _formatDate(metadata.updatedAt),
                   colorScheme: colorScheme,
                 ),
@@ -2981,15 +2980,15 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
           ],
           // 发布者 / 维护者 / 联系方式
           if (metadata.publisher.isNotEmpty)
-            _buildInfoRow(Icons.business_outlined, '发布者', metadata.publisher),
+            _buildInfoRow(Icons.business_outlined, context.t.dict.publisher, metadata.publisher),
           if (metadata.maintainer.isNotEmpty &&
               metadata.maintainer != metadata.publisher)
-            _buildInfoRow(Icons.person_outline, '维护者', metadata.maintainer),
+            _buildInfoRow(Icons.person_outline, context.t.dict.maintainer, metadata.maintainer),
           if (metadata.contactMaintainer != null &&
               metadata.contactMaintainer!.isNotEmpty)
             _buildInfoRow(
               Icons.contact_mail_outlined,
-              '联系方式',
+              context.t.dict.contact,
               metadata.contactMaintainer!,
             ),
           // ID: 置于底部，次要样式
@@ -3080,7 +3079,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
               Icon(Icons.folder_outlined, size: 20, color: colorScheme.primary),
               const SizedBox(width: 8),
               Text(
-                '文件信息',
+                context.t.dict.filesTitle,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -3099,7 +3098,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
 
               if (!snapshot.hasData) {
                 return Text(
-                  '无法获取文件信息',
+                  context.t.dict.cannotGetFileInfo,
                   style: TextStyle(color: colorScheme.error),
                 );
               }
@@ -3109,21 +3108,21 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                 children: [
                   _buildFileInfoRow(
                     'metadata.json',
-                    info['hasMetadata'] == true ? '存在' : '缺失',
+                    info['hasMetadata'] == true ? context.t.dict.fileExists : context.t.dict.fileMissing,
                     info['hasMetadata'] == true,
                   ),
                   _buildFileInfoRow(
                     'logo.png',
-                    info['hasLogo'] == true ? '存在' : '缺失',
+                    info['hasLogo'] == true ? context.t.dict.fileExists : context.t.dict.fileMissing,
                     info['hasLogo'] == true,
                   ),
                   _buildFileInfoRow(
                     'dictionary.db',
-                    info['hasDatabase'] == true ? '存在' : '缺失',
+                    info['hasDatabase'] == true ? context.t.dict.fileExists : context.t.dict.fileMissing,
                     info['hasDatabase'] == true,
                   ),
                   if (info['hasAudios'] == true || info['hasImages'] == true)
-                    _buildFileInfoRow('media.db', '存在', true),
+                    _buildFileInfoRow('media.db', context.t.dict.fileExists, true),
                 ],
               );
             },
@@ -3211,25 +3210,25 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.delete_forever, color: Colors.red),
-            SizedBox(width: 8),
-            Text('删除词典'),
+            const Icon(Icons.delete_forever, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(context.t.dict.deleteDictTitle),
           ],
         ),
         content: Text(
-          '确定删除「${metadata.name}」？\n\n这将删除该词典的所有文件（包括数据库、媒体、元数据等），且无法恢复。',
+          context.t.dict.deleteDictBody(name: metadata.name),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
+            child: Text(context.t.common.delete),
           ),
         ],
       ),
@@ -3248,11 +3247,11 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
       // 删除词典文件夹
       await dictManager.deleteDictionary(metadata.id);
       if (mounted) {
-        showToast(context, '词典「${metadata.name}」已删除');
+        showToast(context, context.t.dict.deleteDictSuccess(name: metadata.name));
         Navigator.pop(context); // 返回词典管理页
       }
     } catch (e) {
-      if (mounted) showToast(context, '删除失败: $e');
+      if (mounted) showToast(context, context.t.dict.deleteDictFailed(error: '$e'));
     }
   }
 
@@ -3311,7 +3310,7 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          const Text('批量更新词典'),
+          Text(context.t.dict.batchUpdateTitle),
           const Spacer(),
           if (_isRefreshing)
             const SizedBox(
@@ -3323,7 +3322,7 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _refresh,
-              tooltip: '重新检查更新',
+              tooltip: context.t.dict.recheck,
             ),
         ],
       ),
@@ -3335,11 +3334,11 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.t.common.cancel),
         ),
         FilledButton(
           onPressed: _selectedDictIds.isEmpty ? null : _startBatchUpdate,
-          child: Text('更新 (${_selectedDictIds.length})'),
+          child: Text(context.t.dict.batchUpdateCount(count: _selectedDictIds.length)),
         ),
       ],
     );
@@ -3355,7 +3354,7 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
         Row(
           children: [
             Text(
-              '发现 ${updatableDicts.length} 个词典有更新',
+              context.t.dict.batchHasUpdates(count: updatableDicts.length),
               style: TextStyle(
                 color: colorScheme.primary,
                 fontWeight: FontWeight.w500,
@@ -3374,8 +3373,8 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
               },
               child: Text(
                 _selectedDictIds.length == updatableDicts.length
-                    ? '取消全选'
-                    : '全选',
+                    ? context.t.dict.deselectAll
+                    : context.t.dict.selectAll,
               ),
             ),
           ],
@@ -3403,10 +3402,10 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
                 },
                 title: Text(dictId),
                 subtitle: Text(
-                  'v${info.from} → v${info.to} | ${info.required.files.length} 个文件',
+                  context.t.dict.versionRange(from: info.from, to: info.to, files: info.required.files.length),
                 ),
                 secondary: Text(
-                  '${info.history.length} 条更新',
+                  context.t.dict.updateRecordCount(count: info.history.length),
                   style: TextStyle(fontSize: 12, color: colorScheme.outline),
                 ),
               );
@@ -3450,7 +3449,7 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
 
             for (final fileName in updateInfo.required.files) {
               step++;
-              onProgress('[$step/$totalSteps] 下载 $fileName', step, totalSteps);
+              onProgress(context.t.dict.downloading(step: step, total: totalSteps, name: fileName), step, totalSteps);
 
               final savePath = path.join(dictDir, fileName);
               bool downloadOk = false;
@@ -3462,7 +3461,7 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
                   )) {
                 if (event['type'] == 'progress') {
                   onProgress(
-                    '[$step/$totalSteps] 下载 $fileName',
+                    context.t.dict.downloading(step: step, total: totalSteps, name: fileName),
                     step,
                     totalSteps,
                     receivedBytes: (event['receivedBytes'] as num).toInt(),
@@ -3482,7 +3481,7 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
 
             if (updateInfo.required.entries.isNotEmpty) {
               step++;
-              onProgress('[$step/$totalSteps] 下载条目更新', step, totalSteps);
+              onProgress(context.t.dict.downloadingEntries(step: step, total: totalSteps), step, totalSteps);
 
               final zstdData = await widget.userDictsService
                   .downloadEntryUpdates(dictId, updateInfo.required.entries);

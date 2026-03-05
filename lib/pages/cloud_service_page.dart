@@ -23,6 +23,7 @@ import '../data/models/dictionary_metadata.dart';
 import '../data/database_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 import '../components/global_scale_wrapper.dart';
 import '../components/transfer_progress_panel.dart';
 
@@ -126,7 +127,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _currentUser = null;
       });
       if (mounted) {
-        showToast(context, '订阅地址已变更，已退出当前账号');
+        showToast(context, context.t.cloud.subscriptionChanged);
       }
     }
 
@@ -148,7 +149,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
     _currentBaseUrl = url;
 
     if (mounted) {
-      showToast(context, '在线订阅地址已保存');
+      showToast(context, context.t.cloud.subscriptionSaved);
     }
   }
 
@@ -162,24 +163,24 @@ class _CloudServicePageState extends State<CloudServicePage> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('登录'),
+          title: Text(context.t.cloud.loginDialogTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: identifierController,
-                decoration: const InputDecoration(
-                  labelText: '用户名或邮箱',
-                  prefixIcon: Icon(Icons.person_outlined),
+                decoration: InputDecoration(
+                  labelText: context.t.cloud.usernameOrEmail,
+                  prefixIcon: const Icon(Icons.person_outlined),
                 ),
                 enabled: !isLoading,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: passwordController,
-                decoration: const InputDecoration(
-                  labelText: '密码',
-                  prefixIcon: Icon(Icons.lock_outlined),
+                decoration: InputDecoration(
+                  labelText: context.t.cloud.passwordLabel,
+                  prefixIcon: const Icon(Icons.lock_outlined),
                 ),
                 obscureText: true,
                 autofillHints: const ['password'],
@@ -190,7 +191,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
           actions: [
             TextButton(
               onPressed: isLoading ? null : () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(context.t.common.cancel),
             ),
             FilledButton(
               onPressed: isLoading
@@ -214,7 +215,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('登录'),
+                  : Text(context.t.cloud.loginBtn),
             ),
           ],
         ),
@@ -234,25 +235,25 @@ class _CloudServicePageState extends State<CloudServicePage> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('注册'),
+          title: Text(context.t.cloud.registerDialogTitle),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: usernameController,
-                  decoration: const InputDecoration(
-                    labelText: '用户名',
-                    prefixIcon: Icon(Icons.person_outlined),
+                  decoration: InputDecoration(
+                    labelText: context.t.cloud.usernameLabel,
+                    prefixIcon: const Icon(Icons.person_outlined),
                   ),
                   enabled: !isLoading,
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: '邮箱',
-                    prefixIcon: Icon(Icons.email_outlined),
+                  decoration: InputDecoration(
+                    labelText: context.t.cloud.emailLabel,
+                    prefixIcon: const Icon(Icons.email_outlined),
                   ),
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const ['email'],
@@ -261,9 +262,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: passwordController,
-                  decoration: const InputDecoration(
-                    labelText: '密码',
-                    prefixIcon: Icon(Icons.lock_outlined),
+                  decoration: InputDecoration(
+                    labelText: context.t.cloud.passwordLabel,
+                    prefixIcon: const Icon(Icons.lock_outlined),
                   ),
                   obscureText: true,
                   enabled: !isLoading,
@@ -271,9 +272,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: confirmPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: '确认密码',
-                    prefixIcon: Icon(Icons.lock_outlined),
+                  decoration: InputDecoration(
+                    labelText: context.t.cloud.confirmPasswordLabel,
+                    prefixIcon: const Icon(Icons.lock_outlined),
                   ),
                   obscureText: true,
                   enabled: !isLoading,
@@ -284,19 +285,19 @@ class _CloudServicePageState extends State<CloudServicePage> {
           actions: [
             TextButton(
               onPressed: isLoading ? null : () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(context.t.common.cancel),
             ),
             FilledButton(
               onPressed: isLoading
                   ? null
                   : () async {
                       if (usernameController.text.trim().isEmpty) {
-                        showToast(context, '请输入用户名');
+                        showToast(context, context.t.cloud.registerUsernameRequired);
                         return;
                       }
                       if (passwordController.text !=
                           confirmPasswordController.text) {
-                        showToast(context, '两次输入的密码不一致');
+                        showToast(context, context.t.cloud.registerPasswordMismatch);
                         return;
                       }
                       setDialogState(() => isLoading = true);
@@ -318,7 +319,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('注册'),
+                  : Text(context.t.cloud.registerBtn),
             ),
           ],
         ),
@@ -331,7 +332,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
     String password,
   ) async {
     if (identifier.isEmpty || password.isEmpty) {
-      showToast(context, '请输入用户名/邮箱和密码');
+      showToast(context, context.t.cloud.loginRequired);
       return false;
     }
 
@@ -352,10 +353,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = result.user;
       });
-      showToast(context, '登录成功');
+      showToast(context, context.t.cloud.loginSuccess);
       return true;
     } else {
-      showToast(context, result.error ?? '登录失败');
+      showToast(context, result.error ?? context.t.cloud.loginFailed);
       return false;
     }
   }
@@ -366,7 +367,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
     String username,
   ) async {
     if (email.isEmpty || password.isEmpty || username.isEmpty) {
-      showToast(context, '请输入邮箱、用户名和密码');
+      showToast(context, context.t.cloud.registerRequired);
       return false;
     }
 
@@ -388,10 +389,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = result.user;
       });
-      showToast(context, '注册成功');
+      showToast(context, context.t.cloud.registerSuccess);
       return true;
     } else {
-      showToast(context, result.error ?? '注册失败');
+      showToast(context, result.error ?? context.t.cloud.registerFailed);
       return false;
     }
   }
@@ -404,12 +405,12 @@ class _CloudServicePageState extends State<CloudServicePage> {
       _isLoggedIn = false;
       _currentUser = null;
     });
-    showToast(context, '已退出登录');
+    showToast(context, context.t.cloud.loggedOut);
   }
 
   void _handleSyncToCloud() {
     if (!_isLoggedIn) {
-      showToast(context, '请先登录');
+      showToast(context, context.t.cloud.loginFirst);
       return;
     }
     _showUploadConfirmDialog();
@@ -419,19 +420,19 @@ class _CloudServicePageState extends State<CloudServicePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('上传设置'),
-        content: const Text('确定要将本地设置上传到云端吗？这将覆盖云端的设置数据。'),
+        title: Text(context.t.cloud.uploadTitle),
+        content: Text(context.t.cloud.uploadConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _doUploadSettings();
             },
-            child: const Text('确定'),
+            child: Text(context.t.common.ok),
           ),
         ],
       ),
@@ -446,7 +447,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
     try {
       final zipResult = await _syncService.createSettingsZip();
       if (!zipResult.success) {
-        if (mounted) showToast(context, zipResult.error ?? '创建设置包失败');
+        if (mounted) showToast(context, zipResult.error ?? context.t.cloud.createPackageFailed);
         return;
       }
 
@@ -459,9 +460,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
       if (!mounted) return;
 
       if (uploadResult.success) {
-        showToast(context, '设置已上传到云端');
+        showToast(context, context.t.cloud.uploadSuccess);
       } else {
-        showToast(context, uploadResult.error ?? '上传失败');
+        showToast(context, uploadResult.error ?? context.t.cloud.uploadFailed);
       }
     } finally {
       if (mounted) setState(() => _isSyncing = false);
@@ -470,7 +471,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
 
   void _handleSyncFromCloud() {
     if (!_isLoggedIn) {
-      showToast(context, '请先登录');
+      showToast(context, context.t.cloud.loginFirst);
       return;
     }
     _showDownloadConfirmDialog();
@@ -480,20 +481,19 @@ class _CloudServicePageState extends State<CloudServicePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('下载设置'),
-        content: const Text('确定要从云端下载设置吗？这将覆盖本地的设置数据。'),
-
+        title: Text(context.t.cloud.downloadTitle),
+        content: Text(context.t.cloud.downloadConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _doDownloadSettings();
             },
-            child: const Text('确定'),
+            child: Text(context.t.common.ok),
           ),
         ],
       ),
@@ -511,12 +511,12 @@ class _CloudServicePageState extends State<CloudServicePage> {
       if (!mounted) return;
 
       if (!downloadResult.success) {
-        showToast(context, downloadResult.error ?? '下载失败');
+        showToast(context, downloadResult.error ?? context.t.cloud.downloadFailed);
         return;
       }
 
       if (downloadResult.data == null) {
-        showToast(context, '云端暂无设置数据');
+        showToast(context, context.t.cloud.downloadEmpty);
         return;
       }
 
@@ -536,11 +536,11 @@ class _CloudServicePageState extends State<CloudServicePage> {
         // 等下一帧主题重建完成后再显示气泡，确保气泡使用新主题样式
         if (mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) showToast(context, '设置已从云端同步');
+            if (mounted) showToast(context, context.t.cloud.downloadSuccess);
           });
         }
       } else {
-        showToast(context, extractResult.error ?? '解压失败');
+        showToast(context, extractResult.error ?? context.t.cloud.extractFailed);
       }
     } finally {
       if (mounted) setState(() => _isSyncing = false);
@@ -556,7 +556,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
             CustomScrollView(
               slivers: [
                 SliverAppBar(
-                  title: const Text('云服务'),
+                  title: Text(context.t.cloud.title),
                   centerTitle: true,
                   pinned: true,
                   backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -624,9 +624,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  '在线订阅地址',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                Text(
+                  context.t.cloud.subscriptionLabel,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),
@@ -635,7 +635,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
               controller: _urlController,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: '请输入词典订阅网址',
+                hintText: context.t.cloud.subscriptionHint,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -653,13 +653,13 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.save_outlined),
                   onPressed: _saveSettings,
-                  tooltip: '保存',
+                  tooltip: context.t.cloud.subscriptionSaveTooltip,
                 ),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '设置订阅地址后可查看和下载在线词典',
+              context.t.cloud.subscriptionHint2,
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
@@ -696,9 +696,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  '账户管理',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                Text(
+                  context.t.cloud.accountTitle,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 if (_isSyncing) ...[
                   const SizedBox(width: 8),
@@ -733,7 +733,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
               trailing: TextButton.icon(
                 onPressed: _handleLogout,
                 icon: const Icon(Icons.logout, size: 18),
-                label: const Text('退出'),
+                label: Text(context.t.cloud.logoutBtn),
                 style: TextButton.styleFrom(foregroundColor: colorScheme.error),
               ),
             ),
@@ -748,7 +748,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
                           ? _showLoginDialog
                           : null,
                       icon: const Icon(Icons.login, size: 18),
-                      label: const Text('登录'),
+                      label: Text(context.t.cloud.loginBtn),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -758,7 +758,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
                           ? _showRegisterDialog
                           : null,
                       icon: const Icon(Icons.person_add, size: 18),
-                      label: const Text('注册'),
+                      label: Text(context.t.cloud.registerBtn),
                     ),
                   ),
                 ],
@@ -777,10 +777,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
               color: canSync ? colorScheme.primary : colorScheme.outline,
             ),
             title: Text(
-              '同步到云端',
+              context.t.cloud.syncToCloud,
               style: TextStyle(color: canSync ? null : colorScheme.outline),
             ),
-            subtitle: const Text('将本地设置上传到云端'),
+            subtitle: Text(context.t.cloud.syncToCloudSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: canSync ? _handleSyncToCloud : null,
           ),
@@ -796,10 +796,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
               color: canSync ? colorScheme.primary : colorScheme.outline,
             ),
             title: Text(
-              '从云端同步',
+              context.t.cloud.syncFromCloud,
               style: TextStyle(color: canSync ? null : colorScheme.outline),
             ),
-            subtitle: const Text('从云端下载设置到本地'),
+            subtitle: Text(context.t.cloud.syncFromCloudSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: canSync ? _handleSyncFromCloud : null,
           ),
@@ -834,7 +834,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '在线词典 (${_availableDictionaries.length})',
+                  context.t.cloud.onlineDicts(count: _availableDictionaries.length),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -844,7 +844,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
             ),
             const SizedBox(height: 12),
             Text(
-              '已连接到订阅源，可在"词典管理"中查看和下载词典',
+              context.t.cloud.onlineDictsConnected,
               style: TextStyle(
                 fontSize: 13,
                 color: colorScheme.onSurfaceVariant,
@@ -1003,7 +1003,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
       if (jsonLines.isEmpty) {
         if (mounted) {
-          showToast(context, '没有有效的条目需要推送');
+          showToast(context, context.t.cloud.noValidEntries);
           setState(() => _isPushing = false);
         }
         return;
@@ -1082,12 +1082,12 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
         }
       } else {
         if (mounted) {
-          showToast(context, result.error ?? '推送失败');
+          showToast(context, result.error ?? context.t.cloud.pushFailedGeneral);
         }
       }
     } catch (e) {
       if (mounted) {
-        showToast(context, '推送失败: $e');
+        showToast(context, context.t.cloud.pushFailed(error: '$e'));
         Logger.i('推送失败: $e', tag: 'PushUpdates');
       }
     } finally {
@@ -1102,7 +1102,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AlertDialog(
-      title: const Text('推送更新'),
+      title: Text(context.t.cloud.pushUpdatesTitle),
       content: SizedBox(
         width: 500,
         child: Column(
@@ -1114,9 +1114,9 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
             else if (_error != null)
               Text(_error!, style: TextStyle(color: colorScheme.error))
             else if (_updateRecords.isEmpty)
-              const Text('没有需要推送的更新记录')
+              Text(context.t.cloud.noPushUpdates)
             else ...[
-              Text('发现 ${_updateRecords.length} 条更新记录：'),
+              Text(context.t.cloud.pushUpdateCount(count: _updateRecords.length)),
               const SizedBox(height: 8),
               Container(
                 constraints: const BoxConstraints(maxHeight: 300),
@@ -1142,11 +1142,11 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                     if (isDelete) {
                       opIcon = Icons.delete_outline;
                       opColor = colorScheme.error;
-                      opLabel = '[删除] ';
+                      opLabel = context.t.cloud.opDelete;
                     } else if (isInsert) {
                       opIcon = Icons.add_circle_outline;
                       opColor = colorScheme.tertiary;
-                      opLabel = '[新增] ';
+                      opLabel = context.t.cloud.opInsert;
                     } else {
                       opIcon = Icons.edit_outlined;
                       opColor = colorScheme.primary;
@@ -1175,10 +1175,10 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
               const SizedBox(height: 16),
               TextField(
                 controller: _messageController,
-                decoration: const InputDecoration(
-                  labelText: '更新消息',
-                  hintText: '请输入更新说明',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: context.t.cloud.pushMessageLabel,
+                  hintText: context.t.cloud.pushMessageHint,
+                  border: const OutlineInputBorder(),
                 ),
               ),
             ],
@@ -1188,7 +1188,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
       actions: [
         TextButton(
           onPressed: _isPushing ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.t.common.cancel),
         ),
         if (_updateRecords.isNotEmpty)
           FilledButton(
@@ -1199,7 +1199,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('确认推送'),
+                : Text(context.t.cloud.updateEntry),
           ),
       ],
     );

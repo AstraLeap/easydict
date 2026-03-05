@@ -14,6 +14,7 @@ import '../services/entry_event_bus.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
+import '../i18n/strings.g.dart';
 
 enum LLMProvider {
   openAI('OpenAI', 'https://api.openai.com/v1'),
@@ -29,6 +30,17 @@ enum LLMProvider {
   final String defaultBaseUrl;
 
   const LLMProvider(this.displayName, this.defaultBaseUrl);
+
+  /// Returns a localized provider name using the current app locale.
+  String localizedName(Translations t) {
+    switch (this) {
+      case LLMProvider.moonshot: return t.ai.providerMoonshot;
+      case LLMProvider.zhipu:   return t.ai.providerZhipu;
+      case LLMProvider.ali:     return t.ai.providerAli;
+      case LLMProvider.custom:  return t.ai.providerCustom;
+      default:                  return displayName; // OpenAI/Anthropic/Gemini/DeepSeek are language-neutral
+    }
+  }
 }
 
 enum TTSProvider {
@@ -887,24 +899,23 @@ final List<EdgeTTSVoice> edgeTTSVoices = [
 
 class LanguageVoiceMapping {
   final String langCode;
-  final String langName;
 
-  const LanguageVoiceMapping({required this.langCode, required this.langName});
+  const LanguageVoiceMapping({required this.langCode});
 }
 
 const List<LanguageVoiceMapping> supportedLanguages = [
-  LanguageVoiceMapping(langCode: 'en', langName: '英语'),
-  LanguageVoiceMapping(langCode: 'zh', langName: '中文'),
-  LanguageVoiceMapping(langCode: 'ja', langName: '日语'),
-  LanguageVoiceMapping(langCode: 'ko', langName: '韩语'),
-  LanguageVoiceMapping(langCode: 'fr', langName: '法语'),
-  LanguageVoiceMapping(langCode: 'de', langName: '德语'),
-  LanguageVoiceMapping(langCode: 'es', langName: '西班牙语'),
-  LanguageVoiceMapping(langCode: 'it', langName: '意大利语'),
-  LanguageVoiceMapping(langCode: 'ru', langName: '俄语'),
-  LanguageVoiceMapping(langCode: 'pt', langName: '葡萄牙语'),
-  LanguageVoiceMapping(langCode: 'ar', langName: '阿拉伯语'),
-  LanguageVoiceMapping(langCode: 'text', langName: '文本'),
+  LanguageVoiceMapping(langCode: 'en'),
+  LanguageVoiceMapping(langCode: 'zh'),
+  LanguageVoiceMapping(langCode: 'ja'),
+  LanguageVoiceMapping(langCode: 'ko'),
+  LanguageVoiceMapping(langCode: 'fr'),
+  LanguageVoiceMapping(langCode: 'de'),
+  LanguageVoiceMapping(langCode: 'es'),
+  LanguageVoiceMapping(langCode: 'it'),
+  LanguageVoiceMapping(langCode: 'ru'),
+  LanguageVoiceMapping(langCode: 'pt'),
+  LanguageVoiceMapping(langCode: 'ar'),
+  LanguageVoiceMapping(langCode: 'text'),
 ];
 
 final Map<String, List<GoogleTTSVoice>> googleTTSVoicesByLanguage = {
@@ -1252,7 +1263,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   }
 
   void _showSavedSnackBar() {
-    showToast(context, '配置已保存');
+    showToast(context, context.t.ai.configSaved);
   }
 
   Future<void> _saveFastConfig() async {
@@ -1458,7 +1469,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     if (apiKey.isEmpty) {
       setState(() {
-        _testResultFast = '请先输入 API Key';
+        _testResultFast = context.t.ai.testApiKeyRequired;
         _testSuccessFast = false;
       });
       return;
@@ -1486,7 +1497,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _testResultFast = '测试失败: $e';
+          _testResultFast = context.t.ai.testFailedWithError(error: '$e');
           _testSuccessFast = false;
         });
       }
@@ -1506,7 +1517,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     if (apiKey.isEmpty) {
       setState(() {
-        _testResultStandard = '请先输入 API Key';
+        _testResultStandard = context.t.ai.testApiKeyRequired;
         _testSuccessStandard = false;
       });
       return;
@@ -1534,7 +1545,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _testResultStandard = '测试失败: $e';
+          _testResultStandard = context.t.ai.testFailedWithError(error: '$e');
           _testSuccessStandard = false;
         });
       }
@@ -1552,7 +1563,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     if (apiKey.isEmpty) {
       setState(() {
-        _testResultTts = '请先输入 API Key';
+        _testResultTts = context.t.ai.testApiKeyRequired;
         _testSuccessTts = false;
       });
       return;
@@ -1568,7 +1579,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     if (mounted) {
       setState(() {
-        _testResultTts = 'TTS 配置已保存，请在发音时测试';
+        _testResultTts = context.t.ai.ttsSaved;
         _testSuccessTts = true;
         _isTestingTts = false;
       });
@@ -1605,19 +1616,19 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
-        return ApiTestResult(success: true, message: 'API 连接成功！响应正常');
+        return ApiTestResult(success: true, message: context.t.ai.testSuccess);
       } else {
         final errorBody = jsonDecode(response.body);
         final errorMessage =
             errorBody['error']?['message'] ??
             errorBody['message'] ??
             'HTTP ${response.statusCode}';
-        return ApiTestResult(success: false, message: 'API 错误: $errorMessage');
+        return ApiTestResult(success: false, message: context.t.ai.testError(message: errorMessage));
       }
     } on TimeoutException {
-      return ApiTestResult(success: false, message: '连接超时，请检查网络或 Base URL');
+      return ApiTestResult(success: false, message: context.t.ai.testTimeout);
     } catch (e) {
-      return ApiTestResult(success: false, message: '连接失败: $e');
+      return ApiTestResult(success: false, message: context.t.ai.testFailed(message: '$e'));
     }
   }
 
@@ -1659,7 +1670,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             valueListenable: providerNotifier,
             isExpanded: true,
             decoration: InputDecoration(
-              labelText: '选择服务商',
+              labelText: context.t.ai.providerLabel,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -1705,7 +1716,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               return DropdownItem<LLMProvider>(
                 value: p,
                 child: Text(
-                  p.displayName,
+                  p.localizedName(context.t),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
@@ -1754,7 +1765,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return '请输入API Key';
+                return context.t.ai.apiKeyRequired;
               }
               return null;
             },
@@ -1764,7 +1775,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           TextFormField(
             controller: baseUrlController,
             decoration: InputDecoration(
-              labelText: 'Base URL (可选)',
+              labelText: context.t.ai.baseUrlLabel,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -1788,12 +1799,12 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 minWidth: 48,
                 minHeight: 48,
               ),
-              hintText: '留空使用默认地址',
+              hintText: context.t.ai.baseUrlHint,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            '仅在使用自定义端点或代理时需要修改url',
+            context.t.ai.baseUrlNote,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -1802,7 +1813,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           TextFormField(
             controller: modelController,
             decoration: InputDecoration(
-              labelText: '模型',
+              labelText: context.t.ai.modelLabel,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -1830,14 +1841,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return '请输入模型名称';
+                return context.t.ai.modelRequired;
               }
               return null;
             },
           ),
           const SizedBox(height: 8),
           Text(
-            '默认模型: ${defaultModels[provider] ?? ''}',
+            context.t.ai.defaultModel(model: defaultModels[provider] ?? ''),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -1854,9 +1865,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
               ),
               child: SwitchListTile(
-                title: const Text('深度思考'),
+                title: Text(context.t.ai.deepThinkingTitle),
                 subtitle: Text(
-                  '在支持的模型上开启思考链（CoT）输出，可显示思考过程',
+                  context.t.ai.deepThinkingSubtitle,
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.outline,
@@ -1882,9 +1893,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               Expanded(
                 child: FilledButton(
                   onPressed: onSave,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('保存配置'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(context.t.common.saveConfig),
                   ),
                 ),
               ),
@@ -1901,7 +1912,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       : const Icon(Icons.network_check_outlined),
                   label: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(isTesting ? '测试中...' : '测试连接'),
+                    child: Text(isTesting ? context.t.common.testing : context.t.common.testConnection),
                   ),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
@@ -1964,7 +1975,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '配置文本转语音服务，用于词典发音功能',
+            context.t.ai.ttsTitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -1974,7 +1985,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             valueListenable: _ttsProviderNotifier,
             isExpanded: true,
             decoration: InputDecoration(
-              labelText: '选择服务商',
+              labelText: context.t.ai.providerLabel,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -2080,7 +2091,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return '请输入API Key';
+                  return context.t.ai.apiKeyRequired;
                 }
                 return null;
               },
@@ -2088,15 +2099,15 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             const SizedBox(height: 8),
             Text(
               _ttsProvider == TTSProvider.google
-                  ? '使用 Google Cloud Service Account JSON Key\n访问 https://console.cloud.google.com/apis/credentials 创建'
-                  : '使用 Azure Speech Service 获取 API Key',
+                  ? context.t.ai.ttsGoogleNote
+                  : context.t.ai.ttsAzureNote,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
             ),
           ] else ...[
             Text(
-              'Edge TTS 是微软 Edge 浏览器的语音合成服务，无需配置即可使用',
+              context.t.ai.ttsEdgeNote,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
@@ -2107,7 +2118,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             TextFormField(
               controller: _ttsBaseUrlController,
               decoration: InputDecoration(
-                labelText: 'Base URL (可选)',
+                labelText: context.t.ai.baseUrlLabel,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -2132,21 +2143,21 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   minHeight: 48,
                 ),
                 hintText: _ttsProvider == TTSProvider.google
-                    ? '留空使用: https://texttospeech.googleapis.com/v1'
-                    : '留空使用默认地址',
+                    ? context.t.ai.ttsBaseUrlHintGoogle
+                    : context.t.ai.baseUrlHint,
               ),
             ),
           ],
           const SizedBox(height: 24),
           Text(
-            '语言音色设置',
+            context.t.ai.ttsVoiceSettings,
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
-            '为每种语言设置发音音色，词典发音时将根据语言自动选择对应音色',
+            context.t.ai.ttsVoiceSettingsSubtitle,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -2167,9 +2178,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               Expanded(
                 child: FilledButton(
                   onPressed: _saveTtsConfig,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('保存配置'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(context.t.common.saveConfig),
                   ),
                 ),
               ),
@@ -2186,7 +2197,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       : const Icon(Icons.network_check_outlined),
                   label: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(_isTestingTts ? '测试中...' : '测试连接'),
+                    child: Text(_isTestingTts ? context.t.common.testing : context.t.common.testConnection),
                   ),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
@@ -2255,8 +2266,8 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
                     child: _buildTextModelConfig(
-                      title: '快速模型',
-                      subtitle: '适用于日常查询，速度优先',
+                      title: context.t.ai.fastModel,
+                      subtitle: context.t.ai.fastModelSubtitle,
                       formKey: _fastFormKey,
                       provider: _fastProvider,
                       providerNotifier: _fastProviderNotifier,
@@ -2286,8 +2297,8 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
                     child: _buildTextModelConfig(
-                      title: '标准模型',
-                      subtitle: '适用于高质量翻译和解释',
+                      title: context.t.ai.standardModel,
+                      subtitle: context.t.ai.standardModelSubtitle,
                       formKey: _standardFormKey,
                       provider: _standardProvider,
                       providerNotifier: _standardProviderNotifier,
@@ -2329,13 +2340,13 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     final content = Scaffold(
       appBar: AppBar(
-        title: const Text('AI配置'),
+        title: Text(context.t.ai.title),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '快速模型'),
-            Tab(text: '标准模型'),
-            Tab(text: '音频模型'),
+          tabs: [
+            Tab(text: context.t.ai.tabFast),
+            Tab(text: context.t.ai.tabStandard),
+            Tab(text: context.t.ai.tabAudio),
           ],
         ),
       ),
@@ -2371,9 +2382,23 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       voiceItems = googleVoices.map((voice) {
         return DropdownItem<String>(
           value: voice.name,
-          child: Text(
-            '${voice.name} (${voice.gender})',
-            overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              Icon(
+                voice.gender == '女性' ? Icons.female : Icons.male,
+                size: 16,
+                color: voice.gender == '女性'
+                    ? Colors.pinkAccent
+                    : Colors.blueAccent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  voice.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         );
       }).toList();
@@ -2381,9 +2406,23 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       voiceItems = edgeVoices.map((voice) {
         return DropdownItem<String>(
           value: voice.name,
-          child: Text(
-            '${voice.name} (${voice.gender})',
-            overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              Icon(
+                voice.gender == '女性' ? Icons.female : Icons.male,
+                size: 16,
+                color: voice.gender == '女性'
+                    ? Colors.pinkAccent
+                    : Colors.blueAccent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  voice.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         );
       }).toList();
@@ -2393,7 +2432,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       voiceItems.add(
         DropdownItem<String>(
           value: currentVoice,
-          child: Text(currentVoice.isEmpty ? '无可用音色' : currentVoice),
+          child: Text(currentVoice.isEmpty ? context.t.ai.ttsNoVoice : currentVoice),
         ),
       );
     }
@@ -2403,7 +2442,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       child: Row(
         children: [
           Text(
-            lang.langName,
+            LanguageUtils.getDisplayName(lang.langCode, context.t),
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(width: 12),
