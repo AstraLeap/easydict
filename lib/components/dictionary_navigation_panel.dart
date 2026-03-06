@@ -195,7 +195,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         double navTop = 0;
         double navBottom = screenHeight;
         try {
-          final renderBox = _navPanelKey.currentContext?.findRenderObject() as RenderBox?;
+          final renderBox =
+              _navPanelKey.currentContext?.findRenderObject() as RenderBox?;
           if (renderBox != null && renderBox.hasSize) {
             final position = renderBox.localToGlobal(Offset.zero);
             navTop = position.dy;
@@ -288,7 +289,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         double navTop = 0;
         double navBottom = screenHeight;
         try {
-          final renderBox = _navPanelKey.currentContext?.findRenderObject() as RenderBox?;
+          final renderBox =
+              _navPanelKey.currentContext?.findRenderObject() as RenderBox?;
           if (renderBox != null && renderBox.hasSize) {
             final position = renderBox.localToGlobal(Offset.zero);
             navTop = position.dy;
@@ -470,7 +472,9 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
     Widget logoContent = InkWell(
       key: key,
-      onTap: isCurrent ? _togglePageList : () => _onDictionarySelected(dict),
+      onTap: isCurrent
+          ? (dict.pageGroups.length > 1 ? _togglePageList : null)
+          : () => _onDictionarySelected(dict),
       borderRadius: BorderRadius.circular(4),
       mouseCursor: SystemMouseCursors.click,
       child: SizedBox(
@@ -1108,10 +1112,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       child: Container(
         width: 40,
         height: 32,
-        margin: const EdgeInsets.symmetric(
-          vertical: 3,
-          horizontal: 6,
-        ),
+        margin: const EdgeInsets.symmetric(vertical: 3, horizontal: 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           color: isSelected

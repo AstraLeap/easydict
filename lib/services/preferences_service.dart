@@ -10,6 +10,7 @@ class LLMConfig {
   final String apiKey;
   final String baseUrl;
   final String model;
+
   /// 是否启用深度思考（仅标准模型有效）
   final bool enableThinking;
 
@@ -53,7 +54,8 @@ class PreferencesService {
   static const String _kLlmSuffixApiKey = '_api_key';
   static const String _kLlmSuffixBaseUrl = '_base_url';
   static const String _kLlmSuffixModel = '_model';
-  static const String _kLlmStandardEnableThinking = 'standard_llm_enable_thinking';
+  static const String _kLlmStandardEnableThinking =
+      'standard_llm_enable_thinking';
 
   // TTS 键名
   static const String _kTtsProvider = 'tts_provider';
@@ -289,8 +291,8 @@ class PreferencesService {
     final baseUrl = p.getString('$prefix${_kLlmSuffixBaseUrl}') ?? '';
     final model = p.getString('$prefix${_kLlmSuffixModel}') ?? '';
 
-    final enableThinking = !isFast &&
-        (p.getBool(_kLlmStandardEnableThinking) ?? false);
+    final enableThinking =
+        !isFast && (p.getBool(_kLlmStandardEnableThinking) ?? false);
 
     return LLMConfig(
       provider: LLMProvider.values[providerIndex],
@@ -389,6 +391,22 @@ class PreferencesService {
   }
 
   static const String _kFontConfigPrefix = 'font_config_';
+  static const String _kFontInitializedPrefix = 'font_initialized_';
+
+  /// Returns true if font configuration has been saved or manually touched
+  /// for [language] at least once — used to prevent the auto-scan from
+  /// overwriting settings the user has deliberately configured (or cleared).
+  Future<bool> isFontLanguageInitialized(String language) async {
+    final p = await prefs;
+    return p.getBool('$_kFontInitializedPrefix$language') ?? false;
+  }
+
+  /// Marks [language] as having been initialised. Called both after the first
+  /// auto-scan save and whenever the user manually picks or clears a font.
+  Future<void> markFontLanguageInitialized(String language) async {
+    final p = await prefs;
+    await p.setBool('$_kFontInitializedPrefix$language', true);
+  }
 
   /// 字体配置支持的所有语言分组键，需与 font_config_page.dart 的 _mapToFontGroupKey 保持一致。
   static const List<String> kFontLanguages = [

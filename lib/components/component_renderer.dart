@@ -428,6 +428,7 @@ FormattedTextResult parseFormattedText(
     bool isSup = false;
     bool isSub = false;
     bool aiTextMark = false;
+    bool isWordLabel = false;
     Color? customColor;
     String? linkTarget;
     String? exactJumpTarget;
@@ -475,7 +476,12 @@ FormattedTextResult parseFormattedText(
           );
           break;
         case 'bold':
-          style = style.copyWith(fontWeight: FontWeight.bold);
+          // Inside a label, bold becomes w600 instead of w700
+          style = style.copyWith(
+            fontWeight: types.contains('label')
+                ? FontWeight.w600
+                : FontWeight.bold,
+          );
           break;
         case 'italic':
           style = style.copyWith(fontStyle: FontStyle.italic);
@@ -501,6 +507,10 @@ FormattedTextResult parseFormattedText(
           // 标签样式交由后续 WidgetSpan 处理，用 bool 标记
           isSup = false; // 复用一下逻辑，下面单独判断
           style = style.copyWith(fontWeight: FontWeight.w500);
+          break;
+        case 'word':
+          isWordLabel = true;
+          style = style.copyWith(fontWeight: FontWeight.w700);
           break;
       }
     }
@@ -553,7 +563,19 @@ FormattedTextResult parseFormattedText(
       );
     } else if (isLabelType && context != null) {
       final labelBaseSize = effectiveBaseStyle.fontSize ?? 12.0;
-      final labelStyle = style.copyWith(fontSize: labelBaseSize * 0.85);
+      var labelStyle = style.copyWith(fontSize: labelBaseSize * 0.85);
+      if (isWordLabel) {
+        // word label: serif font
+        final serifFontInfo = FontLoaderService().getFontInfo(
+          effectiveLanguage ?? '',
+          isSerif: true,
+        );
+        if (serifFontInfo != null) {
+          labelStyle = labelStyle.copyWith(
+            fontFamily: serifFontInfo.fontFamily,
+          );
+        }
+      }
       final borderColor = Theme.of(
         context,
       ).colorScheme.outline.withValues(alpha: 0.55);
@@ -3790,6 +3812,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
             false,
             overrideColor: wordColor,
             labelPrefix: labelPrefix,
+            isBold: true,
+            isSerif: true,
+            fontSize: 14.5,
           ),
         ),
       );
@@ -3832,28 +3857,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       );
     }
 
-    // pronunciation field
-    final pronunciationValue = label['pronunciation'];
-    if (pronunciationValue != null) {
-      final pronunciationText = pronunciationValue is String
-          ? pronunciationValue
-          : '$pronunciationValue';
-      final pronunciationColor = Theme.of(context).colorScheme.onSurface;
-      spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: _buildLabelWidget(
-            context,
-            pronunciationText,
-            'pronunciation',
-            false,
-            overrideColor: pronunciationColor,
-            labelPrefix: labelPrefix,
-          ),
-        ),
-      );
-    }
-
     final order = [
       'grammar',
       'pronunciation',
@@ -3868,11 +3871,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     for (final key in order) {
       final value = label[key];
-      if (value == null || key == 'pos' || key == 'pronunciation') continue;
+      if (value == null || key == 'pos') continue;
 
-      final isPlain = key == 'pattern' || key == 'region' || key == 'grammar';
+      final isPronunciation = key == 'pronunciation';
+      final isPlain =
+          key == 'pattern' ||
+          key == 'region' ||
+          key == 'grammar' ||
+          isPronunciation;
       final hasBackground = !isPlain && key != 'pos';
-      final displayValue = _capitalizeFirst(value is String ? value : '$value');
+      final pronunciationOverride = isPronunciation
+          ? Theme.of(context).colorScheme.onSurface
+          : null;
+      final displayValue = isPronunciation
+          ? (value is String ? value : '$value')
+          : _capitalizeFirst(value is String ? value : '$value');
 
       if (value is List<dynamic>) {
         for (int i = 0; i < value.length; i++) {
@@ -3892,6 +3905,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             labelPrefix: labelPrefix,
             isPattern: key == 'pattern',
             isBold: isBold,
+            overrideColor: pronunciationOverride,
           );
           // 将Widget包装为WidgetSpan
           spans.add(
@@ -3905,8 +3919,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final formattedValue = key == 'pattern'
             ? '[$displayValue]'
             : (key == 'grammar' ? '< $displayValue >' : displayValue);
-        final isBold =
-            key == 'pattern' || key == 'grammar' || key == 'region';
+        final isBold = key == 'pattern' || key == 'grammar' || key == 'region';
         final labelWidget = _buildLabelWidget(
           context,
           formattedValue,
@@ -3915,6 +3928,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           labelPrefix: labelPrefix,
           isPattern: key == 'pattern',
           isBold: isBold,
+          overrideColor: pronunciationOverride,
         );
         // 将Widget包装为WidgetSpan
         spans.add(
@@ -3926,12 +3940,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    // 渲染 order 中未包含的额外 label key（pos、signpost、word、pronunciation 除外）
+    // 渲染 order 中未包含的额外 label key（pos、signpost、word 除外）
     for (final key in label.keys) {
       if (key == 'pos') continue;
       if (key == 'signpost') continue; // signpost 已在最前单独处理
       if (key == 'word') continue; // word 已单独处理
-      if (key == 'pronunciation') continue; // pronunciation 已单独处理
       if (order.contains(key)) continue;
       final value = label[key];
       if (value == null) continue;
@@ -4039,6 +4052,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     String labelPrefix = 'label',
     bool isPattern = false,
     bool isBold = false,
+    bool isSerif = false,
+    double? fontSize,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -4050,20 +4065,33 @@ class ComponentRendererState extends State<ComponentRenderer> {
     TextStyle textStyle;
     if (!hasBackground) {
       // 无背景的语法模式标签（label.pattern）
-      textStyle = DictTypography.getBaseStyle(
-        DictElementType.labelPattern,
-        color: overrideColor ?? colorScheme.primary,
-      ).copyWith(
-        fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-      );
+      textStyle =
+          DictTypography.getBaseStyle(
+            DictElementType.labelPattern,
+            color: overrideColor ?? colorScheme.primary,
+          ).copyWith(
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            fontSize: fontSize,
+          );
     } else {
       // 带背景的语法/地区/用法标签
-      textStyle = DictTypography.getBaseStyle(
-        DictElementType.label,
-        color: overrideColor ?? colorScheme.onSurface,
-      ).copyWith(
-        fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+      textStyle =
+          DictTypography.getBaseStyle(
+            DictElementType.label,
+            color: overrideColor ?? colorScheme.onSurface,
+          ).copyWith(
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            fontSize: fontSize,
+          );
+    }
+    if (isSerif) {
+      final serifFont = FontLoaderService().getFontInfo(
+        _sourceLanguage ?? '',
+        isSerif: true,
       );
+      if (serifFont != null) {
+        textStyle = textStyle.copyWith(fontFamily: serifFont.fontFamily);
+      }
     }
 
     final elementType = hasBackground

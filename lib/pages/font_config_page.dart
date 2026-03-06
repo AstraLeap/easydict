@@ -112,8 +112,8 @@ class _FontConfigPageState extends State<FontConfigPage>
       final language = langEntry.key;
       final detected = langEntry.value;
 
-      // 如果用户已有配置且不是强制重新扫描，跳过该语言的检测
-      if (!forceRescan && existingConfigs.containsKey(language)) {
+      // 如果该语言已初始化（首次自动扫描或用户手动修改过），且不是强制重新扫描，则跳过
+      if (!forceRescan && await prefs.isFontLanguageInitialized(language)) {
         continue;
       }
 
@@ -174,6 +174,9 @@ class _FontConfigPageState extends State<FontConfigPage>
           fontPath: detected.sans.boldItalic!.path,
         );
       }
+
+      // 标记该语言已完成初始化，防止下次打开页面时被自动扫描覆盖
+      await prefs.markFontLanguageInitialized(language);
     }
 
     Logger.i('自动保存字体配置完成', tag: 'FontLoader');
@@ -506,7 +509,11 @@ class _FontConfigPageState extends State<FontConfigPage>
     final selectedFont = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: Text(context.t.font.selectFont(language: LanguageUtils.getDisplayNameExtended(language, context.t))),
+        title: Text(
+          context.t.font.selectFont(
+            language: LanguageUtils.getDisplayNameExtended(language, context.t),
+          ),
+        ),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop<Map<String, String>>(context, {}),
@@ -542,6 +549,9 @@ class _FontConfigPageState extends State<FontConfigPage>
           tag: 'FontLoader',
         );
       }
+
+      // 标记该语言已由用户手动配置，防止自动扫描覆盖用户意图
+      await prefs.markFontLanguageInitialized(language);
 
       // 重新加载字体
       await FontLoaderService().reloadFonts();
@@ -603,7 +613,9 @@ class _FontConfigPageState extends State<FontConfigPage>
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: _selectFolder,
-                      tooltip: _fontFolderPath == null ? context.t.font.folderSet : context.t.font.folderChange,
+                      tooltip: _fontFolderPath == null
+                          ? context.t.font.folderSet
+                          : context.t.font.folderChange,
                     ),
                   ),
                 ),
@@ -619,7 +631,10 @@ class _FontConfigPageState extends State<FontConfigPage>
                       tabs: _languages
                           .map(
                             (lang) => Tab(
-                              text: LanguageUtils.getDisplayNameExtended(lang, context.t),
+                              text: LanguageUtils.getDisplayNameExtended(
+                                lang,
+                                context.t,
+                              ),
                             ),
                           )
                           .toList(),
@@ -694,7 +709,8 @@ class _FontConfigPageState extends State<FontConfigPage>
     required bool isSerif,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fontScale = _fontScales[language]?[isSerif ? 'serif' : 'sans'] ??
+    final fontScale =
+        _fontScales[language]?[isSerif ? 'serif' : 'sans'] ??
         LanguageUtils.getDefaultFontScale(language);
 
     return Card(
@@ -842,7 +858,9 @@ class _FontConfigPageState extends State<FontConfigPage>
       context: context,
       builder: (context) {
         return ScaleDialogWidget(
-          title: context.t.font.scaleDialogTitle(type: isSerif ? context.t.font.serif : context.t.font.sansSerif),
+          title: context.t.font.scaleDialogTitle(
+            type: isSerif ? context.t.font.serif : context.t.font.sansSerif,
+          ),
           subtitle: context.t.font.scaleDialogSubtitle,
           currentValue: (currentScale * 100).round().toDouble(),
           min: 75,
@@ -1002,10 +1020,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
 
   void _step(int direction) {
     final step = widget.divisions.toDouble();
-    final newValue = (_value + direction * step).clamp(
-      widget.min,
-      widget.max,
-    );
+    final newValue = (_value + direction * step).clamp(widget.min, widget.max);
     setState(() {
       _value = newValue;
       _controller.text = _formatValue(newValue);
@@ -1027,7 +1042,10 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(
+            widget.title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
           if (widget.subtitle != null) ...[
             const SizedBox(height: 3),
             Text(
@@ -1066,22 +1084,25 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                     color: colorScheme.onSurfaceVariant,
                   ),
                   border: const UnderlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                 ),
-            onChanged: (value) {
-              final parsed = _parseValue(value);
-              if (parsed != _value) {
-                setState(() {
-                  _value = parsed;
-                });
-              }
-            },
-            onSubmitted: (value) {
-              setState(() {
-                _value = _parseValue(value);
-                _controller.text = _formatValue(_value);
-              });
-            },
+                onChanged: (value) {
+                  final parsed = _parseValue(value);
+                  if (parsed != _value) {
+                    setState(() {
+                      _value = parsed;
+                    });
+                  }
+                },
+                onSubmitted: (value) {
+                  setState(() {
+                    _value = _parseValue(value);
+                    _controller.text = _formatValue(_value);
+                  });
+                },
               ),
             ),
           ),
@@ -1100,14 +1121,15 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
               ),
               Expanded(
                 child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    showValueIndicator: ShowValueIndicator.never,
-                  ),
+                  data: SliderTheme.of(
+                    context,
+                  ).copyWith(showValueIndicator: ShowValueIndicator.never),
                   child: Slider(
                     value: _value.clamp(widget.min, widget.max),
                     min: widget.min,
                     max: widget.max,
-                    divisions: ((widget.max - widget.min) / widget.divisions).round(),
+                    divisions: ((widget.max - widget.min) / widget.divisions)
+                        .round(),
                     onChanged: (value) {
                       setState(() {
                         _value = value;
@@ -1135,12 +1157,22 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  isPercentage ? '${widget.min.toInt()}${widget.unit}' : widget.min.toStringAsFixed(1),
-                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                  isPercentage
+                      ? '${widget.min.toInt()}${widget.unit}'
+                      : widget.min.toStringAsFixed(1),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 Text(
-                  isPercentage ? '${widget.max.toInt()}${widget.unit}' : widget.max.toStringAsFixed(1),
-                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                  isPercentage
+                      ? '${widget.max.toInt()}${widget.unit}'
+                      : widget.max.toStringAsFixed(1),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -1163,7 +1195,10 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
               icon: const Icon(Icons.refresh, size: 16),
               label: Text(context.t.common.reset),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 textStyle: const TextStyle(fontSize: 13),
               ),
             ),
