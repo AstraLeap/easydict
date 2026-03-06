@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../data/models/user_dictionary.dart';
 import '../core/logger.dart';
 import 'auth_service.dart';
+import '../i18n/strings.g.dart';
 
 class UserDictsService {
   static final UserDictsService _instance = UserDictsService._internal();
@@ -40,7 +41,7 @@ class UserDictsService {
   String _buildUrl(String path) {
     final authBaseUrl = _baseUrl;
     if (authBaseUrl == null || authBaseUrl.isEmpty) {
-      throw Exception('服务器地址未设置');
+      throw Exception(t.cloud.serverNotSet);
     }
     final cleanBaseUrl = authBaseUrl.endsWith('/')
         ? authBaseUrl.substring(0, authBaseUrl.length - 1)
@@ -52,7 +53,7 @@ class UserDictsService {
   String _buildUploadUrl(String path) {
     final uploadBaseUrl = _uploadBaseUrl;
     if (uploadBaseUrl == null || uploadBaseUrl.isEmpty) {
-      throw Exception('上传服务器地址未设置');
+      throw Exception(t.cloud.uploadServerNotSet);
     }
     final cleanBaseUrl = uploadBaseUrl.endsWith('/')
         ? uploadBaseUrl.substring(0, uploadBaseUrl.length - 1)
@@ -95,20 +96,20 @@ class UserDictsService {
         final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
         return data.map((item) => UserDictionary.fromJson(item)).toList();
       } else if (response.statusCode == 401) {
-        throw Exception('登录已过期，请重新登录');
+        throw Exception(t.cloud.sessionExpired);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? '获取词典列表失败';
+        final errorMsg = errorData?['detail']?.toString() ?? t.dict.getDictListFailed;
         throw Exception(errorMsg);
       }
     } on FormatException catch (e) {
       Logger.e('解析响应失败: $e', tag: 'UserDictsService');
-      throw Exception('服务器返回数据格式错误');
+      throw Exception(t.dict.invalidResponseFormat);
     } catch (e) {
       Logger.e('获取词典列表异常: $e', tag: 'UserDictsService');
-      throw Exception('获取词典列表失败: $e');
+      throw Exception(t.dict.getDictListFailedError(error: e.toString()));
     }
   }
 
@@ -317,16 +318,16 @@ class UserDictsService {
               .toList(),
         );
       } else if (statusCode == 401) {
-        return UploadResult(success: false, error: '登录已过期，请重新登录');
+        return UploadResult(success: false, error: t.cloud.sessionExpired);
       } else {
         final errorData = jsonDecode(responseBody) as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? '上传失败';
+        final errorMsg = errorData?['detail']?.toString() ?? t.cloud.uploadFailed;
         return UploadResult(success: false, error: errorMsg);
       }
     } catch (e, stackTrace) {
       Logger.e('$method 上传异常: $e', tag: 'UserDictsService');
       Logger.d('堆栈: $stackTrace', tag: 'UserDictsService');
-      return UploadResult(success: false, error: '上传失败: $e');
+      return UploadResult(success: false, error: t.cloud.uploadFailedError(error: e.toString()));
     } finally {
       httpClient?.close();
     }
@@ -382,19 +383,19 @@ class UserDictsService {
       if (response.statusCode == 200) {
         return true;
       } else if (response.statusCode == 401) {
-        throw Exception('登录已过期，请重新登录');
+        throw Exception(t.cloud.sessionExpired);
       } else if (response.statusCode == 404) {
-        throw Exception('词典不存在');
+        throw Exception(t.dict.dictNotFound);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? '删除失败';
+        final errorMsg = errorData?['detail']?.toString() ?? t.dict.dictDeleteFailed;
         throw Exception(errorMsg);
       }
     } catch (e) {
       Logger.e('删除词典异常: $e', tag: 'UserDictsService');
-      throw Exception('删除失败: $e');
+      throw Exception(t.dict.deleteFailed(error: e.toString()));
     }
   }
 
@@ -440,19 +441,19 @@ class UserDictsService {
           entryId: data['entry_id'] as String?,
         );
       } else if (response.statusCode == 401) {
-        return EntryUpdateResult(success: false, error: '登录已过期，请重新登录');
+        return EntryUpdateResult(success: false, error: t.cloud.sessionExpired);
       } else if (response.statusCode == 404) {
-        return EntryUpdateResult(success: false, error: '词典不存在');
+        return EntryUpdateResult(success: false, error: t.dict.dictNotFound);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? '更新失败';
+        final errorMsg = errorData?['detail']?.toString() ?? t.dict.statusUpdateFailed;
         return EntryUpdateResult(success: false, error: errorMsg);
       }
     } catch (e) {
       Logger.e('更新条目异常: $e', tag: 'UserDictsService');
-      return EntryUpdateResult(success: false, error: '更新失败: $e');
+      return EntryUpdateResult(success: false, error: t.dict.updateFailed(error: e.toString()));
     }
   }
 
@@ -492,7 +493,7 @@ class UserDictsService {
     }
 
     if (files.isEmpty) {
-      return UploadResult(success: false, error: '请至少选择一个文件进行更新');
+      return UploadResult(success: false, error: t.cloud.selectAtLeastOneFileToUpdate);
     }
 
     return _uploadWithProgress(
@@ -569,19 +570,19 @@ class UserDictsService {
               .toList(),
         );
       } else if (response.statusCode == 401) {
-        return PushUpdateResult(success: false, error: '登录已过期，请重新登录');
+        return PushUpdateResult(success: false, error: t.cloud.sessionExpired);
       } else if (response.statusCode == 404) {
-        return PushUpdateResult(success: false, error: '词典不存在');
+        return PushUpdateResult(success: false, error: t.dict.dictNotFound);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? '推送更新失败';
+        final errorMsg = errorData?['detail']?.toString() ?? t.cloud.pushFailedGeneral;
         return PushUpdateResult(success: false, error: errorMsg);
       }
     } catch (e, stackTrace) {
       Logger.e('推送条目更新异常: $e\n堆栈: $stackTrace', tag: 'UserDictsService');
-      return PushUpdateResult(success: false, error: '推送更新失败: $e');
+      return PushUpdateResult(success: false, error: t.cloud.pushFailed(error: e.toString()));
     }
   }
 

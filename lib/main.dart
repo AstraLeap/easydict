@@ -171,7 +171,6 @@ void main() async {
       WindowOptions windowOptions = WindowOptions(
         size: Size(windowState['width']!, windowState['height']!),
         center: windowState['posX'] == null || windowState['posY'] == null,
-        backgroundColor: Colors.transparent,
         skipTaskbar: false,
         titleBarStyle: TitleBarStyle.normal,
       );
@@ -192,6 +191,13 @@ void main() async {
           await windowManager.maximize();
         }
       });
+
+      // 同步标题栏深浅色（跟随应用主题设置）
+      final themeModeIndex = prefs.getInt('theme_mode');
+      final savedIsDark = themeModeIndex == 1; // 1 = dark
+      await windowManager.setBrightness(
+        savedIsDark ? Brightness.dark : Brightness.light,
+      );
 
       Logger.i('窗口管理器初始化完成', tag: 'Startup');
     } catch (e) {
@@ -278,6 +284,8 @@ class _MyAppState extends State<MyApp>
   bool _isMultiWindow = false;
   // 缓存上次发给 Android 的 windowBackground 颜色，避免每帧都发 MethodChannel
   int? _lastWindowBgColor;
+  // 缓存上次同步给桌面端标题栏的亮度，避免重复调用
+  Brightness? _lastTitleBarBrightness;
   static const _windowChannel = MethodChannel('com.keskai.easydict/window');
 
   @override
@@ -383,6 +391,17 @@ class _MyAppState extends State<MyApp>
   /// 把 Flutter 主题的 surface 颜色同步给 Android window background，
   /// 使小窗顶栏/底栏（由系统用 windowBackground 渲染）与 App 内容颜色精确匹配。
   /// 只在颜色真正变化时才发 MethodChannel，避免每帧都通信。
+  /// 同步桌面端标题栏深浅色，跟随应用当前主题。
+  void _syncTitleBarBrightness(bool isDark) {
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) return;
+    final brightness = isDark ? Brightness.dark : Brightness.light;
+    if (_lastTitleBarBrightness == brightness) return;
+    _lastTitleBarBrightness = brightness;
+    windowManager.setBrightness(brightness).catchError((e) {
+      Logger.w('同步标题栏亮度失败: $e', tag: 'MyApp');
+    });
+  }
+
   void _syncWindowBackground(Color color) {
     if (!Platform.isAndroid) return;
     final argb = color.toARGB32();
@@ -446,6 +465,7 @@ class _MyAppState extends State<MyApp>
 
               final surfaceColor = Theme.of(context).colorScheme.surface;
               _syncWindowBackground(surfaceColor);
+              _syncTitleBarBrightness(isDark);
 
               Widget content = ErrorBoundary(child: child ?? const SizedBox());
               if (_isMultiWindow) {
@@ -629,231 +649,6 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: IndexedStack(index: _selectedIndex, children: _pages),
       bottomNavigationBar: bottomNav,
-    );
-  }
-}
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: 16.0,
-                right: 16.0,
-                top: 8,
-                bottom: 8,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  SearchBar(
-                    hintText: '搜索单词、短语...',
-                    leading: const Icon(Icons.search),
-                    elevation: WidgetStateProperty.all(0),
-                    backgroundColor: WidgetStateProperty.all(
-                      colorScheme.surfaceContainerHighest,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildSectionHeader(context, '今日概览'),
-                  const SizedBox(height: 12),
-                  Card(
-                    color: colorScheme.primaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Icon(
-                                Icons.auto_stories,
-                                color: colorScheme.onPrimaryContainer,
-                              ),
-                              Icon(
-                                Icons.arrow_forward,
-                                color: colorScheme.onPrimaryContainer,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '每日单词',
-                            style: TextStyle(
-                              color: colorScheme.onPrimaryContainer.withOpacity(
-                                0.7,
-                              ),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Serendipity',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.onPrimaryContainer,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '意外发现珍宝的运气',
-                            style: TextStyle(
-                              color: colorScheme.onPrimaryContainer,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Card(
-                          color: colorScheme.secondaryContainer,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.refresh,
-                                  color: colorScheme.onSecondaryContainer,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '复习',
-                                  style: TextStyle(
-                                    color: colorScheme.onSecondaryContainer,
-                                  ),
-                                ),
-                                Text(
-                                  '24 个',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSecondaryContainer,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Card(
-                          color: colorScheme.tertiaryContainer,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.add_circle_outline,
-                                  color: colorScheme.onTertiaryContainer,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '新词',
-                                  style: TextStyle(
-                                    color: colorScheme.onTertiaryContainer,
-                                  ),
-                                ),
-                                Text(
-                                  '12 个',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onTertiaryContainer,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  _buildSectionHeader(context, '学习统计'),
-                  const SizedBox(height: 12),
-                  Card(
-                    elevation: 0,
-                    color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.calendar_today),
-                          title: const Text('连续打卡'),
-                          trailing: Text(
-                            '12 天',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                        const Divider(height: 1, indent: 16, endIndent: 16),
-                        ListTile(
-                          leading: const Icon(Icons.timer_outlined),
-                          title: const Text('累计学习'),
-                          trailing: Text(
-                            '45 小时',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                        const Divider(height: 1, indent: 16, endIndent: 16),
-                        ListTile(
-                          leading: const Icon(Icons.school_outlined),
-                          title: const Text('掌握词汇'),
-                          trailing: Text(
-                            '1,204 个',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        TextButton(onPressed: () {}, child: const Text('查看全部')),
-      ],
     );
   }
 }

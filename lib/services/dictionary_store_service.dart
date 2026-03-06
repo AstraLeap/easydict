@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import '../data/models/remote_dictionary.dart';
 import 'dictionary_manager.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 /// 词典商店服务
 /// 用于从服务器获取词典列表、下载词典等
@@ -73,10 +74,12 @@ class DictionaryStoreService {
         Logger.i('获取到 ${dictionaries.length} 个词典', tag: 'DictionaryStore');
         return dictionaries;
       } else {
-        throw Exception('获取词典列表失败: HTTP ${response.statusCode}');
+        throw Exception(
+          t.dict.fetchListFailedHttp(code: response.statusCode.toString()),
+        );
       }
     } on TimeoutException {
-      throw Exception('获取词典列表超时，请检查网络连接');
+      throw Exception(t.dict.fetchListTimeout);
     } catch (e) {
       Logger.e('获取词典列表失败: $e', tag: 'DictionaryStore');
       rethrow;
@@ -97,7 +100,9 @@ class DictionaryStoreService {
         final jsonData = jsonDecode(response.body) as Map<String, dynamic>;
         return RemoteDictionary.fromJson(jsonData);
       } else {
-        throw Exception('获取词典详情失败: HTTP ${response.statusCode}');
+        throw Exception(
+          t.dict.fetchDetailFailedHttp(code: response.statusCode.toString()),
+        );
       }
     } catch (e) {
       Logger.e('获取词典详情失败: $e', tag: 'DictionaryStore');
@@ -164,7 +169,7 @@ class DictionaryStoreService {
       final dictDir = await dictManager.getDictionaryDirectory(dict.id);
 
       Logger.i('开始下载词典: ${dict.name}', tag: 'DictionaryStore');
-      onProgress(0, 0, '准备下载...');
+      onProgress(0, 0, t.dict.statusPreparing);
 
       int totalSteps = 0;
       int currentStep = 0;
@@ -175,13 +180,20 @@ class DictionaryStoreService {
       }
 
       if (totalSteps == 0) {
-        onError('没有选择要下载的内容');
+        onError(t.dict.noContentSelected);
         return;
       }
 
       if (dict.hasDatabase && options.includeDatabase) {
         currentStep++;
-        onProgress(0, 0, '[$currentStep/$totalSteps] 下载数据库...');
+        onProgress(
+          0,
+          0,
+          t.dict.downloadingDatabase(
+            step: currentStep.toString(),
+            total: totalSteps.toString(),
+          ),
+        );
 
         final url = Uri.parse(
           _buildUrl('download/${dict.id}/file/dictionary.db'),
@@ -192,7 +204,9 @@ class DictionaryStoreService {
         final response = await _client.send(request);
 
         if (response.statusCode != 200) {
-          throw Exception('下载数据库失败: HTTP ${response.statusCode}');
+          throw Exception(
+            t.dict.downloadDbFailedHttp(code: response.statusCode.toString()),
+          );
         }
 
         final dbFile = File(path.join(dictDir, 'dictionary.db'));
@@ -209,7 +223,11 @@ class DictionaryStoreService {
             onProgress(
               receivedBytes,
               totalBytes,
-              '[$currentStep/$totalSteps] 下载数据库... $progress%',
+              t.dict.downloadingDatabaseProgress(
+                step: currentStep.toString(),
+                total: totalSteps.toString(),
+                progress: progress.toString(),
+              ),
             );
           }
         }
@@ -219,14 +237,25 @@ class DictionaryStoreService {
 
       if ((dict.hasAudios || dict.hasImages) && options.includeMedia) {
         currentStep++;
-        onProgress(0, 0, '[$currentStep/$totalSteps] 下载媒体数据库...');
+        onProgress(
+          0,
+          0,
+          t.dict.downloadingMedia(
+            step: currentStep.toString(),
+            total: totalSteps.toString(),
+          ),
+        );
 
         final url = Uri.parse(_buildUrl('download/${dict.id}/file/media.db'));
         final request = http.Request('GET', url);
         final response = await _client.send(request);
 
         if (response.statusCode != 200) {
-          throw Exception('下载媒体数据库失败: HTTP ${response.statusCode}');
+          throw Exception(
+            t.dict.downloadMediaFailedHttp(
+              code: response.statusCode.toString(),
+            ),
+          );
         }
 
         final mediaDbFile = File(path.join(dictDir, 'media.db'));
@@ -243,7 +272,11 @@ class DictionaryStoreService {
             onProgress(
               receivedBytes,
               totalBytes,
-              '[$currentStep/$totalSteps] 下载媒体数据库... $progress%',
+              t.dict.downloadingMediaProgress(
+                step: currentStep.toString(),
+                total: totalSteps.toString(),
+                progress: progress.toString(),
+              ),
             );
           }
         }
@@ -323,7 +356,7 @@ class DictionaryStoreService {
       }
 
       if (totalSteps == 0) {
-        yield {'type': 'error', 'error': '没有选择要下载的内容'};
+        yield {'type': 'error', 'error': t.dict.noContentSelected};
         return;
       }
 
@@ -338,7 +371,10 @@ class DictionaryStoreService {
         yield {
           'type': 'progress',
           'progress': (currentStep - 1) / totalSteps,
-          'status': '[$currentStep/$totalSteps] 下载元数据...',
+          'status': t.dict.downloadingMeta(
+            step: currentStep.toString(),
+            total: totalSteps.toString(),
+          ),
         };
 
         final url = Uri.parse(
@@ -363,7 +399,12 @@ class DictionaryStoreService {
             '下载元数据失败: $url, HTTP ${response.statusCode}',
             tag: 'DictionaryStore',
           );
-          throw Exception('下载元数据失败: $url, HTTP ${response.statusCode}');
+          throw Exception(
+            t.dict.downloadMetaFailed(
+              url: url.toString(),
+              code: response.statusCode.toString(),
+            ),
+          );
         }
       }
 
@@ -373,7 +414,10 @@ class DictionaryStoreService {
         yield {
           'type': 'progress',
           'progress': (currentStep - 1) / totalSteps,
-          'status': '[$currentStep/$totalSteps] 下载图标...',
+          'status': t.dict.downloadingIcon(
+            step: currentStep.toString(),
+            total: totalSteps.toString(),
+          ),
         };
 
         final url = Uri.parse(_buildUrl('download/${dict.id}/file/logo.png'));
@@ -415,7 +459,10 @@ class DictionaryStoreService {
           'progress': 0.0,
           'receivedBytes': 0,
           'totalBytes': 0,
-          'status': '[$currentStep/$totalSteps] 下载数据库...',
+          'status': t.dict.downloadingDatabase(
+            step: currentStep.toString(),
+            total: totalSteps.toString(),
+          ),
         };
 
         final dbPath = path.join(dictDir, 'dictionary.db');
@@ -444,8 +491,18 @@ class DictionaryStoreService {
               'progress': totalBytes > 0 ? receivedBytes / totalBytes : 0.0,
               'receivedBytes': receivedBytes,
               'totalBytes': totalBytes,
-              'status':
-                  '[$currentStep/$totalSteps] 下载数据库... ${totalBytes > 0 ? '${(receivedBytes / totalBytes * 100).toInt()}%' : formatBytes(receivedBytes)}',
+              'status': totalBytes > 0
+                  ? t.dict.downloadingDatabaseProgress(
+                      step: currentStep.toString(),
+                      total: totalSteps.toString(),
+                      progress: (receivedBytes / totalBytes * 100)
+                          .toInt()
+                          .toString(),
+                    )
+                  : t.dict.downloadingDatabase(
+                      step: currentStep.toString(),
+                      total: totalSteps.toString(),
+                    ),
             };
           }
           await sink.close();
@@ -455,7 +512,9 @@ class DictionaryStoreService {
             tag: 'DictionaryStore',
           );
         } else {
-          throw Exception('下载数据库失败: HTTP ${response.statusCode}');
+          throw Exception(
+            t.dict.downloadDbFailedHttp(code: response.statusCode.toString()),
+          );
         }
       }
 
@@ -470,7 +529,10 @@ class DictionaryStoreService {
           'progress': 0.0,
           'receivedBytes': 0,
           'totalBytes': 0,
-          'status': '[$currentStep/$totalSteps] 下载媒体数据库...',
+          'status': t.dict.downloadingMedia(
+            step: currentStep.toString(),
+            total: totalSteps.toString(),
+          ),
         };
 
         final mediaDbPath = path.join(dictDir, 'media.db');
@@ -499,8 +561,18 @@ class DictionaryStoreService {
               'progress': totalBytes > 0 ? receivedBytes / totalBytes : 0.0,
               'receivedBytes': receivedBytes,
               'totalBytes': totalBytes,
-              'status':
-                  '[$currentStep/$totalSteps] 下载媒体数据库... ${totalBytes > 0 ? '${(receivedBytes / totalBytes * 100).toInt()}%' : formatBytes(receivedBytes)}',
+              'status': totalBytes > 0
+                  ? t.dict.downloadingMediaProgress(
+                      step: currentStep.toString(),
+                      total: totalSteps.toString(),
+                      progress: (receivedBytes / totalBytes * 100)
+                          .toInt()
+                          .toString(),
+                    )
+                  : t.dict.downloadingMedia(
+                      step: currentStep.toString(),
+                      total: totalSteps.toString(),
+                    ),
             };
           }
           await sink.close();
@@ -510,7 +582,11 @@ class DictionaryStoreService {
             tag: 'DictionaryStore',
           );
         } else {
-          throw Exception('下载媒体数据库失败: HTTP ${response.statusCode}');
+          throw Exception(
+            t.dict.downloadMediaFailedHttp(
+              code: response.statusCode.toString(),
+            ),
+          );
         }
       }
 
@@ -623,8 +699,9 @@ class DictionaryStoreService {
       if (await file.exists()) await file.delete();
 
       final request = http.Request('GET', url);
-      final response =
-          await _client.send(request).timeout(const Duration(seconds: 30));
+      final response = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
@@ -646,8 +723,7 @@ class DictionaryStoreService {
           if (lastSpeedUpdate != null) {
             final elapsedMs = now.difference(lastSpeedUpdate!).inMilliseconds;
             if (elapsedMs > 0) {
-              speedBytesPerSecond =
-                  (chunk.length * 1000 / elapsedMs).round();
+              speedBytesPerSecond = (chunk.length * 1000 / elapsedMs).round();
             }
           }
           lastSpeedUpdate = now;
@@ -665,7 +741,7 @@ class DictionaryStoreService {
       }
 
       if (downloadedBytes == 0) {
-        throw Exception('响应内容为空');
+        throw Exception(t.dict.responseEmpty);
       }
 
       Logger.i(

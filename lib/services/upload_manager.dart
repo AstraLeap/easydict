@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 enum UploadState { idle, uploading, completed, error, cancelled }
 
@@ -130,7 +131,7 @@ class UploadManager with ChangeNotifier {
       dictName: dictName,
       startTime: DateTime.now(),
       state: UploadState.uploading,
-      status: '准备上传...',
+      status: t.dict.statusPreparingUpload,
       totalFiles: totalFiles,
       onComplete: onComplete,
       onError: onError,
@@ -150,7 +151,11 @@ class UploadManager with ChangeNotifier {
         task.overallProgress = total > 0
             ? (current - 1 + task.fileProgress) / total
             : 0.0;
-        task.status = '[$current/$total] 上传 $fileName';
+        task.status = t.dict.uploadingFile(
+          step: current.toString(),
+          total: total.toString(),
+          name: fileName,
+        );
 
         final now = DateTime.now();
         // 每 0.5 秒更新一次速度
@@ -165,14 +170,14 @@ class UploadManager with ChangeNotifier {
       });
 
       task.state = UploadState.completed;
-      task.status = '上传完成';
+      task.status = t.dict.statusUploadCompleted;
       task.overallProgress = 1.0;
       task.currentFileName = null;
       notifyListeners();
     } catch (e) {
       Logger.e('上传失败: $e', tag: 'UploadManager');
       task.state = UploadState.error;
-      task.status = '上传失败';
+      task.status = t.dict.statusUploadFailed;
       task.error = e.toString();
       notifyListeners();
       task.onError?.call(e.toString());
@@ -194,7 +199,7 @@ class UploadManager with ChangeNotifier {
     final task = _uploads[dictId];
     if (task != null) {
       task.state = UploadState.cancelled;
-      task.status = '已取消';
+      task.status = t.dict.cancelled;
       notifyListeners();
     }
   }

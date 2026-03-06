@@ -216,6 +216,13 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+
+    case WM_SETTINGCHANGE:
+      if (lparam != 0 &&
+          wcscmp(reinterpret_cast<LPCWSTR>(lparam), L"ImmersiveColorSet") == 0) {
+        UpdateTheme(hwnd);
+      }
+      break;
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);

@@ -1083,7 +1083,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   String _getActionLabel(String action) {
-    return PreferencesService.getActionLabel(action);
+    final t = context.t.settings.actionLabel;
+    switch (action) {
+      case PreferencesService.actionAiTranslate: return t.aiTranslate;
+      case PreferencesService.actionCopy: return t.copy;
+      case PreferencesService.actionAskAi: return t.askAi;
+      case PreferencesService.actionEdit: return t.edit;
+      case PreferencesService.actionSpeak: return t.speak;
+      case PreferencesService.actionBack: return t.back;
+      case PreferencesService.actionFavorite: return t.favorite;
+      case PreferencesService.actionToggleTranslate: return t.toggleTranslate;
+      case PreferencesService.actionAiHistory: return t.aiHistory;
+      case PreferencesService.actionResetEntry: return t.resetEntry;
+      default: return action;
+    }
   }
 
   void _handleOverflowAction(String action) {
@@ -1983,7 +1996,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
       if (pathParts.isEmpty) {
         if (newValue is! Map<String, dynamic>) {
-          throw Exception('根节点必须是对象类型');
+          throw Exception(context.t.entry.rootMustBeObject);
         }
         fullJson.clear();
         fullJson.addAll(newValue);
@@ -2029,7 +2042,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         }
         return newEntry;
       } else {
-        throw Exception('数据库更新失败');
+        throw Exception(context.t.entry.dbUpdateFailed);
       }
     } catch (e) {
       if (mounted) {

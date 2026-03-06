@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'english_db_service.dart';
 import '../data/services/database_initializer.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 /// 三张关系表中命中的完整行数据
 class WordRelationRow {
@@ -91,7 +92,7 @@ class EnglishSearchService {
 
     if (!exists) {
       Logger.w('EnglishSearchService: 英语词典数据库不存在，请先下载。', tag: 'EnglishDB');
-      return Future.error('英语词典数据库不存在，请先下载。');
+      return Future.error(t.dict.dbNotExists);
     }
 
     // 以只读方式打开
@@ -117,10 +118,12 @@ class EnglishSearchService {
         whereArgs: [word, word],
       );
       for (final row in svRows) {
-        results.add(WordRelationRow(
-          tableName: 'spelling_variant',
-          fields: row.map((k, v) => MapEntry(k, v?.toString())),
-        ));
+        results.add(
+          WordRelationRow(
+            tableName: 'spelling_variant',
+            fields: row.map((k, v) => MapEntry(k, v?.toString())),
+          ),
+        );
       }
 
       // nominalization
@@ -130,25 +133,39 @@ class EnglishSearchService {
         whereArgs: [word, word],
       );
       for (final row in nomRows) {
-        results.add(WordRelationRow(
-          tableName: 'nominalization',
-          fields: row.map((k, v) => MapEntry(k, v?.toString())),
-        ));
+        results.add(
+          WordRelationRow(
+            tableName: 'nominalization',
+            fields: row.map((k, v) => MapEntry(k, v?.toString())),
+          ),
+        );
       }
 
       // inflection — pos 列无索引，不放入 WHERE，只在 SELECT 中取用
       final inflRows = await db.query(
         'inflection',
-        columns: ['base', 'pos', 'plural', 'past', 'past_part', 'pres_part', 'third_sing', 'comp', 'superl'],
+        columns: [
+          'base',
+          'pos',
+          'plural',
+          'past',
+          'past_part',
+          'pres_part',
+          'third_sing',
+          'comp',
+          'superl',
+        ],
         where:
             'base = ? OR plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
         whereArgs: [word, word, word, word, word, word, word, word],
       );
       for (final row in inflRows) {
-        results.add(WordRelationRow(
-          tableName: 'inflection',
-          fields: row.map((k, v) => MapEntry(k, v?.toString())),
-        ));
+        results.add(
+          WordRelationRow(
+            tableName: 'inflection',
+            fields: row.map((k, v) => MapEntry(k, v?.toString())),
+          ),
+        );
       }
 
       return results;
@@ -313,7 +330,7 @@ class EnglishSearchService {
         'word1',
         'word2',
         word,
-        '拼写变体',
+        t.entry.spellingVariantLabel,
       ),
       _searchTwoColumnTableWithRelations(
         db,
@@ -321,7 +338,7 @@ class EnglishSearchService {
         'base',
         'full_form',
         word,
-        '缩写',
+        t.entry.abbreviationLabel,
       ),
       _searchTwoColumnTableWithRelations(
         db,
@@ -329,7 +346,7 @@ class EnglishSearchService {
         'base',
         'full_form',
         word,
-        '首字母缩写',
+        t.entry.acronymLabel,
       ),
       _searchTwoColumnTableWithRelations(
         db,
@@ -337,7 +354,7 @@ class EnglishSearchService {
         'base',
         'nominal',
         word,
-        '名词化',
+        t.entry.morphNominalization,
       ),
       _searchInflectionWithRelations(db, word),
     ];
@@ -421,13 +438,13 @@ class EnglishSearchService {
   ) async {
     final results = <String, List<SearchRelation>>{};
     final inflectionCols = {
-      'plural': '复数形式',
-      'past': '过去式',
-      'past_part': '过去分词',
-      'pres_part': '现在分词',
-      'third_sing': '第三人称单数',
-      'comp': '比较级',
-      'superl': '最高级',
+      'plural': t.entry.morphPluralForm,
+      'past': t.entry.morphPast,
+      'past_part': t.entry.morphPastPart,
+      'pres_part': t.entry.morphPresPart,
+      'third_sing': t.entry.morphThirdSingFull,
+      'comp': t.entry.morphComp,
+      'superl': t.entry.morphSuperl,
     };
 
     try {

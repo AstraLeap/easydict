@@ -5,6 +5,7 @@ import 'dictionary_logo.dart';
 import '../core/logger.dart';
 import 'component_renderer.dart';
 import '../services/dictionary_manager.dart';
+import '../core/utils/language_utils.dart';
 
 class DictionaryNavigationPanel extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
@@ -875,30 +876,54 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     if (metadata == null) {
       // 如果没有元数据，返回第一个非空值
       for (final value in defMap.values) {
-        if (value != null && value.toString().isNotEmpty) {
-          return value.toString();
+        final text = value?.toString().trim() ?? '';
+        if (text.isNotEmpty) {
+          return text;
         }
       }
       return '';
     }
 
-    final sourceLang = metadata.sourceLanguage;
-    final targetLangs = metadata.targetLanguages;
+    String? valueForLanguage(String lang) {
+      final normalizedLang = LanguageUtils.normalizeSourceLanguage(lang);
+      final candidates = <String>{
+        lang,
+        lang.toLowerCase(),
+        normalizedLang,
+        normalizedLang.toLowerCase(),
+      };
+
+      for (final candidate in candidates) {
+        final value = defMap[candidate];
+        final text = value?.toString().trim() ?? '';
+        if (text.isNotEmpty) {
+          return text;
+        }
+      }
+      return null;
+    }
+
+    final sourceLang = LanguageUtils.normalizeSourceLanguage(
+      metadata.sourceLanguage,
+    );
+    final targetLangs = metadata.targetLanguages
+        .map(LanguageUtils.normalizeSourceLanguage)
+        .toList();
 
     // 优先级1：目标语言列表中非源语言的语言
     for (final lang in targetLangs) {
       if (lang != sourceLang) {
-        final value = defMap[lang];
-        if (value != null && value.toString().isNotEmpty) {
-          return value.toString();
+        final text = valueForLanguage(lang);
+        if (text != null) {
+          return text;
         }
       }
     }
 
     // 优先级2：源语言
-    final sourceValue = defMap[sourceLang];
-    if (sourceValue != null && sourceValue.toString().isNotEmpty) {
-      return sourceValue.toString();
+    final sourceValue = valueForLanguage(sourceLang);
+    if (sourceValue != null) {
+      return sourceValue;
     }
 
     // 优先级3：其他任意非空语言

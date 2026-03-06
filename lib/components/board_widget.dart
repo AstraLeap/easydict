@@ -99,19 +99,49 @@ class _BoardWidgetState extends State<BoardWidget> {
 
     if (isNested) {
       final boardTitleStyle = _getBoardTitleStyle(colorScheme);
-      return Container(
+      final showTitle = title.isNotEmpty && !widget.hideTitle;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (title.isNotEmpty && !widget.hideTitle)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  title,
-                  style: boardTitleStyle,
+            if (showTitle)
+              InkWell(
+                onTap: _toggleCollapse,
+                onLongPress: _showPath,
+                mouseCursor: SystemMouseCursors.click,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(child: Text(title, style: boardTitleStyle)),
+                        AnimatedRotation(
+                          turns: _isCollapsed ? -0.25 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          child: Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 14,
+                            color: colorScheme.primary.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    _DashedLine(
+                      color: colorScheme.primary.withValues(alpha: 0.4),
+                      height: 1,
+                    ),
+                  ],
                 ),
               ),
-            widget.contentBuilder(contentBoard, widget.path),
+            if (!_isCollapsed)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: widget.contentBuilder(contentBoard, widget.path),
+              ),
           ],
         ),
       );
@@ -151,9 +181,7 @@ class _BoardWidgetState extends State<BoardWidget> {
                 color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
                 borderRadius: _isCollapsed
                     ? BorderRadius.circular(12)
-                    : const BorderRadius.vertical(
-                        top: Radius.circular(12),
-                      ),
+                    : const BorderRadius.vertical(top: Radius.circular(12)),
               ),
               child: Row(
                 children: [
@@ -173,9 +201,9 @@ class _BoardWidgetState extends State<BoardWidget> {
                   Expanded(
                     child: Text(
                       title,
-                      style: _getBoardHeaderStyle(colorScheme).copyWith(
-                        letterSpacing: 0.2,
-                      ),
+                      style: _getBoardHeaderStyle(
+                        colorScheme,
+                      ).copyWith(letterSpacing: 0.2),
                     ),
                   ),
                 ],
@@ -251,4 +279,68 @@ void _findBoardsInList(
       _findBoardsInList(item, boards, itemPath, excludedFields);
     }
   }
+}
+
+/// 虚线Divider widget
+class _DashedLine extends StatelessWidget {
+  final Color color;
+  final double height;
+  final double dashWidth;
+  final double dashSpace;
+
+  const _DashedLine({
+    required this.color,
+    this.height = 1,
+    this.dashWidth = 6,
+    this.dashSpace = 3,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: height,
+      child: CustomPaint(
+        painter: _DashedLinePainter(
+          color: color,
+          dashWidth: dashWidth,
+          dashSpace: dashSpace,
+          strokeWidth: height,
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  final double dashWidth;
+  final double dashSpace;
+  final double strokeWidth;
+
+  _DashedLinePainter({
+    required this.color,
+    required this.dashWidth,
+    required this.dashSpace,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth;
+    var startX = 0.0;
+    while (startX < size.width) {
+      canvas.drawLine(
+        Offset(startX, size.height / 2),
+        Offset(startX + dashWidth, size.height / 2),
+        paint,
+      );
+      startX += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

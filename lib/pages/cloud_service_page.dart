@@ -292,12 +292,18 @@ class _CloudServicePageState extends State<CloudServicePage> {
                   ? null
                   : () async {
                       if (usernameController.text.trim().isEmpty) {
-                        showToast(context, context.t.cloud.registerUsernameRequired);
+                        showToast(
+                          context,
+                          context.t.cloud.registerUsernameRequired,
+                        );
                         return;
                       }
                       if (passwordController.text !=
                           confirmPasswordController.text) {
-                        showToast(context, context.t.cloud.registerPasswordMismatch);
+                        showToast(
+                          context,
+                          context.t.cloud.registerPasswordMismatch,
+                        );
                         return;
                       }
                       setDialogState(() => isLoading = true);
@@ -447,7 +453,11 @@ class _CloudServicePageState extends State<CloudServicePage> {
     try {
       final zipResult = await _syncService.createSettingsZip();
       if (!zipResult.success) {
-        if (mounted) showToast(context, zipResult.error ?? context.t.cloud.createPackageFailed);
+        if (mounted)
+          showToast(
+            context,
+            zipResult.error ?? context.t.cloud.createPackageFailed,
+          );
         return;
       }
 
@@ -511,7 +521,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
       if (!mounted) return;
 
       if (!downloadResult.success) {
-        showToast(context, downloadResult.error ?? context.t.cloud.downloadFailed);
+        showToast(
+          context,
+          downloadResult.error ?? context.t.cloud.downloadFailed,
+        );
         return;
       }
 
@@ -540,7 +553,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
           });
         }
       } else {
-        showToast(context, extractResult.error ?? context.t.cloud.extractFailed);
+        showToast(
+          context,
+          extractResult.error ?? context.t.cloud.extractFailed,
+        );
       }
     } finally {
       if (mounted) setState(() => _isSyncing = false);
@@ -626,7 +642,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 const SizedBox(width: 8),
                 Text(
                   context.t.cloud.subscriptionLabel,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
               ],
             ),
@@ -698,7 +717,10 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 const SizedBox(width: 8),
                 Text(
                   context.t.cloud.accountTitle,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
                 if (_isSyncing) ...[
                   const SizedBox(width: 8),
@@ -834,7 +856,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  context.t.cloud.onlineDicts(count: _availableDictionaries.length),
+                  context.t.cloud.onlineDicts(
+                    count: _availableDictionaries.length,
+                  ),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -879,7 +903,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
   final DictionaryManager _dictManager = DictionaryManager();
   final ZstdService _zstdService = ZstdService();
   final TextEditingController _messageController = TextEditingController(
-    text: '更新条目',
+    text: t.cloud.updateEntry,
   );
 
   List<Map<String, dynamic>> _updateRecords = [];
@@ -915,7 +939,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
       });
     } catch (e) {
       setState(() {
-        _error = '加载更新记录失败: $e';
+        _error = context.t.cloud.loadUpdatesFailed(error: '$e');
         _isLoading = false;
       });
     }
@@ -948,7 +972,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
   Future<void> _pushUpdates() async {
     if (_updateRecords.isEmpty) {
-      showToast(context, '没有需要推送的更新');
+      showToast(context, context.t.cloud.noNeedToPushUpdates);
       return;
     }
 
@@ -1037,7 +1061,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
         widget.dictId,
         zstFile: zstFile,
         message: _messageController.text.trim().isEmpty
-            ? '更新条目'
+            ? t.cloud.updateEntry
             : _messageController.text.trim(),
       );
 
@@ -1116,7 +1140,9 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
             else if (_updateRecords.isEmpty)
               Text(context.t.cloud.noPushUpdates)
             else ...[
-              Text(context.t.cloud.pushUpdateCount(count: _updateRecords.length)),
+              Text(
+                context.t.cloud.pushUpdateCount(count: _updateRecords.length),
+              ),
               const SizedBox(height: 8),
               Container(
                 constraints: const BoxConstraints(maxHeight: 300),
@@ -1130,7 +1156,8 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                   itemBuilder: (context, index) {
                     final record = _updateRecords[index];
                     final headword = record['headword'] as String;
-                    final opType = record['operation_type'] as String? ?? 'update';
+                    final opType =
+                        record['operation_type'] as String? ?? 'update';
                     final isDelete = opType == 'delete';
                     final isInsert = opType == 'insert';
                     final updateTime = DateTime.fromMillisecondsSinceEpoch(
@@ -1157,7 +1184,9 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                       leading: Icon(opIcon, size: 18, color: opColor),
                       title: Text(
                         headword,
-                        style: TextStyle(color: isDelete ? colorScheme.error : null),
+                        style: TextStyle(
+                          color: isDelete ? colorScheme.error : null,
+                        ),
                       ),
                       subtitle: Text(
                         '$opLabel'
@@ -1286,7 +1315,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
 
   Future<void> _upload() async {
     if (_metadataFile == null || _dictionaryFile == null || _logoFile == null) {
-      showToast(context, '请选择所有必填文件');
+      showToast(context, context.t.cloud.selectAllRequiredFiles);
       return;
     }
 
@@ -1316,12 +1345,12 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
           dictionaryFile: _dictionaryFile!,
           logoFile: _logoFile!,
           mediaFile: _mediaFile,
-          message: '初始上传',
+          message: t.cloud.updateEntry,
           onProgress: onProgress,
         );
 
         if (!result.success) {
-          throw Exception(result.error ?? '上传失败');
+          throw Exception(result.error ?? t.cloud.uploadFailed);
         }
 
         // 上传成功后，用服务器返回的 version 更新本地 metadata 文件
@@ -1330,10 +1359,8 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
             result.dictId!,
           );
           if (await metadataFile.exists()) {
-            final metadataJson =
-                jsonDecode(await metadataFile.readAsString());
-            final updatedMetadata =
-                DictionaryMetadata.fromJson(metadataJson);
+            final metadataJson = jsonDecode(await metadataFile.readAsString());
+            final updatedMetadata = DictionaryMetadata.fromJson(metadataJson);
             final newMetadata = DictionaryMetadata(
               id: updatedMetadata.id,
               name: updatedMetadata.name,
@@ -1396,7 +1423,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$label${required ? ' (必填)' : ' (可选)'}',
+                    '$label${required ? context.t.cloud.requiredField : context.t.cloud.optionalField}',
                     style: TextStyle(
                       fontWeight: FontWeight.w500,
                       color: colorScheme.onSurface,
@@ -1452,7 +1479,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
     final isUploading = uploadManager.isUploading;
 
     return AlertDialog(
-      title: const Text('上传新词典'),
+      title: Text(context.t.cloud.uploadNewDict),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1495,7 +1522,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
       actions: [
         TextButton(
           onPressed: isUploading ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.t.common.cancel),
         ),
         FilledButton(
           onPressed: isUploading ? null : _upload,
@@ -1508,7 +1535,7 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
                     color: Colors.white,
                   ),
                 )
-              : const Text('上传'),
+              : Text(context.t.common.upload),
         ),
       ],
     );
@@ -1600,7 +1627,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
   Future<void> _update() async {
     final message = _messageController.text.trim();
     if (message.isEmpty) {
-      showToast(context, '请输入更新说明');
+      showToast(context, context.t.cloud.pushMessageHint);
       return;
     }
 
@@ -1608,7 +1635,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
         _dictionaryFile == null &&
         _logoFile == null &&
         _mediaFile == null) {
-      showToast(context, '请至少选择一个文件进行更新');
+      showToast(context, context.t.cloud.selectAtLeastOneFileToUpdate);
       return;
     }
 
@@ -1648,16 +1675,14 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
         );
 
         if (!result.success) {
-          throw Exception(result.error ?? '更新失败');
+          throw Exception(result.error ?? t.dict.statusUpdateFailed);
         }
 
         if (result.version != null) {
           final metadataFile = await _dictManager.getMetadataFile(dictId);
           if (await metadataFile.exists()) {
-            final metadataJson =
-                jsonDecode(await metadataFile.readAsString());
-            final updatedMetadata =
-                DictionaryMetadata.fromJson(metadataJson);
+            final metadataJson = jsonDecode(await metadataFile.readAsString());
+            final updatedMetadata = DictionaryMetadata.fromJson(metadataJson);
             final newMetadata = DictionaryMetadata(
               id: updatedMetadata.id,
               name: updatedMetadata.name,
@@ -1717,7 +1742,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$label（可选）',
+                    '$label${context.t.cloud.optionalField}',
                     style: TextStyle(
                       fontWeight: FontWeight.w500,
                       color: colorScheme.onSurface,
@@ -1773,7 +1798,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
     final isUploading = uploadManager.isUploading;
 
     return AlertDialog(
-      title: const Text('替换文件'),
+      title: Text(context.t.dict.tooltipReplaceFile),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1800,8 +1825,8 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
             TextField(
               controller: _messageController,
               decoration: InputDecoration(
-                labelText: '版本备注（必填）',
-                hintText: '例如：更新logo、修复词条等',
+                labelText: context.t.cloud.versionNoteLabel,
+                hintText: context.t.cloud.replaceFileHint,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -1810,7 +1835,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
             ),
             const SizedBox(height: 8),
             Text(
-              '提示：请至少选择一个文件进行更新',
+              context.t.cloud.replaceFileTip,
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
@@ -1823,7 +1848,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
       actions: [
         TextButton(
           onPressed: isUploading ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.t.common.cancel),
         ),
         FilledButton(
           onPressed: isUploading ? null : _update,
@@ -1836,7 +1861,7 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
                     color: Colors.white,
                   ),
                 )
-              : const Text('更新'),
+              : Text(context.t.common.update),
         ),
       ],
     );
@@ -1911,7 +1936,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     final text = _jsonController.text.trim();
     if (text.isEmpty) {
       setState(() {
-        _importResult = '请输入 JSON 内容';
+        _importResult = context.t.cloud.enterJsonContent;
         _importHasError = true;
       });
       return;
@@ -1935,9 +1960,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           objectsToParse = [decoded];
           usedJsonMode = true;
         } else if (decoded is List) {
-          objectsToParse = decoded
-              .whereType<Map<String, dynamic>>()
-              .toList();
+          objectsToParse = decoded.whereType<Map<String, dynamic>>().toList();
           usedJsonMode = true;
         }
       } catch (_) {
@@ -1976,13 +1999,18 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
               final preview = lines2[i].length > 50
                   ? '${lines2[i].substring(0, 50)}…'
                   : lines2[i];
-              errorMessages2.add('第 ${i + 1} 行: $preview');
+              errorMessages2.add(
+                context.t.cloud.importLineError(
+                  line: (i + 1).toString(),
+                  preview: preview,
+                ),
+              );
               if (errorMessages2.length >= 3) break;
             }
           }
           setState(() {
             _importResult =
-                'JSON 解析失败，请检查格式（格式化 JSON 或每行一个对象的 JSONL）。\n'
+                '${context.t.cloud.jsonParseError}\n'
                 '${errorMessages2.join("\n")}';
             _importHasError = true;
           });
@@ -1999,7 +2027,9 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
         try {
           if (decoded is! Map<String, dynamic>) {
             errorCount++;
-            errorMessages.add('第 ${i + 1} 条不是 JSON 对象');
+            errorMessages.add(
+              context.t.cloud.importItemNotObject(item: (i + 1).toString()),
+            );
             continue;
           }
 
@@ -2010,7 +2040,9 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           final entry = DictionaryEntry.fromJson(json);
           if (entry.id.isEmpty) {
             errorCount++;
-            errorMessages.add('第 ${i + 1} 条缺少 entry_id');
+            errorMessages.add(
+              context.t.cloud.importItemMissingId(item: (i + 1).toString()),
+            );
             continue;
           }
 
@@ -2020,23 +2052,38 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           } else {
             errorCount++;
             errorMessages.add(
-              '第 ${i + 1} 条写入失败 (entry_id: ${entry.id}, headword: ${entry.headword})',
+              context.t.cloud.importItemWriteFailed(
+                item: (i + 1).toString(),
+                id: entry.id,
+                word: entry.headword,
+              ),
             );
           }
         } catch (e) {
           errorCount++;
-          errorMessages.add('第 ${i + 1} 条处理失败: $e');
+          errorMessages.add(
+            context.t.cloud.importItemFailed(
+              item: (i + 1).toString(),
+              error: e.toString(),
+            ),
+          );
         }
       }
 
-      final buf = StringBuffer('成功导入 $successCount 条');
+      final buf = StringBuffer(
+        context.t.cloud.importSuccessCount(count: successCount.toString()),
+      );
       if (errorCount > 0) {
-        buf.write('，失败 $errorCount 条');
+        buf.write(
+          context.t.cloud.importFailedCount(count: errorCount.toString()),
+        );
         for (final msg in errorMessages.take(5)) {
-          buf.write('\n• $msg');
+          buf.write('\n\u2022 $msg');
         }
         if (errorMessages.length > 5) {
-          buf.write('\n… 还有 ${errorMessages.length - 5} 条错误');
+          buf.write(
+            '\n${context.t.cloud.importMoreErrors(count: (errorMessages.length - 5).toString())}',
+          );
         }
       }
 
@@ -2048,7 +2095,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       if (successCount > 0) widget.onUpdateSuccess();
     } catch (e) {
       setState(() {
-        _importResult = '导入失败: $e';
+        _importResult = context.t.cloud.importFailedError(error: '$e');
         _importHasError = true;
       });
     } finally {
@@ -2061,8 +2108,11 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
   Future<void> _searchEntry() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
-      setState(() => _searchError =
-          _searchMode == 'id' ? '请输入 entry_id' : '请输入词头');
+      setState(
+        () => _searchError = _searchMode == 'id'
+            ? context.t.cloud.enterEntryId
+            : context.t.cloud.enterHeadword,
+      );
       return;
     }
 
@@ -2076,10 +2126,14 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
 
     try {
       if (_searchMode == 'id') {
-        final entry =
-            await _databaseService.getEntryJsonById(widget.dictId, query);
+        final entry = await _databaseService.getEntryJsonById(
+          widget.dictId,
+          query,
+        );
         if (entry == null) {
-          setState(() => _searchError = '未找到 entry_id 为 $query 的条目');
+          setState(
+            () => _searchError = context.t.cloud.entryIdNotFound(id: query),
+          );
         } else {
           // 从 entry JSON 中提取 entry_id
           final eid = (entry['entry_id'] ?? entry['id'])?.toString() ?? query;
@@ -2095,11 +2149,12 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           query,
         );
         if (entries.isEmpty) {
-          setState(() => _searchError = '未找到词头为「$query」的条目');
+          setState(
+            () => _searchError = context.t.cloud.headwordNotFound(word: query),
+          );
         } else if (entries.length == 1) {
           final entry = entries.first;
-          final eid =
-              (entry['entry_id'] ?? entry['id'])?.toString() ?? query;
+          final eid = (entry['entry_id'] ?? entry['id'])?.toString() ?? query;
           setState(() {
             _foundEntry = entry;
             _foundEntryId = eid;
@@ -2109,7 +2164,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
         }
       }
     } catch (e) {
-      setState(() => _searchError = '搜索失败: $e');
+      setState(() => _searchError = context.t.cloud.searchFailed(error: '$e'));
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }
@@ -2118,25 +2173,26 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
   Future<void> _deleteEntry() async {
     if (_foundEntryId == null || _foundEntry == null) return;
 
-    final headword =
-        _foundEntry!['headword']?.toString() ?? _foundEntryId!;
+    final headword = _foundEntry!['headword']?.toString() ?? _foundEntryId!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认删除'),
+        title: Text(context.t.dict.deleteConfirmTitle),
         content: Text(
-          '确定要删除条目「$headword」（entry_id: $_foundEntryId）吗？\n\n'
-          '此操作会将删除记录写入 commit 表，推送更新后服务器端的该条目也将被删除。',
+          context.t.cloud.deleteEntryConfirmContent(
+            headword: headword,
+            id: _foundEntryId!,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('确认删除'),
+            child: Text(context.t.dict.deleteConfirmTitle),
           ),
         ],
       ),
@@ -2159,14 +2215,18 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           _searchError = null;
         });
         if (mounted) {
-          showToast(context, '条目已删除，已记录到 commit 表');
+          showToast(context, context.t.cloud.entryDeleted);
           widget.onUpdateSuccess();
         }
       } else {
-        if (mounted) showToast(context, '删除失败，条目可能不存在');
+        if (mounted) showToast(context, context.t.cloud.entryDeleteFailed);
       }
     } catch (e) {
-      if (mounted) showToast(context, '删除失败: $e');
+      if (mounted)
+        showToast(
+          context,
+          context.t.cloud.deleteFailedError(error: e.toString()),
+        );
     } finally {
       if (mounted) setState(() => _isDeleting = false);
     }
@@ -2178,7 +2238,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return AlertDialog(
-      title: const Text('更新 JSON'),
+      title: Text(context.t.cloud.updateJsonTitle),
       contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
       content: SizedBox(
         width: 560,
@@ -2187,7 +2247,9 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           children: [
             Container(
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.4,
+                ),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: TabBar(
@@ -2207,11 +2269,14 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                 indicatorPadding: const EdgeInsets.all(3),
                 labelColor: colorScheme.primary,
                 unselectedLabelColor: colorScheme.onSurfaceVariant,
-                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                labelStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
                 unselectedLabelStyle: const TextStyle(fontSize: 13),
-                tabs: const [
-                  Tab(text: '导入 JSON / JSONL'),
-                  Tab(text: '搜索删除条目'),
+                tabs: [
+                  Tab(text: context.t.cloud.importTab),
+                  Tab(text: context.t.cloud.deleteSearchTab),
                 ],
               ),
             ),
@@ -2219,10 +2284,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildImportTab(),
-                  _buildDeleteTab(),
-                ],
+                children: [_buildImportTab(), _buildDeleteTab()],
               ),
             ),
           ],
@@ -2231,7 +2293,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
+          child: Text(context.t.common.close),
         ),
       ],
     );
@@ -2256,8 +2318,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
               expands: true,
               style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
               decoration: InputDecoration(
-                hintText:
-                    '粘贴 JSON 或 JSONL（每行一个 JSON 对象）\n\n注意：每条 JSON 必须含有 entry_id 字段',
+                hintText: context.t.cloud.importJsonPlaceholder,
                 hintStyle: TextStyle(
                   color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                 ),
@@ -2323,10 +2384,12 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                           });
                         },
                   icon: const Icon(Icons.clear, size: 16),
-                  label: const Text('清空'),
+                  label: Text(context.t.cloud.clearLabel),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                 ),
               ),
@@ -2340,7 +2403,11 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.upload_outlined, size: 18),
-                label: Text(_isImporting ? '导入中…' : '写入数据库'),
+                label: Text(
+                  _isImporting
+                      ? context.t.cloud.importing
+                      : context.t.cloud.writingToDb,
+                ),
               ),
             ),
           ],
@@ -2358,16 +2425,16 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       children: [
         // 搜索模式切换
         SegmentedButton<String>(
-          segments: const [
+          segments: [
             ButtonSegment(
               value: 'id',
-              label: Text('ID 搜索'),
-              icon: Icon(Icons.tag, size: 15),
+              label: Text(context.t.cloud.idSearch),
+              icon: const Icon(Icons.tag, size: 15),
             ),
             ButtonSegment(
               value: 'headword',
-              label: Text('词头搜索'),
-              icon: Icon(Icons.search, size: 15),
+              label: Text(context.t.cloud.prefixSearch),
+              icon: const Icon(Icons.search, size: 15),
             ),
           ],
           selected: {_searchMode},
@@ -2382,9 +2449,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           },
           style: ButtonStyle(
             visualDensity: VisualDensity.compact,
-            textStyle: WidgetStateProperty.all(
-              const TextStyle(fontSize: 13),
-            ),
+            textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 13)),
           ),
         ),
         const SizedBox(height: 10),
@@ -2399,20 +2464,23 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                     ? TextInputType.number
                     : TextInputType.text,
                 decoration: InputDecoration(
-                  labelText: _searchMode == 'id' ? 'entry_id' : '词头',
+                  labelText: _searchMode == 'id'
+                      ? 'entry_id'
+                      : context.t.cloud.searchHeadwordLabel,
                   hintText: _searchMode == 'id'
-                      ? '输入整数 entry_id'
-                      : '输入词头（自动规范化匹配）',
+                      ? context.t.cloud.searchIdHint
+                      : context.t.cloud.searchHeadwordHint,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide:
-                        BorderSide(color: colorScheme.outlineVariant),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 12),
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                   isDense: true,
                 ),
                 onSubmitted: (_) => _searchEntry(),
@@ -2427,7 +2495,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('搜索'),
+                  : Text(context.t.search.searchBtn),
             ),
           ],
         ),
@@ -2435,22 +2503,26 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
         // 错误提示
         if (_searchError != null)
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: colorScheme.errorContainer,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                Icon(Icons.error_outline,
-                    size: 16, color: colorScheme.onErrorContainer),
+                Icon(
+                  Icons.error_outline,
+                  size: 16,
+                  color: colorScheme.onErrorContainer,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _searchError!,
                     style: TextStyle(
-                        color: colorScheme.onErrorContainer, fontSize: 13),
+                      color: colorScheme.onErrorContainer,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
@@ -2461,9 +2533,11 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Text(
-              '找到 ${_foundEntries.length} 条匹配条目，点击选择要删除的条目：',
-              style:
-                  TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+              context.t.cloud.matchedEntries(count: _foundEntries.length),
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           Expanded(
@@ -2480,19 +2554,22 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                 itemBuilder: (context, index) {
                   final e = _foundEntries[index];
                   final hw = e['headword']?.toString() ?? '';
-                  final eid =
-                      (e['entry_id'] ?? e['id'])?.toString() ?? '';
+                  final eid = (e['entry_id'] ?? e['id'])?.toString() ?? '';
                   return ListTile(
                     dense: true,
                     title: Text(hw, style: const TextStyle(fontSize: 13)),
                     subtitle: Text(
                       'entry_id: $eid',
                       style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.onSurfaceVariant),
+                        fontSize: 11,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                    trailing: Icon(Icons.chevron_right,
-                        size: 18, color: colorScheme.outline),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: colorScheme.outline,
+                    ),
                     onTap: () {
                       setState(() {
                         _foundEntry = e;
@@ -2520,8 +2597,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
               child: SingleChildScrollView(
                 child: Text(
                   const JsonEncoder.withIndent('  ').convert(_foundEntry),
-                  style: const TextStyle(
-                      fontSize: 11, fontFamily: 'monospace'),
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
                 ),
               ),
             ),
@@ -2537,11 +2613,13 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                   });
                 },
                 icon: const Icon(Icons.arrow_back, size: 15),
-                label: const Text('返回'),
+                label: Text(context.t.common.back),
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                 ),
               ),
               const Spacer(),
@@ -2554,7 +2632,11 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.delete_outline, size: 18),
-                label: Text(_isDeleting ? '删除中…' : '删除此条目'),
+                label: Text(
+                  _isDeleting
+                      ? context.t.cloud.deleting
+                      : context.t.cloud.deleteEntry,
+                ),
                 style: FilledButton.styleFrom(
                   backgroundColor: colorScheme.error,
                   foregroundColor: colorScheme.onError,

@@ -36,7 +36,9 @@ List<Map<String, dynamic>> _parsePronunciations(dynamic value) {
     return [Map<String, dynamic>.from(value)];
   }
   if (value is String) {
-    return [<String, dynamic>{'phonetic': value}];
+    return [
+      <String, dynamic>{'phonetic': value},
+    ];
   }
   return [];
 }
@@ -388,8 +390,11 @@ enum _QueryMode { normal, like, glob }
 /// - 否则 → 普通精确/前缀匹配
 _QueryMode _detectQueryMode(String query) {
   if (query.contains('%') || query.contains('_')) return _QueryMode.like;
-  if (query.contains('*') || query.contains('?') ||
-      query.contains('[') || query.contains(']') || query.contains('^')) {
+  if (query.contains('*') ||
+      query.contains('?') ||
+      query.contains('[') ||
+      query.contains(']') ||
+      query.contains('^')) {
     return _QueryMode.glob;
   }
   return _QueryMode.normal;
@@ -548,6 +553,25 @@ class DatabaseService {
     return normalized;
   }
 
+  /// 用于写入数据库时规范化文本，与 build_db_from_jsonl.py 的 normalize_text() 保持一致。
+  /// - [removeSpaces] 为 true 时去除空格（用于 phonetic 字段）；headword_normalized 不去空格。
+  /// - 含有中文字符时转化为简体（与搜索端保持一致）。
+  static String _normalizeForInsert(String text, {bool removeSpaces = false}) {
+    // 小写化 + 去除音调符号 + strip
+    String normalized = text
+        .toLowerCase()
+        .replaceAll(_diacriticsRegExp, '')
+        .trim();
+    if (removeSpaces) {
+      normalized = normalized.replaceAll(' ', '');
+    }
+    // 含中文字符时繁转简
+    if (_chineseRegExp.hasMatch(normalized)) {
+      normalized = ChineseConvertService().convertToSimplified(normalized);
+    }
+    return normalized;
+  }
+
   /// 自动模式下检测输入文本可能属于的语言列表。
   /// 返回 null 表示未检测到特定表意文字脚本，应搜索所有表音文字词典。
   List<String>? _detectPossibleLanguages(String text) {
@@ -581,7 +605,9 @@ class DatabaseService {
       dictId: dictId,
     );
 
-    if (entries.isEmpty && _detectQueryMode(word) == _QueryMode.normal && !usePhoneticSearch) {
+    if (entries.isEmpty &&
+        _detectQueryMode(word) == _QueryMode.normal &&
+        !usePhoneticSearch) {
       // 判断是否需要调用英语关系词搜索
       bool shouldSearchEnglish;
       if (sourceLanguage == 'auto') {
@@ -589,7 +615,8 @@ class DatabaseService {
         // possibleLangs == null 表示表音文字（可能含英语）；包含 'en' 则明确含英语
         shouldSearchEnglish = possibleLangs == null;
       } else {
-        shouldSearchEnglish = sourceLanguage == null ||
+        shouldSearchEnglish =
+            sourceLanguage == null ||
             LanguageUtils.normalizeSourceLanguage(sourceLanguage) == 'en';
       }
 
@@ -718,7 +745,9 @@ class DatabaseService {
 
     final filteredDicts = enabledDicts.where((metadata) {
       if (targetLang == 'auto') {
-        final lang = LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
+        final lang = LanguageUtils.normalizeSourceLanguage(
+          metadata.sourceLanguage,
+        );
         if (possibleLangs != null) {
           // 检测到表意文字：只搜索匹配的语言
           final match = possibleLangs.contains(lang);
@@ -784,7 +813,9 @@ class DatabaseService {
     try {
       final meta = await _dictManager.getDictionaryMetadata(dictId);
       const logographic = {'zh', 'ja', 'ko'};
-      final normalizedLang = LanguageUtils.normalizeSourceLanguage(meta?.sourceLanguage ?? '');
+      final normalizedLang = LanguageUtils.normalizeSourceLanguage(
+        meta?.sourceLanguage ?? '',
+      );
       final isbiaoyi = logographic.contains(normalizedLang);
       _dictHasPhoneticsCache[dictId] = isbiaoyi;
       return isbiaoyi;
@@ -1029,12 +1060,12 @@ class DatabaseService {
     final filteredDicts = sourceLanguage == 'auto'
         ? enabledDicts
         : enabledDicts
-            .where(
-              (m) =>
-                  LanguageUtils.normalizeSourceLanguage(m.sourceLanguage) ==
-                  LanguageUtils.normalizeSourceLanguage(sourceLanguage),
-            )
-            .toList();
+              .where(
+                (m) =>
+                    LanguageUtils.normalizeSourceLanguage(m.sourceLanguage) ==
+                    LanguageUtils.normalizeSourceLanguage(sourceLanguage),
+              )
+              .toList();
 
     Logger.d(
       'getPreSearchCandidates: query=|$query| lang=$sourceLanguage exactMatch=$exactMatch '
@@ -1059,11 +1090,25 @@ class DatabaseService {
         if (sourceLanguage == 'auto') {
           // auto 模式：表意词典搜 headword_normalized + phonetic；表音词典搜 headword_normalized
           return isbiaoyi
-              ? _prefixFromBiaoyiDictAuto(db, query, normalizedQuery, biaoyiExactMatch: biaoyiExactMatch, limit: limit)
-              : _prefixFromPhoneticDictAuto(db, query, normalizedQuery, exactMatch: exactMatch, limit: limit);
+              ? _prefixFromBiaoyiDictAuto(
+                  db,
+                  query,
+                  normalizedQuery,
+                  biaoyiExactMatch: biaoyiExactMatch,
+                  limit: limit,
+                )
+              : _prefixFromPhoneticDictAuto(
+                  db,
+                  query,
+                  normalizedQuery,
+                  exactMatch: exactMatch,
+                  limit: limit,
+                );
         } else if (isbiaoyi) {
           return _prefixFromBiaoyiDict(
-            db, query, normalizedQuery,
+            db,
+            query,
+            normalizedQuery,
             usePhoneticSearch: usePhoneticSearch,
             biaoyiExactMatch: biaoyiExactMatch,
             limit: limit,
@@ -1071,13 +1116,20 @@ class DatabaseService {
         } else {
           // 表音词典：query 保留原始输入用于 startsWith 大小写/空格比较
           return _prefixFromPhoneticDict(
-            db, query, normalizedQuery,
+            db,
+            query,
+            normalizedQuery,
             exactMatch: exactMatch,
             limit: limit,
           );
         }
       } catch (e, st) {
-        Logger.e('dict=${metadata.id} 搜索异常: $e', tag: 'PrefixSearch', error: e, stackTrace: st);
+        Logger.e(
+          'dict=${metadata.id} 搜索异常: $e',
+          tag: 'PrefixSearch',
+          error: e,
+          stackTrace: st,
+        );
         return <_Candidate>[];
       }
     }).toList();
@@ -1097,10 +1149,14 @@ class DatabaseService {
 
     if (sourceLanguage == 'auto') {
       // auto 模式：统一按 headword 小写后升序
-      merged.sort((a, b) => a.headword.toLowerCase().compareTo(b.headword.toLowerCase()));
+      merged.sort(
+        (a, b) => a.headword.toLowerCase().compareTo(b.headword.toLowerCase()),
+      );
     } else {
       const logographic = {'zh', 'ja', 'ko'};
-      if (logographic.contains(LanguageUtils.normalizeSourceLanguage(sourceLanguage))) {
+      if (logographic.contains(
+        LanguageUtils.normalizeSourceLanguage(sourceLanguage),
+      )) {
         // 表意语言：sortKey = normalize_text(phonetic)，即去声调的拼音/假名字母，
         // compareTo 字典序等价于该语言的语音顺序（中文拼音序，日文五十音序，韩文字母序）。
         merged.sort((a, b) {
@@ -1164,11 +1220,13 @@ class DatabaseService {
       );
       return rows
           .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-          .map((r) => _Candidate(
-                r['headword'] as String,
-                r['phonetic'] as String? ?? '',
-                1,
-              ))
+          .map(
+            (r) => _Candidate(
+              r['headword'] as String,
+              r['phonetic'] as String? ?? '',
+              1,
+            ),
+          )
           .toList();
     } else {
       // 普通/简繁区分模式。
@@ -1206,11 +1264,13 @@ class DatabaseService {
       );
       var hwCandidates = hwRows
           .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-          .map((r) => _Candidate(
-                r['headword'] as String,
-                r['phonetic'] as String? ?? '',
-                1,
-              ))
+          .map(
+            (r) => _Candidate(
+              r['headword'] as String,
+              r['phonetic'] as String? ?? '',
+              1,
+            ),
+          )
           .toList();
       if (biaoyiExactMatch && qMode == _QueryMode.normal) {
         final trimmedForExact = query.trim();
@@ -1230,11 +1290,13 @@ class DatabaseService {
       );
       final phCandidates = phRows
           .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-          .map((r) => _Candidate(
-                r['headword'] as String,
-                r['phonetic'] as String? ?? '',
-                1,
-              ))
+          .map(
+            (r) => _Candidate(
+              r['headword'] as String,
+              r['phonetic'] as String? ?? '',
+              1,
+            ),
+          )
           .toList();
 
       // Dart 层合并去重，headword_normalized 臂优先
@@ -1329,7 +1391,9 @@ class DatabaseService {
   }) async {
     final qMode = _detectQueryMode(normalizedQuery);
     final bool isNormalMode = qMode == _QueryMode.normal;
-    final int fetchLimit = (biaoyiExactMatch && isNormalMode) ? limit * 2 : limit;
+    final int fetchLimit = (biaoyiExactMatch && isNormalMode)
+        ? limit * 2
+        : limit;
 
     // ── headword_normalized 臂 ──────────────────────────────────────
     final String hwWhere;
@@ -1355,11 +1419,13 @@ class DatabaseService {
     );
     var hwCandidates = hwRows
         .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-        .map((r) => _Candidate(
-              r['headword'] as String,
-              r['phonetic'] as String? ?? '',
-              1,
-            ))
+        .map(
+          (r) => _Candidate(
+            r['headword'] as String,
+            r['phonetic'] as String? ?? '',
+            1,
+          ),
+        )
         .toList();
     // 简繁区分仅在普通前缀模式下生效
     if (biaoyiExactMatch && isNormalMode) {
@@ -1393,11 +1459,13 @@ class DatabaseService {
     );
     final phCandidates = phRows
         .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-        .map((r) => _Candidate(
-              r['headword'] as String,
-              r['phonetic'] as String? ?? '',
-              1,
-            ))
+        .map(
+          (r) => _Candidate(
+            r['headword'] as String,
+            r['phonetic'] as String? ?? '',
+            1,
+          ),
+        )
         .toList();
 
     // Dart 层合并去重，headword_normalized 臂优先
@@ -1482,8 +1550,6 @@ class DatabaseService {
   }
 
   // ─────────────────────────────────────────────────────────────────
-
-
 
   Future<void> close() async {
     if (_database != null && _database!.isOpen) {
@@ -1611,7 +1677,12 @@ class DatabaseService {
         // 保留已有 insert 记录（不能把未进入服务器的 insert 覆盖为 update）
         final existingType = await _getExistingCommitType(db, entry.id);
         final operationType = existingType == 'insert' ? 'insert' : 'update';
-        await _recordUpdate(db, entry.id, entry.headword, operationType: operationType);
+        await _recordUpdate(
+          db,
+          entry.id,
+          entry.headword,
+          operationType: operationType,
+        );
       }
 
       return result > 0;
@@ -1657,7 +1728,24 @@ class DatabaseService {
         return false;
       }
 
-      final headwordNormalized = _normalizeSearchWord(entry.headword);
+      // 判断是否为表意词典（中/日/韩），决定是否写入 phonetic 列
+      final isbiaoyi = await _isBiaoyiDict(dictId, db);
+
+      // headword_normalized: 不去空格（与 build_db_from_jsonl.py normalize_text 一致）
+      final headwordNormalized = _normalizeForInsert(entry.headword);
+
+      // 表意词典：从 JSON 根节点读取 phonetic 字段并规范化（仅去空格）
+      String? phoneticNormalized;
+      if (isbiaoyi) {
+        final rawJson = entry.toJson();
+        final phoneticRaw = rawJson['phonetic']?.toString() ?? '';
+        if (phoneticRaw.isNotEmpty) {
+          phoneticNormalized = _normalizeForInsert(
+            phoneticRaw,
+            removeSpaces: true,
+          );
+        }
+      }
 
       // 在 INSERT 之前检查条目是否已存在，用于区分 insert 和 update
       final existingRows = await db.query(
@@ -1673,6 +1761,8 @@ class DatabaseService {
         'entry_id': entryId,
         'headword': entry.headword,
         'headword_normalized': headwordNormalized,
+        if (isbiaoyi && phoneticNormalized != null)
+          'phonetic': phoneticNormalized,
         'entry_type': entry.entryType,
         'page': entry.page,
         'section': entry.section,
@@ -1683,9 +1773,15 @@ class DatabaseService {
         // 若已有 insert 记录（尚未推送）则保持 insert；
         // 若是全新条目，记为 insert；否则记为 update
         final existingType = await _getExistingCommitType(db, entry.id);
-        final operationType =
-            (isNewEntry || existingType == 'insert') ? 'insert' : 'update';
-        await _recordUpdate(db, entry.id, entry.headword, operationType: operationType);
+        final operationType = (isNewEntry || existingType == 'insert')
+            ? 'insert'
+            : 'update';
+        await _recordUpdate(
+          db,
+          entry.id,
+          entry.headword,
+          operationType: operationType,
+        );
       }
 
       return true;

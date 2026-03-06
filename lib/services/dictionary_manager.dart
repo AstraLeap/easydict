@@ -10,6 +10,7 @@ import 'package:sqflite/sqflite.dart';
 import '../data/models/dictionary_metadata.dart';
 import '../core/logger.dart';
 import '../core/utils/language_utils.dart';
+import '../i18n/strings.g.dart';
 import 'advanced_search_settings_service.dart';
 import 'entry_event_bus.dart';
 import 'search_history_service.dart';
@@ -253,7 +254,7 @@ class DictionaryManager {
     final dbPath = await getMediaDbPath(dictionaryId);
 
     if (!await File(dbPath).exists()) {
-      throw Exception('媒体数据库不存在: $dictionaryId');
+      throw Exception(t.dict.mediaDbNotFound(id: dictionaryId));
     }
 
     return openDatabase(dbPath, readOnly: false);
@@ -819,7 +820,7 @@ class DictionaryManager {
     final dbPath = await getDictionaryDbPath(dictionaryId);
 
     if (!await File(dbPath).exists()) {
-      throw Exception('词典数据库不存在: $dictionaryId');
+      throw Exception(t.dict.dictDbNotFound(id: dictionaryId));
     }
 
     return openDatabase(dbPath, readOnly: false);
