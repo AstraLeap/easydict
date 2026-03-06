@@ -667,7 +667,7 @@ class _CloudServicePageState extends State<CloudServicePage> {
                   borderSide: BorderSide(color: colorScheme.primary, width: 2),
                 ),
                 filled: true,
-                fillColor: colorScheme.surfaceContainerLowest,
+                fillColor: colorScheme.surfaceContainerLow,
                 prefixIcon: const Icon(Icons.link),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.save_outlined),
@@ -2306,26 +2306,30 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: colorScheme.outlineVariant),
-            ),
-            child: TextField(
-              controller: _jsonController,
-              maxLines: null,
-              expands: true,
-              style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                hintText: context.t.cloud.importJsonPlaceholder,
-                hintStyle: TextStyle(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                ),
-                border: InputBorder.none,
-                alignLabelWithHint: true,
-                contentPadding: const EdgeInsets.all(12),
+          child: TextField(
+            controller: _jsonController,
+            maxLines: null,
+            expands: true,
+            style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+            decoration: InputDecoration(
+              hintText: context.t.cloud.importJsonPlaceholder,
+              hintStyle: TextStyle(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
               ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.primary, width: 2),
+              ),
+              filled: true,
+              fillColor: colorScheme.surfaceContainerHighest,
+              contentPadding: const EdgeInsets.all(12),
             ),
           ),
         ),

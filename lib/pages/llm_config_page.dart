@@ -1695,15 +1695,16 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
               ),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
               prefixIcon: const Icon(Icons.cloud_outlined),
               prefixIconConstraints: const BoxConstraints(
                 minWidth: 48,
                 minHeight: 48,
               ),
+              contentPadding: const EdgeInsets.fromLTRB(12, 16, 0, 16),
             ),
             buttonStyleData: const FormFieldButtonStyleData(
-              padding: EdgeInsets.only(right: 8),
+              padding: EdgeInsets.zero,
             ),
             iconStyleData: IconStyleData(
               icon: Icon(
@@ -1714,7 +1715,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             dropdownStyleData: DropdownStyleData(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
               ),
               maxHeight: 300,
               offset: const Offset(0, -4),
@@ -1758,7 +1759,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
               ),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
               prefixIcon: const Icon(Icons.key_outlined),
               prefixIconConstraints: const BoxConstraints(
                 minWidth: 48,
@@ -1810,7 +1811,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
               ),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
               prefixIcon: const Icon(Icons.link_outlined),
               prefixIconConstraints: const BoxConstraints(
                 minWidth: 48,
@@ -1848,7 +1849,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
               ),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
               prefixIcon: const Icon(Icons.model_training_outlined),
               prefixIconConstraints: const BoxConstraints(
                 minWidth: 48,
@@ -1875,7 +1876,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: Theme.of(context).colorScheme.outlineVariant,
@@ -2024,15 +2025,16 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 ),
               ),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
               prefixIcon: const Icon(Icons.record_voice_over_outlined),
               prefixIconConstraints: const BoxConstraints(
                 minWidth: 48,
                 minHeight: 48,
               ),
+              contentPadding: const EdgeInsets.fromLTRB(12, 16, 0, 16),
             ),
             buttonStyleData: const FormFieldButtonStyleData(
-              padding: EdgeInsets.only(right: 8),
+              padding: EdgeInsets.zero,
             ),
             iconStyleData: IconStyleData(
               icon: Icon(
@@ -2043,7 +2045,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             dropdownStyleData: DropdownStyleData(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
               ),
               maxHeight: 300,
               offset: const Offset(0, -4),
@@ -2094,7 +2096,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   ),
                 ),
                 filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
                 prefixIcon: const Icon(Icons.key_outlined),
                 prefixIconConstraints: const BoxConstraints(
                   minWidth: 48,
@@ -2167,7 +2169,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   ),
                 ),
                 filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
                 prefixIcon: const Icon(Icons.link_outlined),
                 prefixIconConstraints: const BoxConstraints(
                   minWidth: 48,
@@ -2482,10 +2484,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               valueListenable: _voiceNotifierFor(lang.langCode),
               isExpanded: true,
               decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+                contentPadding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -2503,10 +2502,10 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   ),
                 ),
                 filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
               ),
               buttonStyleData: const FormFieldButtonStyleData(
-                padding: EdgeInsets.only(right: 4),
+                padding: EdgeInsets.zero,
               ),
               iconStyleData: IconStyleData(
                 icon: Icon(
@@ -2518,7 +2517,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               dropdownStyleData: DropdownStyleData(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
-                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
                 ),
                 maxHeight: 250,
                 offset: const Offset(0, -4),

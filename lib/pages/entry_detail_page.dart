@@ -2032,6 +2032,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         }
       }
 
+      // Preserve the original entry ID (which may be a composite like 'dictid_42')
+      // so that _updateEntryInGroup can find and replace the entry correctly.
+      fullJson['entry_id'] = entry.id;
       final newEntry = DictionaryEntry.fromJson(fullJson);
       final success = await DatabaseService().insertOrUpdateEntry(newEntry);
 

@@ -449,6 +449,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
   Map<int, int> _foldRanges = {};
 
   bool _syncing = false;
+  List<(int, String)> _stickyContextLines = [];
 
   static const double _lineHeight = 21.0; // fontSize(14) × height(1.5)
   static const TextStyle _lineStyle = TextStyle(
@@ -467,6 +468,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _displayCtrl.addListener(_onDisplayChanged);
     _recomputeFoldRanges();
     widget.controller.addListener(_onParentChanged);
+    _textScrollCtrl.addListener(_onScrollChanged);
   }
 
   @override
@@ -474,6 +476,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     widget.controller.removeListener(_onParentChanged);
     _displayCtrl.removeListener(_onDisplayChanged);
     _displayCtrl.dispose();
+    _textScrollCtrl.removeListener(_onScrollChanged);
     _textScrollCtrl.dispose();
     super.dispose();
   }
@@ -535,7 +538,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _displayCtrl.text = _displayText;
     _syncing = false;
     _recomputeFoldRanges();
-    if (mounted) setState(() {});
+    if (mounted) setState(() { _stickyContextLines = _computeStickyContext(); });
   }
 
   // ── Text reconciliation ─────────────────────────────────────────
@@ -569,6 +572,45 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _nodes.replaceRange(start, oldEnd + 1, replacement);
   }
 
+  // ── Sticky context (VS Code-like) ─────────────────────────────
+
+  void _onScrollChanged() {
+    if (!mounted) return;
+    final newSticky = _computeStickyContext();
+    if (!_stickyEquals(newSticky, _stickyContextLines)) {
+      setState(() { _stickyContextLines = newSticky; });
+    }
+  }
+
+  bool _stickyEquals(List<(int, String)> a, List<(int, String)> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].$1 != b[i].$1 || a[i].$2 != b[i].$2) return false;
+    }
+    return true;
+  }
+
+  List<(int, String)> _computeStickyContext() {
+    final offset = _textScrollCtrl.hasClients ? _textScrollCtrl.offset : 0.0;
+    const topPadding = 8.0;
+    final topLineIndex =
+        ((offset - topPadding) / _lineHeight).floor().clamp(0, _nodes.length);
+    if (topLineIndex <= 0) return [];
+    final stack = <(int, String)>[];
+    for (int i = 0; i < topLineIndex; i++) {
+      final line = _nodes[i].content;
+      final trimmedLeft = line.trimLeft();
+      if (trimmedLeft.startsWith('}') || trimmedLeft.startsWith(']')) {
+        if (stack.isNotEmpty) stack.removeLast();
+      }
+      final trimmedRight = line.trimRight();
+      if (trimmedRight.endsWith('{') || trimmedRight.endsWith('[')) {
+        stack.add((i, line));
+      }
+    }
+    return stack;
+  }
+
   // ── Fold / unfold ───────────────────────────────────────────────
 
   void _toggleFold(int i) {
@@ -579,16 +621,17 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
       node.folded = null;
       _nodes.insertAll(i + 1, hidden.map(_LineNode.new).toList());
     } else {
-      // Fold: collapse nodes[i+1..endLine] under node[i].
+      // Fold: collapse nodes[i+1..endLine-1] under node[i].
+      // Keep the closing bracket line (endLine) visible.
       final endLine = _foldRanges[i];
       if (endLine == null) return;
       final hidden = <String>[];
-      for (int k = i + 1; k <= endLine; k++) {
+      for (int k = i + 1; k < endLine; k++) {
         hidden.add(_nodes[k].content);
         if (_nodes[k].folded != null) hidden.addAll(_nodes[k].folded!);
       }
       node.folded = hidden;
-      _nodes.removeRange(i + 1, endLine + 1);
+      _nodes.removeRange(i + 1, endLine);
     }
     _syncing = true;
     _displayCtrl.text = _displayText;
@@ -596,6 +639,9 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _syncing = false;
     _recomputeFoldRanges();
     setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onScrollChanged();
+    });
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -607,44 +653,114 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
       constraints: const BoxConstraints(maxHeight: 300, minHeight: 60),
       child: Container(
         decoration: BoxDecoration(
+          color: colorScheme.surface,
           border: Border.all(
             color:
                 widget.hasSyntaxError ? colorScheme.error : colorScheme.outline,
           ),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: SingleChildScrollView(
-          controller: _textScrollCtrl,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: Stack(
             children: [
-              // Gutter: fold icons
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Column(
+              SingleChildScrollView(
+                controller: _textScrollCtrl,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (int i = 0; i < _nodes.length; i++)
-                      _buildGutterCell(i, colorScheme),
+                    // Gutter: fold icons
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Column(
+                        children: [
+                          for (int i = 0; i < _nodes.length; i++)
+                            _buildGutterCell(i, colorScheme),
+                        ],
+                      ),
+                    ),
+                    // Single TextField – supports native cursor + multi-line selection.
+                    Expanded(
+                      child: TextField(
+                        controller: _displayCtrl,
+                        style: _lineStyle,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              // Single TextField – supports native cursor + multi-line selection.
-              Expanded(
-                child: TextField(
-                  controller: _displayCtrl,
-                  style: _lineStyle,
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    isDense: true,
+              if (_stickyContextLines.isNotEmpty)
+                _buildStickyHeader(colorScheme),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStickyHeader(ColorScheme colorScheme) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          border: Border(
+            bottom: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+              width: 1,
+            ),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _stickyContextLines.map((entry) {
+            final (lineIndex, lineContent) = entry;
+            return MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () {
+                  final targetOffset = lineIndex * _lineHeight + 8.0;
+                  _textScrollCtrl.animateTo(
+                    targetOffset,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                  );
+                },
+                child: SizedBox(
+                  height: _lineHeight,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 20), // gutter space
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            lineContent,
+                            style: _lineStyle.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            );
+          }).toList(),
         ),
       ),
     );

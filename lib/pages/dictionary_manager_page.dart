@@ -1227,18 +1227,18 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
-                  onPressed: () => _showEditFilesDialog(dict),
-                  icon: Icon(Icons.swap_horiz, color: colorScheme.primary),
-                  tooltip: context.t.dict.tooltipReplaceFile,
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
                   onPressed: () => _showPushUpdatesDialog(dict),
                   icon: Icon(
                     Icons.cloud_upload_outlined,
                     color: colorScheme.primary,
                   ),
                   tooltip: context.t.dict.tooltipPushUpdate,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: () => _showEditFilesDialog(dict),
+                  icon: Icon(Icons.swap_horiz, color: colorScheme.primary),
+                  tooltip: context.t.dict.tooltipReplaceFile,
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
