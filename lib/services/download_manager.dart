@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/remote_dictionary.dart';
 import '../services/dictionary_store_service.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 class DownloadOptionsResult {
   final bool includeMetadata;
@@ -55,7 +56,7 @@ class DownloadTask {
     this.totalBytes = 0,
     this.fileProgress = 0.0,
     this.overallProgress = 0.0,
-    this.status = '准备下载...',
+    this.status = '\u51c6\u5907\u4e0b\u8f7d...',
     this.error,
     this.speedBytesPerSecond = 0,
     this.onComplete,
@@ -91,7 +92,7 @@ class DownloadTask {
     totalBytes: json['totalBytes'] as int? ?? 0,
     fileProgress: (json['fileProgress'] as num?)?.toDouble() ?? 0.0,
     overallProgress: (json['overallProgress'] as num?)?.toDouble() ?? 0.0,
-    status: json['status'] as String? ?? '准备下载...',
+    status: json['status'] as String? ?? t.dict.statusPreparing,
     error: json['error'] as String?,
     speedBytesPerSecond: json['speedBytesPerSecond'] as int? ?? 0,
   );
@@ -201,7 +202,7 @@ class DownloadManager with ChangeNotifier {
       dictName: dict.name,
       startTime: DateTime.now(),
       state: DownloadState.downloading,
-      status: '准备下载...',
+      status: t.dict.statusPreparing,
       onComplete: onComplete,
       onError: onError,
     );
@@ -229,7 +230,7 @@ class DownloadManager with ChangeNotifier {
 
     try {
       if (_storeService == null) {
-        throw Exception('未配置词典商店服务');
+        throw Exception(t.dict.storeNotConfigured);
       }
 
       // 滞动窗口算速变量（完全局部，不持久化）
@@ -251,7 +252,10 @@ class DownloadManager with ChangeNotifier {
               (event['receivedBytes'] as num?)?.toInt() ?? 0;
 
           // 滞动窗口速度计算：每 2 秒更新一次，避免单个 chunk 大小波动巾尕显示
-          speedWindowBytes += (newReceivedBytes - task.receivedBytes).clamp(0, double.maxFinite.toInt());
+          speedWindowBytes += (newReceivedBytes - task.receivedBytes).clamp(
+            0,
+            double.maxFinite.toInt(),
+          );
           final windowElapsed = now.difference(speedWindowStart);
           if (windowElapsed >= speedUpdateInterval) {
             final windowSecs = windowElapsed.inMilliseconds / 1000.0;
@@ -274,7 +278,7 @@ class DownloadManager with ChangeNotifier {
           task.overallProgress = task.totalFiles > 0
               ? (task.fileIndex - 1 + task.fileProgress) / task.totalFiles
               : 0.0;
-          task.status = event['status'] as String? ?? '下载中...';
+          task.status = event['status'] as String? ?? t.dict.statusDownloading;
           task.error = null;
           // The periodic timer handles UI updates; also notify immediately
           // so the very first chunk is reflected without waiting 100 ms.
@@ -283,7 +287,7 @@ class DownloadManager with ChangeNotifier {
         } else if (event['type'] == 'complete') {
           progressTimer.cancel();
           task.state = DownloadState.completed;
-          task.status = '下载完成';
+          task.status = t.dict.statusCompleted;
           task.overallProgress = 1.0;
           task.currentFileName = null;
           notifyListeners();
@@ -291,7 +295,7 @@ class DownloadManager with ChangeNotifier {
           task.onComplete?.call();
           break;
         } else if (event['type'] == 'error') {
-          throw Exception(event['error'] ?? '下载失败');
+          throw Exception(event['error'] ?? t.dict.downloadFailed);
         }
       }
 
@@ -299,7 +303,7 @@ class DownloadManager with ChangeNotifier {
     } catch (e) {
       Logger.e('下载失败: $e', tag: 'DownloadManager');
       task.state = DownloadState.error;
-      task.status = '下载失败';
+      task.status = t.dict.statusFailed;
       task.error = e.toString();
       notifyListeners();
       _saveDownloads();
@@ -314,7 +318,7 @@ class DownloadManager with ChangeNotifier {
     final task = _downloads[dictId];
     if (task != null) {
       task.state = DownloadState.cancelled;
-      task.status = '已取消';
+      task.status = t.dict.cancelled;
       notifyListeners();
       _saveDownloads();
     }
@@ -361,8 +365,10 @@ class DownloadManager with ChangeNotifier {
         int totalBytes,
         double fileProgress,
         int speedBytesPerSecond,
-      }) onProgress,
-    ) updateTask, {
+      })
+      onProgress,
+    )
+    updateTask, {
     VoidCallback? onComplete,
     void Function(String error)? onError,
   }) async {
@@ -376,7 +382,7 @@ class DownloadManager with ChangeNotifier {
       dictName: dictName,
       startTime: DateTime.now(),
       state: DownloadState.downloading,
-      status: '准备更新...',
+      status: t.dict.statusPreparingUpdate,
       onComplete: onComplete,
       onError: onError,
     );
@@ -418,7 +424,7 @@ class DownloadManager with ChangeNotifier {
 
       progressTimer.cancel();
       task.state = DownloadState.completed;
-      task.status = '更新完成';
+      task.status = t.dict.statusUpdateCompleted;
       task.overallProgress = 1.0;
       task.fileProgress = 1.0;
       notifyListeners();
@@ -427,7 +433,7 @@ class DownloadManager with ChangeNotifier {
     } catch (e) {
       Logger.e('更新失败: $e', tag: 'DownloadManager');
       task.state = DownloadState.error;
-      task.status = '更新失败';
+      task.status = t.dict.statusUpdateFailed;
       task.error = e.toString();
       notifyListeners();
       _saveDownloads();
@@ -456,7 +462,7 @@ class DownloadManager with ChangeNotifier {
       dictName: fileName,
       startTime: DateTime.now(),
       state: DownloadState.downloading,
-      status: '准备下载...',
+      status: t.dict.statusPreparing,
       totalFiles: 1,
       onComplete: onComplete,
       onError: onError,
@@ -521,7 +527,7 @@ class DownloadManager with ChangeNotifier {
               ? receivedBytes / contentLength
               : 0.0;
           task.overallProgress = task.fileProgress;
-          task.status = '[1/1] 下载 $fileName';
+          task.status = t.dict.downloadingFile(name: fileName);
           _notifyIfNeeded();
         }
       } finally {
@@ -531,7 +537,7 @@ class DownloadManager with ChangeNotifier {
       await sink.close();
 
       task.state = DownloadState.completed;
-      task.status = '下载完成';
+      task.status = t.dict.statusCompleted;
       task.overallProgress = 1.0;
       task.fileProgress = 1.0;
       notifyListeners();
@@ -540,7 +546,7 @@ class DownloadManager with ChangeNotifier {
     } catch (e) {
       Logger.e('下载失败: $e', tag: 'DownloadManager');
       task.state = DownloadState.error;
-      task.status = '下载失败';
+      task.status = t.dict.statusFailed;
       task.error = e.toString();
       notifyListeners();
       _saveDownloads();

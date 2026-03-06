@@ -9,6 +9,7 @@ import 'dictionary_manager.dart';
 import 'english_search_service.dart';
 import 'preferences_service.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 class EnglishDbService {
   static final EnglishDbService _instance = EnglishDbService._internal();
@@ -87,7 +88,7 @@ class EnglishDbService {
           'EnglishDbService: 下载失败 - HTTP ${response.statusCode}',
           tag: 'EnglishDB',
         );
-        onError('下载失败: HTTP ${response.statusCode}');
+        onError(t.dict.downloadDbFailedHttp(code: response.statusCode.toString()));
         return false;
       }
 
@@ -125,7 +126,7 @@ class EnglishDbService {
       return true;
     } catch (e) {
       Logger.e('EnglishDbService: 下载失败: $e', tag: 'EnglishDB');
-      onError('下载失败: $e');
+      onError(t.cloud.downloadFailedError(error: e.toString()));
       return false;
     }
   }

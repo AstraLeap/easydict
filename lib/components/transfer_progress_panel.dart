@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/download_manager.dart';
 import '../services/upload_manager.dart';
+import '../i18n/strings.g.dart';
 
 class DownloadProgressPanel extends StatefulWidget {
   const DownloadProgressPanel({super.key});
@@ -78,9 +79,9 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
 
     String statusText;
     if (isError) {
-      statusText = '下载失败: ${currentTask.error ?? "未知错误"}';
+      statusText = context.t.dict.downloadError(error: currentTask.error ?? context.t.common.unknown);
     } else if (isCancelled) {
-      statusText = '已取消';
+      statusText = context.t.dict.cancelled;
     } else {
       statusText = currentTask.status;
     }
@@ -131,7 +132,7 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
                     onPressed: () {
                       downloadManager.clearDownload(currentTask.dictId);
                     },
-                    child: Text(isError ? '清除' : '关闭'),
+                    child: Text(isError ? context.t.common.clear : context.t.common.close),
                   ),
               ],
             ),
@@ -249,11 +250,11 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
 
     String statusText;
     if (isError) {
-      statusText = '上传失败: ${currentTask.error ?? "未知错误"}';
+      statusText = context.t.dict.uploadError(error: currentTask.error ?? context.t.common.unknown);
     } else if (isCancelled) {
-      statusText = '已取消';
+      statusText = context.t.dict.cancelled;
     } else if (isCompleted) {
-      statusText = '上传成功';
+      statusText = context.t.dict.uploadSuccess;
     } else {
       statusText = currentTask.status;
     }
@@ -312,7 +313,7 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
                     onPressed: () {
                       uploadManager.clearUpload(currentTask.dictId);
                     },
-                    child: Text(isError ? '清除' : '关闭'),
+                    child: Text(isError ? context.t.common.clear : context.t.common.close),
                   ),
               ],
             ),

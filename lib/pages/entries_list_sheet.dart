@@ -5,6 +5,7 @@ import '../services/font_loader_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/database_service.dart';
 import '../components/global_scale_wrapper.dart';
+import '../i18n/strings.g.dart';
 
 class EntriesListSheet extends StatefulWidget {
   final String dictId;
@@ -139,7 +140,7 @@ class _EntriesListSheetState extends State<EntriesListSheet> {
             controller: searchController,
             onChanged: onSearchChanged,
             decoration: InputDecoration(
-              hintText: '搜索词条...',
+              hintText: context.t.dict.searchEntries,
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -154,7 +155,7 @@ class _EntriesListSheetState extends State<EntriesListSheet> {
 
   Widget buildEntryList() {
     if (entries.isEmpty && !isLoading) {
-      return const Center(child: Text('暂无词条'));
+      return Center(child: Text(context.t.dict.noEntries));
     }
 
     return ListView.builder(

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart';
 import '../data/models/user.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 class AuthResult {
   final bool success;
@@ -37,7 +38,7 @@ class AuthService {
 
   String _buildUrl(String path) {
     if (_baseUrl == null || _baseUrl!.isEmpty) {
-      throw Exception('服务器地址未设置');
+      throw Exception(t.cloud.serverNotSet);
     }
     final cleanBaseUrl = _baseUrl!.endsWith('/')
         ? _baseUrl!.substring(0, _baseUrl!.length - 1)
@@ -65,7 +66,7 @@ class AuthService {
   }) async {
     try {
       if (_baseUrl == null || _baseUrl!.isEmpty) {
-        return AuthResult(success: false, error: '请先设置服务器地址');
+        return AuthResult(success: false, error: t.cloud.serverNotSet);
       }
 
       final url = Uri.parse(_buildUrl('user/register'));
@@ -104,10 +105,13 @@ class AuthService {
       }
     } on TimeoutException {
       Logger.e('注册超时', tag: 'AuthService');
-      return AuthResult(success: false, error: '请求超时，请检查网络连接');
+      return AuthResult(success: false, error: t.cloud.requestTimeout);
     } catch (e) {
       Logger.e('注册异常: $e', tag: 'AuthService');
-      return AuthResult(success: false, error: '注册失败: $e');
+      return AuthResult(
+        success: false,
+        error: t.cloud.registerFailedError(error: e.toString()),
+      );
     }
   }
 
@@ -117,7 +121,7 @@ class AuthService {
   }) async {
     try {
       if (_baseUrl == null || _baseUrl!.isEmpty) {
-        return AuthResult(success: false, error: '请先设置服务器地址');
+        return AuthResult(success: false, error: t.cloud.serverNotSet);
       }
 
       final url = Uri.parse(_buildUrl('user/login'));
@@ -155,21 +159,24 @@ class AuthService {
       }
     } on TimeoutException {
       Logger.e('登录超时', tag: 'AuthService');
-      return AuthResult(success: false, error: '请求超时，请检查网络连接');
+      return AuthResult(success: false, error: t.cloud.requestTimeout);
     } catch (e) {
       Logger.e('登录异常: $e', tag: 'AuthService');
-      return AuthResult(success: false, error: '登录失败: $e');
+      return AuthResult(
+        success: false,
+        error: t.cloud.loginFailedError(error: e.toString()),
+      );
     }
   }
 
   Future<AuthResult> getCurrentUser() async {
     try {
       if (_baseUrl == null || _baseUrl!.isEmpty) {
-        return AuthResult(success: false, error: '请先设置服务器地址');
+        return AuthResult(success: false, error: t.cloud.serverNotSet);
       }
 
       if (_token == null) {
-        return AuthResult(success: false, error: '未登录');
+        return AuthResult(success: false, error: t.cloud.notLoggedIn);
       }
 
       final url = Uri.parse(_buildUrl('user/me'));
@@ -189,25 +196,30 @@ class AuthService {
         return AuthResult(success: true, user: _currentUser);
       } else if (response.statusCode == 401) {
         logout();
-        return AuthResult(success: false, error: '登录已过期，请重新登录');
+        return AuthResult(success: false, error: t.cloud.sessionExpired);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
         final errorMsg =
-            errorData?['error'] ?? errorData?['message'] ?? '获取用户信息失败';
+            errorData?['error'] ??
+            errorData?['message'] ??
+            t.cloud.getUserFailed;
         return AuthResult(success: false, error: errorMsg.toString());
       }
     } on TimeoutException {
-      return AuthResult(success: false, error: '请求超时，请检查网络连接');
+      return AuthResult(success: false, error: t.cloud.requestTimeout);
     } catch (e) {
       Logger.e('获取用户信息异常: $e', tag: 'AuthService');
-      return AuthResult(success: false, error: '获取用户信息失败: $e');
+      return AuthResult(
+        success: false,
+        error: t.cloud.getUserFailedError(error: e.toString()),
+      );
     }
   }
 
   String _parseErrorMessage(Map<String, dynamic>? errorData) {
-    if (errorData == null) return '请求失败';
+    if (errorData == null) return t.cloud.requestFailed;
 
     if (errorData['detail'] != null) {
       return errorData['detail'].toString();
@@ -219,7 +231,7 @@ class AuthService {
       return errorData['message'].toString();
     }
 
-    return '请求失败';
+    return t.cloud.requestFailed;
   }
 
   void logout() {
@@ -252,11 +264,11 @@ class AuthService {
   Future<SettingsResult> downloadSettings() async {
     try {
       if (_baseUrl == null || _baseUrl!.isEmpty) {
-        return SettingsResult(success: false, error: '请先设置服务器地址');
+        return SettingsResult(success: false, error: t.cloud.serverNotSet);
       }
 
       if (_token == null) {
-        return SettingsResult(success: false, error: '未登录');
+        return SettingsResult(success: false, error: t.cloud.notLoggedIn);
       }
 
       final url = Uri.parse(_buildUrl('user/settings'));
@@ -271,10 +283,10 @@ class AuthService {
       if (response.statusCode == 200) {
         return SettingsResult(success: true, data: response.bodyBytes);
       } else if (response.statusCode == 404) {
-        return SettingsResult(success: false, error: '云端暂无设置数据');
+        return SettingsResult(success: false, error: t.cloud.downloadEmpty);
       } else if (response.statusCode == 401) {
         logout();
-        return SettingsResult(success: false, error: '登录已过期，请重新登录');
+        return SettingsResult(success: false, error: t.cloud.sessionExpired);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
@@ -283,26 +295,32 @@ class AuthService {
         return SettingsResult(success: false, error: errorMsg);
       }
     } on TimeoutException {
-      return SettingsResult(success: false, error: '请求超时，请检查网络连接');
+      return SettingsResult(success: false, error: t.cloud.requestTimeout);
     } catch (e) {
       Logger.e('下载设置异常: $e', tag: 'AuthService');
-      return SettingsResult(success: false, error: '下载设置失败: $e');
+      return SettingsResult(
+        success: false,
+        error: t.cloud.downloadFailedError(error: e.toString()),
+      );
     }
   }
 
   Future<SettingsResult> uploadSettings(String zipFilePath) async {
     try {
       if (_baseUrl == null || _baseUrl!.isEmpty) {
-        return SettingsResult(success: false, error: '请先设置服务器地址');
+        return SettingsResult(success: false, error: t.cloud.serverNotSet);
       }
 
       if (_token == null) {
-        return SettingsResult(success: false, error: '未登录');
+        return SettingsResult(success: false, error: t.cloud.notLoggedIn);
       }
 
       final file = File(zipFilePath);
       if (!await file.exists()) {
-        return SettingsResult(success: false, error: '设置文件不存在');
+        return SettingsResult(
+          success: false,
+          error: t.cloud.settingsFileNotFound,
+        );
       }
 
       final url = Uri.parse(_buildUrl('user/settings'));
@@ -329,7 +347,7 @@ class AuthService {
         return SettingsResult(success: true);
       } else if (response.statusCode == 401) {
         logout();
-        return SettingsResult(success: false, error: '登录已过期，请重新登录');
+        return SettingsResult(success: false, error: t.cloud.sessionExpired);
       } else {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
@@ -338,10 +356,13 @@ class AuthService {
         return SettingsResult(success: false, error: errorMsg);
       }
     } on TimeoutException {
-      return SettingsResult(success: false, error: '请求超时，请检查网络连接');
+      return SettingsResult(success: false, error: t.cloud.requestTimeout);
     } catch (e) {
       Logger.e('上传设置异常: $e', tag: 'AuthService');
-      return SettingsResult(success: false, error: '上传设置失败: $e');
+      return SettingsResult(
+        success: false,
+        error: t.cloud.uploadFailedError(error: e.toString()),
+      );
     }
   }
 

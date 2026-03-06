@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/word_bank_service.dart';
+import '../../i18n/strings.g.dart';
 
 class WordListDialog {
   static Future<List<String>?> show(
@@ -34,7 +35,7 @@ class WordListDialog {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isNewWord ? '选择词表' : '调整 "$word" 的词表',
+                        isNewWord ? context.t.wordBank.selectLists : context.t.wordBank.adjustLists(word: word),
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 16),
@@ -74,8 +75,8 @@ class WordListDialog {
                         children: [
                           Expanded(
                             child: TextField(
-                              decoration: const InputDecoration(
-                                hintText: '输入新词表名称',
+                              decoration: InputDecoration(
+                                hintText: context.t.wordBank.newListHint,
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 8,
@@ -123,14 +124,14 @@ class WordListDialog {
                                 ).colorScheme.error,
                               ),
                               icon: const Icon(Icons.delete_outline),
-                              label: const Text('移除单词'),
+                              label: Text(context.t.wordBank.removeWord),
                             )
                           else
                             const SizedBox.shrink(),
                           const Spacer(),
                           TextButton(
                             onPressed: () => Navigator.pop(context, null),
-                            child: const Text('取消'),
+                            child: Text(context.t.common.cancel),
                           ),
                           const SizedBox(width: 8),
                           TextButton(
@@ -140,7 +141,7 @@ class WordListDialog {
                                     context,
                                     selectedLists.toList(),
                                   ),
-                            child: const Text('确定'),
+                            child: Text(context.t.common.ok),
                           ),
                         ],
                       ),

@@ -34,11 +34,16 @@ enum LLMProvider {
   /// Returns a localized provider name using the current app locale.
   String localizedName(Translations t) {
     switch (this) {
-      case LLMProvider.moonshot: return t.ai.providerMoonshot;
-      case LLMProvider.zhipu:   return t.ai.providerZhipu;
-      case LLMProvider.ali:     return t.ai.providerAli;
-      case LLMProvider.custom:  return t.ai.providerCustom;
-      default:                  return displayName; // OpenAI/Anthropic/Gemini/DeepSeek are language-neutral
+      case LLMProvider.moonshot:
+        return t.ai.providerMoonshot;
+      case LLMProvider.zhipu:
+        return t.ai.providerZhipu;
+      case LLMProvider.ali:
+        return t.ai.providerAli;
+      case LLMProvider.custom:
+        return t.ai.providerCustom;
+      default:
+        return displayName; // OpenAI/Anthropic/Gemini/DeepSeek are language-neutral
     }
   }
 }
@@ -1016,26 +1021,26 @@ class _LLMConfigPageState extends State<LLMConfigPage>
   String? _testResultTts;
   bool? _testSuccessTts;
 
-/// 快速模型默认名 (2026 更新版)：极致响应速度、超低成本、适合简单 Agent 任务
+  /// 快速模型默认名 (2026 更新版)：极致响应速度、超低成本、适合简单 Agent 任务
   static const Map<LLMProvider, String> _fastDefaultModels = {
     LLMProvider.openAI: 'gpt-5-mini',
     LLMProvider.anthropic: 'claude-haiku-4-5',
     LLMProvider.gemini: 'gemini-3-flash',
-    LLMProvider.deepseek: 'deepseek-chat', 
-    LLMProvider.moonshot: 'kimi-k2.5-instant', 
-    LLMProvider.zhipu: 'glm-5-flash', 
-    LLMProvider.ali: 'qwen-flash', 
+    LLMProvider.deepseek: 'deepseek-chat',
+    LLMProvider.moonshot: 'kimi-k2.5-instant',
+    LLMProvider.zhipu: 'glm-5-flash',
+    LLMProvider.ali: 'qwen-flash',
     LLMProvider.custom: '',
   };
 
   /// 标准模型默认名 (2026 更新版)：卓越推理能力、复杂任务规划、长文本深度分析
   static const Map<LLMProvider, String> _standardDefaultModels = {
-    LLMProvider.openAI: 'gpt-5-chat-latest', 
+    LLMProvider.openAI: 'gpt-5-chat-latest',
     LLMProvider.anthropic: 'claude-opus-4-6',
     LLMProvider.gemini: 'gemini-3-pro',
     LLMProvider.deepseek: 'deepseek-reasoner',
-    LLMProvider.moonshot: 'kimi-k2.5-thinking', 
-    LLMProvider.zhipu: 'glm-5', 
+    LLMProvider.moonshot: 'kimi-k2.5-thinking',
+    LLMProvider.zhipu: 'glm-5',
     LLMProvider.ali: 'qwen-max',
     LLMProvider.custom: '',
   };
@@ -1103,12 +1108,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
         if (!_languageVoiceSettings.containsKey(lang)) {
           if (_ttsProvider == TTSProvider.google) {
             final voices = googleTTSVoicesByLanguage[lang];
-            _languageVoiceSettings[lang] =
-                voices != null && voices.isNotEmpty ? voices.first.name : '';
+            _languageVoiceSettings[lang] = voices != null && voices.isNotEmpty
+                ? voices.first.name
+                : '';
           } else {
             final voices = edgeTTSVoicesByLanguage[lang];
-            _languageVoiceSettings[lang] =
-                voices != null && voices.isNotEmpty ? voices.first.name : '';
+            _languageVoiceSettings[lang] = voices != null && voices.isNotEmpty
+                ? voices.first.name
+                : '';
           }
         }
       }
@@ -1123,7 +1130,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     _fastProviderNotifier = ValueNotifier<LLMProvider?>(_fastProvider);
     _standardProviderNotifier = ValueNotifier<LLMProvider?>(_standardProvider);
     _ttsProviderNotifier = ValueNotifier<TTSProvider?>(_ttsProvider);
-    
+
     _tabController = TabController(length: 3, vsync: this);
     _loadConfig();
     _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
@@ -1294,10 +1301,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     );
     final fastModelText = _fastModelController.text.trim();
     await prefs.setString('fast_llm_model', fastModelText);
-    Logger.i(
-      '  fast_llm_model: $fastModelText',
-      tag: 'LLMConfig',
-    );
+    Logger.i('  fast_llm_model: $fastModelText', tag: 'LLMConfig');
 
     _showSavedSnackBar();
   }
@@ -1330,10 +1334,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     );
     final standardModelText = _standardModelController.text.trim();
     await prefs.setString('standard_llm_model', standardModelText);
-    Logger.i(
-      '  standard_llm_model: $standardModelText',
-      tag: 'LLMConfig',
-    );
+    Logger.i('  standard_llm_model: $standardModelText', tag: 'LLMConfig');
     await prefs.setBool(
       'standard_llm_enable_thinking',
       _standardEnableThinking,
@@ -1623,12 +1624,18 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             errorBody['error']?['message'] ??
             errorBody['message'] ??
             'HTTP ${response.statusCode}';
-        return ApiTestResult(success: false, message: context.t.ai.testError(message: errorMessage));
+        return ApiTestResult(
+          success: false,
+          message: context.t.ai.testError(message: errorMessage),
+        );
       }
     } on TimeoutException {
       return ApiTestResult(success: false, message: context.t.ai.testTimeout);
     } catch (e) {
-      return ApiTestResult(success: false, message: context.t.ai.testFailed(message: '$e'));
+      return ApiTestResult(
+        success: false,
+        message: context.t.ai.testFailed(message: '$e'),
+      );
     }
   }
 
@@ -1695,6 +1702,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 minHeight: 48,
               ),
             ),
+            buttonStyleData: const FormFieldButtonStyleData(
+              padding: EdgeInsets.only(right: 8),
+            ),
             iconStyleData: IconStyleData(
               icon: Icon(
                 Icons.arrow_drop_down,
@@ -1704,7 +1714,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             dropdownStyleData: DropdownStyleData(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context).colorScheme.surface,
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
               maxHeight: 300,
               offset: const Offset(0, -4),
@@ -1754,13 +1764,20 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 minWidth: 48,
                 minHeight: 48,
               ),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  obscureApiKey
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
+              suffixIcon: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: IconButton(
+                  icon: Icon(
+                    obscureApiKey
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                  onPressed: onToggleObscure,
                 ),
-                onPressed: onToggleObscure,
+              ),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 52,
+                minHeight: 48,
               ),
             ),
             validator: (value) {
@@ -1854,7 +1871,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             ),
           ),
           // 深度思考开关（仅标准模型）
-          if (enableThinking != null && onToggleEnableThinking != null) ...[  
+          if (enableThinking != null && onToggleEnableThinking != null) ...[
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
@@ -1912,7 +1929,11 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       : const Icon(Icons.network_check_outlined),
                   label: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(isTesting ? context.t.common.testing : context.t.common.testConnection),
+                    child: Text(
+                      isTesting
+                          ? context.t.common.testing
+                          : context.t.common.testConnection,
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
@@ -2010,6 +2031,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 minHeight: 48,
               ),
             ),
+            buttonStyleData: const FormFieldButtonStyleData(
+              padding: EdgeInsets.only(right: 8),
+            ),
             iconStyleData: IconStyleData(
               icon: Icon(
                 Icons.arrow_drop_down,
@@ -2019,7 +2043,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             dropdownStyleData: DropdownStyleData(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context).colorScheme.surface,
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
               maxHeight: 300,
               offset: const Offset(0, -4),
@@ -2076,17 +2100,24 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                   minWidth: 48,
                   minHeight: 48,
                 ),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureTtsApiKey
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: IconButton(
+                    icon: Icon(
+                      _obscureTtsApiKey
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscureTtsApiKey = !_obscureTtsApiKey;
+                      });
+                    },
                   ),
-                  onPressed: () {
-                    setState(() {
-                      _obscureTtsApiKey = !_obscureTtsApiKey;
-                    });
-                  },
+                ),
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 52,
+                  minHeight: 48,
                 ),
               ),
               validator: (value) {
@@ -2166,9 +2197,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
           // 按 _availableLanguages 的顺序（即词典管理页设定的语言顺序）渲染
           ..._availableLanguages
               .map(
-                (code) => supportedLanguages.where(
-                  (l) => l.langCode == code,
-                ).firstOrNull,
+                (code) => supportedLanguages
+                    .where((l) => l.langCode == code)
+                    .firstOrNull,
               )
               .whereType<LanguageVoiceMapping>()
               .map((lang) => _buildLanguageVoiceSetting(lang)),
@@ -2197,7 +2228,11 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                       : const Icon(Icons.network_check_outlined),
                   label: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(_isTestingTts ? context.t.common.testing : context.t.common.testConnection),
+                    child: Text(
+                      _isTestingTts
+                          ? context.t.common.testing
+                          : context.t.common.testConnection,
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
@@ -2386,17 +2421,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             children: [
               Icon(
                 voice.gender == '女性' ? Icons.female : Icons.male,
-                size: 16,
+                size: 18,
                 color: voice.gender == '女性'
-                    ? Colors.pinkAccent
-                    : Colors.blueAccent,
+                    ? Theme.of(context).colorScheme.tertiary
+                    : Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  voice.name,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text(voice.name, overflow: TextOverflow.ellipsis),
               ),
             ],
           ),
@@ -2410,17 +2442,14 @@ class _LLMConfigPageState extends State<LLMConfigPage>
             children: [
               Icon(
                 voice.gender == '女性' ? Icons.female : Icons.male,
-                size: 16,
+                size: 18,
                 color: voice.gender == '女性'
-                    ? Colors.pinkAccent
-                    : Colors.blueAccent,
+                    ? Theme.of(context).colorScheme.tertiary
+                    : Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  voice.name,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text(voice.name, overflow: TextOverflow.ellipsis),
               ),
             ],
           ),
@@ -2432,7 +2461,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       voiceItems.add(
         DropdownItem<String>(
           value: currentVoice,
-          child: Text(currentVoice.isEmpty ? context.t.ai.ttsNoVoice : currentVoice),
+          child: Text(
+            currentVoice.isEmpty ? context.t.ai.ttsNoVoice : currentVoice,
+          ),
         ),
       );
     }
@@ -2474,6 +2505,9 @@ class _LLMConfigPageState extends State<LLMConfigPage>
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
+              buttonStyleData: const FormFieldButtonStyleData(
+                padding: EdgeInsets.only(right: 4),
+              ),
               iconStyleData: IconStyleData(
                 icon: Icon(
                   Icons.arrow_drop_down,
@@ -2484,7 +2518,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               dropdownStyleData: DropdownStyleData(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
-                  color: Theme.of(context).colorScheme.surface,
+                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
                 ),
                 maxHeight: 250,
                 offset: const Offset(0, -4),

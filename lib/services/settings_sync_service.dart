@@ -5,6 +5,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 class SettingsSyncResult {
   final bool success;
@@ -21,20 +22,20 @@ class SettingsSyncService {
 
   /// 不参与云同步的 SharedPreferences 键前缀（字体配置页、词典管理页相关设置）
   static const List<String> _excludedSyncKeyPrefixes = [
-    'font_config_',   // 字体配置页 - 自定义字体映射
-    'font_scale_',    // 字体配置页 - 字体缩放
+    'font_config_', // 字体配置页 - 自定义字体映射
+    'font_scale_', // 字体配置页 - 字体缩放
   ];
 
   /// 不参与云同步的 SharedPreferences 精确键（字体配置页、词典管理页相关设置）
   static const List<String> _excludedSyncKeys = [
-    'font_folder_path',          // 字体配置页 - 字体文件夹路径（设备相关）
-    'dictionaries_base_dir',     // 词典管理页 - 词典目录路径（设备相关）
-    'online_subscription_url',   // 词典管理页 - 在线订阅地址
-    'enabled_dictionaries',      // 词典管理页 - 启用的词典列表
-    'auto_check_dict_update',    // 词典管理页 - 自动检查更新
+    'font_folder_path', // 字体配置页 - 字体文件夹路径（设备相关）
+    'dictionaries_base_dir', // 词典管理页 - 词典目录路径（设备相关）
+    'online_subscription_url', // 词典管理页 - 在线订阅地址
+    'enabled_dictionaries', // 词典管理页 - 启用的词典列表
+    'auto_check_dict_update', // 词典管理页 - 自动检查更新
     'last_dict_update_check_time', // 词典管理页 - 上次检查时间
-    'last_app_update_check_time',  // 应用更新 - 上次检查时间（设备相关）
-    'dictionary_content_scale',    // 设置页 - 软件布局缩放（设备相关）
+    'last_app_update_check_time', // 应用更新 - 上次检查时间（设备相关）
+    'dictionary_content_scale', // 设置页 - 软件布局缩放（设备相关）
   ];
 
   bool _isExcludedFromSync(String rawKey) {
@@ -95,14 +96,20 @@ class SettingsSyncService {
                 bytes = await prefsFile.readAsBytes();
               }
             } catch (e) {
-              Logger.w('过滤 shared_preferences.json 失败，使用原始文件: $e', tag: 'SettingsSync');
+              Logger.w(
+                '过滤 shared_preferences.json 失败，使用原始文件: $e',
+                tag: 'SettingsSync',
+              );
               bytes = await prefsFile.readAsBytes();
             }
           } else {
             // Android/iOS：从运行时实例序列化
             try {
               final prefs = await SharedPreferences.getInstance();
-              final all = prefs.getKeys().fold<Map<String, dynamic>>({}, (map, key) {
+              final all = prefs.getKeys().fold<Map<String, dynamic>>({}, (
+                map,
+                key,
+              ) {
                 if (!_isExcludedFromSync(key)) {
                   map[key] = prefs.get(key);
                 }
@@ -124,7 +131,10 @@ class SettingsSyncService {
             bytes,
           );
           archive.addFile(archiveFile);
-          Logger.i('添加文件到压缩包: $fileName (${bytes.length} bytes)', tag: 'SettingsSync');
+          Logger.i(
+            '添加文件到压缩包: $fileName (${bytes.length} bytes)',
+            tag: 'SettingsSync',
+          );
           continue;
         }
 
@@ -149,7 +159,10 @@ class SettingsSyncService {
       }
 
       if (archive.isEmpty) {
-        return SettingsSyncResult(success: false, error: '没有可同步的设置文件');
+        return SettingsSyncResult(
+          success: false,
+          error: t.cloud.noSyncableFiles,
+        );
       }
 
       final zipData = ZipEncoder().encode(archive);
@@ -163,7 +176,10 @@ class SettingsSyncService {
       return SettingsSyncResult(success: true, filePath: zipPath);
     } catch (e) {
       Logger.e('创建设置压缩包失败: $e', tag: 'SettingsSync');
-      return SettingsSyncResult(success: false, error: '创建压缩包失败: $e');
+      return SettingsSyncResult(
+        success: false,
+        error: t.cloud.createPackageFailedError(error: e.toString()),
+      );
     }
   }
 
@@ -173,7 +189,10 @@ class SettingsSyncService {
       final zipFile = File(zipPath);
 
       if (!await zipFile.exists()) {
-        return SettingsSyncResult(success: false, error: '压缩包文件不存在');
+        return SettingsSyncResult(
+          success: false,
+          error: t.cloud.archiveNotFound,
+        );
       }
 
       final zipBytes = await zipFile.readAsBytes();
@@ -198,14 +217,20 @@ class SettingsSyncService {
       }
 
       if (extractedCount == 0) {
-        return SettingsSyncResult(success: false, error: '压缩包中没有有效的设置文件');
+        return SettingsSyncResult(
+          success: false,
+          error: t.cloud.archiveNoValidFiles,
+        );
       }
 
       Logger.i('设置解压成功，共 $extractedCount 个文件', tag: 'SettingsSync');
       return SettingsSyncResult(success: true);
     } catch (e) {
       Logger.e('解压设置压缩包失败: $e', tag: 'SettingsSync');
-      return SettingsSyncResult(success: false, error: '解压失败: $e');
+      return SettingsSyncResult(
+        success: false,
+        error: t.cloud.extractFailedError(error: e.toString()),
+      );
     }
   }
 
@@ -235,14 +260,20 @@ class SettingsSyncService {
       }
 
       if (extractedCount == 0) {
-        return SettingsSyncResult(success: false, error: '压缩包中没有有效的设置文件');
+        return SettingsSyncResult(
+          success: false,
+          error: t.cloud.archiveNoValidFiles,
+        );
       }
 
       Logger.i('设置解压成功，共 $extractedCount 个文件', tag: 'SettingsSync');
       return SettingsSyncResult(success: true);
     } catch (e) {
       Logger.e('解压设置压缩包失败: $e', tag: 'SettingsSync');
-      return SettingsSyncResult(success: false, error: '解压失败: $e');
+      return SettingsSyncResult(
+        success: false,
+        error: t.cloud.extractFailedError(error: e.toString()),
+      );
     }
   }
 

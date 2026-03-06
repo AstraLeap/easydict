@@ -145,7 +145,7 @@ class DictTypography {
     // ── 释义 ──
     DictElementType.definition: _ElementMeta(
       baseFontSize: 15.5,
-      isSerifOrMonospace: false, 
+      isSerifOrMonospace: false,
       lineHeight: 1.6,
     ),
 
@@ -163,7 +163,7 @@ class DictTypography {
 
     // ── 词性/标签 ──
     DictElementType.pos: _ElementMeta(
-      baseFontSize: 14.0,
+      baseFontSize: 15.5,
       isSerifOrMonospace: false,
       fontWeight: FontWeight.w700,
       letterSpacing: 0.5,
@@ -174,7 +174,7 @@ class DictTypography {
       fontWeight: FontWeight.w500,
     ),
     DictElementType.labelPattern: _ElementMeta(
-      baseFontSize: 11.0,
+      baseFontSize: 13.5,
       isSerifOrMonospace: false,
       fontWeight: FontWeight.w700,
     ),

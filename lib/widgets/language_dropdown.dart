@@ -35,7 +35,7 @@ class LanguageDropdown extends StatelessWidget {
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: PopupMenuButton<String?>(
-        tooltip: '选择语言',
+        tooltip: context.t.common.selectLanguage,
         offset: const Offset(-8, 45),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         elevation: 4,

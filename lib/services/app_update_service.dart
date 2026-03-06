@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'preferences_service.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 /// GitHub Release 信息
 class GitHubRelease {
@@ -22,7 +23,8 @@ class GitHubRelease {
   });
 
   /// 版本号（去掉 'v' 前缀）
-  String get version => tagName.startsWith('v') ? tagName.substring(1) : tagName;
+  String get version =>
+      tagName.startsWith('v') ? tagName.substring(1) : tagName;
 }
 
 class AppUpdateService extends ChangeNotifier {
@@ -59,15 +61,15 @@ class AppUpdateService extends ChangeNotifier {
       if (_hasCheckedOnStartup) {
         return;
       }
-      
+
       final lastCheck = await _preferencesService.getLastAppUpdateCheckTime();
       if (lastCheck != null) {
         _lastCheckTime = lastCheck;
       }
-      
+
       // 标记为已检查过本次启动
       _hasCheckedOnStartup = true;
-      
+
       checkForUpdates();
     } catch (e) {
       Logger.w('AppUpdateService.checkOnStartup 失败: $e', tag: 'AppUpdate');
@@ -105,9 +107,8 @@ class AppUpdateService extends ChangeNotifier {
           name: json['name'] as String? ?? '',
           htmlUrl: json['html_url'] as String? ?? '',
           body: json['body'] as String? ?? '',
-          publishedAt: DateTime.tryParse(
-                json['published_at'] as String? ?? '',
-              ) ??
+          publishedAt:
+              DateTime.tryParse(json['published_at'] as String? ?? '') ??
               DateTime.now(),
         );
         _latestRelease = release;
@@ -117,17 +118,22 @@ class AppUpdateService extends ChangeNotifier {
           tag: 'AppUpdate',
         );
       } else if (response.statusCode == 404) {
-        Logger.i('未找到 GitHub Release（可能还没有发布），statusCode=404', tag: 'AppUpdate');
+        Logger.i(
+          '未找到 GitHub Release（可能还没有发布），statusCode=404',
+          tag: 'AppUpdate',
+        );
         _hasUpdate = false;
       } else {
-        _errorMessage = 'GitHub API 错误 (${response.statusCode})';
+        _errorMessage = t.help.githubApiError(
+          code: response.statusCode.toString(),
+        );
         Logger.w(_errorMessage!, tag: 'AppUpdate');
       }
 
       _lastCheckTime = DateTime.now();
       await _preferencesService.setLastAppUpdateCheckTime(_lastCheckTime!);
     } catch (e) {
-      _errorMessage = '检查更新失败: $e';
+      _errorMessage = t.help.checkUpdateError(error: e.toString());
       Logger.w(_errorMessage!, tag: 'AppUpdate');
     } finally {
       _isChecking = false;

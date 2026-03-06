@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/english_db_service.dart';
 import '../services/download_manager.dart';
 import '../core/logger.dart';
+import '../i18n/strings.g.dart';
 
 enum EnglishDbDownloadResult { downloaded, notNow, neverAskAgain }
 
@@ -58,7 +59,7 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              isError ? '下载失败' : '下载英语词典数据库',
+              isError ? context.t.dict.dbDialogTitleError : context.t.dict.dbDialogTitle,
               style: TextStyle(
                 fontSize: 18,
                 color: isError ? Colors.orange : null,
@@ -72,14 +73,14 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '英语词典数据库可以帮助您：',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            '',  // replaced by i18n below
           ),
+
           const SizedBox(height: 12),
-          _buildFeatureItem(Icons.search, '单词拼写变体查询'),
-          _buildFeatureItem(Icons.swap_horiz, '缩写/首字母缩略词查询'),
-          _buildFeatureItem(Icons.change_history, '名词化形式查询'),
-          _buildFeatureItem(Icons.format_list_numbered, '动词变形查询'),
+          _buildFeatureItem(Icons.search, context.t.dict.dbFeatureVariant),
+          _buildFeatureItem(Icons.swap_horiz, context.t.dict.dbFeatureAbbr),
+          _buildFeatureItem(Icons.change_history, context.t.dict.dbFeatureNominal),
+          _buildFeatureItem(Icons.format_list_numbered, context.t.dict.dbFeatureInflection),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
@@ -97,7 +98,7 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '例如：搜索 "alpacas" 可自动重定向到 "alpaca"（复数形式）',
+                    context.t.dict.dbExample,
                     style: TextStyle(
                       fontSize: 13,
                       color: colorScheme.onSurfaceVariant,
@@ -127,7 +128,7 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
               downloadManager.cancelDownload(_englishDbId);
               Navigator.of(context).pop(EnglishDbDownloadResult.notNow);
             },
-            child: const Text('取消'),
+            child: Text(context.t.common.cancel),
           ),
         ] else if (isError) ...[
           TextButton(
@@ -135,12 +136,12 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
               downloadManager.clearDownload(_englishDbId);
               Navigator.of(context).pop(EnglishDbDownloadResult.notNow);
             },
-            child: const Text('暂不'),
+            child: Text(context.t.common.notNow),
           ),
           ElevatedButton.icon(
             onPressed: () => _startDownload(downloadManager),
             icon: const Icon(Icons.refresh),
-            label: const Text('重试'),
+            label: Text(context.t.common.retry),
           ),
         ] else ...[
           TextButton(
@@ -152,18 +153,18 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
                 ).pop(EnglishDbDownloadResult.neverAskAgain);
               }
             },
-            child: const Text('不再询问'),
+            child: Text(context.t.common.neverAskAgain),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop(EnglishDbDownloadResult.notNow);
             },
-            child: const Text('暂不'),
+            child: Text(context.t.common.notNow),
           ),
           ElevatedButton.icon(
             onPressed: () => _startDownload(downloadManager),
             icon: const Icon(Icons.download),
-            label: const Text('下载'),
+            label: Text(context.t.common.download),
           ),
         ],
       ],

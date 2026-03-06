@@ -82,17 +82,19 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
       "index": 1, //必选
       "label": {
         "signpost":"same opinion",
+        "word":"someword",
         "pos": "n",
-        "pattern": ["in a ~", "mental ~"],
         "grammar": ["U", "S"],
-        "complex":"雜",
+        "pronunciation":"/dɔːɡ/",
         "region": "global",
+        "pattern": ["in a ~", "mental ~"],
         "register": "informal",
         "usage": ["figurative"],
         "tone": "neutral",
+        "complex":"雜",
         "topic": ["psychology"],
         others: "other label",//这里可以使用自定义的键名
-      }, //里面统统是可选
+      }, //里面全部是可选，里面所有的值都既可以是string，也可以是string list。label的值既可以是一个map，也可以是map list。
       "definition": {
         "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
         "en": "A state of mental confusion or uncertainty.",
@@ -181,6 +183,7 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
 | `sub`              | 下标         |
 | `color`            | 主题色       |
 | `special`          | 主题色、斜体 |
+| `label`          | 一个带背景和边框的标签 |
 | `ai`               | AI生成的内容 |
 | `->dog`            | 查词dog链接  |
 | `==entry_id.path`  | 精确跳转     |
