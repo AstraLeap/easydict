@@ -79,6 +79,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
   /// AI聊天历史弹窗的 setState，用于在请求完成时刷新弹窗内容
   StateSetter? _modalSetState;
+  bool _isModalActive = false;
 
   // 导航栏位置状态（固定在右侧，只保存垂直位置）
   double _navPanelDy = 0.7; // 相对屏幕高度的比例
@@ -103,8 +104,18 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   List<String> _toolbarActions = [];
   List<String> _overflowActions = [];
 
-  /// 是否有新的AI回答尚未查看（用于工具栏按鈕闪烁）
-  bool _hasNewAiAnswer = false;
+  /// 流式输出状态通知器，避免在每个chunk时重建整个列表
+  final Map<String, ValueNotifier<(String, String?, bool)>>
+  _streamingNotifiers = {};
+
+  /// 流式输出节流计时器（80ms 批量推送，减少 Markdown 重渲染频率）
+  final Map<String, Timer?> _streamingThrottleTimers = {};
+
+  /// 请求状态版本通知，用于在流式开始/结束时精确更新单个消息卡片，避免全模态重建影响滚动
+  final ValueNotifier<int> _pendingRequestsVersionNotifier = ValueNotifier(0);
+
+  /// AI聊天记录列表的滚动控制器（由 DraggableScrollableSheet 提供，保存引用供外部安全调用）
+  ScrollController? _chatScrollController;
 
   @override
   void initState() {
@@ -151,6 +162,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       sub.cancel();
     }
     _pendingAiRequests.clear();
+    // 释放所有流式通知器与节流计时器
+    for (final t in _streamingThrottleTimers.values) {
+      t?.cancel();
+    }
+    _streamingThrottleTimers.clear();
+    for (final notifier in _streamingNotifiers.values) {
+      notifier.dispose();
+    }
+    _streamingNotifiers.clear();
+    _pendingRequestsVersionNotifier.dispose();
     super.dispose();
   }
 
@@ -330,6 +351,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         records.map(
           (r) => AiChatRecord(
             id: r.id,
+            conversationId: r.conversationId,
             word: r.word,
             question: r.question,
             answer: r.answer,
@@ -340,6 +362,29 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         ),
       );
     });
+  }
+
+  /// 获取所有会话ID，按最新消息时间降序排列
+  List<String> _getConversationIds() {
+    final Map<String, DateTime> latestTimestamps = {};
+    for (final record in _aiChatHistory) {
+      final cid = record.conversationId;
+      if (!latestTimestamps.containsKey(cid) ||
+          record.timestamp.isAfter(latestTimestamps[cid]!)) {
+        latestTimestamps[cid] = record.timestamp;
+      }
+    }
+    final ids = latestTimestamps.keys.toList();
+    ids.sort((a, b) => latestTimestamps[b]!.compareTo(latestTimestamps[a]!));
+    return ids;
+  }
+
+  /// 获取某会话的所有消息，按时间升序排列
+  List<AiChatRecord> _getConversationMessages(String conversationId) {
+    return _aiChatHistory
+        .where((r) => r.conversationId == conversationId)
+        .toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
   }
 
   @override
@@ -971,30 +1016,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           onPressed: _toggleAllNonTargetLanguages,
         );
       case PreferencesService.actionAiHistory:
-        final colorScheme = Theme.of(context).colorScheme;
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              final hadNewAnswer = _hasNewAiAnswer;
-              if (mounted) setState(() => _hasNewAiAnswer = false);
-              _showAiChatHistory(
-                startFullscreen: hadNewAnswer,
-                expandNewest: hadNewAnswer,
-              );
-            },
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-              child: _BlinkingIcon(
-                icon: Icons.auto_awesome,
-                color: _hasNewAiAnswer
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-                isBlinking: _hasNewAiAnswer,
-              ),
-            ),
-          ),
+        return _buildActionButton(
+          icon: Icons.auto_awesome,
+          onPressed: () => _showAiChatHistory(),
         );
       case PreferencesService.actionResetEntry:
         return _buildActionButton(
@@ -1085,17 +1109,28 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   String _getActionLabel(String action) {
     final t = context.t.settings.actionLabel;
     switch (action) {
-      case PreferencesService.actionAiTranslate: return t.aiTranslate;
-      case PreferencesService.actionCopy: return t.copy;
-      case PreferencesService.actionAskAi: return t.askAi;
-      case PreferencesService.actionEdit: return t.edit;
-      case PreferencesService.actionSpeak: return t.speak;
-      case PreferencesService.actionBack: return t.back;
-      case PreferencesService.actionFavorite: return t.favorite;
-      case PreferencesService.actionToggleTranslate: return t.toggleTranslate;
-      case PreferencesService.actionAiHistory: return t.aiHistory;
-      case PreferencesService.actionResetEntry: return t.resetEntry;
-      default: return action;
+      case PreferencesService.actionAiTranslate:
+        return t.aiTranslate;
+      case PreferencesService.actionCopy:
+        return t.copy;
+      case PreferencesService.actionAskAi:
+        return t.askAi;
+      case PreferencesService.actionEdit:
+        return t.edit;
+      case PreferencesService.actionSpeak:
+        return t.speak;
+      case PreferencesService.actionBack:
+        return t.back;
+      case PreferencesService.actionFavorite:
+        return t.favorite;
+      case PreferencesService.actionToggleTranslate:
+        return t.toggleTranslate;
+      case PreferencesService.actionAiHistory:
+        return t.aiHistory;
+      case PreferencesService.actionResetEntry:
+        return t.resetEntry;
+      default:
+        return action;
     }
   }
 
@@ -1112,12 +1147,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         _toggleAllNonTargetLanguages();
         break;
       case PreferencesService.actionAiHistory:
-        final hadNewAnswer = _hasNewAiAnswer;
-        if (mounted) setState(() => _hasNewAiAnswer = false);
-        _showAiChatHistory(
-          startFullscreen: hadNewAnswer,
-          expandNewest: hadNewAnswer,
-        );
+        _showAiChatHistory();
         break;
       case PreferencesService.actionResetEntry:
         _resetCurrentEntry();
@@ -2049,7 +2079,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       }
     } catch (e) {
       if (mounted) {
-        showToast(toastContext ?? context, context.t.entry.saveFailed(error: '$e'));
+        showToast(
+          toastContext ?? context,
+          context.t.entry.saveFailed(error: '$e'),
+        );
       }
       return null;
     }
@@ -2171,7 +2204,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
       if (needTranslation && textToTranslate.isNotEmpty) {
         // 去除格式标记并替换波浪线后再进行翻译
-        final plainText = _substituteHeadword(_removeFormatting(textToTranslate), entry);
+        final plainText = _substituteHeadword(
+          _removeFormatting(textToTranslate),
+          entry,
+        );
         _performTranslation(
           entry,
           pathParts,
@@ -2447,7 +2483,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
     // 去除格式化文本中的格式标记并替换波浪线
     if (currentValue is String) {
-      currentValue = _substituteHeadword(_removeFormatting(currentValue), entry);
+      currentValue = _substituteHeadword(
+        _removeFormatting(currentValue),
+        entry,
+      );
     } else if (currentValue is Map) {
       // 如果是对象，递归处理所有字符串字段
       currentValue = _removeFormattingFromMap(currentValue);
@@ -2500,7 +2539,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   String _substituteHeadword(String text, DictionaryEntry entry) {
     final dictId = entry.dictId ?? '';
     final meta = DictionaryManager().getCachedMetadata(dictId);
-    if (LanguageUtils.normalizeSourceLanguage(meta?.sourceLanguage ?? '') == 'zh') {
+    if (LanguageUtils.normalizeSourceLanguage(meta?.sourceLanguage ?? '') ==
+        'zh') {
       return text
           .replaceAll('～', entry.headword)
           .replaceAll('\u301c', entry.headword);
@@ -2667,7 +2707,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         : Theme.of(context).colorScheme.onSurface,
                   ),
                   decoration: InputDecoration(
-                    hintText: context.t.entry.explainPrompt(word: entry.headword),
+                    hintText: context.t.entry.explainPrompt(
+                      word: entry.headword,
+                    ),
                     hintStyle: TextStyle(
                       color: Theme.of(
                         context,
@@ -2680,7 +2722,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         final inputText = questionController.text.trim();
                         // 如果用户输入为空，使用默认问题
                         final question = inputText.isEmpty
-                            ? context.t.entry.explainPrompt(word: entry.headword)
+                            ? context.t.entry.explainPrompt(
+                                word: entry.headword,
+                              )
                             : inputText;
                         Navigator.pop(context);
                         await _askAiAboutElement(
@@ -2688,6 +2732,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                           pathParts.join('.'),
                           question,
                           word: entry.headword,
+                          dictionaryId:
+                              _entryGroup.currentDictionaryGroup.dictionaryId,
                         );
                       },
                     ),
@@ -2718,6 +2764,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     String path,
     String question, {
     String? word,
+    String? dictionaryId,
   }) async {
     final requestId = DateTime.now().millisecondsSinceEpoch.toString();
     final targetWord = word ?? widget.initialWord;
@@ -2725,46 +2772,64 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 格式化JSON为密集文本（移除换行和多余空格）
     final compactJson = _formatCompactJson(elementJson);
 
+    // 每次询问词典元素都开一个新会话
+    final conversationId = requestId;
+
     // 创建加载中的记录
     final record = AiChatRecord(
       id: requestId,
+      conversationId: conversationId,
       word: targetWord,
       question: question,
       answer: '',
       timestamp: DateTime.now(),
       path: path,
       elementJson: compactJson,
+      dictionaryId: dictionaryId,
     );
     _aiChatHistory.add(record);
     _currentLoadingId = requestId;
     _autoExpandIds.add(requestId);
+    _streamingNotifiers[requestId] = ValueNotifier<(String, String?, bool)>((
+      '',
+      null,
+      false,
+    ));
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
       AiChatRecordModel(
         id: requestId,
+        conversationId: conversationId,
         word: targetWord,
         question: question,
         answer: '',
         timestamp: record.timestamp,
         path: path,
         elementJson: compactJson,
+        dictionaryId: dictionaryId,
       ),
     );
 
-    // 立即刷新UI
+    // 刷新UI：面板已打开则更新列表，否则立即打开面板
     setState(() {});
-
-    // 如果AI聊天面板还没有打开，立即打开（流式结果将实时显示）
-    final modalWasOpen = _modalSetState != null;
-    if (!modalWasOpen && mounted) {
+    if (_isModalActive) {
+      _safeModalSetState();
+    } else if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showAiChatHistory(expandNewest: true);
+        if (mounted) _showAiChatHistory(initialConversationId: conversationId);
       });
     }
 
     // 启动流式请求
-    final stream = _aiService.askAboutElementStream(elementJson, path, question);
+    final appLanguage = LocaleSettings.instance.currentLocale == AppLocale.zh
+        ? 'Chinese'
+        : 'English';
+    final stream = _aiService.askAboutElementStream(
+      elementJson,
+      question,
+      appLanguage: appLanguage,
+    );
     final sub = stream.listen(
       (chunk) {
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
@@ -2776,60 +2841,87 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           _aiChatHistory[idx].thinkingContent =
               (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
+        // 80ms 节流：每个周期内第一个 chunk 启动一个定时器，到期再批量推送 UI更新
+        if (_streamingThrottleTimers[requestId] == null) {
+          _streamingThrottleTimers[requestId] = Timer(
+            const Duration(milliseconds: 80),
+            () {
+              _streamingThrottleTimers[requestId] = null;
+              final i = _aiChatHistory.indexWhere((r) => r.id == requestId);
+              if (i != -1) {
+                _streamingNotifiers[requestId]?.value = (
+                  _aiChatHistory[i].answer,
+                  _aiChatHistory[i].thinkingContent,
+                  false,
+                );
+              }
+            },
+          );
         }
       },
       onDone: () {
+        // 取消节流定时器并做最终一次全量刷新
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
-        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        _pendingRequestsVersionNotifier.value++;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _streamingNotifiers[requestId]?.value = (
+            _aiChatHistory[idx].answer,
+            _aiChatHistory[idx].thinkingContent,
+            true,
+          );
+        }
+        _streamingNotifiers.remove(requestId)?.dispose();
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
         if (idx != -1) {
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
+              conversationId: conversationId,
               word: targetWord,
               question: question,
               answer: _aiChatHistory[idx].answer,
               timestamp: _aiChatHistory[idx].timestamp,
               path: path,
               elementJson: compactJson,
+              dictionaryId: dictionaryId,
             ),
           );
         }
-        if (mounted) {
-          setState(() => _hasNewAiAnswer = true);
-          _modalSetState?.call(() {});
-        }
       },
       onError: (e) {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
+        _pendingRequestsVersionNotifier.value++;
+        _streamingNotifiers.remove(requestId)?.dispose();
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = context.t.entry.aiRequestFailedShort + ' $e';
+          _aiChatHistory[idx].answer =
+              context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
+              conversationId: conversationId,
               word: targetWord,
               question: question,
               answer: context.t.entry.aiRequestFailedShort + ' $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: path,
               elementJson: compactJson,
+              dictionaryId: dictionaryId,
             ),
           );
         }
         if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
           showToast(context, context.t.entry.aiRequestFailed(error: '$e'));
         }
       },
       cancelOnError: true,
     );
     _pendingAiRequests[requestId] = sub;
+    _pendingRequestsVersionNotifier.value++;
   }
 
   /// 将JSON格式化为紧凑文本（移除换行和多余空格）
@@ -2881,10 +2973,212 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
   }
 
+  /// 安全调用弹窗 setState，防止弹窗已被 dispose 但 _isModalActive 尚未清除时崩溃
+  void _safeModalSetState() {
+    if (!_isModalActive || _modalSetState == null) return;
+    try {
+      _modalSetState!(() {});
+    } catch (_) {
+      _isModalActive = false;
+      _modalSetState = null;
+    }
+  }
+
+  /// 重新生成AI回答（支持"重新生成"/"简洁点"/"详细点"三种模式）
+  Future<void> _regenerateAiRecord(
+    AiChatRecord record,
+    StateSetter setModalState, {
+    String mode = 'regenerate', // 'regenerate' | 'concise' | 'detailed'
+  }) async {
+    // 取消该记录正在进行的请求
+    _pendingAiRequests[record.id]?.cancel();
+    _pendingAiRequests.remove(record.id);
+    _streamingThrottleTimers.remove(record.id)?.cancel();
+    _streamingNotifiers.remove(record.id)?.dispose();
+
+    // 从内存和数据库删除旧记录
+    final conversationId = record.conversationId;
+    setState(() => _aiChatHistory.removeWhere((r) => r.id == record.id));
+    await _aiChatDatabaseService.deleteRecord(record.id);
+
+    // 构造发给 AI 的问题（界面上仍显示原始问题）
+    String aiQuestion = record.question;
+    if (mode == 'concise') {
+      aiQuestion =
+          '${record.question}\n\n(Please provide a shorter, more concise answer.)';
+    } else if (mode == 'detailed') {
+      aiQuestion =
+          '${record.question}\n\n(Please provide a more detailed and comprehensive answer.)';
+    }
+
+    // 创建新记录（保持同一会话）
+    final newId = 'regen_${DateTime.now().millisecondsSinceEpoch}';
+    final newRecord = AiChatRecord(
+      id: newId,
+      conversationId: conversationId,
+      word: record.word,
+      question: record.question, // 显示原始问题
+      answer: '',
+      timestamp: DateTime.now(),
+      path: record.path,
+      elementJson: record.elementJson,
+    );
+    _aiChatHistory.add(newRecord);
+    _currentLoadingId = newId;
+    _autoExpandIds.add(newId);
+    _streamingNotifiers[newId] = ValueNotifier<(String, String?, bool)>((
+      '',
+      null,
+      false,
+    ));
+
+    await _aiChatDatabaseService.addRecord(
+      AiChatRecordModel(
+        id: newId,
+        conversationId: conversationId,
+        word: record.word,
+        question: record.question,
+        answer: '',
+        timestamp: newRecord.timestamp,
+        path: record.path,
+        elementJson: record.elementJson,
+      ),
+    );
+
+    setState(() {});
+    setModalState(() {});
+
+    // 启动流式请求，根据记录类型分派到正确的 stream：
+    // 1. path == '__summary__' → summarizeDictionaryStream（页面总结，使用存储的词典JSON）
+    // 2. elementJson != null → askAboutElementStream（词典元素提问）
+    // 3. 其他 → freeChatStream（自由聊天续问，携带会话历史）
+    final appLanguage = LocaleSettings.instance.currentLocale == AppLocale.zh
+        ? 'Chinese'
+        : 'English';
+    final Stream<LLMChunk> stream;
+    if (record.path == '__summary__' && record.elementJson != null) {
+      // 总结类型：将 mode 转为 instruction
+      String? instruction;
+      if (mode == 'concise') {
+        instruction = 'Be more concise and brief.';
+      } else if (mode == 'detailed') {
+        instruction =
+            'Be more detailed and comprehensive, covering more examples and nuances.';
+      }
+      stream = _aiService.summarizeDictionaryStream(
+        record.elementJson!,
+        appLanguage: appLanguage,
+        instruction: instruction,
+      );
+    } else if (record.elementJson != null) {
+      // 元素提问类型
+      stream = _aiService.askAboutElementStream(
+        record.elementJson!,
+        aiQuestion,
+        appLanguage: appLanguage,
+      );
+    } else {
+      // 自由聊天续问：删除旧记录后 _buildChatHistory 自动返回会话内前序消息
+      final history = _buildChatHistory(conversationId);
+      stream = _aiService.freeChatStream(
+        aiQuestion,
+        history: history,
+        context: 'Current word: ${record.word}',
+        appLanguage: appLanguage,
+      );
+    }
+
+    final sub = stream.listen(
+      (chunk) {
+        final idx = _aiChatHistory.indexWhere((r) => r.id == newId);
+        if (idx == -1) return;
+        if (chunk.text != null) _aiChatHistory[idx].answer += chunk.text!;
+        if (chunk.thinking != null) {
+          _aiChatHistory[idx].thinkingContent =
+              (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
+        }
+        if (_streamingThrottleTimers[newId] == null) {
+          _streamingThrottleTimers[newId] = Timer(
+            const Duration(milliseconds: 80),
+            () {
+              _streamingThrottleTimers[newId] = null;
+              final i = _aiChatHistory.indexWhere((r) => r.id == newId);
+              if (i != -1) {
+                _streamingNotifiers[newId]?.value = (
+                  _aiChatHistory[i].answer,
+                  _aiChatHistory[i].thinkingContent,
+                  false,
+                );
+              }
+            },
+          );
+        }
+      },
+      onDone: () {
+        _streamingThrottleTimers.remove(newId)?.cancel();
+        _pendingAiRequests.remove(newId);
+        _pendingRequestsVersionNotifier.value++;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == newId);
+        if (idx != -1) {
+          _streamingNotifiers[newId]?.value = (
+            _aiChatHistory[idx].answer,
+            _aiChatHistory[idx].thinkingContent,
+            true,
+          );
+          _aiChatDatabaseService.updateRecord(
+            AiChatRecordModel(
+              id: newId,
+              conversationId: conversationId,
+              word: record.word,
+              question: record.question,
+              answer: _aiChatHistory[idx].answer,
+              timestamp: _aiChatHistory[idx].timestamp,
+              path: record.path,
+              elementJson: record.elementJson,
+            ),
+          );
+        }
+        _streamingNotifiers.remove(newId)?.dispose();
+        if (_currentLoadingId == newId) _currentLoadingId = null;
+      },
+      onError: (e) {
+        _streamingThrottleTimers.remove(newId)?.cancel();
+        _pendingAiRequests.remove(newId);
+        _pendingRequestsVersionNotifier.value++;
+        _streamingNotifiers.remove(newId)?.dispose();
+        if (_currentLoadingId == newId) _currentLoadingId = null;
+        final idx = _aiChatHistory.indexWhere((r) => r.id == newId);
+        if (idx != -1) {
+          _aiChatHistory[idx].answer =
+              context.t.entry.aiRequestFailedShort + ' $e';
+          _aiChatDatabaseService.updateRecord(
+            AiChatRecordModel(
+              id: newId,
+              conversationId: conversationId,
+              word: record.word,
+              question: record.question,
+              answer: context.t.entry.aiRequestFailedShort + ' $e',
+              timestamp: _aiChatHistory[idx].timestamp,
+              path: record.path,
+              elementJson: record.elementJson,
+            ),
+          );
+        }
+        if (mounted) {
+          showToast(context, context.t.entry.aiRequestFailed(error: '$e'));
+        }
+      },
+      cancelOnError: true,
+    );
+    _pendingAiRequests[newId] = sub;
+    _pendingRequestsVersionNotifier.value++;
+  }
+
   /// 显示AI聊天记录
   void _showAiChatHistory({
     bool startFullscreen = false,
     bool expandNewest = false,
+    String? initialConversationId,
   }) async {
     // 首次打开时加载聊天记录
     if (!_isAiChatHistoryLoaded) {
@@ -2892,12 +3186,29 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       _isAiChatHistoryLoaded = true;
     }
 
+    // 确定要进入的会话和视图模式
+    String? activeConversationId = initialConversationId;
+    if (activeConversationId == null &&
+        expandNewest &&
+        _aiChatHistory.isNotEmpty) {
+      activeConversationId = _aiChatHistory.last.conversationId;
+    }
+    bool isThreadView = activeConversationId != null;
+
+    // 获取字典源语言，用于 Markdown 字体回退链
+    final sourceLang = await _getCurrentLanguage();
+    final targetLang = LocaleSettings.instance.currentLocale == AppLocale.zh
+        ? 'zh'
+        : 'en';
+
+    final ScrollController threadScrollController = ScrollController();
     final freeChatController = TextEditingController();
     final freeChatFocusNode = FocusNode();
     bool isFullScreen = startFullscreen;
     // 提前从父级 context 获取状态栏高度，底部弹出层的 context 中 viewPadding.top 为 0
     final statusBarHeight = MediaQuery.of(context).viewPadding.top;
 
+    _isModalActive = true;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2908,6 +3219,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         builder: (context, setModalState) {
           _modalSetState = setModalState;
           final screenSize = MediaQuery.of(context).size;
+          final colorScheme = Theme.of(context).colorScheme;
+
           return DraggableScrollableSheet(
             initialChildSize: isFullScreen ? 1.0 : 0.7,
             minChildSize: isFullScreen ? 1.0 : 0.5,
@@ -2917,6 +3230,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 : (screenSize.height - statusBarHeight - 8) / screenSize.height,
             expand: false,
             builder: (context, scrollController) {
+              _chatScrollController = scrollController;
+              final aiMdStyleSheet = _buildAiMarkdownStyleSheet(
+                context,
+                sourceLang: sourceLang,
+                targetLang: targetLang,
+              );
+              // 预计算当前会话消息和会话列表（随 setModalState 重建）
+              final threadMessages =
+                  (isThreadView && activeConversationId != null)
+                  ? _getConversationMessages(activeConversationId!)
+                  : <AiChatRecord>[];
+              final conversationIds = isThreadView
+                  ? <String>[]
+                  : _getConversationIds();
               Widget content = Container(
                 width: isFullScreen ? screenSize.width : null,
                 padding: EdgeInsets.only(
@@ -2925,51 +3252,170 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   right: 16,
                   bottom: 16,
                 ),
-                decoration: isFullScreen
-                    ? BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.zero,
-                      )
-                    : null,
                 child: Column(
                   children: [
-                    // 标题栏
+                    // ── 标题栏（列表/线程模式自适应）──
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              Navigator.pop(context);
-                              await _summarizeCurrentPage();
-                              if (mounted) _showAiChatHistory(expandNewest: true);
-                            },
-                            icon: Icon(
-                              Icons.auto_awesome,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            label: Text(
-                              context.t.entry.summarizePage,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context).colorScheme.primary,
+                          if (isThreadView) ...[
+                            // 对话线程模式：返回列表按钮
+                            IconButton(
+                              onPressed: () => setModalState(() {
+                                isThreadView = false;
+                                activeConversationId = null;
+                              }),
+                              icon: const Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 18,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 36,
+                                minHeight: 36,
                               ),
                             ),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                activeConversationId != null
+                                    ? (_getConversationMessages(
+                                            activeConversationId!,
+                                          ).firstOrNull?.question ??
+                                          context.t.entry.continueAsk)
+                                    : context.t.entry.continueAsk,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                              side: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.6),
-                              ),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                          ),
-                          const Spacer(),
+                          ] else ...[
+                            // 列表模式：AI 总结按钮
+                            Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(20),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () async {
+                                  _modalSetState = null;
+                                  _isModalActive = false;
+                                  Navigator.pop(context);
+                                  await _summarizeCurrentPage();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(20),
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Theme.of(
+                                          context,
+                                        ).colorScheme.primary.withOpacity(0.10),
+                                        Theme.of(context).colorScheme.tertiary
+                                            .withOpacity(0.07),
+                                      ],
+                                    ),
+                                    border: Border.all(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary.withOpacity(0.35),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        context.t.entry.aiSummaryButton,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        width: 1,
+                                        height: 12,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outlineVariant,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      DictionaryLogo(
+                                        dictionaryId: _entryGroup
+                                            .currentDictionaryGroup
+                                            .dictionaryId,
+                                        dictionaryName: _entryGroup
+                                            .currentDictionaryGroup
+                                            .dictionaryName,
+                                        size: 14,
+                                      ),
+                                      if (_entryGroup
+                                              .currentDictionaryGroup
+                                              .pageGroups
+                                              .length >
+                                          1) ...[
+                                        const SizedBox(width: 4),
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 80,
+                                          ),
+                                          child: Text(
+                                            _entryGroup
+                                                .currentDictionaryGroup
+                                                .currentPage,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.outline,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                          ],
+                          // 清除全部聊天记录按钮（仅在消息列表界面显示）
+                          if (!isThreadView)
+                            IconButton(
+                              onPressed: () =>
+                                  _showClearAllChatHistoryConfirmDialog(
+                                    context,
+                                    () {
+                                      _aiChatHistory.clear();
+                                      _aiChatDatabaseService.clearAllRecords();
+                                      _isAiChatHistoryLoaded = false;
+                                      setModalState(() {});
+                                      Navigator.pop(context);
+                                    },
+                                  ),
+                              icon: Icon(
+                                Icons.delete_sweep_outlined,
+                                size: 20,
+                                color: colorScheme.error.withOpacity(0.7),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              tooltip: context.t.settings.misc_page.clearAll,
+                            ),
+                          // 全屏切换和关闭（始终显示）
                           IconButton(
                             onPressed: () {
                               setModalState(() {
@@ -2983,11 +3429,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               size: 20,
                             ),
                             visualDensity: VisualDensity.compact,
-                            tooltip: isFullScreen ? context.t.common.exitFullscreen : context.t.common.fullscreen,
+                            tooltip: isFullScreen
+                                ? context.t.common.exitFullscreen
+                                : context.t.common.fullscreen,
                           ),
                           IconButton(
                             onPressed: () {
                               _modalSetState = null;
+                              _isModalActive = false;
                               Navigator.pop(context);
                             },
                             icon: const Icon(Icons.close, size: 20),
@@ -2997,422 +3446,561 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    // 聊天记录列表
+                    // ── 内容区：对话线程 ↔ 历史消息列表 ──
                     Expanded(
-                      child: _aiChatHistory.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.chat_bubble_outline,
-                                    size: 48,
-                                    color: Colors.grey,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    context.t.entry.noChatHistory,
-                                    style: const TextStyle(color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              controller: scrollController,
-                              itemCount: _aiChatHistory.length,
-                              itemBuilder: (context, index) {
-                                final record =
-                                    _aiChatHistory[_aiChatHistory.length -
-                                        1 -
-                                        index];
-                                final isStreaming =
-                                    _pendingAiRequests.containsKey(record.id);
-                                final isLoading =
-                                    record.answer.isEmpty && isStreaming;
-                                final isError = record.answer.startsWith(
-                                  context.t.entry.aiRequestFailedShort,
-                                );
-
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    side: BorderSide(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .outlineVariant
-                                          .withOpacity(0.5),
-                                    ),
-                                  ),
-                                  child: ExpansionTile(
-                                    key: ValueKey(record.id),
-                                    leading: isLoading
-                                        ? SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                            ),
-                                          )
-                                        : isError
-                                        ? Icon(
-                                            Icons.error_outline,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.error,
-                                          )
-                                        : Icon(
-                                            Icons.check_circle_outline,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                          ),
-                                    initiallyExpanded:
-                                        _autoExpandIds.contains(record.id) ||
-                                        (index == 0 && expandNewest),
-                                    title: Text(
-                                      record.question,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      '${record.word} · ${_formatTimestamp(record.timestamp)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.outline,
-                                      ),
-                                    ),
-                                    // 修复深色模式下的亮色横条问题
-                                    collapsedShape:
-                                        const RoundedRectangleBorder(
-                                          side: BorderSide.none,
+                      child: isThreadView
+                          ? (threadMessages.isEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(
+                                          Icons.chat_bubble_outline,
+                                          size: 48,
+                                          color: Colors.grey,
                                         ),
-                                    shape: const RoundedRectangleBorder(
-                                      side: BorderSide.none,
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          context.t.entry.noChatHistory,
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          12,
-                                          8,
-                                          12,
-                                          4,
+                                  )
+                                : ListView.builder(
+                                    controller: threadScrollController,
+                                    itemCount: threadMessages.length,
+                                    padding: EdgeInsets.zero,
+                                    itemBuilder: (ctx, i) {
+                                      final record = threadMessages[i];
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 16,
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                              CrossAxisAlignment.stretch,
                                           children: [
-                                            // 显示JSON内容（紧凑格式，最多两行）
-                                            if (record.elementJson != null)
-                                              Container(
-                                                width: double.infinity,
-                                                padding: const EdgeInsets.all(
-                                                  8,
+                                            // 用户消息气泡（右对齐）
+                                            Align(
+                                              alignment: Alignment.centerRight,
+                                              child: Container(
+                                                constraints: BoxConstraints(
+                                                  maxWidth:
+                                                      screenSize.width * 0.75,
                                                 ),
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 8,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 10,
+                                                    ),
                                                 decoration: BoxDecoration(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerHighest,
+                                                  color: colorScheme
+                                                      .primaryContainer,
                                                   borderRadius:
-                                                      BorderRadius.circular(4),
+                                                      BorderRadius.circular(16),
                                                 ),
-                                                child: Text(
-                                                  record.elementJson!,
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    fontFamily: 'Consolas',
+                                                child: SelectableText(
+                                                  record.question,
+                                                  style: TextStyle(
+                                                    color: colorScheme
+                                                        .onPrimaryContainer,
+                                                    fontSize: 14,
                                                   ),
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
                                                 ),
                                               ),
-                                            const SizedBox(height: 8),
-                                            // 显示思考过程（如果有）
-                                            if (record.thinkingContent != null &&
-                                                record.thinkingContent!.isNotEmpty)
-                                              Theme(
-                                                data: Theme.of(context).copyWith(
-                                                  dividerColor: Colors.transparent,
-                                                ),
-                                                child: ExpansionTile(
-                                                  dense: true,
-                                                  visualDensity: VisualDensity.compact,
-                                                  tilePadding: EdgeInsets.zero,
-                                                  childrenPadding: EdgeInsets.zero,
-                                                  title: Row(children: [
-                                                    Icon(
-                                                      Icons.psychology_outlined,
-                                                      size: 14,
-                                                      color: Theme.of(context).colorScheme.outline,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      context.t.entry.thinkingProcess,
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Theme.of(context).colorScheme.outline,
-                                                      ),
-                                                    ),
-                                                    if (isStreaming && record.answer.isEmpty)
-                                                      Padding(
-                                                        padding: const EdgeInsets.only(left: 6),
-                                                        child: SizedBox(
-                                                          width: 10,
-                                                          height: 10,
-                                                          child: CircularProgressIndicator(
-                                                            strokeWidth: 1.5,
-                                                            color: Theme.of(context).colorScheme.outline,
+                                            ),
+                                            // AI 回复（左对齐，Markdown 渲染，支持流式更新）
+                                            ValueListenableBuilder<int>(
+                                              valueListenable:
+                                                  _pendingRequestsVersionNotifier,
+                                              builder: (ctx2, _, __) {
+                                                final notifier =
+                                                    _streamingNotifiers[record
+                                                        .id];
+                                                final inProgress =
+                                                    _pendingAiRequests
+                                                        .containsKey(record.id);
+                                                if (notifier != null) {
+                                                  return ValueListenableBuilder<
+                                                    (String, String?, bool)
+                                                  >(
+                                                    valueListenable: notifier,
+                                                    builder: (ctx3, val, _) {
+                                                      final text =
+                                                          val.$1.isNotEmpty
+                                                          ? val.$1
+                                                          : record.answer;
+                                                      if (text.isEmpty) {
+                                                        return Padding(
+                                                          padding:
+                                                              const EdgeInsets.all(
+                                                                8,
+                                                              ),
+                                                          child: SizedBox(
+                                                            width: 20,
+                                                            height: 20,
+                                                            child: CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color: colorScheme
+                                                                  .primary,
+                                                            ),
                                                           ),
+                                                        );
+                                                      }
+                                                      return RepaintBoundary(
+                                                        child: MarkdownBody(
+                                                          data: text,
+                                                          selectable: true,
+                                                          styleSheet:
+                                                              aiMdStyleSheet,
                                                         ),
-                                                      ),
-                                                  ]),
-                                                  collapsedShape: const RoundedRectangleBorder(
-                                                    side: BorderSide.none,
-                                                  ),
-                                                  shape: const RoundedRectangleBorder(
-                                                    side: BorderSide.none,
-                                                  ),
-                                                  children: [
-                                                    Container(
-                                                      width: double.infinity,
-                                                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-                                                      decoration: BoxDecoration(
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .surfaceContainerHighest
-                                                            .withOpacity(0.5),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: SelectableText(
-                                                        record.thinkingContent!,
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: Theme.of(context).colorScheme.outline,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            if (record.thinkingContent != null &&
-                                                record.thinkingContent!.isNotEmpty)
-                                              const SizedBox(height: 4),
-                                            // 显示加载中、错误或回答内容
-                                            if (isLoading)
-                                              Row(
-                                                children: [
-                                                  SizedBox(
-                                                    width: 16,
-                                                    height: 16,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          color: Theme.of(
-                                                            context,
-                                                          ).colorScheme.primary,
-                                                        ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Text(
-                                                    context.t.entry.aiThinking,
-                                                    style: TextStyle(
-                                                      color: Theme.of(
-                                                        context,
-                                                      ).colorScheme.outline,
-                                                    ),
-                                                  ),
-                                                ],
-                                              )
-                                            else if (isError)
-                                              Text(
-                                                record.answer,
-                                                style: TextStyle(
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.error,
-                                                ),
-                                              )
-                                            else
-                                              // Markdown渲染回答 - 使用延迟加载避免卡顿
-                                              _LazyMarkdownBody(
-                                                data: record.answer,
-                                              ),
-                                            // 流式输出时在回答末尾显示进度指示器
-                                            if (isStreaming && record.answer.isNotEmpty)
-                                              Padding(
-                                                padding: const EdgeInsets.only(top: 4),
-                                                child: Row(
-                                                  children: [
-                                                    SizedBox(
-                                                      width: 12,
-                                                      height: 12,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 1.5,
-                                                        color: Theme.of(context).colorScheme.primary,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Text(
-                                                      context.t.entry.outputting,
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Theme.of(context).colorScheme.outline,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.end,
-                                              children: [
-                                                if (!isLoading)
-                                                  TextButton.icon(
-                                                    onPressed: () {
-                                                      Clipboard.setData(
-                                                        ClipboardData(
-                                                          text: record.answer,
-                                                        ),
-                                                      );
-                                                      showToast(
-                                                        context,
-                                                        context.t.entry.copiedToClipboard,
                                                       );
                                                     },
-                                                    icon: const Icon(
-                                                      Icons.copy,
-                                                      size: 16,
-                                                    ),
-                                                    label: Text(context.t.common.copy),
-                                                    style: TextButton.styleFrom(
-                                                      visualDensity:
-                                                          VisualDensity.compact,
-                                                      tapTargetSize:
-                                                          MaterialTapTargetSize
-                                                              .shrinkWrap,
-                                                    ),
-                                                  ),
-                                                // 继续对话按钮
-                                                if (!isLoading && !isError)
-                                                  TextButton.icon(
-                                                    onPressed: () {
-                                                      _showContinueChatDialog(
-                                                        record,
-                                                        onMessageSent: () {
-                                                          setModalState(() {});
-                                                          setState(() {});
-                                                        },
-                                                      );
-                                                    },
-                                                    icon: const Icon(
-                                                      Icons.chat,
-                                                      size: 16,
-                                                    ),
-                                                    label: Text(context.t.common.continue_),
-                                                    style: TextButton.styleFrom(
-                                                      visualDensity:
-                                                          VisualDensity.compact,
-                                                      tapTargetSize:
-                                                          MaterialTapTargetSize
-                                                              .shrinkWrap,
-                                                    ),
-                                                  ),
-                                                // 删除单条记录按钮
-                                                IconButton(
-                                                  onPressed: () async {
-                                                    final confirm = await showDialog<bool>(
-                                                      context: context,
-                                                      builder: (context) => AlertDialog(
-                                                        title: Text(
-                                                          context.t.entry.deleteRecord,
-                                                        ),
-                                                        content: Text(
-                                                          context.t.entry.deleteRecordConfirm,
-                                                        ),
-                                                        actions: [
-                                                          TextButton(
-                                                            onPressed: () =>
-                                                                Navigator.pop(
-                                                                  context,
-                                                                  false,
-                                                                ),
-                                                            child: Text(
-                                                              context.t.common.cancel,
+                                                  );
+                                                }
+                                                if (record.answer.isEmpty) {
+                                                  return inProgress
+                                                      ? Padding(
+                                                          padding:
+                                                              const EdgeInsets.all(
+                                                                8,
+                                                              ),
+                                                          child: SizedBox(
+                                                            width: 20,
+                                                            height: 20,
+                                                            child: CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color: colorScheme
+                                                                  .primary,
                                                             ),
                                                           ),
-                                                          TextButton(
-                                                            onPressed: () =>
-                                                                Navigator.pop(
-                                                                  context,
-                                                                  true,
-                                                                ),
-                                                            style: TextButton.styleFrom(
-                                                              foregroundColor:
-                                                                  Theme.of(
-                                                                        context,
-                                                                      )
-                                                                      .colorScheme
-                                                                      .error,
-                                                            ),
-                                                            child: Text(
-                                                              context.t.common.delete,
-                                                            ),
-                                                          ),
-                                                        ],
+                                                        )
+                                                      : const SizedBox.shrink();
+                                                }
+                                                return Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    RepaintBoundary(
+                                                      child: MarkdownBody(
+                                                        data: record.answer,
+                                                        selectable: true,
+                                                        styleSheet:
+                                                            aiMdStyleSheet,
                                                       ),
-                                                    );
-                                                    if (confirm == true) {
-                                                      await _aiChatDatabaseService
-                                                          .deleteRecord(
-                                                            record.id,
-                                                          );
-                                                      setState(() {
-                                                        _aiChatHistory
-                                                            .removeWhere(
-                                                              (r) =>
-                                                                  r.id ==
-                                                                  record.id,
+                                                    ),
+                                                    Row(
+                                                      children: [
+                                                        IconButton(
+                                                          onPressed: () {
+                                                            Clipboard.setData(
+                                                              ClipboardData(
+                                                                text: record
+                                                                    .answer,
+                                                              ),
                                                             );
-                                                      });
-                                                      setModalState(() {});
-                                                    }
-                                                  },
-                                                  icon: Icon(
-                                                    Icons.delete_outline,
-                                                    size: 18,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .error
-                                                        .withOpacity(0.7),
-                                                  ),
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  tooltip: context.t.common.delete,
-                                                ),
-                                              ],
+                                                            showToast(
+                                                              context,
+                                                              context
+                                                                  .t
+                                                                  .entry
+                                                                  .copiedToClipboard,
+                                                            );
+                                                          },
+                                                          icon: const Icon(
+                                                            Icons.copy_outlined,
+                                                            size: 16,
+                                                          ),
+                                                          visualDensity:
+                                                              VisualDensity
+                                                                  .compact,
+                                                          tooltip: context
+                                                              .t
+                                                              .common
+                                                              .copy,
+                                                        ),
+                                                        IconButton(
+                                                          icon: Icon(
+                                                            Icons
+                                                                .delete_outline,
+                                                            size: 16,
+                                                            color: colorScheme
+                                                                .error
+                                                                .withOpacity(
+                                                                  0.7,
+                                                                ),
+                                                          ),
+                                                          onPressed: () async {
+                                                            final confirmed = await showDialog<bool>(
+                                                              context: context,
+                                                              builder: (dlgCtx) => AlertDialog(
+                                                                title: Text(
+                                                                  context
+                                                                      .t
+                                                                      .entry
+                                                                      .deleteRecord,
+                                                                ),
+                                                                content: Text(
+                                                                  context
+                                                                      .t
+                                                                      .entry
+                                                                      .deleteRecordConfirm,
+                                                                ),
+                                                                actions: [
+                                                                  TextButton(
+                                                                    onPressed: () =>
+                                                                        Navigator.pop(
+                                                                          dlgCtx,
+                                                                          false,
+                                                                        ),
+                                                                    child: Text(
+                                                                      context
+                                                                          .t
+                                                                          .common
+                                                                          .cancel,
+                                                                    ),
+                                                                  ),
+                                                                  TextButton(
+                                                                    onPressed: () =>
+                                                                        Navigator.pop(
+                                                                          dlgCtx,
+                                                                          true,
+                                                                        ),
+                                                                    style: TextButton.styleFrom(
+                                                                      foregroundColor:
+                                                                          colorScheme
+                                                                              .error,
+                                                                    ),
+                                                                    child: Text(
+                                                                      context
+                                                                          .t
+                                                                          .common
+                                                                          .delete,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            );
+                                                            if (confirmed ==
+                                                                    true &&
+                                                                mounted) {
+                                                              final isLast = _aiChatHistory
+                                                                  .where(
+                                                                    (r) =>
+                                                                        r.conversationId ==
+                                                                            activeConversationId &&
+                                                                        r.id !=
+                                                                            record.id,
+                                                                  )
+                                                                  .isEmpty;
+                                                              await _aiChatDatabaseService
+                                                                  .deleteRecord(
+                                                                    record.id,
+                                                                  );
+                                                              if (mounted) {
+                                                                setState(
+                                                                  () => _aiChatHistory
+                                                                      .removeWhere(
+                                                                        (r) =>
+                                                                            r.id ==
+                                                                            record.id,
+                                                                      ),
+                                                                );
+                                                                setModalState(() {
+                                                                  if (isLast) {
+                                                                    isThreadView =
+                                                                        false;
+                                                                    activeConversationId =
+                                                                        null;
+                                                                  }
+                                                                });
+                                                              }
+                                                            }
+                                                          },
+                                                          visualDensity:
+                                                              VisualDensity
+                                                                  .compact,
+                                                          tooltip: context
+                                                              .t
+                                                              .common
+                                                              .delete,
+                                                        ),
+                                                        PopupMenuButton<String>(
+                                                          padding:
+                                                              EdgeInsets.zero,
+                                                          constraints:
+                                                              const BoxConstraints(),
+                                                          child: Padding(
+                                                            padding:
+                                                                const EdgeInsets.all(
+                                                                  8,
+                                                                ),
+                                                            child: Icon(
+                                                              Icons.refresh,
+                                                              size: 16,
+                                                              color: colorScheme
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                          ),
+                                                          tooltip: context
+                                                              .t
+                                                              .entry
+                                                              .regenerate,
+                                                          onSelected: (mode) {
+                                                            _regenerateAiRecord(
+                                                              record,
+                                                              setModalState,
+                                                              mode: mode,
+                                                            );
+                                                          },
+                                                          itemBuilder: (ctx) => [
+                                                            PopupMenuItem(
+                                                              value:
+                                                                  'regenerate',
+                                                              child: Row(
+                                                                children: [
+                                                                  const Icon(
+                                                                    Icons
+                                                                        .refresh,
+                                                                    size: 18,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 8,
+                                                                  ),
+                                                                  Text(
+                                                                    context
+                                                                        .t
+                                                                        .entry
+                                                                        .regenerate,
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                            PopupMenuItem(
+                                                              value: 'concise',
+                                                              child: Row(
+                                                                children: [
+                                                                  const Icon(
+                                                                    Icons
+                                                                        .compress,
+                                                                    size: 18,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 8,
+                                                                  ),
+                                                                  Text(
+                                                                    context
+                                                                        .t
+                                                                        .entry
+                                                                        .moreConc,
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                            PopupMenuItem(
+                                                              value: 'detailed',
+                                                              child: Row(
+                                                                children: [
+                                                                  const Icon(
+                                                                    Icons
+                                                                        .expand,
+                                                                    size: 18,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 8,
+                                                                  ),
+                                                                  Text(
+                                                                    context
+                                                                        .t
+                                                                        .entry
+                                                                        .moreDetailed,
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                );
+                                              },
                                             ),
                                           ],
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
+                                      );
+                                    },
+                                  ))
+                          : (conversationIds.isEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(
+                                          Icons.chat_bubble_outline,
+                                          size: 48,
+                                          color: Colors.grey,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          context.t.entry.noChatHistory,
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    controller: scrollController,
+                                    itemCount: conversationIds.length,
+                                    itemBuilder: (ctx, i) {
+                                      final cid = conversationIds[i];
+                                      final msgs = _getConversationMessages(
+                                        cid,
+                                      );
+                                      if (msgs.isEmpty)
+                                        return const SizedBox.shrink();
+                                      final firstMsg = msgs.first;
+                                      final lastMsg = msgs.last;
+                                      final isStreaming = _pendingAiRequests
+                                          .containsKey(lastMsg.id);
+                                      final isLoading =
+                                          lastMsg.answer.isEmpty && isStreaming;
+                                      final isError = lastMsg.answer.startsWith(
+                                        context.t.entry.aiRequestFailedShort,
+                                      );
+                                      return ValueListenableBuilder<int>(
+                                        valueListenable:
+                                            _pendingRequestsVersionNotifier,
+                                        builder: (ctx2, _, __) {
+                                          return Card(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 8,
+                                            ),
+                                            elevation: 0,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              side: BorderSide(
+                                                color: colorScheme
+                                                    .outlineVariant
+                                                    .withOpacity(0.5),
+                                              ),
+                                            ),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: InkWell(
+                                              onTap: () {
+                                                setModalState(() {
+                                                  activeConversationId = cid;
+                                                  isThreadView = true;
+                                                });
+                                                WidgetsBinding.instance
+                                                    .addPostFrameCallback((_) {
+                                                      if (threadScrollController
+                                                          .hasClients) {
+                                                        threadScrollController.jumpTo(
+                                                          threadScrollController
+                                                              .position
+                                                              .maxScrollExtent,
+                                                        );
+                                                      }
+                                                    });
+                                              },
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 14,
+                                                    ),
+                                                child: Row(
+                                                  children: [
+                                                    if (isLoading)
+                                                      SizedBox(
+                                                        width: 16,
+                                                        height: 16,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color: colorScheme
+                                                                  .primary,
+                                                            ),
+                                                      )
+                                                    else if (isError)
+                                                      Icon(
+                                                        Icons.error_outline,
+                                                        size: 16,
+                                                        color:
+                                                            colorScheme.error,
+                                                      ),
+                                                    SizedBox(
+                                                      width:
+                                                          isLoading || isError
+                                                          ? 8
+                                                          : 0,
+                                                    ),
+                                                    Text(
+                                                      firstMsg.word,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 14,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        _buildConversationSubtitle(
+                                                          firstMsg,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color: colorScheme
+                                                              .outline,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      _formatTimestamp(
+                                                        lastMsg.timestamp,
+                                                      ),
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color:
+                                                            colorScheme.outline,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Icon(
+                                                      Icons.chevron_right,
+                                                      size: 18,
+                                                      color: colorScheme
+                                                          .outlineVariant,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  )),
                     ),
                     const SizedBox(height: 6),
-                    // 自由发送文本框
+                    // ── 输入框（发送即进入对话线程）──
                     Container(
                       padding: EdgeInsets.only(
                         bottom: MediaQuery.of(context).viewInsets.bottom > 0
@@ -3422,99 +4010,156 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: freeChatController,
-                              focusNode: freeChatFocusNode,
-                              maxLines: 3,
-                              minLines: 1,
-                              decoration: InputDecoration(
-                                hintText: context.t.entry.chatInputHint,
-                                hintStyle: TextStyle(
-                                  fontSize: 13,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                filled: true,
-                                fillColor: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                              ),
-                              onSubmitted: (text) {
-                                if (text.trim().isNotEmpty) {
-                                  _sendFreeChatMessage(
-                                    text.trim(),
-                                    onMessageSent: () {
-                                      freeChatController.clear();
-                                      setModalState(() {});
-                                      setState(() {});
-                                      // 滚动到最新消息
-                                      Future.delayed(
-                                        const Duration(milliseconds: 300),
-                                        () {
-                                          if (scrollController.hasClients) {
-                                            scrollController.animateTo(
-                                              0,
-                                              duration: const Duration(
-                                                milliseconds: 300,
-                                              ),
-                                              curve: Curves.easeOut,
-                                            );
-                                          }
+                            child: Shortcuts(
+                              shortcuts: {
+                                LogicalKeySet(LogicalKeyboardKey.enter):
+                                    const _SendIntent(),
+                                LogicalKeySet(
+                                  LogicalKeyboardKey.shift,
+                                  LogicalKeyboardKey.enter,
+                                ): const _NewLineIntent(),
+                                LogicalKeySet(
+                                  LogicalKeyboardKey.control,
+                                  LogicalKeyboardKey.enter,
+                                ): const _NewLineIntent(),
+                                LogicalKeySet(
+                                  LogicalKeyboardKey.meta,
+                                  LogicalKeyboardKey.enter,
+                                ): const _NewLineIntent(),
+                              },
+                              child: Actions(
+                                actions: {
+                                  _SendIntent: _SendAction(
+                                    onSend: () {
+                                      final text = freeChatController.text
+                                          .trim();
+                                      if (text.isEmpty) return;
+                                      _sendFreeChatMessage(
+                                        text,
+                                        conversationId: isThreadView
+                                            ? activeConversationId
+                                            : null,
+                                        onMessageSent: (String newConvId) {
+                                          freeChatController.clear();
+                                          setModalState(() {
+                                            activeConversationId = newConvId;
+                                            isThreadView = true;
+                                          });
+                                          setState(() {});
+                                          WidgetsBinding.instance
+                                              .addPostFrameCallback((_) {
+                                                Future.delayed(
+                                                  const Duration(
+                                                    milliseconds: 100,
+                                                  ),
+                                                  () {
+                                                    if (threadScrollController
+                                                        .hasClients) {
+                                                      threadScrollController
+                                                          .animateTo(
+                                                            threadScrollController
+                                                                .position
+                                                                .maxScrollExtent,
+                                                            duration:
+                                                                const Duration(
+                                                                  milliseconds:
+                                                                      300,
+                                                                ),
+                                                            curve:
+                                                                Curves.easeOut,
+                                                          );
+                                                    }
+                                                  },
+                                                );
+                                              });
                                         },
                                       );
                                     },
-                                  );
-                                }
-                              },
+                                  ),
+                                  _NewLineIntent: _NewLineAction(
+                                    controller: freeChatController,
+                                  ),
+                                },
+                                child: TextField(
+                                  controller: freeChatController,
+                                  focusNode: freeChatFocusNode,
+                                  maxLines: 3,
+                                  minLines: 1,
+                                  decoration: InputDecoration(
+                                    hintText: context.t.entry.chatInputHint,
+                                    hintStyle: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outline,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outlineVariant,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outlineVariant,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    filled: true,
+                                    fillColor: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           IconButton.filled(
                             onPressed: () {
                               final text = freeChatController.text.trim();
-                              if (text.isNotEmpty) {
-                                _sendFreeChatMessage(
-                                  text,
-                                  onMessageSent: () {
-                                    freeChatController.clear();
-                                    freeChatFocusNode.unfocus();
-                                    setModalState(() {});
-                                    setState(() {});
-                                    // 滚动到最新消息
+                              if (text.isEmpty) return;
+                              freeChatFocusNode.unfocus();
+                              _sendFreeChatMessage(
+                                text,
+                                conversationId: isThreadView
+                                    ? activeConversationId
+                                    : null,
+                                onMessageSent: (String newConvId) {
+                                  freeChatController.clear();
+                                  setModalState(() {
+                                    activeConversationId = newConvId;
+                                    isThreadView = true;
+                                  });
+                                  setState(() {});
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
                                     Future.delayed(
-                                      const Duration(milliseconds: 300),
+                                      const Duration(milliseconds: 100),
                                       () {
-                                        if (scrollController.hasClients) {
-                                          scrollController.animateTo(
-                                            0,
+                                        if (threadScrollController.hasClients) {
+                                          threadScrollController.animateTo(
+                                            threadScrollController
+                                                .position
+                                                .maxScrollExtent,
                                             duration: const Duration(
                                               milliseconds: 300,
                                             ),
@@ -3523,9 +4168,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                         }
                                       },
                                     );
-                                  },
-                                );
-                              }
+                                  });
+                                },
+                              );
                             },
                             icon: const Icon(Icons.send),
                           ),
@@ -3544,27 +4189,32 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           );
         },
       ),
-    );
+    ).then((_) {
+      _modalSetState = null;
+      _isModalActive = false;
+      threadScrollController.dispose();
+      freeChatController.dispose();
+      freeChatFocusNode.dispose();
+    });
   }
 
   /// 发送自由聊天消息（流式输出）
   Future<void> _sendFreeChatMessage(
     String message, {
-    required VoidCallback onMessageSent,
+    required void Function(String conversationId) onMessageSent,
+    String? conversationId,
   }) async {
     final requestId = 'free_${DateTime.now().millisecondsSinceEpoch}';
+    final actualConversationId = conversationId ?? requestId;
 
     // 构建当前单词上下文
     final currentWord = widget.initialWord;
-    final currentDict = _entryGroup.currentDictionaryGroup;
-    String context = '当前查询单词: $currentWord';
-    if (currentDict.dictionaryId.isNotEmpty) {
-      context += '\n当前词典: ${currentDict.dictionaryId}';
-    }
+    final String context = 'Current word: $currentWord';
 
     // 创建记录
     final record = AiChatRecord(
       id: requestId,
+      conversationId: actualConversationId,
       word: currentWord,
       question: message,
       answer: '',
@@ -3575,11 +4225,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _aiChatHistory.add(record);
     _currentLoadingId = requestId;
     _autoExpandIds.add(requestId);
+    _streamingNotifiers[requestId] = ValueNotifier<(String, String?, bool)>((
+      '',
+      null,
+      false,
+    ));
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
       AiChatRecordModel(
         id: requestId,
+        conversationId: actualConversationId,
         word: currentWord,
         question: message,
         answer: '',
@@ -3589,16 +4245,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       ),
     );
 
-    onMessageSent();
+    onMessageSent(actualConversationId);
 
-    // 准备历史对话（最近5轮）
-    final history = _buildChatHistory();
+    // 准备历史对话（当前会话最近5轮）
+    final history = _buildChatHistory(actualConversationId);
 
     // 启动流式请求
+    final appLanguage = LocaleSettings.instance.currentLocale == AppLocale.zh
+        ? 'Chinese'
+        : 'English';
     final stream = _aiService.freeChatStream(
       message,
       history: history,
       context: context,
+      appLanguage: appLanguage,
     );
     final sub = stream.listen(
       (chunk) {
@@ -3609,19 +4269,43 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           _aiChatHistory[idx].thinkingContent =
               (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
+        // 80ms 节流批量推送 UI 更新
+        if (_streamingThrottleTimers[requestId] == null) {
+          _streamingThrottleTimers[requestId] = Timer(
+            const Duration(milliseconds: 80),
+            () {
+              _streamingThrottleTimers[requestId] = null;
+              final i = _aiChatHistory.indexWhere((r) => r.id == requestId);
+              if (i != -1) {
+                _streamingNotifiers[requestId]?.value = (
+                  _aiChatHistory[i].answer,
+                  _aiChatHistory[i].thinkingContent,
+                  false,
+                );
+              }
+            },
+          );
         }
       },
       onDone: () {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
-        if (_currentLoadingId == requestId) _currentLoadingId = null;
+        _pendingRequestsVersionNotifier.value++;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
+        if (idx != -1) {
+          _streamingNotifiers[requestId]?.value = (
+            _aiChatHistory[idx].answer,
+            _aiChatHistory[idx].thinkingContent,
+            true,
+          );
+        }
+        _streamingNotifiers.remove(requestId)?.dispose();
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
         if (idx != -1) {
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
+              conversationId: actualConversationId,
               word: currentWord,
               question: message,
               answer: _aiChatHistory[idx].answer,
@@ -3631,20 +4315,21 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             ),
           );
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
-        }
       },
       onError: (e) {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
+        _pendingRequestsVersionNotifier.value++;
+        _streamingNotifiers.remove(requestId)?.dispose();
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = this.context.t.entry.aiRequestFailedShort + ' $e';
+          _aiChatHistory[idx].answer =
+              this.context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
+              conversationId: actualConversationId,
               word: currentWord,
               question: message,
               answer: this.context.t.entry.aiRequestFailedShort + ' $e',
@@ -3654,325 +4339,62 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             ),
           );
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
-        }
       },
       cancelOnError: true,
     );
     _pendingAiRequests[requestId] = sub;
+    _pendingRequestsVersionNotifier.value++;
   }
 
-  /// 构建聊天历史（用于连续对话）
-  List<Map<String, String>> _buildChatHistory() {
+  /// 构建聊天历史（用于连续对话，只包含当前会话的消息）
+  List<Map<String, String>> _buildChatHistory(String conversationId) {
     final history = <Map<String, String>>[];
-    // 取最近5轮对话（最多10条消息）
-    final recentRecords = _aiChatHistory
-        .where((r) => r.answer.isNotEmpty && !r.answer.startsWith(context.t.entry.aiRequestFailedShort))
-        .toList();
 
-    final startIndex = recentRecords.length > 5 ? recentRecords.length - 5 : 0;
-    for (var i = startIndex; i < recentRecords.length; i++) {
-      final record = recentRecords[i];
-      history.add({'role': 'user', 'content': record.question});
-      history.add({'role': 'assistant', 'content': record.answer});
+    final allRecords =
+        _aiChatHistory
+            .where(
+              (r) =>
+                  r.conversationId == conversationId &&
+                  r.answer.isNotEmpty &&
+                  !r.answer.startsWith(context.t.entry.aiRequestFailedShort),
+            )
+            .toList()
+          ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    if (allRecords.isEmpty) return history;
+
+    // 为每条记录重建发送给LLM的原始用户消息：
+    // 含有 elementJson 的记录在首次请求时携带了完整 JSON，
+    // 这里还原该格式，确保 LLM 在多轮对话中始终能看到原始词典内容。
+    String buildUserContent(AiChatRecord r) {
+      if (r.elementJson == null) return r.question;
+      if (r.path == '__summary__') {
+        return 'Analyze the following dictionary JSON data and output a structured summary as instructed.\n\n```json\n${r.elementJson}\n```';
+      }
+      // askAboutElement 格式
+      return 'Dictionary content:\n```json\n${r.elementJson}\n```\n\nQuestion: ${r.question}';
+    }
+
+    // 滑动窗口：最近5轮
+    const maxWindow = 5;
+    final startIdx = allRecords.length > maxWindow
+        ? allRecords.length - maxWindow
+        : 0;
+
+    // 若首条记录（携带词典 JSON 上下文）被窗口截断，始终将其锚定在历史开头，
+    // 避免 LLM 丢失原始词典内容，导致后续回答"凭空作答"。
+    final root = allRecords.first;
+    if (startIdx > 0 && root.elementJson != null) {
+      history.add({'role': 'user', 'content': buildUserContent(root)});
+      history.add({'role': 'assistant', 'content': root.answer});
+    }
+
+    for (var i = startIdx; i < allRecords.length; i++) {
+      final r = allRecords[i];
+      history.add({'role': 'user', 'content': buildUserContent(r)});
+      history.add({'role': 'assistant', 'content': r.answer});
     }
     return history;
-  }
-
-  /// 显示继续对话对话框
-  void _showContinueChatDialog(
-    AiChatRecord record, {
-    required VoidCallback onMessageSent,
-  }) {
-    final messageController = TextEditingController();
-    final scrollController = ScrollController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return DraggableScrollableSheet(
-            initialChildSize: 0.6,
-            minChildSize: 0.4,
-            maxChildSize: 0.9,
-            expand: false,
-            builder: (context, sheetScrollController) {
-              return Container(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    // 标题栏
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            context.t.entry.continueChatTitle,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    // 历史消息显示
-                    Expanded(
-                      child: ListView(
-                        controller: scrollController,
-                        children: [
-                          // 原始问题
-                          Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    context.t.entry.originalQuestion,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(record.question),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // AI回答
-                          Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    context.t.entry.aiAnswer,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  MarkdownBody(
-                                    data: record.answer,
-                                    selectable: true,
-                                    styleSheet:
-                                        MarkdownStyleSheet.fromTheme(
-                                          Theme.of(context),
-                                        ).copyWith(
-                                          p: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.copyWith(height: 1.6),
-                                          code: TextStyle(
-                                            fontFamily: 'Consolas',
-                                            fontSize:
-                                                (Theme.of(context)
-                                                        .textTheme
-                                                        .bodyMedium
-                                                        ?.fontSize ??
-                                                    14) *
-                                                0.9,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                            backgroundColor: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                          ),
-                                          codeblockDecoration: BoxDecoration(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .outlineVariant
-                                                  .withOpacity(0.5),
-                                            ),
-                                          ),
-                                          codeblockPadding:
-                                              const EdgeInsets.all(12),
-                                          blockquote: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.copyWith(
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
-                                                fontStyle: FontStyle.italic,
-                                                height: 1.6,
-                                              ),
-                                          blockquoteDecoration: BoxDecoration(
-                                            border: Border(
-                                              left: BorderSide(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary
-                                                    .withOpacity(0.5),
-                                                width: 4,
-                                              ),
-                                            ),
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primaryContainer
-                                                .withOpacity(0.15),
-                                            borderRadius:
-                                                const BorderRadius.only(
-                                                  topRight: Radius.circular(4),
-                                                  bottomRight: Radius.circular(
-                                                    4,
-                                                  ),
-                                                ),
-                                          ),
-                                          blockquotePadding:
-                                              const EdgeInsets.fromLTRB(
-                                                12,
-                                                8,
-                                                8,
-                                                8,
-                                              ),
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const Divider(),
-                          const SizedBox(height: 8),
-                          Text(
-                            context.t.entry.continueAsk,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                    const Divider(),
-                    // 输入框
-                    Container(
-                      padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).viewInsets.bottom > 0
-                            ? MediaQuery.of(context).viewInsets.bottom
-                            : 8,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: messageController,
-                              maxLines: 3,
-                              minLines: 1,
-                              decoration: InputDecoration(
-                                hintText: context.t.entry.continueAskHint,
-                                hintStyle: TextStyle(
-                                  fontSize: 13,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                filled: true,
-                                fillColor: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                              ),
-                              onSubmitted: (text) {
-                                if (text.trim().isNotEmpty) {
-                                  _sendContinueChatMessage(
-                                    record,
-                                    text.trim(),
-                                    onMessageSent: () {
-                                      messageController.clear();
-                                      Navigator.pop(context);
-                                      onMessageSent();
-                                    },
-                                  );
-                                }
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filled(
-                            onPressed: () {
-                              final text = messageController.text.trim();
-                              if (text.isNotEmpty) {
-                                _sendContinueChatMessage(
-                                  record,
-                                  text,
-                                  onMessageSent: () {
-                                    messageController.clear();
-                                    Navigator.pop(context);
-                                    onMessageSent();
-                                  },
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.send),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
   }
 
   /// 发送继续对话消息（流式输出）
@@ -3985,12 +4407,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final currentWord = widget.initialWord;
 
     // 构建上下文信息
-    String context = '当前查询单词: $currentWord\n';
-    context += '原始问题: ${parentRecord.question}\n';
+    String context = 'Current word: $currentWord\n';
+    context += 'Original question: ${parentRecord.question}\n';
     context +=
-        '原始回答: ${parentRecord.answer.substring(0, parentRecord.answer.length > 500 ? 500 : parentRecord.answer.length)}...';
+        'Original answer: ${parentRecord.answer.substring(0, parentRecord.answer.length > 500 ? 500 : parentRecord.answer.length)}...';
     if (parentRecord.elementJson != null) {
-      context += '\n相关词典内容: ${parentRecord.elementJson}';
+      context += '\nRelated dictionary content: ${parentRecord.elementJson}';
     }
 
     // 创建记录
@@ -4006,6 +4428,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _aiChatHistory.add(record);
     _currentLoadingId = requestId;
     _autoExpandIds.add(requestId);
+    _streamingNotifiers[requestId] = ValueNotifier<(String, String?, bool)>((
+      '',
+      null,
+      false,
+    ));
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
@@ -4021,6 +4448,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
 
     onMessageSent();
+    // 刷新列表以显示新消息
+    _safeModalSetState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _chatScrollController?.jumpTo(0);
+    });
 
     // 准备历史对话（包含父对话）
     final history = <Map<String, String>>[
@@ -4029,10 +4461,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     ];
 
     // 启动流式请求
+    final appLanguage = LocaleSettings.instance.currentLocale == AppLocale.zh
+        ? 'Chinese'
+        : 'English';
     final stream = _aiService.freeChatStream(
       message,
       history: history,
       context: context,
+      appLanguage: appLanguage,
     );
     final sub = stream.listen(
       (chunk) {
@@ -4043,16 +4479,36 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           _aiChatHistory[idx].thinkingContent =
               (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
+        // 80ms 节流批量推送 UI 更新
+        if (_streamingThrottleTimers[requestId] == null) {
+          _streamingThrottleTimers[requestId] = Timer(
+            const Duration(milliseconds: 80),
+            () {
+              _streamingThrottleTimers[requestId] = null;
+              final i = _aiChatHistory.indexWhere((r) => r.id == requestId);
+              if (i != -1) {
+                _streamingNotifiers[requestId]?.value = (
+                  _aiChatHistory[i].answer,
+                  _aiChatHistory[i].thinkingContent,
+                  false,
+                );
+              }
+            },
+          );
         }
       },
       onDone: () {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
+        _pendingRequestsVersionNotifier.value++;
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
+          _streamingNotifiers[requestId]?.value = (
+            _aiChatHistory[idx].answer,
+            _aiChatHistory[idx].thinkingContent,
+            true,
+          );
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
@@ -4065,17 +4521,18 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             ),
           );
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
-        }
+        _streamingNotifiers.remove(requestId)?.dispose();
       },
       onError: (e) {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
+        _pendingRequestsVersionNotifier.value++;
+        _streamingNotifiers.remove(requestId)?.dispose();
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = this.context.t.entry.aiRequestFailedShort + ' $e';
+          _aiChatHistory[idx].answer =
+              this.context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
@@ -4088,14 +4545,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             ),
           );
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
-        }
       },
       cancelOnError: true,
     );
     _pendingAiRequests[requestId] = sub;
+    _pendingRequestsVersionNotifier.value++;
   }
 
   /// 格式化时间戳
@@ -4113,6 +4567,47 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       return context.t.entry.daysAgo(n: diff.inDays);
     } else {
       return '${timestamp.month}/${timestamp.day} ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// 构建消息概览单行布局的副标题：自由聊天显示"AI自由聊天"，总结显示"词典+page AI总结"，询问显示"词典 AI询问"
+  String _buildConversationSubtitle(AiChatRecord firstMsg) {
+    final path = firstMsg.path;
+    if (path == '__summary__') {
+      final dictId =
+          firstMsg.dictionaryId ?? _parseSummaryDictId(firstMsg.elementJson);
+      final page = _parseSummaryPage(firstMsg.elementJson);
+      final dictLabel = (dictId != null && dictId.isNotEmpty) ? dictId : '';
+      if (page != null && page.isNotEmpty) {
+        return context.t.entry.chatOverviewSummary(dict: dictLabel, page: page);
+      }
+      return context.t.entry.chatOverviewSummaryNoPage(dict: dictLabel);
+    } else if (path != null) {
+      final dictId = firstMsg.dictionaryId;
+      final dictLabel = (dictId != null && dictId.isNotEmpty) ? dictId : '';
+      return context.t.entry.chatOverviewAsk(dict: dictLabel);
+    } else {
+      return context.t.entry.chatOverviewFreeChat;
+    }
+  }
+
+  String? _parseSummaryDictId(String? elementJson) {
+    if (elementJson == null) return null;
+    try {
+      final data = jsonDecode(elementJson) as Map<String, dynamic>?;
+      return data?['dictionary'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _parseSummaryPage(String? elementJson) {
+    if (elementJson == null) return null;
+    try {
+      final data = jsonDecode(elementJson) as Map<String, dynamic>?;
+      return data?['page'] as String?;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -4137,134 +4632,252 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       return;
     }
 
-    final targetWord = entries.length == 1
-        ? entries[0].headword
-        : context.t.entry.summaryEntriesLabel(first: entries[0].headword, count: entries.length);
+    final targetWord = entries[0].headword;
 
-    // 创建记录
+    // 每次总结都开一个新会话
+    final conversationId = requestId;
+
+    // 构建当前页所有entries的JSON内容
+    // compactJson 用于持久化存储（不缩进，空白少），重新生成时可恢复上下文
+    final summaryData = {
+      'dictionary': currentDict.dictionaryId,
+      'page': currentPage.page,
+      'entries': entries.map((e) => e.toJson()).toList(),
+    };
+    final compactJson = jsonEncode(summaryData);
+    final jsonContent = const JsonEncoder.withIndent('  ').convert(summaryData);
+
+    // 创建记录（path 标记为 __summary__ ，以便重新生成时识别类型）
     final record = AiChatRecord(
       id: requestId,
+      conversationId: conversationId,
       word: targetWord,
       question: context.t.entry.summaryQuestion,
       answer: '',
       timestamp: DateTime.now(),
-      path: null,
+      path: '__summary__',
+      elementJson: compactJson,
+      dictionaryId: currentDict.dictionaryId,
     );
     _aiChatHistory.add(record);
     _currentLoadingId = requestId;
     _autoExpandIds.add(requestId);
+    _streamingNotifiers[requestId] = ValueNotifier<(String, String?, bool)>((
+      '',
+      null,
+      false,
+    ));
 
     // 保存到持久化存储
     _aiChatDatabaseService.addRecord(
       AiChatRecordModel(
         id: requestId,
+        conversationId: conversationId,
         word: targetWord,
         question: context.t.entry.summaryQuestion,
         answer: '',
         timestamp: record.timestamp,
-        path: null,
-        elementJson: null,
+        path: '__summary__',
+        elementJson: compactJson,
+        dictionaryId: currentDict.dictionaryId,
       ),
     );
 
+    // 刷新UI：面板已打开则更新列表，否则立即打开面板
     setState(() {});
-
-    // 构建当前页所有entries的JSON内容
-    final jsonContent = const JsonEncoder.withIndent('  ').convert({
-      'dictionary': currentDict.dictionaryId,
-      'page': currentPageIndex,
-      'entries': entries.map((e) => e.toJson()).toList(),
-    });
-
-    // 打开AI聊天面板（如果未开）
-    final modalWasOpen = _modalSetState != null;
-    if (!modalWasOpen && mounted) {
+    if (_isModalActive) {
+      _safeModalSetState();
+    } else if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showAiChatHistory(expandNewest: true);
+        if (mounted) _showAiChatHistory(initialConversationId: conversationId);
       });
     }
 
     // 启动流式请求
-    final stream = _aiService.summarizeDictionaryStream(jsonContent);
+    final appLanguage = LocaleSettings.instance.currentLocale == AppLocale.zh
+        ? 'Chinese'
+        : 'English';
+    final stream = _aiService.summarizeDictionaryStream(
+      jsonContent,
+      appLanguage: appLanguage,
+    );
     final sub = stream.listen(
       (chunk) {
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx == -1) return;
         if (chunk.text != null) {
-          if (_aiChatHistory[idx].answer.isEmpty) {
-            // 第一个 token：将问题改成更友好的标题
-            _aiChatHistory[idx].answer = '';
-          }
           _aiChatHistory[idx].answer += chunk.text!;
         }
         if (chunk.thinking != null) {
           _aiChatHistory[idx].thinkingContent =
               (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
         }
-        if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
+        // 80ms 节流批量推送 UI 更新
+        if (_streamingThrottleTimers[requestId] == null) {
+          _streamingThrottleTimers[requestId] = Timer(
+            const Duration(milliseconds: 80),
+            () {
+              _streamingThrottleTimers[requestId] = null;
+              final i = _aiChatHistory.indexWhere((r) => r.id == requestId);
+              if (i != -1) {
+                _streamingNotifiers[requestId]?.value = (
+                  _aiChatHistory[i].answer,
+                  _aiChatHistory[i].thinkingContent,
+                  false,
+                );
+              }
+            },
+          );
         }
       },
       onDone: () {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
-        if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
           // 更新问题标题
           final finalAnswer = _aiChatHistory[idx].answer;
           _aiChatHistory[idx] = AiChatRecord(
             id: requestId,
+            conversationId: conversationId,
             word: targetWord,
             question: context.t.entry.summaryTitle,
             answer: finalAnswer,
             thinkingContent: _aiChatHistory[idx].thinkingContent,
             timestamp: _aiChatHistory[idx].timestamp,
-            path: null,
+            path: '__summary__',
+            elementJson: compactJson,
+            dictionaryId: currentDict.dictionaryId,
+          );
+          // 最终全量刷新一次
+          _streamingNotifiers[requestId]?.value = (
+            finalAnswer,
+            _aiChatHistory[idx].thinkingContent,
+            true,
           );
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
+              conversationId: conversationId,
               word: targetWord,
               question: context.t.entry.summaryTitle,
               answer: finalAnswer,
               timestamp: _aiChatHistory[idx].timestamp,
-              path: null,
-              elementJson: null,
+              path: '__summary__',
+              elementJson: compactJson,
+              dictionaryId: currentDict.dictionaryId,
             ),
           );
         }
+        _streamingNotifiers.remove(requestId)?.dispose();
+        if (_currentLoadingId == requestId) _currentLoadingId = null;
         if (mounted) {
-          setState(() => _hasNewAiAnswer = true);
-          _modalSetState?.call(() {});
+          _pendingRequestsVersionNotifier.value++;
         }
       },
       onError: (e) {
+        _streamingThrottleTimers.remove(requestId)?.cancel();
         _pendingAiRequests.remove(requestId);
+        _streamingNotifiers.remove(requestId)?.dispose();
         if (_currentLoadingId == requestId) _currentLoadingId = null;
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
-          _aiChatHistory[idx].answer = context.t.entry.aiRequestFailedShort + ' $e';
+          _aiChatHistory[idx].answer =
+              context.t.entry.aiRequestFailedShort + ' $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
+              conversationId: conversationId,
               word: targetWord,
               question: context.t.entry.summaryQuestion,
               answer: context.t.entry.aiRequestFailedShort + ' $e',
               timestamp: _aiChatHistory[idx].timestamp,
-              path: null,
-              elementJson: null,
+              path: '__summary__',
+              elementJson: compactJson,
+              dictionaryId: currentDict.dictionaryId,
             ),
           );
         }
         if (mounted) {
-          setState(() {});
-          _modalSetState?.call(() {});
+          _pendingRequestsVersionNotifier.value++;
           showToast(context, context.t.entry.aiSumFailed(error: '$e'));
         }
       },
       cancelOnError: true,
     );
     _pendingAiRequests[requestId] = sub;
+    _pendingRequestsVersionNotifier.value++;
+  }
+
+  void _showClearAllChatHistoryConfirmDialog(
+    BuildContext ctx,
+    VoidCallback onConfirm,
+  ) {
+    final colorScheme = Theme.of(ctx).colorScheme;
+    showDialog(
+      context: ctx,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: colorScheme.error),
+            const SizedBox(width: 8),
+            Text(ctx.t.settings.misc_page.clearAllConfirmTitle),
+          ],
+        ),
+        content: Text(ctx.t.settings.misc_page.clearAllConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(ctx.t.common.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onConfirm();
+            },
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
+            child: Text(ctx.t.common.clear),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SendIntent extends Intent {
+  const _SendIntent();
+}
+
+class _NewLineIntent extends Intent {
+  const _NewLineIntent();
+}
+
+class _SendAction extends Action<_SendIntent> {
+  final VoidCallback onSend;
+
+  _SendAction({required this.onSend});
+
+  @override
+  Object? invoke(_SendIntent intent) {
+    onSend();
+    return null;
+  }
+}
+
+class _NewLineAction extends Action<_NewLineIntent> {
+  final TextEditingController controller;
+
+  _NewLineAction({required this.controller});
+
+  @override
+  Object? invoke(_NewLineIntent intent) {
+    final text = controller.text;
+    final selection = controller.selection;
+    final newText = text.replaceRange(selection.start, selection.end, '\n');
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: selection.start + 1),
+    );
+    return null;
   }
 }

@@ -121,16 +121,16 @@ class _TranslationsCommonEn extends TranslationsCommonZh {
 	@override String get error => 'Error';
 	@override String get success => 'Success';
 	@override String get testing => 'Testing...';
-	@override String get testConnection => 'Test Connection';
+	@override String get testConnection => 'Test Config';
 	@override String get saveConfig => 'Save Config';
 	@override String get unknown => 'Unknown';
 	@override String get fullscreen => 'Fullscreen';
 	@override String get exitFullscreen => 'Exit Fullscreen';
-	@override String get selectLanguage => 'Select Language';
-	@override String get redo => 'Redo';
-	@override String get neverAskAgain => 'Never Ask Again';
-	@override String get notNow => 'Not Now';
 	@override String get retryLater => 'Please try again later';
+	@override String get notNow => 'Not Now';
+	@override String get neverAskAgain => 'Never Ask Again';
+	@override String get redo => 'Redo';
+	@override String get selectLanguage => 'Select Language';
 }
 
 // Path: settings
@@ -226,10 +226,10 @@ class _TranslationsWordBankEn extends TranslationsWordBankZh {
 	@override String get listSaved => 'List updated';
 	@override String get listOpFailed => 'Operation failed';
 	@override String get listNameExists => 'List name already exists, please use a different name';
-	@override String get selectLists => 'Select List';
-	@override String adjustLists({required Object word}) => 'Adjust "${word}" Lists';
-	@override String get newListHint => 'Enter new list name';
-	@override String get removeWord => 'Remove Word';
+	@override String get selectLists => 'Select lists';
+	@override String adjustLists({required Object word}) => 'Adjust lists for "${word}"';
+	@override String get newListHint => 'Add new list...';
+	@override String get removeWord => 'Remove word';
 }
 
 // Path: theme
@@ -284,7 +284,7 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String upToDate({required Object version}) => 'Up to date (${version})';
 	@override String currentVersion({required Object version}) => 'Current version ${version}';
 	@override String get updateError => 'Check failed, tap to retry';
-	@override String githubApiError({required Object code}) => 'GitHub API error (${code})';
+	@override String githubApiError({required Object code}) => 'GitHub API error (status ${code})';
 	@override String checkUpdateError({required Object error}) => 'Update check failed: ${error}';
 }
 
@@ -428,6 +428,9 @@ class _TranslationsCloudEn extends TranslationsCloudZh {
 	@override String get registerUsernameRequired => 'Please enter a username';
 	@override String get registerPasswordMismatch => 'Passwords do not match';
 	@override String get loggedOut => 'Logged out';
+	@override String get requestTimeout => 'Request timed out, please check your network connection';
+	@override String registerFailedError({required Object error}) => 'Registration failed: ${error}';
+	@override String loginFailedError({required Object error}) => 'Login failed: ${error}';
 	@override String get syncToCloud => 'Sync to Cloud';
 	@override String get syncToCloudSubtitle => 'Upload local settings to cloud';
 	@override String get syncFromCloud => 'Sync from Cloud';
@@ -437,6 +440,8 @@ class _TranslationsCloudEn extends TranslationsCloudZh {
 	@override String get uploadSuccess => 'Settings uploaded';
 	@override String get uploadFailed => 'Upload failed';
 	@override String get createPackageFailed => 'Failed to create settings package';
+	@override String uploadFailedError({required Object error}) => 'Upload failed: ${error}';
+	@override String get selectAtLeastOneFileToUpdate => 'Please select at least one file to update';
 	@override String get downloadTitle => 'Download Settings';
 	@override String get downloadConfirm => 'Download settings from cloud? This will overwrite local data.';
 	@override String get downloadSuccess => 'Settings synced from cloud';
@@ -459,72 +464,67 @@ class _TranslationsCloudEn extends TranslationsCloudZh {
 	@override String get opInsert => '[New] ';
 	@override String get opDelete => '[Deleted] ';
 	@override String get loginFirst => 'Please log in first';
+	@override String get serverNotSet => 'Please configure the cloud service subscription URL first';
+	@override String get uploadServerNotSet => 'Please configure the upload server URL first';
+	@override String get sessionExpired => 'Session expired, please log in again';
 	@override String get permissionTitle => 'File Access Required';
 	@override String get permissionBody => 'External directory access requires the "All Files Access" permission.\n\nTap "Authorize" to open Settings, find this app under "Manage All Files" and enable the permission.';
 	@override String get goAuthorize => 'Authorize';
 	@override String get permissionDenied => 'File access denied, operation cancelled';
-	@override String get serverNotSet => 'Please set the server address first';
-	@override String get requestTimeout => 'Request timed out, please check your network';
-	@override String get notLoggedIn => 'Not logged in';
-	@override String get sessionExpired => 'Session expired, please log in again';
+	@override String get notLoggedIn => 'Not logged in, please log in first';
 	@override String get getUserFailed => 'Failed to get user info';
-	@override String get requestFailed => 'Request failed';
-	@override String get settingsFileNotFound => 'Settings file not found';
-	@override String loginFailedError({required Object error}) => 'Login failed: ${error}';
-	@override String registerFailedError({required Object error}) => 'Registration failed: ${error}';
 	@override String getUserFailedError({required Object error}) => 'Failed to get user info: ${error}';
+	@override String get requestFailed => 'Request failed';
 	@override String downloadFailedError({required Object error}) => 'Download failed: ${error}';
-	@override String uploadFailedError({required Object error}) => 'Upload failed: ${error}';
-	@override String get noSyncableFiles => 'No settings files to sync';
-	@override String createPackageFailedError({required Object error}) => 'Failed to create archive: ${error}';
-	@override String get archiveNotFound => 'Archive file not found';
-	@override String get archiveNoValidFiles => 'No valid settings files in archive';
-	@override String extractFailedError({required Object error}) => 'Extraction failed: ${error}';
-	@override String get uploadServerNotSet => 'Upload server address not set';
-	@override String get uploadNewDict => 'Upload New Dictionary';
-	@override String get selectAllRequiredFiles => 'Please select all required files';
-	@override String get selectAtLeastOneFileToUpdate => 'Please select at least one file to update';
-	@override String get replaceFileTip => 'Tip: please select at least one file to update';
-	@override String get replaceFileHint => 'e.g. update logo, fix entries, etc.';
-	@override String get versionNoteLabel => 'Version note (required)';
-	@override String get entryDeleted => 'Entry deleted and recorded in commit table';
-	@override String get entryDeleteFailed => 'Delete failed, entry may not exist';
-	@override String deleteFailedError({required Object error}) => 'Delete failed: ${error}';
-	@override String get updateJsonTitle => 'Update JSON';
-	@override String get prefixSearch => 'Headword Search';
-	@override String get idSearch => 'ID Search';
-	@override String get importTab => 'Import JSON / JSONL';
-	@override String get deleteSearchTab => 'Search & Delete Entry';
-	@override String get clearLabel => 'Clear';
-	@override String get writingToDb => 'Write to database';
-	@override String get importing => 'Importing…';
-	@override String get deleteEntry => 'Delete this entry';
-	@override String get deleting => 'Deleting…';
-	@override String get importJsonPlaceholder => 'Paste JSON or JSONL (one JSON object per line)\n\nNote: Each JSON must contain the entry_id field';
-	@override String get searchIdHint => 'Enter integer entry_id';
-	@override String get searchHeadwordHint => 'Enter headword (auto-normalized match)';
-	@override String get searchHeadwordLabel => 'Headword';
-	@override String entryIdNotFound({required Object id}) => 'No entry found with entry_id ${id}';
-	@override String headwordNotFound({required Object word}) => 'No entry found with headword 「${word}」';
-	@override String searchFailed({required Object error}) => 'Search failed: ${error}';
-	@override String matchedEntries({required Object count}) => '${count} matching entries found, tap to select one to delete:';
+	@override String get settingsFileNotFound => 'Settings file not found';
 	@override String get noNeedToPushUpdates => 'No updates to push';
-	@override String get jsonParseError => 'JSON parse failed, please check the format (formatted JSON or JSONL with one object per line)';
-	@override String importLineError({required Object line, required Object preview}) => 'Line ${line}: ${preview}';
-	@override String importItemNotObject({required Object item}) => 'Item ${item} is not a JSON object';
-	@override String importItemMissingId({required Object item}) => 'Item ${item} is missing entry_id';
-	@override String importItemWriteFailed({required Object item, required Object id, required Object word}) => 'Item ${item} failed to write (entry_id: ${id}, headword: ${word})';
-	@override String importItemFailed({required Object item, required Object error}) => 'Item ${item} processing failed: ${error}';
-	@override String importSuccessCount({required Object count}) => 'Successfully imported ${count} entries';
-	@override String importFailedCount({required Object count}) => ', failed ${count} entries';
-	@override String importMoreErrors({required Object count}) => '… ${count} more errors';
-	@override String get enterJsonContent => 'Please enter JSON content';
-	@override String importFailedError({required Object error}) => 'Import failed: ${error}';
-	@override String get enterEntryId => 'Please enter entry_id';
-	@override String get enterHeadword => 'Please enter headword';
+	@override String get selectAllRequiredFiles => 'Please select all required files';
 	@override String get requiredField => ' (required)';
 	@override String get optionalField => ' (optional)';
-	@override String deleteEntryConfirmContent({required Object headword, required Object id}) => 'Are you sure you want to delete entry 「${headword}」 (entry_id: ${id})?\n\nThis will record the deletion in the commit table. After pushing updates, the entry on the server will also be deleted.';
+	@override String get uploadNewDict => 'Upload New Dictionary';
+	@override String get versionNoteLabel => 'Version note';
+	@override String get replaceFileHint => 'Enter version description...';
+	@override String get replaceFileTip => 'Files not selected will not be updated';
+	@override String get enterJsonContent => 'Please enter JSON content';
+	@override String importLineError({required Object line, required Object preview}) => 'Line ${line}: parse error: "${preview}"';
+	@override String get jsonParseError => 'JSON parse error';
+	@override String importItemNotObject({required Object item}) => 'Item ${item} is not a JSON object';
+	@override String importItemMissingId({required Object item}) => 'Item ${item} has no ID';
+	@override String importItemWriteFailed({required Object item, required Object id, required Object word}) => 'Item ${item} (id=${id}, ${word}) write failed';
+	@override String importItemFailed({required Object item, required Object error}) => 'Item ${item} failed: ${error}';
+	@override String importSuccessCount({required Object count}) => 'Imported ${count} entries';
+	@override String importFailedCount({required Object count}) => ', ${count} failed';
+	@override String importMoreErrors({required Object count}) => '... and ${count} more';
+	@override String importFailedError({required Object error}) => 'Import failed: ${error}';
+	@override String get enterEntryId => 'Please enter entry ID';
+	@override String get enterHeadword => 'Please enter headword';
+	@override String entryIdNotFound({required Object id}) => 'Entry not found for ID: ${id}';
+	@override String headwordNotFound({required Object word}) => 'Entry not found: "${word}"';
+	@override String searchFailed({required Object error}) => 'Search failed: ${error}';
+	@override String deleteEntryConfirmContent({required Object headword, required Object id}) => 'Delete "${headword}" (ID: ${id})? This cannot be undone.';
+	@override String get entryDeleted => 'Entry deleted';
+	@override String get entryDeleteFailed => 'Failed to delete entry';
+	@override String deleteFailedError({required Object error}) => 'Delete failed: ${error}';
+	@override String get updateJsonTitle => 'Update Entry Data';
+	@override String get importTab => 'Import';
+	@override String get deleteSearchTab => 'Delete/Search';
+	@override String get importJsonPlaceholder => 'Enter JSONL content, one entry per line...';
+	@override String get clearLabel => 'Clear';
+	@override String get importing => 'Importing...';
+	@override String get writingToDb => 'Write to DB';
+	@override String get idSearch => 'Search by ID';
+	@override String get prefixSearch => 'Search by headword';
+	@override String get searchHeadwordLabel => 'Headword';
+	@override String get searchIdHint => 'Enter entry_id';
+	@override String get searchHeadwordHint => 'Enter headword';
+	@override String matchedEntries({required Object count}) => '${count} entries found';
+	@override String get deleting => 'Deleting...';
+	@override String get deleteEntry => 'Delete Entry';
+	@override String get noSyncableFiles => 'No syncable files found';
+	@override String createPackageFailedError({required Object error}) => 'Failed to create package: ${error}';
+	@override String get archiveNotFound => 'Archive file not found';
+	@override String get archiveNoValidFiles => 'No valid files in archive';
+	@override String extractFailedError({required Object error}) => 'Extraction failed: ${error}';
 }
 
 // Path: dict
@@ -569,6 +569,11 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String dictDbWithSize({required Object size}) => '[Required] Dict database (${size})';
 	@override String get mediaDb => 'Media database';
 	@override String mediaDbWithSize({required Object size}) => 'Media database (${size})';
+	@override String mediaDbNotFound({required Object id}) => 'Media database not found for dictionary: ${id}';
+	@override String dictDbNotFound({required Object id}) => 'Dictionary database not found for: ${id}';
+	@override String get getDictListFailed => 'Failed to get dictionary list';
+	@override String get invalidResponseFormat => 'Invalid response format from server';
+	@override String getDictListFailedError({required Object error}) => 'Failed to get dictionary list: ${error}';
 	@override String get startDownload => 'Start Download';
 	@override String downloading({required Object step, required Object total, required Object name}) => '[${step}/${total}] Downloading ${name}';
 	@override String downloadingEntries({required Object step, required Object total}) => '[${step}/${total}] Downloading entry updates';
@@ -578,6 +583,15 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String deleteConfirmBody({required Object name}) => 'Delete dictionary "${name}"?';
 	@override String get deleteSuccess => 'Dictionary deleted';
 	@override String deleteFailed({required Object error}) => 'Delete failed: ${error}';
+	@override String get dictNotFound => 'Dictionary not found';
+	@override String get dictDeleteFailed => 'Dictionary delete failed';
+	@override String get statusUpdateFailed => 'Status update failed';
+	@override String get statusPreparing => 'Preparing';
+	@override String get statusPreparingUpdate => 'Preparing update';
+	@override String get statusDownloading => 'Downloading';
+	@override String get statusCompleted => 'Completed';
+	@override String get storeNotConfigured => 'Dictionary storage directory not configured';
+	@override String get downloadFailed => 'Download failed';
 	@override String get tooltipUpdateJson => 'Update JSON';
 	@override String get tooltipReplaceFile => 'Replace File';
 	@override String get tooltipPushUpdate => 'Push Update';
@@ -647,59 +661,44 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get versionLabel => 'Version';
 	@override String get updatedLabel => 'Updated';
 	@override String get detailTitle => 'Dictionary Details';
-	@override String downloadError({required Object error}) => 'Download failed: ${error}';
-	@override String uploadError({required Object error}) => 'Upload failed: ${error}';
-	@override String get cancelled => 'Cancelled';
-	@override String get uploadSuccess => 'Uploaded successfully';
-	@override String get searchEntries => 'Search entries...';
-	@override String get noEntries => 'No entries';
-	@override String get dbDialogTitle => 'Download English Dictionary Database';
-	@override String get dbDialogTitleError => 'Download Failed';
-	@override String get dbFeatureTitle => 'The English dictionary database can:';
-	@override String get dbFeatureVariant => 'Spelling variant lookup';
-	@override String get dbFeatureAbbr => 'Abbreviation/acronym lookup';
-	@override String get dbFeatureNominal => 'Nominalization lookup';
-	@override String get dbFeatureInflection => 'Verb inflection lookup';
-	@override String get dbExample => 'e.g. searching "alpacas" redirects to "alpaca" (plural form)';
-	@override String get statusPreparing => 'Preparing download...';
-	@override String get statusDownloading => 'Downloading...';
-	@override String get statusCompleted => 'Download complete';
-	@override String get statusFailed => 'Download failed';
-	@override String get statusPreparingUpdate => 'Preparing update...';
-	@override String get statusUpdateCompleted => 'Update complete';
-	@override String get statusUpdateFailed => 'Update failed';
-	@override String get statusPreparingUpload => 'Preparing upload...';
+	@override String get statusPreparingUpload => 'Preparing upload';
 	@override String uploadingFile({required Object step, required Object total, required Object name}) => '[${step}/${total}] Uploading ${name}';
 	@override String get statusUploadCompleted => 'Upload completed';
 	@override String get statusUploadFailed => 'Upload failed';
-	@override String get storeNotConfigured => 'Dictionary store service not configured';
-	@override String get downloadFailed => 'Download failed';
-	@override String get noContentSelected => 'No content selected for download';
-	@override String get fetchListTimeout => 'Fetching dictionary list timed out, please check your network';
+	@override String get cancelled => 'Cancelled';
+	@override String get statusFailed => 'Failed';
+	@override String get statusUpdateCompleted => 'Update completed';
+	@override String downloadingFile({required Object name}) => 'Downloading ${name}';
 	@override String fetchListFailedHttp({required Object code}) => 'Failed to fetch dictionary list: HTTP ${code}';
-	@override String fetchDetailFailedHttp({required Object code}) => 'Failed to fetch dictionary details: HTTP ${code}';
+	@override String get fetchListTimeout => 'Dictionary list fetch timed out';
+	@override String fetchDetailFailedHttp({required Object code}) => 'Failed to fetch dictionary detail: HTTP ${code}';
+	@override String get noContentSelected => 'No content selected';
+	@override String downloadingDatabase({required Object step, required Object total}) => '[${step}/${total}] Downloading dictionary database';
 	@override String downloadDbFailedHttp({required Object code}) => 'Failed to download database: HTTP ${code}';
+	@override String downloadingDatabaseProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading dictionary database ${progress}%';
+	@override String downloadingMedia({required Object step, required Object total}) => '[${step}/${total}] Downloading media database';
 	@override String downloadMediaFailedHttp({required Object code}) => 'Failed to download media database: HTTP ${code}';
+	@override String downloadingMediaProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading media database ${progress}%';
+	@override String downloadingMeta({required Object step, required Object total}) => '[${step}/${total}] Downloading metadata';
 	@override String downloadMetaFailed({required Object url, required Object code}) => 'Failed to download metadata: ${url}, HTTP ${code}';
+	@override String downloadingIcon({required Object step, required Object total}) => '[${step}/${total}] Downloading icon';
 	@override String get responseEmpty => 'Response body is empty';
-	@override String get invalidResponseFormat => 'Invalid response format from server';
-	@override String get getDictListFailed => 'Failed to get dictionary list';
-	@override String getDictListFailedError({required Object error}) => 'Failed to get dictionary list: ${error}';
-	@override String get dictNotFound => 'Dictionary not found';
-	@override String get dictDeleteFailed => 'Delete failed';
-	@override String downloadingFile({required Object name}) => '[1/1] Downloading ${name}';
-	@override String downloadingMeta({required Object step, required Object total}) => '[${step}/${total}] Downloading metadata...';
-	@override String downloadingIcon({required Object step, required Object total}) => '[${step}/${total}] Downloading icon...';
-	@override String downloadingDatabase({required Object step, required Object total}) => '[${step}/${total}] Downloading database...';
-	@override String downloadingDatabaseProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading database... ${progress}%';
-	@override String downloadingMedia({required Object step, required Object total}) => '[${step}/${total}] Downloading media database...';
-	@override String downloadingMediaProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading media database... ${progress}%';
-	@override String dictDbNotFound({required Object id}) => 'Dictionary database does not exist: ${id}';
-	@override String mediaDbNotFound({required Object id}) => 'Media database does not exist: ${id}';
-	@override String get dbNotExists => 'English dictionary database does not exist, please download it first.';
-	@override String downloadFileFailed({required Object name}) => 'Download file failed: ${name}';
-	@override String downloadFileFailedError({required Object name, required Object error}) => 'Download file failed: ${name} — ${error}';
-	@override String get downloadEntriesFailed => 'Download entry updates failed';
+	@override String get dbDialogTitleError => 'Enhance English Search (Error)';
+	@override String get dbDialogTitle => 'Enhance English Search';
+	@override String get dbFeatureVariant => 'Spelling variants (colour → color)';
+	@override String get dbFeatureAbbr => 'Abbreviations (abbr. → abbreviation)';
+	@override String get dbFeatureNominal => 'Nominalizations (happy → happiness)';
+	@override String get dbFeatureInflection => 'Inflections (runs, ran, running → run)';
+	@override String get dbExample => 'e.g. Searching "colour" returns entries for "color"';
+	@override String downloadError({required Object error}) => 'Download error: ${error}';
+	@override String uploadError({required Object error}) => 'Upload error: ${error}';
+	@override String get uploadSuccess => 'Upload successful';
+	@override String downloadFileFailedError({required Object name, required Object error}) => 'Failed to download ${name}: ${error}';
+	@override String downloadFileFailed({required Object name}) => 'Failed to download ${name}';
+	@override String get downloadEntriesFailed => 'Failed to download entry updates';
+	@override String get searchEntries => 'Search entries...';
+	@override String get noEntries => 'No entries';
+	@override String get dbNotExists => 'English dictionary database not found, please download first';
 }
 
 // Path: entry
@@ -722,8 +721,6 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get resetFailed => 'Reset failed';
 	@override String saveFailed({required Object error}) => 'Save failed: ${error}';
 	@override String get saveSuccess => 'Saved';
-	@override String get rootMustBeObject => 'Root node must be an object type';
-	@override String get dbUpdateFailed => 'Database update failed';
 	@override String processFailed({required Object error}) => 'Process failed: ${error}';
 	@override String get translating => 'Translating...';
 	@override String translateFailed({required Object error}) => 'Translation failed: ${error}';
@@ -747,6 +744,9 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get aiAnswer => 'AI Answer';
 	@override String get continueAsk => 'Continue asking';
 	@override String get continueAskHint => 'Ask a follow-up question...';
+	@override String get regenerate => 'Regenerate';
+	@override String get moreConc => 'More Concise';
+	@override String get moreDetailed => 'More Detailed';
 	@override String get chatInputHint => 'Ask anything...';
 	@override String get justNow => 'Just now';
 	@override String minutesAgo({required Object n}) => '${n}m ago';
@@ -764,33 +764,42 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get morphSpellingVariant => 'Variant';
 	@override String get morphNominalization => 'Nominalization';
 	@override String get morphInflection => 'Inflection';
-	@override String get spellingVariantLabel => 'Spelling variant';
-	@override String get abbreviationLabel => 'Abbreviation';
-	@override String get acronymLabel => 'Acronym';
-	@override String get morphPluralForm => 'Plural form';
-	@override String get morphThirdSingFull => 'Third person singular';
 	@override String get uncountable => 'uncountable';
 	@override String get summaryQuestion => 'Please summarize all dictionary content on this page';
 	@override String get summaryTitle => 'Current page summary';
+	@override String get aiSummaryButton => 'Tap to AI Summarize';
 	@override String summaryEntriesLabel({required Object first, required Object count}) => '${first} and ${count} entries';
+	@override String chatStartSummary({required Object dict, required Object page}) => '${dict} [${page}] AI Summary';
+	@override String chatStartElement({required Object dict, required Object path}) => '${dict} [${path}] AI Inquiry';
+	@override String chatStartFreeChat({required Object word}) => '"${word}" Free Chat';
+	@override String get chatOverviewFreeChat => 'Free Chat';
+	@override String chatOverviewSummary({required Object dict, required Object page}) => '${dict} [${page}] AI Summary';
+	@override String chatOverviewSummaryNoPage({required Object dict}) => '${dict} AI Summary';
+	@override String chatOverviewAsk({required Object dict}) => '${dict} AI Inquiry';
 	@override String get returnToStart => 'Return to initial path';
 	@override String get path => 'Path';
 	@override String explainPrompt({required Object word}) => 'This is part of the dictionary entry for "${word}", please explain this section.';
 	@override String currentWord({required Object word}) => 'Current word: ${word}';
 	@override String currentDict({required Object dictId}) => 'Current dictionary: ${dictId}';
 	@override String entryNotFound({required Object entryId}) => 'Entry not found: ${entryId}';
-	@override String get extractFailed => 'Cannot extract text';
+	@override String get extractFailed => 'Failed to extract text';
 	@override String get generatingAudio => 'Generating audio...';
-	@override String speakFailed({required Object error}) => 'Speak failed: ${error}';
-	@override String phraseNotFound({required Object phrase}) => 'Phrase not found: ${phrase}';
+	@override String speakFailed({required Object error}) => 'TTS failed: ${error}';
+	@override String phraseNotFound({required Object phrase}) => 'Phrase not found: "${phrase}"';
 	@override String get imageLoadFailed => 'Failed to load image';
-	@override String get formatJson => 'Format';
-	@override String get jsonHint => 'Enter JSON content';
-	@override String get syntaxError => 'Syntax error';
-	@override String get syntaxCheck => 'Syntax check';
+	@override String get rootMustBeObject => 'Root must be a JSON object';
+	@override String get dbUpdateFailed => 'Failed to save to database';
 	@override String jsonFormatFailed({required Object error}) => 'Format failed: ${error}';
 	@override String jsonSyntaxError({required Object error}) => 'JSON syntax error: ${error}';
-	@override String jsonErrorLabel({required Object error}) => 'Error: ${error}';
+	@override String get formatJson => 'Format JSON';
+	@override String get syntaxError => 'Syntax error';
+	@override String get syntaxCheck => 'Syntax OK';
+	@override String jsonErrorLabel({required Object error}) => 'Syntax error: ${error}';
+	@override String get spellingVariantLabel => 'Spelling variant';
+	@override String get abbreviationLabel => 'Abbreviation';
+	@override String get acronymLabel => 'Acronym';
+	@override String get morphPluralForm => 'Plural form';
+	@override String get morphThirdSingFull => 'Third person singular';
 }
 
 // Path: settings.scaleDialog
@@ -963,16 +972,16 @@ extension on TranslationsEn {
 			'common.error' => 'Error',
 			'common.success' => 'Success',
 			'common.testing' => 'Testing...',
-			'common.testConnection' => 'Test Connection',
+			'common.testConnection' => 'Test Config',
 			'common.saveConfig' => 'Save Config',
 			'common.unknown' => 'Unknown',
 			'common.fullscreen' => 'Fullscreen',
 			'common.exitFullscreen' => 'Exit Fullscreen',
-			'common.selectLanguage' => 'Select Language',
-			'common.redo' => 'Redo',
-			'common.neverAskAgain' => 'Never Ask Again',
-			'common.notNow' => 'Not Now',
 			'common.retryLater' => 'Please try again later',
+			'common.notNow' => 'Not Now',
+			'common.neverAskAgain' => 'Never Ask Again',
+			'common.redo' => 'Redo',
+			'common.selectLanguage' => 'Select Language',
 			'settings.title' => 'Settings',
 			'settings.cloudService' => 'Cloud Service',
 			'settings.dictionaryManager' => 'Dictionary Manager',
@@ -1088,10 +1097,10 @@ extension on TranslationsEn {
 			'wordBank.listSaved' => 'List updated',
 			'wordBank.listOpFailed' => 'Operation failed',
 			'wordBank.listNameExists' => 'List name already exists, please use a different name',
-			'wordBank.selectLists' => 'Select List',
-			'wordBank.adjustLists' => ({required Object word}) => 'Adjust "${word}" Lists',
-			'wordBank.newListHint' => 'Enter new list name',
-			'wordBank.removeWord' => 'Remove Word',
+			'wordBank.selectLists' => 'Select lists',
+			'wordBank.adjustLists' => ({required Object word}) => 'Adjust lists for "${word}"',
+			'wordBank.newListHint' => 'Add new list...',
+			'wordBank.removeWord' => 'Remove word',
 			'theme.title' => 'Theme Settings',
 			'theme.light' => 'Light',
 			'theme.dark' => 'Dark',
@@ -1142,7 +1151,7 @@ extension on TranslationsEn {
 			'help.upToDate' => ({required Object version}) => 'Up to date (${version})',
 			'help.currentVersion' => ({required Object version}) => 'Current version ${version}',
 			'help.updateError' => 'Check failed, tap to retry',
-			'help.githubApiError' => ({required Object code}) => 'GitHub API error (${code})',
+			'help.githubApiError' => ({required Object code}) => 'GitHub API error (status ${code})',
 			'help.checkUpdateError' => ({required Object error}) => 'Update check failed: ${error}',
 			'langNames.zh' => 'Chinese',
 			'langNames.ja' => 'Japanese',
@@ -1250,6 +1259,9 @@ extension on TranslationsEn {
 			'cloud.registerUsernameRequired' => 'Please enter a username',
 			'cloud.registerPasswordMismatch' => 'Passwords do not match',
 			'cloud.loggedOut' => 'Logged out',
+			'cloud.requestTimeout' => 'Request timed out, please check your network connection',
+			'cloud.registerFailedError' => ({required Object error}) => 'Registration failed: ${error}',
+			'cloud.loginFailedError' => ({required Object error}) => 'Login failed: ${error}',
 			'cloud.syncToCloud' => 'Sync to Cloud',
 			'cloud.syncToCloudSubtitle' => 'Upload local settings to cloud',
 			'cloud.syncFromCloud' => 'Sync from Cloud',
@@ -1259,6 +1271,8 @@ extension on TranslationsEn {
 			'cloud.uploadSuccess' => 'Settings uploaded',
 			'cloud.uploadFailed' => 'Upload failed',
 			'cloud.createPackageFailed' => 'Failed to create settings package',
+			'cloud.uploadFailedError' => ({required Object error}) => 'Upload failed: ${error}',
+			'cloud.selectAtLeastOneFileToUpdate' => 'Please select at least one file to update',
 			'cloud.downloadTitle' => 'Download Settings',
 			'cloud.downloadConfirm' => 'Download settings from cloud? This will overwrite local data.',
 			'cloud.downloadSuccess' => 'Settings synced from cloud',
@@ -1281,72 +1295,67 @@ extension on TranslationsEn {
 			'cloud.opInsert' => '[New] ',
 			'cloud.opDelete' => '[Deleted] ',
 			'cloud.loginFirst' => 'Please log in first',
+			'cloud.serverNotSet' => 'Please configure the cloud service subscription URL first',
+			'cloud.uploadServerNotSet' => 'Please configure the upload server URL first',
+			'cloud.sessionExpired' => 'Session expired, please log in again',
 			'cloud.permissionTitle' => 'File Access Required',
 			'cloud.permissionBody' => 'External directory access requires the "All Files Access" permission.\n\nTap "Authorize" to open Settings, find this app under "Manage All Files" and enable the permission.',
 			'cloud.goAuthorize' => 'Authorize',
 			'cloud.permissionDenied' => 'File access denied, operation cancelled',
-			'cloud.serverNotSet' => 'Please set the server address first',
-			'cloud.requestTimeout' => 'Request timed out, please check your network',
-			'cloud.notLoggedIn' => 'Not logged in',
-			'cloud.sessionExpired' => 'Session expired, please log in again',
+			'cloud.notLoggedIn' => 'Not logged in, please log in first',
 			'cloud.getUserFailed' => 'Failed to get user info',
-			'cloud.requestFailed' => 'Request failed',
-			'cloud.settingsFileNotFound' => 'Settings file not found',
-			'cloud.loginFailedError' => ({required Object error}) => 'Login failed: ${error}',
-			'cloud.registerFailedError' => ({required Object error}) => 'Registration failed: ${error}',
 			'cloud.getUserFailedError' => ({required Object error}) => 'Failed to get user info: ${error}',
+			'cloud.requestFailed' => 'Request failed',
 			'cloud.downloadFailedError' => ({required Object error}) => 'Download failed: ${error}',
-			'cloud.uploadFailedError' => ({required Object error}) => 'Upload failed: ${error}',
-			'cloud.noSyncableFiles' => 'No settings files to sync',
-			'cloud.createPackageFailedError' => ({required Object error}) => 'Failed to create archive: ${error}',
-			'cloud.archiveNotFound' => 'Archive file not found',
-			'cloud.archiveNoValidFiles' => 'No valid settings files in archive',
-			'cloud.extractFailedError' => ({required Object error}) => 'Extraction failed: ${error}',
-			'cloud.uploadServerNotSet' => 'Upload server address not set',
-			'cloud.uploadNewDict' => 'Upload New Dictionary',
-			'cloud.selectAllRequiredFiles' => 'Please select all required files',
-			'cloud.selectAtLeastOneFileToUpdate' => 'Please select at least one file to update',
-			'cloud.replaceFileTip' => 'Tip: please select at least one file to update',
-			'cloud.replaceFileHint' => 'e.g. update logo, fix entries, etc.',
-			'cloud.versionNoteLabel' => 'Version note (required)',
-			'cloud.entryDeleted' => 'Entry deleted and recorded in commit table',
-			'cloud.entryDeleteFailed' => 'Delete failed, entry may not exist',
-			'cloud.deleteFailedError' => ({required Object error}) => 'Delete failed: ${error}',
-			'cloud.updateJsonTitle' => 'Update JSON',
-			'cloud.prefixSearch' => 'Headword Search',
-			'cloud.idSearch' => 'ID Search',
-			'cloud.importTab' => 'Import JSON / JSONL',
-			'cloud.deleteSearchTab' => 'Search & Delete Entry',
-			'cloud.clearLabel' => 'Clear',
-			'cloud.writingToDb' => 'Write to database',
-			'cloud.importing' => 'Importing…',
-			'cloud.deleteEntry' => 'Delete this entry',
-			'cloud.deleting' => 'Deleting…',
-			'cloud.importJsonPlaceholder' => 'Paste JSON or JSONL (one JSON object per line)\n\nNote: Each JSON must contain the entry_id field',
-			'cloud.searchIdHint' => 'Enter integer entry_id',
-			'cloud.searchHeadwordHint' => 'Enter headword (auto-normalized match)',
-			'cloud.searchHeadwordLabel' => 'Headword',
-			'cloud.entryIdNotFound' => ({required Object id}) => 'No entry found with entry_id ${id}',
-			'cloud.headwordNotFound' => ({required Object word}) => 'No entry found with headword 「${word}」',
-			'cloud.searchFailed' => ({required Object error}) => 'Search failed: ${error}',
-			'cloud.matchedEntries' => ({required Object count}) => '${count} matching entries found, tap to select one to delete:',
+			'cloud.settingsFileNotFound' => 'Settings file not found',
 			'cloud.noNeedToPushUpdates' => 'No updates to push',
-			'cloud.jsonParseError' => 'JSON parse failed, please check the format (formatted JSON or JSONL with one object per line)',
-			'cloud.importLineError' => ({required Object line, required Object preview}) => 'Line ${line}: ${preview}',
-			'cloud.importItemNotObject' => ({required Object item}) => 'Item ${item} is not a JSON object',
-			'cloud.importItemMissingId' => ({required Object item}) => 'Item ${item} is missing entry_id',
-			'cloud.importItemWriteFailed' => ({required Object item, required Object id, required Object word}) => 'Item ${item} failed to write (entry_id: ${id}, headword: ${word})',
-			'cloud.importItemFailed' => ({required Object item, required Object error}) => 'Item ${item} processing failed: ${error}',
-			'cloud.importSuccessCount' => ({required Object count}) => 'Successfully imported ${count} entries',
-			'cloud.importFailedCount' => ({required Object count}) => ', failed ${count} entries',
-			'cloud.importMoreErrors' => ({required Object count}) => '… ${count} more errors',
-			'cloud.enterJsonContent' => 'Please enter JSON content',
-			'cloud.importFailedError' => ({required Object error}) => 'Import failed: ${error}',
-			'cloud.enterEntryId' => 'Please enter entry_id',
-			'cloud.enterHeadword' => 'Please enter headword',
+			'cloud.selectAllRequiredFiles' => 'Please select all required files',
 			'cloud.requiredField' => ' (required)',
 			'cloud.optionalField' => ' (optional)',
-			'cloud.deleteEntryConfirmContent' => ({required Object headword, required Object id}) => 'Are you sure you want to delete entry 「${headword}」 (entry_id: ${id})?\n\nThis will record the deletion in the commit table. After pushing updates, the entry on the server will also be deleted.',
+			'cloud.uploadNewDict' => 'Upload New Dictionary',
+			'cloud.versionNoteLabel' => 'Version note',
+			'cloud.replaceFileHint' => 'Enter version description...',
+			'cloud.replaceFileTip' => 'Files not selected will not be updated',
+			'cloud.enterJsonContent' => 'Please enter JSON content',
+			'cloud.importLineError' => ({required Object line, required Object preview}) => 'Line ${line}: parse error: "${preview}"',
+			'cloud.jsonParseError' => 'JSON parse error',
+			'cloud.importItemNotObject' => ({required Object item}) => 'Item ${item} is not a JSON object',
+			'cloud.importItemMissingId' => ({required Object item}) => 'Item ${item} has no ID',
+			'cloud.importItemWriteFailed' => ({required Object item, required Object id, required Object word}) => 'Item ${item} (id=${id}, ${word}) write failed',
+			'cloud.importItemFailed' => ({required Object item, required Object error}) => 'Item ${item} failed: ${error}',
+			'cloud.importSuccessCount' => ({required Object count}) => 'Imported ${count} entries',
+			'cloud.importFailedCount' => ({required Object count}) => ', ${count} failed',
+			'cloud.importMoreErrors' => ({required Object count}) => '... and ${count} more',
+			'cloud.importFailedError' => ({required Object error}) => 'Import failed: ${error}',
+			'cloud.enterEntryId' => 'Please enter entry ID',
+			'cloud.enterHeadword' => 'Please enter headword',
+			'cloud.entryIdNotFound' => ({required Object id}) => 'Entry not found for ID: ${id}',
+			'cloud.headwordNotFound' => ({required Object word}) => 'Entry not found: "${word}"',
+			'cloud.searchFailed' => ({required Object error}) => 'Search failed: ${error}',
+			'cloud.deleteEntryConfirmContent' => ({required Object headword, required Object id}) => 'Delete "${headword}" (ID: ${id})? This cannot be undone.',
+			'cloud.entryDeleted' => 'Entry deleted',
+			'cloud.entryDeleteFailed' => 'Failed to delete entry',
+			'cloud.deleteFailedError' => ({required Object error}) => 'Delete failed: ${error}',
+			'cloud.updateJsonTitle' => 'Update Entry Data',
+			'cloud.importTab' => 'Import',
+			'cloud.deleteSearchTab' => 'Delete/Search',
+			'cloud.importJsonPlaceholder' => 'Enter JSONL content, one entry per line...',
+			'cloud.clearLabel' => 'Clear',
+			'cloud.importing' => 'Importing...',
+			'cloud.writingToDb' => 'Write to DB',
+			'cloud.idSearch' => 'Search by ID',
+			'cloud.prefixSearch' => 'Search by headword',
+			'cloud.searchHeadwordLabel' => 'Headword',
+			'cloud.searchIdHint' => 'Enter entry_id',
+			'cloud.searchHeadwordHint' => 'Enter headword',
+			'cloud.matchedEntries' => ({required Object count}) => '${count} entries found',
+			'cloud.deleting' => 'Deleting...',
+			'cloud.deleteEntry' => 'Delete Entry',
+			'cloud.noSyncableFiles' => 'No syncable files found',
+			'cloud.createPackageFailedError' => ({required Object error}) => 'Failed to create package: ${error}',
+			'cloud.archiveNotFound' => 'Archive file not found',
+			'cloud.archiveNoValidFiles' => 'No valid files in archive',
+			'cloud.extractFailedError' => ({required Object error}) => 'Extraction failed: ${error}',
 			'dict.title' => 'Dictionary Manager',
 			'dict.tabSort' => 'Dict Order',
 			'dict.tabSource' => 'Dict Source',
@@ -1382,6 +1391,11 @@ extension on TranslationsEn {
 			'dict.dictDbWithSize' => ({required Object size}) => '[Required] Dict database (${size})',
 			'dict.mediaDb' => 'Media database',
 			'dict.mediaDbWithSize' => ({required Object size}) => 'Media database (${size})',
+			'dict.mediaDbNotFound' => ({required Object id}) => 'Media database not found for dictionary: ${id}',
+			'dict.dictDbNotFound' => ({required Object id}) => 'Dictionary database not found for: ${id}',
+			'dict.getDictListFailed' => 'Failed to get dictionary list',
+			'dict.invalidResponseFormat' => 'Invalid response format from server',
+			'dict.getDictListFailedError' => ({required Object error}) => 'Failed to get dictionary list: ${error}',
 			'dict.startDownload' => 'Start Download',
 			'dict.downloading' => ({required Object step, required Object total, required Object name}) => '[${step}/${total}] Downloading ${name}',
 			'dict.downloadingEntries' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading entry updates',
@@ -1391,6 +1405,15 @@ extension on TranslationsEn {
 			'dict.deleteConfirmBody' => ({required Object name}) => 'Delete dictionary "${name}"?',
 			'dict.deleteSuccess' => 'Dictionary deleted',
 			'dict.deleteFailed' => ({required Object error}) => 'Delete failed: ${error}',
+			'dict.dictNotFound' => 'Dictionary not found',
+			'dict.dictDeleteFailed' => 'Dictionary delete failed',
+			'dict.statusUpdateFailed' => 'Status update failed',
+			'dict.statusPreparing' => 'Preparing',
+			'dict.statusPreparingUpdate' => 'Preparing update',
+			'dict.statusDownloading' => 'Downloading',
+			'dict.statusCompleted' => 'Completed',
+			'dict.storeNotConfigured' => 'Dictionary storage directory not configured',
+			'dict.downloadFailed' => 'Download failed',
 			'dict.tooltipUpdateJson' => 'Update JSON',
 			'dict.tooltipReplaceFile' => 'Replace File',
 			'dict.tooltipPushUpdate' => 'Push Update',
@@ -1420,6 +1443,8 @@ extension on TranslationsEn {
 			'dict.permissionNeeded' => 'Requires All Files Access permission',
 			'dict.cantWrite' => ({required Object dir}) => 'Cannot write to ${dir}, check permissions',
 			'dict.cantWritePicked' => 'Cannot write to selected directory, please choose another',
+			_ => null,
+		} ?? switch (path) {
 			'dict.permissionDialogBody' => 'Tap OK to open Settings, enable "Manage All Files" permission, then return to the app.',
 			'dict.statsTitle' => 'Statistics',
 			'dict.entryCount' => 'Entries',
@@ -1434,8 +1459,6 @@ extension on TranslationsEn {
 			'dict.deleteDictSuccess' => ({required Object name}) => '"${name}" deleted',
 			'dict.deleteDictFailed' => ({required Object error}) => 'Delete failed: ${error}',
 			'dict.cannotGetFileInfo' => 'Cannot get file info',
-			_ => null,
-		} ?? switch (path) {
 			'dict.updateDictTitle' => ({required Object name}) => 'Update Dict - ${name}',
 			'dict.smartUpdate' => 'Smart Update',
 			'dict.manualSelect' => 'Manual Select',
@@ -1462,59 +1485,44 @@ extension on TranslationsEn {
 			'dict.versionLabel' => 'Version',
 			'dict.updatedLabel' => 'Updated',
 			'dict.detailTitle' => 'Dictionary Details',
-			'dict.downloadError' => ({required Object error}) => 'Download failed: ${error}',
-			'dict.uploadError' => ({required Object error}) => 'Upload failed: ${error}',
-			'dict.cancelled' => 'Cancelled',
-			'dict.uploadSuccess' => 'Uploaded successfully',
-			'dict.searchEntries' => 'Search entries...',
-			'dict.noEntries' => 'No entries',
-			'dict.dbDialogTitle' => 'Download English Dictionary Database',
-			'dict.dbDialogTitleError' => 'Download Failed',
-			'dict.dbFeatureTitle' => 'The English dictionary database can:',
-			'dict.dbFeatureVariant' => 'Spelling variant lookup',
-			'dict.dbFeatureAbbr' => 'Abbreviation/acronym lookup',
-			'dict.dbFeatureNominal' => 'Nominalization lookup',
-			'dict.dbFeatureInflection' => 'Verb inflection lookup',
-			'dict.dbExample' => 'e.g. searching "alpacas" redirects to "alpaca" (plural form)',
-			'dict.statusPreparing' => 'Preparing download...',
-			'dict.statusDownloading' => 'Downloading...',
-			'dict.statusCompleted' => 'Download complete',
-			'dict.statusFailed' => 'Download failed',
-			'dict.statusPreparingUpdate' => 'Preparing update...',
-			'dict.statusUpdateCompleted' => 'Update complete',
-			'dict.statusUpdateFailed' => 'Update failed',
-			'dict.statusPreparingUpload' => 'Preparing upload...',
+			'dict.statusPreparingUpload' => 'Preparing upload',
 			'dict.uploadingFile' => ({required Object step, required Object total, required Object name}) => '[${step}/${total}] Uploading ${name}',
 			'dict.statusUploadCompleted' => 'Upload completed',
 			'dict.statusUploadFailed' => 'Upload failed',
-			'dict.storeNotConfigured' => 'Dictionary store service not configured',
-			'dict.downloadFailed' => 'Download failed',
-			'dict.noContentSelected' => 'No content selected for download',
-			'dict.fetchListTimeout' => 'Fetching dictionary list timed out, please check your network',
+			'dict.cancelled' => 'Cancelled',
+			'dict.statusFailed' => 'Failed',
+			'dict.statusUpdateCompleted' => 'Update completed',
+			'dict.downloadingFile' => ({required Object name}) => 'Downloading ${name}',
 			'dict.fetchListFailedHttp' => ({required Object code}) => 'Failed to fetch dictionary list: HTTP ${code}',
-			'dict.fetchDetailFailedHttp' => ({required Object code}) => 'Failed to fetch dictionary details: HTTP ${code}',
+			'dict.fetchListTimeout' => 'Dictionary list fetch timed out',
+			'dict.fetchDetailFailedHttp' => ({required Object code}) => 'Failed to fetch dictionary detail: HTTP ${code}',
+			'dict.noContentSelected' => 'No content selected',
+			'dict.downloadingDatabase' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading dictionary database',
 			'dict.downloadDbFailedHttp' => ({required Object code}) => 'Failed to download database: HTTP ${code}',
+			'dict.downloadingDatabaseProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading dictionary database ${progress}%',
+			'dict.downloadingMedia' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading media database',
 			'dict.downloadMediaFailedHttp' => ({required Object code}) => 'Failed to download media database: HTTP ${code}',
+			'dict.downloadingMediaProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading media database ${progress}%',
+			'dict.downloadingMeta' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading metadata',
 			'dict.downloadMetaFailed' => ({required Object url, required Object code}) => 'Failed to download metadata: ${url}, HTTP ${code}',
+			'dict.downloadingIcon' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading icon',
 			'dict.responseEmpty' => 'Response body is empty',
-			'dict.invalidResponseFormat' => 'Invalid response format from server',
-			'dict.getDictListFailed' => 'Failed to get dictionary list',
-			'dict.getDictListFailedError' => ({required Object error}) => 'Failed to get dictionary list: ${error}',
-			'dict.dictNotFound' => 'Dictionary not found',
-			'dict.dictDeleteFailed' => 'Delete failed',
-			'dict.downloadingFile' => ({required Object name}) => '[1/1] Downloading ${name}',
-			'dict.downloadingMeta' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading metadata...',
-			'dict.downloadingIcon' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading icon...',
-			'dict.downloadingDatabase' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading database...',
-			'dict.downloadingDatabaseProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading database... ${progress}%',
-			'dict.downloadingMedia' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading media database...',
-			'dict.downloadingMediaProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] Downloading media database... ${progress}%',
-			'dict.dictDbNotFound' => ({required Object id}) => 'Dictionary database does not exist: ${id}',
-			'dict.mediaDbNotFound' => ({required Object id}) => 'Media database does not exist: ${id}',
-			'dict.dbNotExists' => 'English dictionary database does not exist, please download it first.',
-			'dict.downloadFileFailed' => ({required Object name}) => 'Download file failed: ${name}',
-			'dict.downloadFileFailedError' => ({required Object name, required Object error}) => 'Download file failed: ${name} — ${error}',
-			'dict.downloadEntriesFailed' => 'Download entry updates failed',
+			'dict.dbDialogTitleError' => 'Enhance English Search (Error)',
+			'dict.dbDialogTitle' => 'Enhance English Search',
+			'dict.dbFeatureVariant' => 'Spelling variants (colour → color)',
+			'dict.dbFeatureAbbr' => 'Abbreviations (abbr. → abbreviation)',
+			'dict.dbFeatureNominal' => 'Nominalizations (happy → happiness)',
+			'dict.dbFeatureInflection' => 'Inflections (runs, ran, running → run)',
+			'dict.dbExample' => 'e.g. Searching "colour" returns entries for "color"',
+			'dict.downloadError' => ({required Object error}) => 'Download error: ${error}',
+			'dict.uploadError' => ({required Object error}) => 'Upload error: ${error}',
+			'dict.uploadSuccess' => 'Upload successful',
+			'dict.downloadFileFailedError' => ({required Object name, required Object error}) => 'Failed to download ${name}: ${error}',
+			'dict.downloadFileFailed' => ({required Object name}) => 'Failed to download ${name}',
+			'dict.downloadEntriesFailed' => 'Failed to download entry updates',
+			'dict.searchEntries' => 'Search entries...',
+			'dict.noEntries' => 'No entries',
+			'dict.dbNotExists' => 'English dictionary database not found, please download first',
 			'entry.wordRemoved' => ({required Object word}) => 'Removed "${word}" from word bank',
 			'entry.wordListUpdated' => ({required Object word}) => 'Updated word list for "${word}"',
 			'entry.selectAtLeastOne' => 'Please select at least one list',
@@ -1528,8 +1536,6 @@ extension on TranslationsEn {
 			'entry.resetFailed' => 'Reset failed',
 			'entry.saveFailed' => ({required Object error}) => 'Save failed: ${error}',
 			'entry.saveSuccess' => 'Saved',
-			'entry.rootMustBeObject' => 'Root node must be an object type',
-			'entry.dbUpdateFailed' => 'Database update failed',
 			'entry.processFailed' => ({required Object error}) => 'Process failed: ${error}',
 			'entry.translating' => 'Translating...',
 			'entry.translateFailed' => ({required Object error}) => 'Translation failed: ${error}',
@@ -1553,6 +1559,9 @@ extension on TranslationsEn {
 			'entry.aiAnswer' => 'AI Answer',
 			'entry.continueAsk' => 'Continue asking',
 			'entry.continueAskHint' => 'Ask a follow-up question...',
+			'entry.regenerate' => 'Regenerate',
+			'entry.moreConc' => 'More Concise',
+			'entry.moreDetailed' => 'More Detailed',
 			'entry.chatInputHint' => 'Ask anything...',
 			'entry.justNow' => 'Just now',
 			'entry.minutesAgo' => ({required Object n}) => '${n}m ago',
@@ -1570,33 +1579,42 @@ extension on TranslationsEn {
 			'entry.morphSpellingVariant' => 'Variant',
 			'entry.morphNominalization' => 'Nominalization',
 			'entry.morphInflection' => 'Inflection',
-			'entry.spellingVariantLabel' => 'Spelling variant',
-			'entry.abbreviationLabel' => 'Abbreviation',
-			'entry.acronymLabel' => 'Acronym',
-			'entry.morphPluralForm' => 'Plural form',
-			'entry.morphThirdSingFull' => 'Third person singular',
 			'entry.uncountable' => 'uncountable',
 			'entry.summaryQuestion' => 'Please summarize all dictionary content on this page',
 			'entry.summaryTitle' => 'Current page summary',
+			'entry.aiSummaryButton' => 'Tap to AI Summarize',
 			'entry.summaryEntriesLabel' => ({required Object first, required Object count}) => '${first} and ${count} entries',
+			'entry.chatStartSummary' => ({required Object dict, required Object page}) => '${dict} [${page}] AI Summary',
+			'entry.chatStartElement' => ({required Object dict, required Object path}) => '${dict} [${path}] AI Inquiry',
+			'entry.chatStartFreeChat' => ({required Object word}) => '"${word}" Free Chat',
+			'entry.chatOverviewFreeChat' => 'Free Chat',
+			'entry.chatOverviewSummary' => ({required Object dict, required Object page}) => '${dict} [${page}] AI Summary',
+			'entry.chatOverviewSummaryNoPage' => ({required Object dict}) => '${dict} AI Summary',
+			'entry.chatOverviewAsk' => ({required Object dict}) => '${dict} AI Inquiry',
 			'entry.returnToStart' => 'Return to initial path',
 			'entry.path' => 'Path',
 			'entry.explainPrompt' => ({required Object word}) => 'This is part of the dictionary entry for "${word}", please explain this section.',
 			'entry.currentWord' => ({required Object word}) => 'Current word: ${word}',
 			'entry.currentDict' => ({required Object dictId}) => 'Current dictionary: ${dictId}',
 			'entry.entryNotFound' => ({required Object entryId}) => 'Entry not found: ${entryId}',
-			'entry.extractFailed' => 'Cannot extract text',
+			'entry.extractFailed' => 'Failed to extract text',
 			'entry.generatingAudio' => 'Generating audio...',
-			'entry.speakFailed' => ({required Object error}) => 'Speak failed: ${error}',
-			'entry.phraseNotFound' => ({required Object phrase}) => 'Phrase not found: ${phrase}',
+			'entry.speakFailed' => ({required Object error}) => 'TTS failed: ${error}',
+			'entry.phraseNotFound' => ({required Object phrase}) => 'Phrase not found: "${phrase}"',
 			'entry.imageLoadFailed' => 'Failed to load image',
-			'entry.formatJson' => 'Format',
-			'entry.jsonHint' => 'Enter JSON content',
-			'entry.syntaxError' => 'Syntax error',
-			'entry.syntaxCheck' => 'Syntax check',
+			'entry.rootMustBeObject' => 'Root must be a JSON object',
+			'entry.dbUpdateFailed' => 'Failed to save to database',
 			'entry.jsonFormatFailed' => ({required Object error}) => 'Format failed: ${error}',
 			'entry.jsonSyntaxError' => ({required Object error}) => 'JSON syntax error: ${error}',
-			'entry.jsonErrorLabel' => ({required Object error}) => 'Error: ${error}',
+			'entry.formatJson' => 'Format JSON',
+			'entry.syntaxError' => 'Syntax error',
+			'entry.syntaxCheck' => 'Syntax OK',
+			'entry.jsonErrorLabel' => ({required Object error}) => 'Syntax error: ${error}',
+			'entry.spellingVariantLabel' => 'Spelling variant',
+			'entry.abbreviationLabel' => 'Abbreviation',
+			'entry.acronymLabel' => 'Acronym',
+			'entry.morphPluralForm' => 'Plural form',
+			'entry.morphThirdSingFull' => 'Third person singular',
 			_ => null,
 		};
 	}

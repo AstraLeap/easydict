@@ -54,6 +54,11 @@ class LanguageOrderChangedEvent {
   const LanguageOrderChangedEvent();
 }
 
+/// 搜索历史变化事件（本地添加/删除历史记录时触发，供搜索页刷新列表）
+class SearchHistoryChangedEvent {
+  const SearchHistoryChangedEvent();
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -73,6 +78,8 @@ class EntryEventBus {
       StreamController<DictionariesChangedEvent>.broadcast();
   final _languageOrderChangedController =
       StreamController<LanguageOrderChangedEvent>.broadcast();
+  final _searchHistoryChangedController =
+      StreamController<SearchHistoryChangedEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -88,6 +95,8 @@ class EntryEventBus {
       _dictionariesChangedController.stream;
   Stream<LanguageOrderChangedEvent> get languageOrderChanged =>
       _languageOrderChangedController.stream;
+  Stream<SearchHistoryChangedEvent> get searchHistoryChanged =>
+      _searchHistoryChangedController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -117,6 +126,10 @@ class EntryEventBus {
     _languageOrderChangedController.add(const LanguageOrderChangedEvent());
   }
 
+  void emitSearchHistoryChanged() {
+    _searchHistoryChangedController.add(const SearchHistoryChangedEvent());
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
@@ -125,5 +138,6 @@ class EntryEventBus {
     _settingsSyncedController.close();
     _dictionariesChangedController.close();
     _languageOrderChangedController.close();
+    _searchHistoryChangedController.close();
   }
 }

@@ -60,6 +60,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   StreamSubscription<SettingsSyncedEvent>? _syncSubscription;
   StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
   StreamSubscription<LanguageOrderChangedEvent>? _langOrderSubscription;
+  StreamSubscription<SearchHistoryChangedEvent>? _historyChangedSubscription;
 
   bool _isInitializing = true;
 
@@ -106,6 +107,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     });
     _langOrderSubscription = EntryEventBus().languageOrderChanged.listen((_) {
       _loadDictionaryGroups();
+    });
+    _historyChangedSubscription = EntryEventBus().searchHistoryChanged.listen((_) {
+      _loadSearchHistory();
     });
   }
 
@@ -194,6 +198,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _syncSubscription?.cancel();
     _dictsChangedSubscription?.cancel();
     _langOrderSubscription?.cancel();
+    _historyChangedSubscription?.cancel();
     _debounceTimer?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();

@@ -220,20 +220,20 @@ class TranslationsCommonZh {
 	/// zh: '退出全屏'
 	String get exitFullscreen => '退出全屏';
 
-	/// zh: '选择语言'
-	String get selectLanguage => '选择语言';
-
-	/// zh: '重做'
-	String get redo => '重做';
-
-	/// zh: '不再询问'
-	String get neverAskAgain => '不再询问';
+	/// zh: '请稍后重试'
+	String get retryLater => '请稍后重试';
 
 	/// zh: '暂不'
 	String get notNow => '暂不';
 
-	/// zh: '请稍后再试'
-	String get retryLater => '请稍后再试';
+	/// zh: '不再提示'
+	String get neverAskAgain => '不再提示';
+
+	/// zh: '重做'
+	String get redo => '重做';
+
+	/// zh: '选择语言'
+	String get selectLanguage => '选择语言';
 }
 
 // Path: settings
@@ -460,14 +460,14 @@ class TranslationsWordBankZh {
 	/// zh: '选择词表'
 	String get selectLists => '选择词表';
 
-	/// zh: '调整 "{word}" 的词表'
-	String adjustLists({required Object word}) => '调整 "${word}" 的词表';
+	/// zh: '调整"{word}"的词表'
+	String adjustLists({required Object word}) => '调整"${word}"的词表';
 
-	/// zh: '输入新词表名称'
-	String get newListHint => '输入新词表名称';
+	/// zh: '新建词表...'
+	String get newListHint => '新建词表...';
 
-	/// zh: '移除单词'
-	String get removeWord => '移除单词';
+	/// zh: '从单词本移除'
+	String get removeWord => '从单词本移除';
 }
 
 // Path: theme
@@ -594,8 +594,8 @@ class TranslationsHelpZh {
 	/// zh: '检查失败，点击重试'
 	String get updateError => '检查失败，点击重试';
 
-	/// zh: 'GitHub API 错误 ({code})'
-	String githubApiError({required Object code}) => 'GitHub API 错误 (${code})';
+	/// zh: 'GitHub API 错误 (状态码 {code})'
+	String githubApiError({required Object code}) => 'GitHub API 错误 (状态码 ${code})';
 
 	/// zh: '检查更新失败: {error}'
 	String checkUpdateError({required Object error}) => '检查更新失败: ${error}';
@@ -954,6 +954,15 @@ class TranslationsCloudZh {
 	/// zh: '已退出登录'
 	String get loggedOut => '已退出登录';
 
+	/// zh: '请求超时，请检查网络连接'
+	String get requestTimeout => '请求超时，请检查网络连接';
+
+	/// zh: '注册失败: {error}'
+	String registerFailedError({required Object error}) => '注册失败: ${error}';
+
+	/// zh: '登录失败: {error}'
+	String loginFailedError({required Object error}) => '登录失败: ${error}';
+
 	/// zh: '同步到云端'
 	String get syncToCloud => '同步到云端';
 
@@ -980,6 +989,12 @@ class TranslationsCloudZh {
 
 	/// zh: '创建设置包失败'
 	String get createPackageFailed => '创建设置包失败';
+
+	/// zh: '上传失败: {error}'
+	String uploadFailedError({required Object error}) => '上传失败: ${error}';
+
+	/// zh: '请至少选择一个要更新的文件'
+	String get selectAtLeastOneFileToUpdate => '请至少选择一个要更新的文件';
 
 	/// zh: '下载设置'
 	String get downloadTitle => '下载设置';
@@ -1047,6 +1062,15 @@ class TranslationsCloudZh {
 	/// zh: '请先登录'
 	String get loginFirst => '请先登录';
 
+	/// zh: '请先配置云服务订阅地址'
+	String get serverNotSet => '请先配置云服务订阅地址';
+
+	/// zh: '请先配置上传服务器地址'
+	String get uploadServerNotSet => '请先配置上传服务器地址';
+
+	/// zh: '登录已过期，请重新登录'
+	String get sessionExpired => '登录已过期，请重新登录';
+
 	/// zh: '需要文件访问权限'
 	String get permissionTitle => '需要文件访问权限';
 
@@ -1059,182 +1083,29 @@ class TranslationsCloudZh {
 	/// zh: '未获得文件访问权限，操作已取消'
 	String get permissionDenied => '未获得文件访问权限，操作已取消';
 
-	/// zh: '请先设置服务器地址'
-	String get serverNotSet => '请先设置服务器地址';
-
-	/// zh: '请求超时，请检查网络连接'
-	String get requestTimeout => '请求超时，请检查网络连接';
-
-	/// zh: '未登录'
-	String get notLoggedIn => '未登录';
-
-	/// zh: '登录已过期，请重新登录'
-	String get sessionExpired => '登录已过期，请重新登录';
+	/// zh: '未登录，请先登录'
+	String get notLoggedIn => '未登录，请先登录';
 
 	/// zh: '获取用户信息失败'
 	String get getUserFailed => '获取用户信息失败';
 
-	/// zh: '请求失败'
-	String get requestFailed => '请求失败';
-
-	/// zh: '设置文件不存在'
-	String get settingsFileNotFound => '设置文件不存在';
-
-	/// zh: '登录失败: {error}'
-	String loginFailedError({required Object error}) => '登录失败: ${error}';
-
-	/// zh: '注册失败: {error}'
-	String registerFailedError({required Object error}) => '注册失败: ${error}';
-
 	/// zh: '获取用户信息失败: {error}'
 	String getUserFailedError({required Object error}) => '获取用户信息失败: ${error}';
+
+	/// zh: '请求失败'
+	String get requestFailed => '请求失败';
 
 	/// zh: '下载失败: {error}'
 	String downloadFailedError({required Object error}) => '下载失败: ${error}';
 
-	/// zh: '上传失败: {error}'
-	String uploadFailedError({required Object error}) => '上传失败: ${error}';
-
-	/// zh: '没有可同步的设置文件'
-	String get noSyncableFiles => '没有可同步的设置文件';
-
-	/// zh: '创建压缩包失败: {error}'
-	String createPackageFailedError({required Object error}) => '创建压缩包失败: ${error}';
-
-	/// zh: '压缩包文件不存在'
-	String get archiveNotFound => '压缩包文件不存在';
-
-	/// zh: '压缩包中没有有效的设置文件'
-	String get archiveNoValidFiles => '压缩包中没有有效的设置文件';
-
-	/// zh: '解压失败: {error}'
-	String extractFailedError({required Object error}) => '解压失败: ${error}';
-
-	/// zh: '上传服务器地址未设置'
-	String get uploadServerNotSet => '上传服务器地址未设置';
-
-	/// zh: '上传新词典'
-	String get uploadNewDict => '上传新词典';
-
-	/// zh: '请选择所有必填文件'
-	String get selectAllRequiredFiles => '请选择所有必填文件';
-
-	/// zh: '请至少选择一个文件进行更新'
-	String get selectAtLeastOneFileToUpdate => '请至少选择一个文件进行更新';
-
-	/// zh: '提示：请至少选择一个文件进行更新'
-	String get replaceFileTip => '提示：请至少选择一个文件进行更新';
-
-	/// zh: '例如：更新logo、修复词条等'
-	String get replaceFileHint => '例如：更新logo、修复词条等';
-
-	/// zh: '版本备注（必填）'
-	String get versionNoteLabel => '版本备注（必填）';
-
-	/// zh: '条目已删除，已记录到 commit 表'
-	String get entryDeleted => '条目已删除，已记录到 commit 表';
-
-	/// zh: '删除失败，条目可能不存在'
-	String get entryDeleteFailed => '删除失败，条目可能不存在';
-
-	/// zh: '删除失败: {error}'
-	String deleteFailedError({required Object error}) => '删除失败: ${error}';
-
-	/// zh: '更新 JSON'
-	String get updateJsonTitle => '更新 JSON';
-
-	/// zh: '词头搜索'
-	String get prefixSearch => '词头搜索';
-
-	/// zh: 'ID 搜索'
-	String get idSearch => 'ID 搜索';
-
-	/// zh: '导入 JSON / JSONL'
-	String get importTab => '导入 JSON / JSONL';
-
-	/// zh: '搜索删除条目'
-	String get deleteSearchTab => '搜索删除条目';
-
-	/// zh: '清空'
-	String get clearLabel => '清空';
-
-	/// zh: '写入数据库'
-	String get writingToDb => '写入数据库';
-
-	/// zh: '导入中…'
-	String get importing => '导入中…';
-
-	/// zh: '删除此条目'
-	String get deleteEntry => '删除此条目';
-
-	/// zh: '删除中…'
-	String get deleting => '删除中…';
-
-	/// zh: '粘贴 JSON 或 JSONL（每行一个 JSON 对象） 注意：每条 JSON 必须含有 entry_id 字段'
-	String get importJsonPlaceholder => '粘贴 JSON 或 JSONL（每行一个 JSON 对象）\n\n注意：每条 JSON 必须含有 entry_id 字段';
-
-	/// zh: '输入整数 entry_id'
-	String get searchIdHint => '输入整数 entry_id';
-
-	/// zh: '输入词头（自动规范化匹配）'
-	String get searchHeadwordHint => '输入词头（自动规范化匹配）';
-
-	/// zh: '词头'
-	String get searchHeadwordLabel => '词头';
-
-	/// zh: '未找到 entry_id 为 {id} 的条目'
-	String entryIdNotFound({required Object id}) => '未找到 entry_id 为 ${id} 的条目';
-
-	/// zh: '未找到词头为「{word}」的条目'
-	String headwordNotFound({required Object word}) => '未找到词头为「${word}」的条目';
-
-	/// zh: '搜索失败: {error}'
-	String searchFailed({required Object error}) => '搜索失败: ${error}';
-
-	/// zh: '找到 {count} 条匹配条目，点击选择要删除的条目：'
-	String matchedEntries({required Object count}) => '找到 ${count} 条匹配条目，点击选择要删除的条目：';
+	/// zh: '设置文件不存在'
+	String get settingsFileNotFound => '设置文件不存在';
 
 	/// zh: '没有需要推送的更新'
 	String get noNeedToPushUpdates => '没有需要推送的更新';
 
-	/// zh: 'JSON 解析失败，请检查格式（格式化 JSON 或每行一个对象的 JSONL）'
-	String get jsonParseError => 'JSON 解析失败，请检查格式（格式化 JSON 或每行一个对象的 JSONL）';
-
-	/// zh: '第 {line} 行: {preview}'
-	String importLineError({required Object line, required Object preview}) => '第 ${line} 行: ${preview}';
-
-	/// zh: '第 {item} 条不是 JSON 对象'
-	String importItemNotObject({required Object item}) => '第 ${item} 条不是 JSON 对象';
-
-	/// zh: '第 {item} 条缺少 entry_id'
-	String importItemMissingId({required Object item}) => '第 ${item} 条缺少 entry_id';
-
-	/// zh: '第 {item} 条写入失败 (entry_id: {id}, headword: {word})'
-	String importItemWriteFailed({required Object item, required Object id, required Object word}) => '第 ${item} 条写入失败 (entry_id: ${id}, headword: ${word})';
-
-	/// zh: '第 {item} 条处理失败: {error}'
-	String importItemFailed({required Object item, required Object error}) => '第 ${item} 条处理失败: ${error}';
-
-	/// zh: '成功导入 {count} 条'
-	String importSuccessCount({required Object count}) => '成功导入 ${count} 条';
-
-	/// zh: '，失败 {count} 条'
-	String importFailedCount({required Object count}) => '，失败 ${count} 条';
-
-	/// zh: '… 还有 {count} 条错误'
-	String importMoreErrors({required Object count}) => '… 还有 ${count} 条错误';
-
-	/// zh: '请输入 JSON 内容'
-	String get enterJsonContent => '请输入 JSON 内容';
-
-	/// zh: '导入失败: {error}'
-	String importFailedError({required Object error}) => '导入失败: ${error}';
-
-	/// zh: '请输入 entry_id'
-	String get enterEntryId => '请输入 entry_id';
-
-	/// zh: '请输入词头'
-	String get enterHeadword => '请输入词头';
+	/// zh: '请选择所有必填文件'
+	String get selectAllRequiredFiles => '请选择所有必填文件';
 
 	/// zh: '（必填）'
 	String get requiredField => '（必填）';
@@ -1242,8 +1113,137 @@ class TranslationsCloudZh {
 	/// zh: '（可选）'
 	String get optionalField => '（可选）';
 
-	/// zh: '确定要删除条目「{headword}」（entry_id: {id}）吗？ 此操作会将删除记录写入 commit 表，推送更新后服务器端的该条目也将被删除。'
-	String deleteEntryConfirmContent({required Object headword, required Object id}) => '确定要删除条目「${headword}」（entry_id: ${id}）吗？\n\n此操作会将删除记录写入 commit 表，推送更新后服务器端的该条目也将被删除。';
+	/// zh: '上传新词典'
+	String get uploadNewDict => '上传新词典';
+
+	/// zh: '版本说明'
+	String get versionNoteLabel => '版本说明';
+
+	/// zh: '输入版本说明...'
+	String get replaceFileHint => '输入版本说明...';
+
+	/// zh: '未选择的文件不会被更新'
+	String get replaceFileTip => '未选择的文件不会被更新';
+
+	/// zh: '请输入JSON内容'
+	String get enterJsonContent => '请输入JSON内容';
+
+	/// zh: '第{line}行解析失败："{preview}"'
+	String importLineError({required Object line, required Object preview}) => '第${line}行解析失败："${preview}"';
+
+	/// zh: 'JSON解析失败'
+	String get jsonParseError => 'JSON解析失败';
+
+	/// zh: '第{item}条不是JSON对象'
+	String importItemNotObject({required Object item}) => '第${item}条不是JSON对象';
+
+	/// zh: '第{item}条没有ID'
+	String importItemMissingId({required Object item}) => '第${item}条没有ID';
+
+	/// zh: '第{item}条（id={id}, {word}）写入失败'
+	String importItemWriteFailed({required Object item, required Object id, required Object word}) => '第${item}条（id=${id}, ${word}）写入失败';
+
+	/// zh: '第{item}条处理失败: {error}'
+	String importItemFailed({required Object item, required Object error}) => '第${item}条处理失败: ${error}';
+
+	/// zh: '成功导入{count}条'
+	String importSuccessCount({required Object count}) => '成功导入${count}条';
+
+	/// zh: '，失败{count}条'
+	String importFailedCount({required Object count}) => '，失败${count}条';
+
+	/// zh: '...还有{count}个错误'
+	String importMoreErrors({required Object count}) => '...还有${count}个错误';
+
+	/// zh: '导入失败: {error}'
+	String importFailedError({required Object error}) => '导入失败: ${error}';
+
+	/// zh: '请输入词条ID'
+	String get enterEntryId => '请输入词条ID';
+
+	/// zh: '请输入词头'
+	String get enterHeadword => '请输入词头';
+
+	/// zh: '未找到ID为{id}的词条'
+	String entryIdNotFound({required Object id}) => '未找到ID为${id}的词条';
+
+	/// zh: '未找到词条："{word}"'
+	String headwordNotFound({required Object word}) => '未找到词条："${word}"';
+
+	/// zh: '搜索失败: {error}'
+	String searchFailed({required Object error}) => '搜索失败: ${error}';
+
+	/// zh: '确定删除词条"{headword}"（ID: {id}）？此操作不可撤销。'
+	String deleteEntryConfirmContent({required Object headword, required Object id}) => '确定删除词条"${headword}"（ID: ${id}）？此操作不可撤销。';
+
+	/// zh: '词条已删除'
+	String get entryDeleted => '词条已删除';
+
+	/// zh: '词条删除失败'
+	String get entryDeleteFailed => '词条删除失败';
+
+	/// zh: '删除失败: {error}'
+	String deleteFailedError({required Object error}) => '删除失败: ${error}';
+
+	/// zh: '更新词条数据'
+	String get updateJsonTitle => '更新词条数据';
+
+	/// zh: '导入'
+	String get importTab => '导入';
+
+	/// zh: '删除/搜索'
+	String get deleteSearchTab => '删除/搜索';
+
+	/// zh: '输入JSONL内容，每行一个词条...'
+	String get importJsonPlaceholder => '输入JSONL内容，每行一个词条...';
+
+	/// zh: '清空'
+	String get clearLabel => '清空';
+
+	/// zh: '导入中...'
+	String get importing => '导入中...';
+
+	/// zh: '写入数据库'
+	String get writingToDb => '写入数据库';
+
+	/// zh: '按ID搜索'
+	String get idSearch => '按ID搜索';
+
+	/// zh: '按词头搜索'
+	String get prefixSearch => '按词头搜索';
+
+	/// zh: '词头'
+	String get searchHeadwordLabel => '词头';
+
+	/// zh: '输入entry_id'
+	String get searchIdHint => '输入entry_id';
+
+	/// zh: '输入词头'
+	String get searchHeadwordHint => '输入词头';
+
+	/// zh: '找到{count}条词条'
+	String matchedEntries({required Object count}) => '找到${count}条词条';
+
+	/// zh: '删除中...'
+	String get deleting => '删除中...';
+
+	/// zh: '删除词条'
+	String get deleteEntry => '删除词条';
+
+	/// zh: '没有找到可同步的文件'
+	String get noSyncableFiles => '没有找到可同步的文件';
+
+	/// zh: '创建压缩包失败: {error}'
+	String createPackageFailedError({required Object error}) => '创建压缩包失败: ${error}';
+
+	/// zh: '压缩包文件不存在'
+	String get archiveNotFound => '压缩包文件不存在';
+
+	/// zh: '压缩包中没有有效的文件'
+	String get archiveNoValidFiles => '压缩包中没有有效的文件';
+
+	/// zh: '解压失败: {error}'
+	String extractFailedError({required Object error}) => '解压失败: ${error}';
 }
 
 // Path: dict
@@ -1359,6 +1359,21 @@ class TranslationsDictZh {
 	/// zh: '媒体数据库（{size}）'
 	String mediaDbWithSize({required Object size}) => '媒体数据库（${size}）';
 
+	/// zh: '找不到词典 {id} 的媒体数据库'
+	String mediaDbNotFound({required Object id}) => '找不到词典 ${id} 的媒体数据库';
+
+	/// zh: '找不到词典 {id} 的数据库'
+	String dictDbNotFound({required Object id}) => '找不到词典 ${id} 的数据库';
+
+	/// zh: '获取词典列表失败'
+	String get getDictListFailed => '获取词典列表失败';
+
+	/// zh: '服务器返回格式无效'
+	String get invalidResponseFormat => '服务器返回格式无效';
+
+	/// zh: '获取词典列表失败: {error}'
+	String getDictListFailedError({required Object error}) => '获取词典列表失败: ${error}';
+
 	/// zh: '开始下载'
 	String get startDownload => '开始下载';
 
@@ -1385,6 +1400,33 @@ class TranslationsDictZh {
 
 	/// zh: '删除失败: {error}'
 	String deleteFailed({required Object error}) => '删除失败: ${error}';
+
+	/// zh: '未找到指定词典'
+	String get dictNotFound => '未找到指定词典';
+
+	/// zh: '词典删除失败'
+	String get dictDeleteFailed => '词典删除失败';
+
+	/// zh: '状态更新失败'
+	String get statusUpdateFailed => '状态更新失败';
+
+	/// zh: '准备中'
+	String get statusPreparing => '准备中';
+
+	/// zh: '准备更新'
+	String get statusPreparingUpdate => '准备更新';
+
+	/// zh: '下载中'
+	String get statusDownloading => '下载中';
+
+	/// zh: '已完成'
+	String get statusCompleted => '已完成';
+
+	/// zh: '未配置词典存储目录'
+	String get storeNotConfigured => '未配置词典存储目录';
+
+	/// zh: '下载失败'
+	String get downloadFailed => '下载失败';
 
 	/// zh: '更新JSON'
 	String get tooltipUpdateJson => '更新JSON';
@@ -1593,71 +1635,8 @@ class TranslationsDictZh {
 	/// zh: '词典详情'
 	String get detailTitle => '词典详情';
 
-	/// zh: '下载失败: {error}'
-	String downloadError({required Object error}) => '下载失败: ${error}';
-
-	/// zh: '上传失败: {error}'
-	String uploadError({required Object error}) => '上传失败: ${error}';
-
-	/// zh: '已取消'
-	String get cancelled => '已取消';
-
-	/// zh: '上传成功'
-	String get uploadSuccess => '上传成功';
-
-	/// zh: '搜索词条...'
-	String get searchEntries => '搜索词条...';
-
-	/// zh: '暂无词条'
-	String get noEntries => '暂无词条';
-
-	/// zh: '下载英语词典数据库'
-	String get dbDialogTitle => '下载英语词典数据库';
-
-	/// zh: '下载失败'
-	String get dbDialogTitleError => '下载失败';
-
-	/// zh: '英语词典数据库可以帮助您：'
-	String get dbFeatureTitle => '英语词典数据库可以帮助您：';
-
-	/// zh: '单词拼写变体查询'
-	String get dbFeatureVariant => '单词拼写变体查询';
-
-	/// zh: '缩写/首字母缩略词查询'
-	String get dbFeatureAbbr => '缩写/首字母缩略词查询';
-
-	/// zh: '名词化形式查询'
-	String get dbFeatureNominal => '名词化形式查询';
-
-	/// zh: '动词变形查询'
-	String get dbFeatureInflection => '动词变形查询';
-
-	/// zh: '例如：搜索 "alpacas" 可自动重定向到 "alpaca"（复数形式）'
-	String get dbExample => '例如：搜索 "alpacas" 可自动重定向到 "alpaca"（复数形式）';
-
-	/// zh: '准备下载...'
-	String get statusPreparing => '准备下载...';
-
-	/// zh: '下载中...'
-	String get statusDownloading => '下载中...';
-
-	/// zh: '下载完成'
-	String get statusCompleted => '下载完成';
-
-	/// zh: '下载失败'
-	String get statusFailed => '下载失败';
-
-	/// zh: '准备更新...'
-	String get statusPreparingUpdate => '准备更新...';
-
-	/// zh: '更新完成'
-	String get statusUpdateCompleted => '更新完成';
-
-	/// zh: '更新失败'
-	String get statusUpdateFailed => '更新失败';
-
-	/// zh: '准备上传...'
-	String get statusPreparingUpload => '准备上传...';
+	/// zh: '准备上传'
+	String get statusPreparingUpload => '准备上传';
 
 	/// zh: '[{step}/{total}] 上传 {name}'
 	String uploadingFile({required Object step, required Object total, required Object name}) => '[${step}/${total}] 上传 ${name}';
@@ -1668,89 +1647,107 @@ class TranslationsDictZh {
 	/// zh: '上传失败'
 	String get statusUploadFailed => '上传失败';
 
-	/// zh: '未配置词典商店服务'
-	String get storeNotConfigured => '未配置词典商店服务';
+	/// zh: '已取消'
+	String get cancelled => '已取消';
 
-	/// zh: '下载失败'
-	String get downloadFailed => '下载失败';
+	/// zh: '失败'
+	String get statusFailed => '失败';
 
-	/// zh: '没有选择要下载的内容'
-	String get noContentSelected => '没有选择要下载的内容';
+	/// zh: '更新完成'
+	String get statusUpdateCompleted => '更新完成';
 
-	/// zh: '获取词典列表超时，请检查网络连接'
-	String get fetchListTimeout => '获取词典列表超时，请检查网络连接';
+	/// zh: '下载 {name}'
+	String downloadingFile({required Object name}) => '下载 ${name}';
 
 	/// zh: '获取词典列表失败: HTTP {code}'
 	String fetchListFailedHttp({required Object code}) => '获取词典列表失败: HTTP ${code}';
 
+	/// zh: '获取词典列表超时'
+	String get fetchListTimeout => '获取词典列表超时';
+
 	/// zh: '获取词典详情失败: HTTP {code}'
 	String fetchDetailFailedHttp({required Object code}) => '获取词典详情失败: HTTP ${code}';
+
+	/// zh: '未选择任何内容'
+	String get noContentSelected => '未选择任何内容';
+
+	/// zh: '[{step}/{total}] 下载词典数据库'
+	String downloadingDatabase({required Object step, required Object total}) => '[${step}/${total}] 下载词典数据库';
 
 	/// zh: '下载数据库失败: HTTP {code}'
 	String downloadDbFailedHttp({required Object code}) => '下载数据库失败: HTTP ${code}';
 
+	/// zh: '[{step}/{total}] 下载词典数据库 {progress}%'
+	String downloadingDatabaseProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载词典数据库 ${progress}%';
+
+	/// zh: '[{step}/{total}] 下载媒体数据库'
+	String downloadingMedia({required Object step, required Object total}) => '[${step}/${total}] 下载媒体数据库';
+
 	/// zh: '下载媒体数据库失败: HTTP {code}'
 	String downloadMediaFailedHttp({required Object code}) => '下载媒体数据库失败: HTTP ${code}';
+
+	/// zh: '[{step}/{total}] 下载媒体数据库 {progress}%'
+	String downloadingMediaProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载媒体数据库 ${progress}%';
+
+	/// zh: '[{step}/{total}] 下载元数据'
+	String downloadingMeta({required Object step, required Object total}) => '[${step}/${total}] 下载元数据';
 
 	/// zh: '下载元数据失败: {url}, HTTP {code}'
 	String downloadMetaFailed({required Object url, required Object code}) => '下载元数据失败: ${url}, HTTP ${code}';
 
+	/// zh: '[{step}/{total}] 下载图标'
+	String downloadingIcon({required Object step, required Object total}) => '[${step}/${total}] 下载图标';
+
 	/// zh: '响应内容为空'
 	String get responseEmpty => '响应内容为空';
 
-	/// zh: '服务器返回数据格式错误'
-	String get invalidResponseFormat => '服务器返回数据格式错误';
+	/// zh: '英语搜索增强（出错）'
+	String get dbDialogTitleError => '英语搜索增强（出错）';
 
-	/// zh: '获取词典列表失败'
-	String get getDictListFailed => '获取词典列表失败';
+	/// zh: '英语搜索增强'
+	String get dbDialogTitle => '英语搜索增强';
 
-	/// zh: '获取词典列表失败: {error}'
-	String getDictListFailedError({required Object error}) => '获取词典列表失败: ${error}';
+	/// zh: '拼写变体（colour → color）'
+	String get dbFeatureVariant => '拼写变体（colour → color）';
 
-	/// zh: '词典不存在'
-	String get dictNotFound => '词典不存在';
+	/// zh: '缩写（abbr. → abbreviation）'
+	String get dbFeatureAbbr => '缩写（abbr. → abbreviation）';
 
-	/// zh: '删除失败'
-	String get dictDeleteFailed => '删除失败';
+	/// zh: '名词化（happy → happiness）'
+	String get dbFeatureNominal => '名词化（happy → happiness）';
 
-	/// zh: '[1/1] 下载 {name}'
-	String downloadingFile({required Object name}) => '[1/1] 下载 ${name}';
+	/// zh: '屈折词形（runs, ran, running → run）'
+	String get dbFeatureInflection => '屈折词形（runs, ran, running → run）';
 
-	/// zh: '[{step}/{total}] 下载元数据...'
-	String downloadingMeta({required Object step, required Object total}) => '[${step}/${total}] 下载元数据...';
+	/// zh: '例：搜索"colour"可找到"color"的词条'
+	String get dbExample => '例：搜索"colour"可找到"color"的词条';
 
-	/// zh: '[{step}/{total}] 下载图标...'
-	String downloadingIcon({required Object step, required Object total}) => '[${step}/${total}] 下载图标...';
+	/// zh: '下载出错: {error}'
+	String downloadError({required Object error}) => '下载出错: ${error}';
 
-	/// zh: '[{step}/{total}] 下载数据库...'
-	String downloadingDatabase({required Object step, required Object total}) => '[${step}/${total}] 下载数据库...';
+	/// zh: '上传出错: {error}'
+	String uploadError({required Object error}) => '上传出错: ${error}';
 
-	/// zh: '[{step}/{total}] 下载数据库... {progress}%'
-	String downloadingDatabaseProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载数据库... ${progress}%';
+	/// zh: '上传成功'
+	String get uploadSuccess => '上传成功';
 
-	/// zh: '[{step}/{total}] 下载媒体数据库...'
-	String downloadingMedia({required Object step, required Object total}) => '[${step}/${total}] 下载媒体数据库...';
+	/// zh: '下载{name}失败: {error}'
+	String downloadFileFailedError({required Object name, required Object error}) => '下载${name}失败: ${error}';
 
-	/// zh: '[{step}/{total}] 下载媒体数据库... {progress}%'
-	String downloadingMediaProgress({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载媒体数据库... ${progress}%';
-
-	/// zh: '词典数据库不存在: {id}'
-	String dictDbNotFound({required Object id}) => '词典数据库不存在: ${id}';
-
-	/// zh: '媒体数据库不存在: {id}'
-	String mediaDbNotFound({required Object id}) => '媒体数据库不存在: ${id}';
-
-	/// zh: '英语词典数据库不存在，请先下载。'
-	String get dbNotExists => '英语词典数据库不存在，请先下载。';
-
-	/// zh: '下载文件失败: {name}'
-	String downloadFileFailed({required Object name}) => '下载文件失败: ${name}';
-
-	/// zh: '下载文件失败: {name} — {error}'
-	String downloadFileFailedError({required Object name, required Object error}) => '下载文件失败: ${name} — ${error}';
+	/// zh: '下载{name}失败'
+	String downloadFileFailed({required Object name}) => '下载${name}失败';
 
 	/// zh: '下载条目更新失败'
 	String get downloadEntriesFailed => '下载条目更新失败';
+
+	/// zh: '搜索词条...'
+	String get searchEntries => '搜索词条...';
+
+	/// zh: '暂无词条'
+	String get noEntries => '暂无词条';
+
+	/// zh: '英语词典数据库不存在，请先下载'
+	String get dbNotExists => '英语词典数据库不存在，请先下载';
 }
 
 // Path: entry
@@ -1799,12 +1796,6 @@ class TranslationsEntryZh {
 
 	/// zh: '保存成功'
 	String get saveSuccess => '保存成功';
-
-	/// zh: '根节点必须是对象类型'
-	String get rootMustBeObject => '根节点必须是对象类型';
-
-	/// zh: '数据库更新失败'
-	String get dbUpdateFailed => '数据库更新失败';
 
 	/// zh: '处理失败: {error}'
 	String processFailed({required Object error}) => '处理失败: ${error}';
@@ -1875,6 +1866,15 @@ class TranslationsEntryZh {
 	/// zh: '基于以上对话继续提问...'
 	String get continueAskHint => '基于以上对话继续提问...';
 
+	/// zh: '重新生成'
+	String get regenerate => '重新生成';
+
+	/// zh: '简洁点'
+	String get moreConc => '简洁点';
+
+	/// zh: '详细点'
+	String get moreDetailed => '详细点';
+
 	/// zh: '输入任意问题...'
 	String get chatInputHint => '输入任意问题...';
 
@@ -1926,21 +1926,6 @@ class TranslationsEntryZh {
 	/// zh: '屈折词'
 	String get morphInflection => '屈折词';
 
-	/// zh: '拼写变体'
-	String get spellingVariantLabel => '拼写变体';
-
-	/// zh: '缩写'
-	String get abbreviationLabel => '缩写';
-
-	/// zh: '首字母缩写'
-	String get acronymLabel => '首字母缩写';
-
-	/// zh: '复数形式'
-	String get morphPluralForm => '复数形式';
-
-	/// zh: '第三人称单数'
-	String get morphThirdSingFull => '第三人称单数';
-
 	/// zh: '不可数'
 	String get uncountable => '不可数';
 
@@ -1950,8 +1935,32 @@ class TranslationsEntryZh {
 	/// zh: '当前页内容总结'
 	String get summaryTitle => '当前页内容总结';
 
+	/// zh: '点我AI总结'
+	String get aiSummaryButton => '点我AI总结';
+
 	/// zh: '{first}等{count}个词条'
 	String summaryEntriesLabel({required Object first, required Object count}) => '${first}等${count}个词条';
+
+	/// zh: '{dict} [{page}] AI总结'
+	String chatStartSummary({required Object dict, required Object page}) => '${dict} [${page}] AI总结';
+
+	/// zh: '{dict} [{path}] AI询问'
+	String chatStartElement({required Object dict, required Object path}) => '${dict} [${path}] AI询问';
+
+	/// zh: '「{word}」AI自由聊天'
+	String chatStartFreeChat({required Object word}) => '「${word}」AI自由聊天';
+
+	/// zh: 'AI自由聊天'
+	String get chatOverviewFreeChat => 'AI自由聊天';
+
+	/// zh: '{dict} [{page}] AI总结'
+	String chatOverviewSummary({required Object dict, required Object page}) => '${dict} [${page}] AI总结';
+
+	/// zh: '{dict} AI总结'
+	String chatOverviewSummaryNoPage({required Object dict}) => '${dict} AI总结';
+
+	/// zh: '{dict} AI询问'
+	String chatOverviewAsk({required Object dict}) => '${dict} AI询问';
 
 	/// zh: '返回初始路径'
 	String get returnToStart => '返回初始路径';
@@ -1968,44 +1977,62 @@ class TranslationsEntryZh {
 	/// zh: '当前词典: {dictId}'
 	String currentDict({required Object dictId}) => '当前词典: ${dictId}';
 
-	/// zh: '未找到条目: {entryId}'
-	String entryNotFound({required Object entryId}) => '未找到条目: ${entryId}';
+	/// zh: '未找到词条: {entryId}'
+	String entryNotFound({required Object entryId}) => '未找到词条: ${entryId}';
 
-	/// zh: '无法提取文本内容'
-	String get extractFailed => '无法提取文本内容';
+	/// zh: '提取文本失败'
+	String get extractFailed => '提取文本失败';
 
-	/// zh: '正在生成音频...'
-	String get generatingAudio => '正在生成音频...';
+	/// zh: '生成音频中...'
+	String get generatingAudio => '生成音频中...';
 
-	/// zh: '朗读失败: {error}'
-	String speakFailed({required Object error}) => '朗读失败: ${error}';
+	/// zh: '语音合成失败: {error}'
+	String speakFailed({required Object error}) => '语音合成失败: ${error}';
 
-	/// zh: '未找到短语: {phrase}'
-	String phraseNotFound({required Object phrase}) => '未找到短语: ${phrase}';
+	/// zh: '未找到短语："{phrase}"'
+	String phraseNotFound({required Object phrase}) => '未找到短语："${phrase}"';
 
 	/// zh: '图片加载失败'
 	String get imageLoadFailed => '图片加载失败';
 
-	/// zh: '格式化'
-	String get formatJson => '格式化';
+	/// zh: '根节点必须是JSON对象'
+	String get rootMustBeObject => '根节点必须是JSON对象';
 
-	/// zh: '输入 JSON 内容'
-	String get jsonHint => '输入 JSON 内容';
-
-	/// zh: '语法错误'
-	String get syntaxError => '语法错误';
-
-	/// zh: '语法检测'
-	String get syntaxCheck => '语法检测';
+	/// zh: '保存到数据库失败'
+	String get dbUpdateFailed => '保存到数据库失败';
 
 	/// zh: '格式化失败: {error}'
 	String jsonFormatFailed({required Object error}) => '格式化失败: ${error}';
 
-	/// zh: 'JSON 格式错误: {error}'
-	String jsonSyntaxError({required Object error}) => 'JSON 格式错误: ${error}';
+	/// zh: 'JSON语法错误: {error}'
+	String jsonSyntaxError({required Object error}) => 'JSON语法错误: ${error}';
 
-	/// zh: '错误: {error}'
-	String jsonErrorLabel({required Object error}) => '错误: ${error}';
+	/// zh: '格式化JSON'
+	String get formatJson => '格式化JSON';
+
+	/// zh: '语法错误'
+	String get syntaxError => '语法错误';
+
+	/// zh: '语法检查通过'
+	String get syntaxCheck => '语法检查通过';
+
+	/// zh: '语法错误: {error}'
+	String jsonErrorLabel({required Object error}) => '语法错误: ${error}';
+
+	/// zh: '拼写变体'
+	String get spellingVariantLabel => '拼写变体';
+
+	/// zh: '缩写'
+	String get abbreviationLabel => '缩写';
+
+	/// zh: '首字母缩略词'
+	String get acronymLabel => '首字母缩略词';
+
+	/// zh: '复数形式'
+	String get morphPluralForm => '复数形式';
+
+	/// zh: '第三人称单数'
+	String get morphThirdSingFull => '第三人称单数';
 }
 
 // Path: settings.scaleDialog
@@ -2317,11 +2344,11 @@ extension on Translations {
 			'common.unknown' => '未知',
 			'common.fullscreen' => '全屏',
 			'common.exitFullscreen' => '退出全屏',
-			'common.selectLanguage' => '选择语言',
-			'common.redo' => '重做',
-			'common.neverAskAgain' => '不再询问',
+			'common.retryLater' => '请稍后重试',
 			'common.notNow' => '暂不',
-			'common.retryLater' => '请稍后再试',
+			'common.neverAskAgain' => '不再提示',
+			'common.redo' => '重做',
+			'common.selectLanguage' => '选择语言',
 			'settings.title' => '设置',
 			'settings.cloudService' => '云服务',
 			'settings.dictionaryManager' => '词典管理',
@@ -2438,9 +2465,9 @@ extension on Translations {
 			'wordBank.listOpFailed' => '操作失败',
 			'wordBank.listNameExists' => '词表名称已存在，请使用其他名称',
 			'wordBank.selectLists' => '选择词表',
-			'wordBank.adjustLists' => ({required Object word}) => '调整 "${word}" 的词表',
-			'wordBank.newListHint' => '输入新词表名称',
-			'wordBank.removeWord' => '移除单词',
+			'wordBank.adjustLists' => ({required Object word}) => '调整"${word}"的词表',
+			'wordBank.newListHint' => '新建词表...',
+			'wordBank.removeWord' => '从单词本移除',
 			'theme.title' => '主题设置',
 			'theme.light' => '浅色',
 			'theme.dark' => '深色',
@@ -2491,7 +2518,7 @@ extension on Translations {
 			'help.upToDate' => ({required Object version}) => '已是最新版本 ${version}',
 			'help.currentVersion' => ({required Object version}) => '当前版本 ${version}',
 			'help.updateError' => '检查失败，点击重试',
-			'help.githubApiError' => ({required Object code}) => 'GitHub API 错误 (${code})',
+			'help.githubApiError' => ({required Object code}) => 'GitHub API 错误 (状态码 ${code})',
 			'help.checkUpdateError' => ({required Object error}) => '检查更新失败: ${error}',
 			'langNames.zh' => '中文',
 			'langNames.ja' => '日语',
@@ -2599,6 +2626,9 @@ extension on Translations {
 			'cloud.registerUsernameRequired' => '请输入用户名',
 			'cloud.registerPasswordMismatch' => '两次输入的密码不一致',
 			'cloud.loggedOut' => '已退出登录',
+			'cloud.requestTimeout' => '请求超时，请检查网络连接',
+			'cloud.registerFailedError' => ({required Object error}) => '注册失败: ${error}',
+			'cloud.loginFailedError' => ({required Object error}) => '登录失败: ${error}',
 			'cloud.syncToCloud' => '同步到云端',
 			'cloud.syncToCloudSubtitle' => '将本地设置上传到云端',
 			'cloud.syncFromCloud' => '从云端同步',
@@ -2608,6 +2638,8 @@ extension on Translations {
 			'cloud.uploadSuccess' => '设置已上传到云端',
 			'cloud.uploadFailed' => '上传失败',
 			'cloud.createPackageFailed' => '创建设置包失败',
+			'cloud.uploadFailedError' => ({required Object error}) => '上传失败: ${error}',
+			'cloud.selectAtLeastOneFileToUpdate' => '请至少选择一个要更新的文件',
 			'cloud.downloadTitle' => '下载设置',
 			'cloud.downloadConfirm' => '确定要从云端下载设置吗？这将覆盖本地的设置数据。',
 			'cloud.downloadSuccess' => '设置已从云端同步',
@@ -2630,72 +2662,67 @@ extension on Translations {
 			'cloud.opInsert' => '[新增] ',
 			'cloud.opDelete' => '[删除] ',
 			'cloud.loginFirst' => '请先登录',
+			'cloud.serverNotSet' => '请先配置云服务订阅地址',
+			'cloud.uploadServerNotSet' => '请先配置上传服务器地址',
+			'cloud.sessionExpired' => '登录已过期，请重新登录',
 			'cloud.permissionTitle' => '需要文件访问权限',
 			'cloud.permissionBody' => '访问外部目录需要「所有文件访问」权限。\n\n点击「去授权」后，系统将跳转到设置页面，请在「管理所有文件」中找到本应用并开启权限，然后返回应用即可生效。',
 			'cloud.goAuthorize' => '去授权',
 			'cloud.permissionDenied' => '未获得文件访问权限，操作已取消',
-			'cloud.serverNotSet' => '请先设置服务器地址',
-			'cloud.requestTimeout' => '请求超时，请检查网络连接',
-			'cloud.notLoggedIn' => '未登录',
-			'cloud.sessionExpired' => '登录已过期，请重新登录',
+			'cloud.notLoggedIn' => '未登录，请先登录',
 			'cloud.getUserFailed' => '获取用户信息失败',
-			'cloud.requestFailed' => '请求失败',
-			'cloud.settingsFileNotFound' => '设置文件不存在',
-			'cloud.loginFailedError' => ({required Object error}) => '登录失败: ${error}',
-			'cloud.registerFailedError' => ({required Object error}) => '注册失败: ${error}',
 			'cloud.getUserFailedError' => ({required Object error}) => '获取用户信息失败: ${error}',
+			'cloud.requestFailed' => '请求失败',
 			'cloud.downloadFailedError' => ({required Object error}) => '下载失败: ${error}',
-			'cloud.uploadFailedError' => ({required Object error}) => '上传失败: ${error}',
-			'cloud.noSyncableFiles' => '没有可同步的设置文件',
-			'cloud.createPackageFailedError' => ({required Object error}) => '创建压缩包失败: ${error}',
-			'cloud.archiveNotFound' => '压缩包文件不存在',
-			'cloud.archiveNoValidFiles' => '压缩包中没有有效的设置文件',
-			'cloud.extractFailedError' => ({required Object error}) => '解压失败: ${error}',
-			'cloud.uploadServerNotSet' => '上传服务器地址未设置',
-			'cloud.uploadNewDict' => '上传新词典',
-			'cloud.selectAllRequiredFiles' => '请选择所有必填文件',
-			'cloud.selectAtLeastOneFileToUpdate' => '请至少选择一个文件进行更新',
-			'cloud.replaceFileTip' => '提示：请至少选择一个文件进行更新',
-			'cloud.replaceFileHint' => '例如：更新logo、修复词条等',
-			'cloud.versionNoteLabel' => '版本备注（必填）',
-			'cloud.entryDeleted' => '条目已删除，已记录到 commit 表',
-			'cloud.entryDeleteFailed' => '删除失败，条目可能不存在',
-			'cloud.deleteFailedError' => ({required Object error}) => '删除失败: ${error}',
-			'cloud.updateJsonTitle' => '更新 JSON',
-			'cloud.prefixSearch' => '词头搜索',
-			'cloud.idSearch' => 'ID 搜索',
-			'cloud.importTab' => '导入 JSON / JSONL',
-			'cloud.deleteSearchTab' => '搜索删除条目',
-			'cloud.clearLabel' => '清空',
-			'cloud.writingToDb' => '写入数据库',
-			'cloud.importing' => '导入中…',
-			'cloud.deleteEntry' => '删除此条目',
-			'cloud.deleting' => '删除中…',
-			'cloud.importJsonPlaceholder' => '粘贴 JSON 或 JSONL（每行一个 JSON 对象）\n\n注意：每条 JSON 必须含有 entry_id 字段',
-			'cloud.searchIdHint' => '输入整数 entry_id',
-			'cloud.searchHeadwordHint' => '输入词头（自动规范化匹配）',
-			'cloud.searchHeadwordLabel' => '词头',
-			'cloud.entryIdNotFound' => ({required Object id}) => '未找到 entry_id 为 ${id} 的条目',
-			'cloud.headwordNotFound' => ({required Object word}) => '未找到词头为「${word}」的条目',
-			'cloud.searchFailed' => ({required Object error}) => '搜索失败: ${error}',
-			'cloud.matchedEntries' => ({required Object count}) => '找到 ${count} 条匹配条目，点击选择要删除的条目：',
+			'cloud.settingsFileNotFound' => '设置文件不存在',
 			'cloud.noNeedToPushUpdates' => '没有需要推送的更新',
-			'cloud.jsonParseError' => 'JSON 解析失败，请检查格式（格式化 JSON 或每行一个对象的 JSONL）',
-			'cloud.importLineError' => ({required Object line, required Object preview}) => '第 ${line} 行: ${preview}',
-			'cloud.importItemNotObject' => ({required Object item}) => '第 ${item} 条不是 JSON 对象',
-			'cloud.importItemMissingId' => ({required Object item}) => '第 ${item} 条缺少 entry_id',
-			'cloud.importItemWriteFailed' => ({required Object item, required Object id, required Object word}) => '第 ${item} 条写入失败 (entry_id: ${id}, headword: ${word})',
-			'cloud.importItemFailed' => ({required Object item, required Object error}) => '第 ${item} 条处理失败: ${error}',
-			'cloud.importSuccessCount' => ({required Object count}) => '成功导入 ${count} 条',
-			'cloud.importFailedCount' => ({required Object count}) => '，失败 ${count} 条',
-			'cloud.importMoreErrors' => ({required Object count}) => '… 还有 ${count} 条错误',
-			'cloud.enterJsonContent' => '请输入 JSON 内容',
-			'cloud.importFailedError' => ({required Object error}) => '导入失败: ${error}',
-			'cloud.enterEntryId' => '请输入 entry_id',
-			'cloud.enterHeadword' => '请输入词头',
+			'cloud.selectAllRequiredFiles' => '请选择所有必填文件',
 			'cloud.requiredField' => '（必填）',
 			'cloud.optionalField' => '（可选）',
-			'cloud.deleteEntryConfirmContent' => ({required Object headword, required Object id}) => '确定要删除条目「${headword}」（entry_id: ${id}）吗？\n\n此操作会将删除记录写入 commit 表，推送更新后服务器端的该条目也将被删除。',
+			'cloud.uploadNewDict' => '上传新词典',
+			'cloud.versionNoteLabel' => '版本说明',
+			'cloud.replaceFileHint' => '输入版本说明...',
+			'cloud.replaceFileTip' => '未选择的文件不会被更新',
+			'cloud.enterJsonContent' => '请输入JSON内容',
+			'cloud.importLineError' => ({required Object line, required Object preview}) => '第${line}行解析失败："${preview}"',
+			'cloud.jsonParseError' => 'JSON解析失败',
+			'cloud.importItemNotObject' => ({required Object item}) => '第${item}条不是JSON对象',
+			'cloud.importItemMissingId' => ({required Object item}) => '第${item}条没有ID',
+			'cloud.importItemWriteFailed' => ({required Object item, required Object id, required Object word}) => '第${item}条（id=${id}, ${word}）写入失败',
+			'cloud.importItemFailed' => ({required Object item, required Object error}) => '第${item}条处理失败: ${error}',
+			'cloud.importSuccessCount' => ({required Object count}) => '成功导入${count}条',
+			'cloud.importFailedCount' => ({required Object count}) => '，失败${count}条',
+			'cloud.importMoreErrors' => ({required Object count}) => '...还有${count}个错误',
+			'cloud.importFailedError' => ({required Object error}) => '导入失败: ${error}',
+			'cloud.enterEntryId' => '请输入词条ID',
+			'cloud.enterHeadword' => '请输入词头',
+			'cloud.entryIdNotFound' => ({required Object id}) => '未找到ID为${id}的词条',
+			'cloud.headwordNotFound' => ({required Object word}) => '未找到词条："${word}"',
+			'cloud.searchFailed' => ({required Object error}) => '搜索失败: ${error}',
+			'cloud.deleteEntryConfirmContent' => ({required Object headword, required Object id}) => '确定删除词条"${headword}"（ID: ${id}）？此操作不可撤销。',
+			'cloud.entryDeleted' => '词条已删除',
+			'cloud.entryDeleteFailed' => '词条删除失败',
+			'cloud.deleteFailedError' => ({required Object error}) => '删除失败: ${error}',
+			'cloud.updateJsonTitle' => '更新词条数据',
+			'cloud.importTab' => '导入',
+			'cloud.deleteSearchTab' => '删除/搜索',
+			'cloud.importJsonPlaceholder' => '输入JSONL内容，每行一个词条...',
+			'cloud.clearLabel' => '清空',
+			'cloud.importing' => '导入中...',
+			'cloud.writingToDb' => '写入数据库',
+			'cloud.idSearch' => '按ID搜索',
+			'cloud.prefixSearch' => '按词头搜索',
+			'cloud.searchHeadwordLabel' => '词头',
+			'cloud.searchIdHint' => '输入entry_id',
+			'cloud.searchHeadwordHint' => '输入词头',
+			'cloud.matchedEntries' => ({required Object count}) => '找到${count}条词条',
+			'cloud.deleting' => '删除中...',
+			'cloud.deleteEntry' => '删除词条',
+			'cloud.noSyncableFiles' => '没有找到可同步的文件',
+			'cloud.createPackageFailedError' => ({required Object error}) => '创建压缩包失败: ${error}',
+			'cloud.archiveNotFound' => '压缩包文件不存在',
+			'cloud.archiveNoValidFiles' => '压缩包中没有有效的文件',
+			'cloud.extractFailedError' => ({required Object error}) => '解压失败: ${error}',
 			'dict.title' => '词典管理',
 			'dict.tabSort' => '词典排序',
 			'dict.tabSource' => '词典来源',
@@ -2731,6 +2758,11 @@ extension on Translations {
 			'dict.dictDbWithSize' => ({required Object size}) => '[必选]词典数据库（${size}）',
 			'dict.mediaDb' => '媒体数据库',
 			'dict.mediaDbWithSize' => ({required Object size}) => '媒体数据库（${size}）',
+			'dict.mediaDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的媒体数据库',
+			'dict.dictDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的数据库',
+			'dict.getDictListFailed' => '获取词典列表失败',
+			'dict.invalidResponseFormat' => '服务器返回格式无效',
+			'dict.getDictListFailedError' => ({required Object error}) => '获取词典列表失败: ${error}',
 			'dict.startDownload' => '开始下载',
 			'dict.downloading' => ({required Object step, required Object total, required Object name}) => '[${step}/${total}] 下载 ${name}',
 			'dict.downloadingEntries' => ({required Object step, required Object total}) => '[${step}/${total}] 下载条目更新',
@@ -2740,6 +2772,15 @@ extension on Translations {
 			'dict.deleteConfirmBody' => ({required Object name}) => '确定要删除词典 "${name}" 吗？',
 			'dict.deleteSuccess' => '词典已删除',
 			'dict.deleteFailed' => ({required Object error}) => '删除失败: ${error}',
+			'dict.dictNotFound' => '未找到指定词典',
+			'dict.dictDeleteFailed' => '词典删除失败',
+			'dict.statusUpdateFailed' => '状态更新失败',
+			'dict.statusPreparing' => '准备中',
+			'dict.statusPreparingUpdate' => '准备更新',
+			'dict.statusDownloading' => '下载中',
+			'dict.statusCompleted' => '已完成',
+			'dict.storeNotConfigured' => '未配置词典存储目录',
+			'dict.downloadFailed' => '下载失败',
 			'dict.tooltipUpdateJson' => '更新JSON',
 			'dict.tooltipReplaceFile' => '替换文件',
 			'dict.tooltipPushUpdate' => '推送更新',
@@ -2769,6 +2810,8 @@ extension on Translations {
 			'dict.permissionNeeded' => '需申请「所有文件访问」权限',
 			'dict.cantWrite' => ({required Object dir}) => '无法写入 ${dir}，请检查权限',
 			'dict.cantWritePicked' => '无法写入所选目录，请重新选择',
+			_ => null,
+		} ?? switch (path) {
 			'dict.permissionDialogBody' => '点击「确定」后系统将跳转到设置页面，请开启「管理所有文件」权限后返回应用。',
 			'dict.statsTitle' => '统计信息',
 			'dict.entryCount' => '词条数',
@@ -2783,8 +2826,6 @@ extension on Translations {
 			'dict.deleteDictSuccess' => ({required Object name}) => '词典「${name}」已删除',
 			'dict.deleteDictFailed' => ({required Object error}) => '删除失败: ${error}',
 			'dict.cannotGetFileInfo' => '无法获取文件信息',
-			_ => null,
-		} ?? switch (path) {
 			'dict.updateDictTitle' => ({required Object name}) => '更新词典 - ${name}',
 			'dict.smartUpdate' => '智能更新',
 			'dict.manualSelect' => '手动选择',
@@ -2811,59 +2852,44 @@ extension on Translations {
 			'dict.versionLabel' => '版本',
 			'dict.updatedLabel' => '更新',
 			'dict.detailTitle' => '词典详情',
-			'dict.downloadError' => ({required Object error}) => '下载失败: ${error}',
-			'dict.uploadError' => ({required Object error}) => '上传失败: ${error}',
-			'dict.cancelled' => '已取消',
-			'dict.uploadSuccess' => '上传成功',
-			'dict.searchEntries' => '搜索词条...',
-			'dict.noEntries' => '暂无词条',
-			'dict.dbDialogTitle' => '下载英语词典数据库',
-			'dict.dbDialogTitleError' => '下载失败',
-			'dict.dbFeatureTitle' => '英语词典数据库可以帮助您：',
-			'dict.dbFeatureVariant' => '单词拼写变体查询',
-			'dict.dbFeatureAbbr' => '缩写/首字母缩略词查询',
-			'dict.dbFeatureNominal' => '名词化形式查询',
-			'dict.dbFeatureInflection' => '动词变形查询',
-			'dict.dbExample' => '例如：搜索 "alpacas" 可自动重定向到 "alpaca"（复数形式）',
-			'dict.statusPreparing' => '准备下载...',
-			'dict.statusDownloading' => '下载中...',
-			'dict.statusCompleted' => '下载完成',
-			'dict.statusFailed' => '下载失败',
-			'dict.statusPreparingUpdate' => '准备更新...',
-			'dict.statusUpdateCompleted' => '更新完成',
-			'dict.statusUpdateFailed' => '更新失败',
-			'dict.statusPreparingUpload' => '准备上传...',
+			'dict.statusPreparingUpload' => '准备上传',
 			'dict.uploadingFile' => ({required Object step, required Object total, required Object name}) => '[${step}/${total}] 上传 ${name}',
 			'dict.statusUploadCompleted' => '上传完成',
 			'dict.statusUploadFailed' => '上传失败',
-			'dict.storeNotConfigured' => '未配置词典商店服务',
-			'dict.downloadFailed' => '下载失败',
-			'dict.noContentSelected' => '没有选择要下载的内容',
-			'dict.fetchListTimeout' => '获取词典列表超时，请检查网络连接',
+			'dict.cancelled' => '已取消',
+			'dict.statusFailed' => '失败',
+			'dict.statusUpdateCompleted' => '更新完成',
+			'dict.downloadingFile' => ({required Object name}) => '下载 ${name}',
 			'dict.fetchListFailedHttp' => ({required Object code}) => '获取词典列表失败: HTTP ${code}',
+			'dict.fetchListTimeout' => '获取词典列表超时',
 			'dict.fetchDetailFailedHttp' => ({required Object code}) => '获取词典详情失败: HTTP ${code}',
+			'dict.noContentSelected' => '未选择任何内容',
+			'dict.downloadingDatabase' => ({required Object step, required Object total}) => '[${step}/${total}] 下载词典数据库',
 			'dict.downloadDbFailedHttp' => ({required Object code}) => '下载数据库失败: HTTP ${code}',
+			'dict.downloadingDatabaseProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载词典数据库 ${progress}%',
+			'dict.downloadingMedia' => ({required Object step, required Object total}) => '[${step}/${total}] 下载媒体数据库',
 			'dict.downloadMediaFailedHttp' => ({required Object code}) => '下载媒体数据库失败: HTTP ${code}',
+			'dict.downloadingMediaProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载媒体数据库 ${progress}%',
+			'dict.downloadingMeta' => ({required Object step, required Object total}) => '[${step}/${total}] 下载元数据',
 			'dict.downloadMetaFailed' => ({required Object url, required Object code}) => '下载元数据失败: ${url}, HTTP ${code}',
+			'dict.downloadingIcon' => ({required Object step, required Object total}) => '[${step}/${total}] 下载图标',
 			'dict.responseEmpty' => '响应内容为空',
-			'dict.invalidResponseFormat' => '服务器返回数据格式错误',
-			'dict.getDictListFailed' => '获取词典列表失败',
-			'dict.getDictListFailedError' => ({required Object error}) => '获取词典列表失败: ${error}',
-			'dict.dictNotFound' => '词典不存在',
-			'dict.dictDeleteFailed' => '删除失败',
-			'dict.downloadingFile' => ({required Object name}) => '[1/1] 下载 ${name}',
-			'dict.downloadingMeta' => ({required Object step, required Object total}) => '[${step}/${total}] 下载元数据...',
-			'dict.downloadingIcon' => ({required Object step, required Object total}) => '[${step}/${total}] 下载图标...',
-			'dict.downloadingDatabase' => ({required Object step, required Object total}) => '[${step}/${total}] 下载数据库...',
-			'dict.downloadingDatabaseProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载数据库... ${progress}%',
-			'dict.downloadingMedia' => ({required Object step, required Object total}) => '[${step}/${total}] 下载媒体数据库...',
-			'dict.downloadingMediaProgress' => ({required Object step, required Object total, required Object progress}) => '[${step}/${total}] 下载媒体数据库... ${progress}%',
-			'dict.dictDbNotFound' => ({required Object id}) => '词典数据库不存在: ${id}',
-			'dict.mediaDbNotFound' => ({required Object id}) => '媒体数据库不存在: ${id}',
-			'dict.dbNotExists' => '英语词典数据库不存在，请先下载。',
-			'dict.downloadFileFailed' => ({required Object name}) => '下载文件失败: ${name}',
-			'dict.downloadFileFailedError' => ({required Object name, required Object error}) => '下载文件失败: ${name} — ${error}',
+			'dict.dbDialogTitleError' => '英语搜索增强（出错）',
+			'dict.dbDialogTitle' => '英语搜索增强',
+			'dict.dbFeatureVariant' => '拼写变体（colour → color）',
+			'dict.dbFeatureAbbr' => '缩写（abbr. → abbreviation）',
+			'dict.dbFeatureNominal' => '名词化（happy → happiness）',
+			'dict.dbFeatureInflection' => '屈折词形（runs, ran, running → run）',
+			'dict.dbExample' => '例：搜索"colour"可找到"color"的词条',
+			'dict.downloadError' => ({required Object error}) => '下载出错: ${error}',
+			'dict.uploadError' => ({required Object error}) => '上传出错: ${error}',
+			'dict.uploadSuccess' => '上传成功',
+			'dict.downloadFileFailedError' => ({required Object name, required Object error}) => '下载${name}失败: ${error}',
+			'dict.downloadFileFailed' => ({required Object name}) => '下载${name}失败',
 			'dict.downloadEntriesFailed' => '下载条目更新失败',
+			'dict.searchEntries' => '搜索词条...',
+			'dict.noEntries' => '暂无词条',
+			'dict.dbNotExists' => '英语词典数据库不存在，请先下载',
 			'entry.wordRemoved' => ({required Object word}) => '已将 "${word}" 从单词本移除',
 			'entry.wordListUpdated' => ({required Object word}) => '已更新 "${word}" 的词表归属',
 			'entry.selectAtLeastOne' => '请至少选择一个词表',
@@ -2877,8 +2903,6 @@ extension on Translations {
 			'entry.resetFailed' => '重置失败',
 			'entry.saveFailed' => ({required Object error}) => '保存失败: ${error}',
 			'entry.saveSuccess' => '保存成功',
-			'entry.rootMustBeObject' => '根节点必须是对象类型',
-			'entry.dbUpdateFailed' => '数据库更新失败',
 			'entry.processFailed' => ({required Object error}) => '处理失败: ${error}',
 			'entry.translating' => '正在翻译...',
 			'entry.translateFailed' => ({required Object error}) => '翻译失败: ${error}',
@@ -2902,6 +2926,9 @@ extension on Translations {
 			'entry.aiAnswer' => 'AI回答',
 			'entry.continueAsk' => '继续提问',
 			'entry.continueAskHint' => '基于以上对话继续提问...',
+			'entry.regenerate' => '重新生成',
+			'entry.moreConc' => '简洁点',
+			'entry.moreDetailed' => '详细点',
 			'entry.chatInputHint' => '输入任意问题...',
 			'entry.justNow' => '刚刚',
 			'entry.minutesAgo' => ({required Object n}) => '${n}分钟前',
@@ -2919,33 +2946,42 @@ extension on Translations {
 			'entry.morphSpellingVariant' => '变体',
 			'entry.morphNominalization' => '名词化',
 			'entry.morphInflection' => '屈折词',
-			'entry.spellingVariantLabel' => '拼写变体',
-			'entry.abbreviationLabel' => '缩写',
-			'entry.acronymLabel' => '首字母缩写',
-			'entry.morphPluralForm' => '复数形式',
-			'entry.morphThirdSingFull' => '第三人称单数',
 			'entry.uncountable' => '不可数',
 			'entry.summaryQuestion' => '请总结当前页的所有词典内容',
 			'entry.summaryTitle' => '当前页内容总结',
+			'entry.aiSummaryButton' => '点我AI总结',
 			'entry.summaryEntriesLabel' => ({required Object first, required Object count}) => '${first}等${count}个词条',
+			'entry.chatStartSummary' => ({required Object dict, required Object page}) => '${dict} [${page}] AI总结',
+			'entry.chatStartElement' => ({required Object dict, required Object path}) => '${dict} [${path}] AI询问',
+			'entry.chatStartFreeChat' => ({required Object word}) => '「${word}」AI自由聊天',
+			'entry.chatOverviewFreeChat' => 'AI自由聊天',
+			'entry.chatOverviewSummary' => ({required Object dict, required Object page}) => '${dict} [${page}] AI总结',
+			'entry.chatOverviewSummaryNoPage' => ({required Object dict}) => '${dict} AI总结',
+			'entry.chatOverviewAsk' => ({required Object dict}) => '${dict} AI询问',
 			'entry.returnToStart' => '返回初始路径',
 			'entry.path' => '路径',
 			'entry.explainPrompt' => ({required Object word}) => '这是词典中单词"${word}"的一部分，请解释这部分内容。',
 			'entry.currentWord' => ({required Object word}) => '当前查询单词: ${word}',
 			'entry.currentDict' => ({required Object dictId}) => '当前词典: ${dictId}',
-			'entry.entryNotFound' => ({required Object entryId}) => '未找到条目: ${entryId}',
-			'entry.extractFailed' => '无法提取文本内容',
-			'entry.generatingAudio' => '正在生成音频...',
-			'entry.speakFailed' => ({required Object error}) => '朗读失败: ${error}',
-			'entry.phraseNotFound' => ({required Object phrase}) => '未找到短语: ${phrase}',
+			'entry.entryNotFound' => ({required Object entryId}) => '未找到词条: ${entryId}',
+			'entry.extractFailed' => '提取文本失败',
+			'entry.generatingAudio' => '生成音频中...',
+			'entry.speakFailed' => ({required Object error}) => '语音合成失败: ${error}',
+			'entry.phraseNotFound' => ({required Object phrase}) => '未找到短语："${phrase}"',
 			'entry.imageLoadFailed' => '图片加载失败',
-			'entry.formatJson' => '格式化',
-			'entry.jsonHint' => '输入 JSON 内容',
-			'entry.syntaxError' => '语法错误',
-			'entry.syntaxCheck' => '语法检测',
+			'entry.rootMustBeObject' => '根节点必须是JSON对象',
+			'entry.dbUpdateFailed' => '保存到数据库失败',
 			'entry.jsonFormatFailed' => ({required Object error}) => '格式化失败: ${error}',
-			'entry.jsonSyntaxError' => ({required Object error}) => 'JSON 格式错误: ${error}',
-			'entry.jsonErrorLabel' => ({required Object error}) => '错误: ${error}',
+			'entry.jsonSyntaxError' => ({required Object error}) => 'JSON语法错误: ${error}',
+			'entry.formatJson' => '格式化JSON',
+			'entry.syntaxError' => '语法错误',
+			'entry.syntaxCheck' => '语法检查通过',
+			'entry.jsonErrorLabel' => ({required Object error}) => '语法错误: ${error}',
+			'entry.spellingVariantLabel' => '拼写变体',
+			'entry.abbreviationLabel' => '缩写',
+			'entry.acronymLabel' => '首字母缩略词',
+			'entry.morphPluralForm' => '复数形式',
+			'entry.morphThirdSingFull' => '第三人称单数',
 			_ => null,
 		};
 	}

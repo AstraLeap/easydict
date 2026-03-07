@@ -35,9 +35,7 @@ class AIService {
             tag: 'AIService',
           );
           await Future.delayed(delay);
-          delay = Duration(
-            milliseconds: (delay.inMilliseconds * 2).round(),
-          );
+          delay = Duration(milliseconds: (delay.inMilliseconds * 2).round());
         }
       }
     }
@@ -145,46 +143,51 @@ class AIService {
   }
 
   /// 词典内容总结流式版本
-  Stream<LLMChunk> summarizeDictionaryStream(String jsonContent) {
-    const systemPrompt =
-        '你是一位专业的词典内容解析师，擅长从词典数据中提炼关键语言信息。'
-        '请对提供的词典 JSON 数据进行分析，输出结构清晰的 Markdown 总结，内容包括：\n'
-        '1. **核心含义**：列出主要词义及词性，表述简洁\n'
-        '2. **词源 / 构词**（如有）：简述词根、词缀或来源\n'
-        '3. **重要搭配与例句**：优先列出高频、实用的搭配和典型例句\n'
-        '4. **语言要点**：发音、用法区分、常见错误或文体色彩等值得注意之处\n'
-        '输出要条理分明，篇幅适中，以学习者视角呈现最有价值的信息。';
+  Stream<LLMChunk> summarizeDictionaryStream(
+    String jsonContent, {
+    String appLanguage = 'English',
+    String? instruction, // e.g. 'Be more concise.' or 'Be more detailed and comprehensive.'
+  }) {
+    final systemPrompt =
+        'You are a professional dictionary content analyst, skilled at distilling key linguistic information from dictionary data. '
+        'Analyze the provided dictionary JSON data and output a well-structured Markdown summary covering:\n'
+        '1. **Core Meanings**: List the main senses and parts of speech concisely\n'
+        '2. **Etymology / Word Formation** (if available): Briefly describe roots, affixes, or origins\n'
+        '3. **Key Collocations & Examples**: Prioritize high-frequency, practical collocations and typical example sentences\n'
+        '4. **Language Notes**: Pronunciation, usage distinctions, common errors, or register worth noting\n'
+        'Keep the output well-organized and appropriately concise, presenting the most valuable information from a learner\'s perspective.\n'
+        'Respond in $appLanguage.';
 
-    final prompt =
-        '请分析以下词典 JSON 数据：\n\n'
-        '```json\n'
-        '$jsonContent\n'
-        '```\n\n'
-        '按照要求输出结构化总结。';
+    String prompt =
+        'Analyze the following dictionary JSON data and output a structured summary as instructed.';
+    if (instruction != null && instruction.isNotEmpty) {
+      prompt += ' $instruction';
+    }
 
-    return chatStream(prompt, systemPrompt: systemPrompt);
+    final fullPrompt = '$prompt\n\n```json\n$jsonContent\n```';
+
+    return chatStream(fullPrompt, systemPrompt: systemPrompt);
   }
 
   /// 询问AI关于词典元素的流式版本
   Stream<LLMChunk> askAboutElementStream(
     String elementJson,
-    String path,
-    String question,
-  ) {
-    const systemPrompt =
-        '你是一位专业的语言学老师，擅长词汇、语法、翻译和语言文化解析。'
-        '用户会向你展示词典中的某段具体内容（如例句、释义、搭配、词源等），并提出问题。'
-        '请结合语言学知识和实际用法，给出准确、有深度的解答。'
-        '回答要简洁清晰、重点突出，语言风格贴近语言学习者的需求。';
+    String question, {
+    String appLanguage = 'English',
+  }) {
+    final systemPrompt =
+        'You are a professional language teacher with expertise in vocabulary, grammar, translation, and linguistic culture. '
+        'The user will show you a specific piece of content from a dictionary (such as an example sentence, definition, collocation, or etymology) and ask a question. '
+        'Provide accurate, in-depth answers drawing on linguistic knowledge and real-world usage. '
+        'Keep your response concise and focused.\n'
+        'Respond in $appLanguage.';
 
     final prompt =
-        '词典路径：$path\n\n'
-        '内容：\n'
+        'Dictionary content:\n'
         '```json\n'
         '$elementJson\n'
         '```\n\n'
-        '问题：$question\n\n'
-        '请针对上述内容和问题，给出专业、实用的解答。';
+        'Question: $question';
 
     return chatStream(prompt, systemPrompt: systemPrompt);
   }
@@ -194,16 +197,17 @@ class AIService {
     String question, {
     required List<Map<String, String>> history,
     String? context,
+    String appLanguage = 'English',
   }) {
-    const systemPrompt =
-        '你是一位专业的语言学习助手，擅长词汇解析、语法说明、翻译辨析和语言文化知识。'
-        '请提供准确、有帮助的回答，语言简洁明了。'
-        '若用户提供了学习上下文（如词典条目、例句等），请充分结合上下文作答，避免孤立回答。'
-        '对于语言相关问题，适当举例说明，帮助用户加深理解。';
+    final systemPrompt =
+        'You are a professional language learning assistant with expertise in vocabulary analysis, grammar, translation, and linguistic culture. '
+        'Provide accurate and helpful answers in a clear, concise style. '
+        'If the user provides a learning context (such as a dictionary entry or example sentence), incorporate it into your response.\n'
+        'Respond in $appLanguage.';
 
     String fullQuestion = question;
     if (context != null && context.isNotEmpty) {
-      fullQuestion = '当前学习上下文：\n$context\n\n用户问题：$question';
+      fullQuestion = 'Context:\n$context\n\nQuestion: $question';
     }
 
     return chatWithHistoryStream(
