@@ -4688,7 +4688,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
 
     // 获取 phrases 的 GlobalKey 用于滚动定位
-    final phrasesKey = _getElementKey('phrases');
+    final phrasesKey = _getElementKey('phrase');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

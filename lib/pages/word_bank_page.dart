@@ -13,6 +13,7 @@ import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
 import '../widgets/search_bar.dart';
 import '../services/advanced_search_settings_service.dart';
+import '../services/search_history_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/entry_event_bus.dart';
 import '../services/font_loader_service.dart';
@@ -1402,6 +1403,9 @@ class _WordBankPageState extends State<WordBankPage> {
       final entryGroup = DictionaryEntryGroup.groupEntries(
         searchResult.entries,
       );
+      await SearchHistoryService().addSearchRecord(word);
+      EntryEventBus().emitSearchHistoryChanged();
+      if (!mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(

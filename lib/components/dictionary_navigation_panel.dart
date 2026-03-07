@@ -753,7 +753,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               section.entry.dictId ?? '',
               currentSectionIndex,
               true,
-              targetPath: 'phrases',
+              targetPath: 'phrase',
             );
           },
           mouseCursor: SystemMouseCursors.click,
@@ -798,7 +798,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'phonetic', // 根节点 phonetic 不生成目录
       'sense',
       'sense_group',
-      'phrases', // 唯一正确字段名，不生成目录
+      'phrase', // toJson() 输出 'phrase'，不生成目录
       'data',
       'hiddenLanguages',
       'hidden_languages',

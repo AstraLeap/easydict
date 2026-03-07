@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme_provider.dart';
 import '../core/utils/toast_utils.dart';
-import '../data/services/ai_chat_database_service.dart';
+
 import '../i18n/strings.g.dart';
 import '../services/dict_update_check_service.dart';
 import '../services/app_update_service.dart';
@@ -26,17 +26,28 @@ import 'theme_color_page.dart';
 String _getLocalizedActionLabel(BuildContext context, String action) {
   final t = context.t.settings.actionLabel;
   switch (action) {
-    case PreferencesService.actionAiTranslate: return t.aiTranslate;
-    case PreferencesService.actionCopy: return t.copy;
-    case PreferencesService.actionAskAi: return t.askAi;
-    case PreferencesService.actionEdit: return t.edit;
-    case PreferencesService.actionSpeak: return t.speak;
-    case PreferencesService.actionBack: return t.back;
-    case PreferencesService.actionFavorite: return t.favorite;
-    case PreferencesService.actionToggleTranslate: return t.toggleTranslate;
-    case PreferencesService.actionAiHistory: return t.aiHistory;
-    case PreferencesService.actionResetEntry: return t.resetEntry;
-    default: return action;
+    case PreferencesService.actionAiTranslate:
+      return t.aiTranslate;
+    case PreferencesService.actionCopy:
+      return t.copy;
+    case PreferencesService.actionAskAi:
+      return t.askAi;
+    case PreferencesService.actionEdit:
+      return t.edit;
+    case PreferencesService.actionSpeak:
+      return t.speak;
+    case PreferencesService.actionBack:
+      return t.back;
+    case PreferencesService.actionFavorite:
+      return t.favorite;
+    case PreferencesService.actionToggleTranslate:
+      return t.toggleTranslate;
+    case PreferencesService.actionAiHistory:
+      return t.aiHistory;
+    case PreferencesService.actionResetEntry:
+      return t.resetEntry;
+    default:
+      return action;
   }
 }
 
@@ -230,7 +241,10 @@ class _SettingsPageState extends State<SettingsPage> {
             return AlertDialog(
               title: Text(context.t.settings.scaleDialog.confirmTitle),
               content: Text(
-                context.t.settings.scaleDialog.confirmBody(percent: (newScale * 100).round(), seconds: countdown),
+                context.t.settings.scaleDialog.confirmBody(
+                  percent: (newScale * 100).round(),
+                  seconds: countdown,
+                ),
               ),
               actions: [
                 TextButton(
@@ -636,11 +650,8 @@ class MiscSettingsPage extends StatefulWidget {
 
 class _MiscSettingsPageState extends State<MiscSettingsPage> {
   final double _contentScale = FontLoaderService().getDictionaryContentScale();
-  final _chatService = AiChatDatabaseService();
   final _englishDbService = EnglishDbService();
   final _preferencesService = PreferencesService();
-  int _recordCount = 0;
-  int _autoCleanupDays = 0;
   bool _neverAskAgain = false;
   bool _autoCheckDictUpdate = true;
   bool _englishDbExists = false;
@@ -653,14 +664,10 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   }
 
   Future<void> _loadData() async {
-    final count = await _chatService.getRecordCount();
-    final days = await _chatService.getAutoCleanupDays();
     final neverAsk = await _englishDbService.getNeverAskAgain();
     final autoCheck = await _preferencesService.getAutoCheckDictUpdate();
     final englishDbExists = await _englishDbService.dbExists();
     setState(() {
-      _recordCount = count;
-      _autoCleanupDays = days;
       _neverAskAgain = neverAsk;
       _autoCheckDictUpdate = autoCheck;
       _englishDbExists = englishDbExists;
@@ -689,86 +696,10 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                     padding: const EdgeInsets.all(16),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
-                        _buildSectionTitle(context, context.t.settings.misc_page.aiChatTitle),
-                        const SizedBox(height: 8),
-                        Card(
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                              color: colorScheme.outlineVariant.withOpacity(
-                                0.5,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                leading: Icon(
-                                  Icons.chat_bubble_outline,
-                                  color: colorScheme.primary,
-                                ),
-                                title: Text(context.t.settings.misc_page.recordCount),
-                                subtitle: Text(context.t.settings.misc_page.records(count: _recordCount)),
-                              ),
-                              Divider(
-                                height: 1,
-                                indent: 56,
-                                color: colorScheme.outlineVariant.withOpacity(
-                                  0.3,
-                                ),
-                              ),
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                leading: Icon(
-                                  Icons.auto_delete_outlined,
-                                  color: colorScheme.primary,
-                                ),
-                                title: Text(context.t.settings.misc_page.autoCleanup),
-                                subtitle: Text(
-                                  _autoCleanupDays == 0
-                                      ? context.t.settings.misc_page.noAutoCleanup
-                                      : context.t.settings.misc_page.keepRecentDays(days: _autoCleanupDays),
-                                ),
-                                trailing: const Icon(Icons.chevron_right),
-                                onTap: _showAutoCleanupDialog,
-                              ),
-                              Divider(
-                                height: 1,
-                                indent: 56,
-                                color: colorScheme.outlineVariant.withOpacity(
-                                  0.3,
-                                ),
-                              ),
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                leading: Icon(
-                                  Icons.delete_forever_outlined,
-                                  color: colorScheme.error,
-                                ),
-                                title: Text(
-                                  context.t.settings.misc_page.clearAll,
-                                  style: TextStyle(color: colorScheme.error),
-                                ),
-                                subtitle: Text(context.t.common.irreversible),
-                                onTap: _showClearAllConfirmDialog,
-                              ),
-                            ],
-                          ),
+                        _buildSectionTitle(
+                          context,
+                          context.t.settings.misc_page.auxDbTitle,
                         ),
-                        const SizedBox(height: 24),
-                        _buildSectionTitle(context, context.t.settings.misc_page.auxDbTitle),
                         const SizedBox(height: 8),
                         Card(
                           elevation: 0,
@@ -792,9 +723,21 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                   Icons.translate,
                                   color: colorScheme.primary,
                                 ),
-                                title: Text(context.t.settings.misc_page.skipAskRedirect),
+                                title: Text(
+                                  context.t.settings.misc_page.skipAskRedirect,
+                                ),
                                 subtitle: Text(
-                                  _neverAskAgain ? context.t.settings.misc_page.skipAskEnabled : context.t.settings.misc_page.skipAskDisabled,
+                                  _neverAskAgain
+                                      ? context
+                                            .t
+                                            .settings
+                                            .misc_page
+                                            .skipAskEnabled
+                                      : context
+                                            .t
+                                            .settings
+                                            .misc_page
+                                            .skipAskDisabled,
                                 ),
                                 trailing: Switch(
                                   value: _neverAskAgain,
@@ -840,8 +783,16 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                                 ),
                                 subtitle: Text(
                                   _englishDbExists
-                                      ? context.t.settings.misc_page.auxDbInstalled
-                                      : context.t.settings.misc_page.auxDbNotInstalled,
+                                      ? context
+                                            .t
+                                            .settings
+                                            .misc_page
+                                            .auxDbInstalled
+                                      : context
+                                            .t
+                                            .settings
+                                            .misc_page
+                                            .auxDbNotInstalled,
                                 ),
                                 onTap: _englishDbExists
                                     ? () => _showDeleteAuxDbDialog()
@@ -851,7 +802,10 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildSectionTitle(context, context.t.settings.misc_page.dictUpdateTitle),
+                        _buildSectionTitle(
+                          context,
+                          context.t.settings.misc_page.dictUpdateTitle,
+                        ),
                         const SizedBox(height: 8),
                         Card(
                           elevation: 0,
@@ -873,8 +827,16 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                               Icons.update,
                               color: colorScheme.primary,
                             ),
-                            title: Text(context.t.settings.misc_page.autoCheckDictUpdate),
-                            subtitle: Text(context.t.settings.misc_page.autoCheckDictUpdateSubtitle),
+                            title: Text(
+                              context.t.settings.misc_page.autoCheckDictUpdate,
+                            ),
+                            subtitle: Text(
+                              context
+                                  .t
+                                  .settings
+                                  .misc_page
+                                  .autoCheckDictUpdateSubtitle,
+                            ),
                             trailing: Switch(
                               value: _autoCheckDictUpdate,
                               onChanged: (value) async {
@@ -915,80 +877,6 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     );
   }
 
-  void _showAutoCleanupDialog() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final options = [
-      (0, context.t.settings.misc_page.noAutoCleanup),
-      (7, context.t.settings.misc_page.keep7Days),
-      (30, context.t.settings.misc_page.keep30Days),
-      (90, context.t.settings.misc_page.keep90Days),
-    ];
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.t.settings.misc_page.autoCleanupDialogTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: options.map((option) {
-            final (days, label) = option;
-            return RadioListTile<int>(
-              title: Text(label),
-              value: days,
-              groupValue: _autoCleanupDays,
-              activeColor: colorScheme.primary,
-              onChanged: (value) async {
-                if (value != null) {
-                  await _chatService.setAutoCleanupDays(value);
-                  setState(() => _autoCleanupDays = value);
-                  Navigator.pop(context);
-                }
-              },
-            );
-          }).toList(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(context.t.common.cancel),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showClearAllConfirmDialog() {
-    final colorScheme = Theme.of(context).colorScheme;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: colorScheme.error),
-            const SizedBox(width: 8),
-            Text(context.t.settings.misc_page.clearAllConfirmTitle),
-          ],
-        ),
-        content: Text(context.t.settings.misc_page.clearAllConfirmBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(context.t.common.cancel),
-          ),
-          FilledButton(
-            onPressed: () async {
-              await _chatService.clearAllRecords();
-              setState(() => _recordCount = 0);
-              Navigator.pop(context);
-              showToast(context, context.t.settings.misc_page.clearAllSuccess);
-            },
-            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
-            child: Text(context.t.common.clear),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showDeleteAuxDbDialog() {
     final colorScheme = Theme.of(context).colorScheme;
     showDialog(
@@ -1014,9 +902,15 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                 Navigator.pop(context);
                 if (deleted) {
                   setState(() => _englishDbExists = false);
-                  showToast(context, context.t.settings.misc_page.deleteAuxDbSuccess);
+                  showToast(
+                    context,
+                    context.t.settings.misc_page.deleteAuxDbSuccess,
+                  );
                 } else {
-                  showToast(context, context.t.settings.misc_page.deleteAuxDbNotExist);
+                  showToast(
+                    context,
+                    context.t.settings.misc_page.deleteAuxDbNotExist,
+                  );
                 }
               }
             },
@@ -1112,7 +1006,11 @@ class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
                                     ),
                                     color: colorScheme.surface,
                                     child: Text(
-                                      context.t.settings.clickActionDialog.primaryLabel,
+                                      context
+                                          .t
+                                          .settings
+                                          .clickActionDialog
+                                          .primaryLabel,
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: colorScheme.primary,
@@ -1237,7 +1135,12 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
   }
 
   void _showMaxItemsError() {
-    showToast(context, context.t.settings.toolbarDialog.maxItemsError(max: PreferencesService.maxToolbarItems));
+    showToast(
+      context,
+      context.t.settings.toolbarDialog.maxItemsError(
+        max: PreferencesService.maxToolbarItems,
+      ),
+    );
   }
 
   @override
@@ -1259,7 +1162,9 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                context.t.settings.toolbarDialog.hint(max: PreferencesService.maxToolbarItems),
+                context.t.settings.toolbarDialog.hint(
+                  max: PreferencesService.maxToolbarItems,
+                ),
                 style: TextStyle(
                   fontSize: 12,
                   color: colorScheme.onSurfaceVariant,
@@ -1386,7 +1291,9 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              isInToolbar ? context.t.settings.toolbarDialog.toolbar : context.t.settings.toolbarDialog.overflow,
+              isInToolbar
+                  ? context.t.settings.toolbarDialog.toolbar
+                  : context.t.settings.toolbarDialog.overflow,
               style: TextStyle(
                 fontSize: 10,
                 color: isInToolbar
