@@ -538,7 +538,7 @@ class DatabaseService {
   /// 1. 含有中文字符时，先将繁体转换为简体（与数据库构建脚本 normalize_headword 保持一致）
   /// 2. 小写化
   /// 3. 去除音调符号（Unicode 组合字符）
-  /// 4. 去除空格
+  /// 4. 去除两端空格（与数据库构建时的 normalize_text 保持一致，内部空格保留）
   String _normalizeSearchWord(String word) {
     // 含中文字符时，繁体转简体（与 build_db_from_jsonl.py 的 opencc t2s 处理保持一致）
     if (_chineseRegExp.hasMatch(word)) {
@@ -548,8 +548,8 @@ class DatabaseService {
     String normalized = word.toLowerCase();
     // 去除音调符号（Unicode组合字符）
     normalized = normalized.replaceAll(_diacriticsRegExp, '');
-    // 去除空格（与数据库构建时的 normalize_text 保持一致）
-    normalized = normalized.replaceAll(' ', '');
+    // 去除两端空格（与数据库构建时的 normalize_text 保持一致，内部空格保留）
+    normalized = normalized.trim();
     return normalized;
   }
 

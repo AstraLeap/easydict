@@ -3202,6 +3202,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         : 'en';
 
     final ScrollController threadScrollController = ScrollController();
+    final ScrollController listScrollController = ScrollController();
     final freeChatController = TextEditingController();
     final freeChatFocusNode = FocusNode();
     bool isFullScreen = startFullscreen;
@@ -3212,9 +3213,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) {
           _modalSetState = setModalState;
@@ -3736,18 +3735,15 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                           padding:
                                                               EdgeInsets.zero,
                                                           constraints:
-                                                              const BoxConstraints(),
-                                                          child: Padding(
-                                                            padding:
-                                                                const EdgeInsets.all(
-                                                                  8,
-                                                                ),
-                                                            child: Icon(
-                                                              Icons.refresh,
-                                                              size: 16,
-                                                              color: colorScheme
-                                                                  .onSurfaceVariant,
-                                                            ),
+                                                              const BoxConstraints(
+                                                                minWidth: 40,
+                                                                minHeight: 40,
+                                                              ),
+                                                          icon: Icon(
+                                                            Icons.refresh,
+                                                            size: 16,
+                                                            color: colorScheme
+                                                                .onSurfaceVariant,
                                                           ),
                                                           tooltip: context
                                                               .t
@@ -3860,7 +3856,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                     ),
                                   )
                                 : ListView.builder(
-                                    controller: scrollController,
+                                    controller: listScrollController,
                                     itemCount: conversationIds.length,
                                     itemBuilder: (ctx, i) {
                                       final cid = conversationIds[i];
@@ -3915,6 +3911,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                                       }
                                                     });
                                               },
+                                              onLongPress: () =>
+                                                  _deleteConversation(
+                                                    cid,
+                                                    context,
+                                                    colorScheme,
+                                                    setModalState,
+                                                  ),
+                                              onSecondaryTap: () =>
+                                                  _deleteConversation(
+                                                    cid,
+                                                    context,
+                                                    colorScheme,
+                                                    setModalState,
+                                                  ),
                                               child: Padding(
                                                 padding:
                                                     const EdgeInsets.symmetric(
@@ -4180,11 +4190,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   ],
                 ),
               );
-              // 全屏时使用 ClipRect 裁剪圆角，顶部 padding 已手动留起状态栏空间
-              if (isFullScreen) {
-                return ClipRect(child: content);
-              }
-              return content;
+              return Material(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: isFullScreen
+                    ? null
+                    : const BorderRadius.vertical(top: Radius.circular(16)),
+                clipBehavior: isFullScreen ? Clip.none : Clip.antiAlias,
+                child: content,
+              );
             },
           );
         },
@@ -4193,6 +4206,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       _modalSetState = null;
       _isModalActive = false;
       threadScrollController.dispose();
+      listScrollController.dispose();
       freeChatController.dispose();
       freeChatFocusNode.dispose();
     });
@@ -4807,6 +4821,46 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
     _pendingAiRequests[requestId] = sub;
     _pendingRequestsVersionNotifier.value++;
+  }
+
+  Future<void> _deleteConversation(
+    String conversationId,
+    BuildContext context,
+    ColorScheme colorScheme,
+    StateSetter setModalState,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: Text(context.t.common.delete),
+        content: Text(context.t.entry.deleteRecordConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, false),
+            child: Text(context.t.common.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            style: TextButton.styleFrom(foregroundColor: colorScheme.error),
+            child: Text(context.t.common.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      final recordsToDelete = _aiChatHistory
+          .where((r) => r.conversationId == conversationId)
+          .toList();
+      for (final r in recordsToDelete) {
+        await _aiChatDatabaseService.deleteRecord(r.id);
+      }
+      if (mounted) {
+        setState(() {
+          _aiChatHistory.removeWhere((r) => r.conversationId == conversationId);
+        });
+        setModalState(() {});
+      }
+    }
   }
 
   void _showClearAllChatHistoryConfirmDialog(
