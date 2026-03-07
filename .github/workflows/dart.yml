@@ -25,6 +25,9 @@ jobs:
             os: windows-latest
             build_cmd: flutter build windows --release
             artifact_path: easydict-*-windows-x64.zip
+            setup_cmd: |
+              choco install llvm -y
+              echo "C:\Program Files\LLVM\bin" >> $GITHUB_PATH
 
           - target: linux
             os: ubuntu-latest
@@ -46,6 +49,11 @@ jobs:
         with:
           channel: "stable"
           cache: true
+
+      - name: Setup Platform Dependencies
+        if: matrix.setup_cmd != ''
+        run: ${{ matrix.setup_cmd }}
+        shell: bash
 
       - name: Install dependencies
         run: flutter pub get
