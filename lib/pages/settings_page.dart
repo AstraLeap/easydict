@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme_provider.dart';
 import '../core/utils/toast_utils.dart';
+import '../core/utils/language_utils.dart';
 
 import '../i18n/strings.g.dart';
 import '../services/dict_update_check_service.dart';
@@ -239,12 +240,16 @@ class _SettingsPageState extends State<SettingsPage> {
               }
             });
             return AlertDialog(
-              title: Text(context.t.settings.scaleDialog.confirmTitle),
+              title: Text(
+                context.t.settings.scaleDialog.confirmTitle,
+                locale: getFontLocale(),
+              ),
               content: Text(
                 context.t.settings.scaleDialog.confirmBody(
                   percent: (newScale * 100).round(),
                   seconds: countdown,
                 ),
+                locale: getFontLocale(),
               ),
               actions: [
                 TextButton(
@@ -253,7 +258,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     dialogResult = false;
                     Navigator.of(dialogContext).pop();
                   },
-                  child: Text(context.t.common.undo),
+                  child: Text(context.t.common.undo, locale: getFontLocale()),
                 ),
                 FilledButton(
                   onPressed: () {
@@ -261,7 +266,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     dialogResult = true;
                     Navigator.of(dialogContext).pop();
                   },
-                  child: Text(context.t.common.confirm),
+                  child: Text(
+                    context.t.common.confirm,
+                    locale: getFontLocale(),
+                  ),
                 ),
               ],
             );
@@ -284,10 +292,10 @@ class _SettingsPageState extends State<SettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final contentScale = FontLoaderService().getDictionaryContentScale();
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: PageScaleWrapper(
-          scale: contentScale,
+      body: PageScaleWrapper(
+        scale: contentScale,
+        child: SafeArea(
+          bottom: false,
           child: CustomScrollView(
             slivers: [
               SliverPadding(
@@ -385,7 +393,6 @@ class _SettingsPageState extends State<SettingsPage> {
                           title: context.t.settings.appLanguage,
                           icon: Icons.language_outlined,
                           iconColor: colorScheme.primary,
-                          subtitle: _getLocaleLabel(context),
                           onTap: _showLanguageDialog,
                         ),
                         _buildSettingsTile(
@@ -529,7 +536,7 @@ class _SettingsPageState extends State<SettingsPage> {
       leading: Icon(icon, color: effectiveIconColor, size: 24),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
       subtitle: subtitle != null
           ? Text(

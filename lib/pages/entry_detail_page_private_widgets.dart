@@ -170,41 +170,26 @@ class _BlinkingIconState extends State<_BlinkingIcon>
 
 /// 构建 AI 聊天内容用的 MarkdownStyleSheet。
 ///
-/// [sourceLang] 字典源语言（如 'en'），用作首选字体族。
-/// [targetLang] 目标/UI 语言（如 'zh'），用作备用字体族。
+/// AI 聊天内容统一使用系统默认字体（SourceSans3/SourceSerif4），
+/// 不使用用户自定义字体，以保持界面一致性。
 ///
 /// 修复"斜体太斜"问题：em 和 blockquote 的斜体改用带真实斜体字形的
 /// SourceSans3 / SourceSerif4，避免合成斜体对 CJK 字形产生极端倾斜。
-MarkdownStyleSheet _buildAiMarkdownStyleSheet(
-  BuildContext context, {
-  String sourceLang = 'en',
-  String targetLang = 'zh',
-}) {
+MarkdownStyleSheet _buildAiMarkdownStyleSheet(BuildContext context) {
   final theme = Theme.of(context);
   final cs = theme.colorScheme;
-  final fontService = FontLoaderService();
 
-  // 按"源语言字体在前、目标语言字体在后"的顺序构建字体回退链
-  final sourceFontInfo = fontService.getFontInfo(sourceLang, isSerif: false);
-  final targetFontInfo = fontService.getFontInfo(targetLang, isSerif: false);
-  final srcFamily = sourceFontInfo?.fontFamily ?? 'SourceSans3';
-  final tgtFamily = targetFontInfo?.fontFamily ?? 'SourceSans3';
+  // AI 聊天内容使用系统默认字体，不使用用户自定义字体
+  const firstFont = 'SourceSans3';
 
-  // 用于正文文本的基准 TextStyle（包含自定义字体回退链）
   final baseBody = theme.textTheme.bodyMedium?.copyWith(
     height: 1.6,
-    fontFamily: srcFamily,
-    fontFamilyFallback: srcFamily != tgtFamily
-        ? [tgtFamily, 'SourceSans3', 'SourceSerif4']
-        : ['SourceSans3', 'SourceSerif4'],
+    fontFamily: firstFont,
   );
 
-  // 斜体专用 TextStyle：指定 SourceSans3（内置真实斜体字形）为首选，
-  // 避免 CJK 字形被合成斜体变换拉歪。
   final italicBody = baseBody?.copyWith(
     fontStyle: FontStyle.italic,
-    fontFamily: 'SourceSans3',
-    fontFamilyFallback: [srcFamily, tgtFamily, 'SourceSerif4'],
+    fontFamily: firstFont,
   );
 
   return MarkdownStyleSheet.fromTheme(theme).copyWith(
@@ -212,20 +197,17 @@ MarkdownStyleSheet _buildAiMarkdownStyleSheet(
     h1: theme.textTheme.titleLarge?.copyWith(
       fontWeight: FontWeight.w700,
       height: 1.4,
-      fontFamily: srcFamily,
-      fontFamilyFallback: [tgtFamily, 'SourceSerif4'],
+      fontFamily: firstFont,
     ),
     h2: theme.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w700,
       height: 1.4,
-      fontFamily: srcFamily,
-      fontFamilyFallback: [tgtFamily, 'SourceSerif4'],
+      fontFamily: firstFont,
     ),
     h3: theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w600,
       height: 1.4,
-      fontFamily: srcFamily,
-      fontFamilyFallback: [tgtFamily, 'SourceSerif4'],
+      fontFamily: firstFont,
     ),
     h1Padding: const EdgeInsets.only(top: 16, bottom: 4),
     h2Padding: const EdgeInsets.only(top: 12, bottom: 4),
@@ -276,14 +258,8 @@ MarkdownStyleSheet _buildAiMarkdownStyleSheet(
 /// 延迟渲染 MarkdownBody，避免在 ExpansionTile 展开动画期间带来卡顿
 class _LazyMarkdownBody extends StatefulWidget {
   final String data;
-  final String sourceLang;
-  final String targetLang;
 
-  const _LazyMarkdownBody({
-    required this.data,
-    this.sourceLang = 'en',
-    this.targetLang = 'zh',
-  });
+  const _LazyMarkdownBody({required this.data});
 
   @override
   State<_LazyMarkdownBody> createState() => _LazyMarkdownBodyState();
@@ -324,11 +300,7 @@ class _LazyMarkdownBodyState extends State<_LazyMarkdownBody> {
       child: MarkdownBody(
         data: widget.data,
         selectable: true,
-        styleSheet: _buildAiMarkdownStyleSheet(
-          context,
-          sourceLang: widget.sourceLang,
-          targetLang: widget.targetLang,
-        ),
+        styleSheet: _buildAiMarkdownStyleSheet(context),
       ),
     );
   }
@@ -341,16 +313,12 @@ class _AiChatDetailContent extends StatefulWidget {
   final AiChatRecord record;
   final ValueNotifier<(String, String?, bool)>? streamingNotifier;
   final ScrollController? scrollController;
-  final String sourceLang;
-  final String targetLang;
 
   const _AiChatDetailContent({
     super.key,
     required this.record,
     this.streamingNotifier,
     this.scrollController,
-    this.sourceLang = 'en',
-    this.targetLang = 'zh',
   });
 
   @override
@@ -490,11 +458,7 @@ class _AiChatDetailContentState extends State<_AiChatDetailContent> {
   }
 
   MarkdownStyleSheet _buildMarkdownStyleSheet(BuildContext context) =>
-      _buildAiMarkdownStyleSheet(
-        context,
-        sourceLang: widget.sourceLang,
-        targetLang: widget.targetLang,
-      );
+      _buildAiMarkdownStyleSheet(context);
 
   @override
   Widget build(BuildContext context) {
@@ -784,20 +748,11 @@ class _AiChatDetailPageState extends State<_AiChatDetailPage> {
         content: Shortcuts(
           shortcuts: {
             LogicalKeySet(LogicalKeyboardKey.enter): const _SendIntent(),
-            LogicalKeySet(
-                  LogicalKeyboardKey.shift,
-                  LogicalKeyboardKey.enter,
-                ):
+            LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.enter):
                 const _NewLineIntent(),
-            LogicalKeySet(
-                  LogicalKeyboardKey.control,
-                  LogicalKeyboardKey.enter,
-                ):
+            LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.enter):
                 const _NewLineIntent(),
-            LogicalKeySet(
-                  LogicalKeyboardKey.meta,
-                  LogicalKeyboardKey.enter,
-                ):
+            LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.enter):
                 const _NewLineIntent(),
           },
           child: Actions(

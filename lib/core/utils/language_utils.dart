@@ -1,4 +1,13 @@
+import 'dart:ui';
 import '../../i18n/strings.g.dart';
+
+Locale? getFontLocale() {
+  final currentLocale = LocaleSettings.currentLocale;
+  if (currentLocale == AppLocale.zh) {
+    return const Locale('zh', 'CN');
+  }
+  return null;
+}
 
 class LanguageUtils {
   /// 使用字母文字（拉丁、西里尔、阿拉伯等拼音字母书写系统）的语言代码集合。

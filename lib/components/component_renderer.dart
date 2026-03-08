@@ -343,6 +343,10 @@ FormattedTextResult parseFormattedText(
 
   /// 可选：覆盖带 recognizer 的 TextSpan 的鼠标样式（不影响链接跳转 span）。
   MouseCursor? mouseCursor,
+
+  /// 是否应用用户自定义字体，默认为 true。
+  /// AI 内容、JSON 编辑器等非字典内容应设为 false。
+  bool useCustomFont = true,
 }) {
   // elementType 优先覆盖 isSerif
   final effectiveIsSerif = elementType != null
@@ -362,7 +366,8 @@ FormattedTextResult parseFormattedText(
     sourceLanguage: sourceLanguage,
   );
 
-  if (effectiveLanguage != null) {
+  // 仅当 useCustomFont 为 true 时才应用自定义字体
+  if (useCustomFont && effectiveLanguage != null) {
     final fontService = FontLoaderService();
     final fontInfo = fontService.getFontInfo(
       effectiveLanguage,
@@ -1633,6 +1638,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     bool isBold = false,
     DictElementType? elementType,
     MouseCursor? mouseCursor,
+    bool useCustomFont = true,
   }) {
     return parseFormattedText(
       text,
@@ -1651,6 +1657,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       isBold: isBold,
       elementType: elementType,
       mouseCursor: mouseCursor,
+      useCustomFont: useCustomFont,
     );
   }
 
@@ -3874,11 +3881,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
       if (value == null || key == 'pos') continue;
 
       final isPronunciation = key == 'pronunciation';
+      final isComplex = key == 'complex';
       final isPlain =
           key == 'pattern' ||
           key == 'region' ||
           key == 'grammar' ||
-          isPronunciation;
+          isPronunciation ||
+          isComplex;
       final hasBackground = !isPlain && key != 'pos';
       final pronunciationOverride = isPronunciation
           ? Theme.of(context).colorScheme.onSurface
@@ -3893,7 +3902,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
           final itemValue = item is String ? item : '$item';
           final formattedValue = key == 'pattern'
               ? '[$itemValue]'
-              : (key == 'grammar' ? '< $itemValue >' : itemValue);
+              : (key == 'grammar'
+                    ? '< $itemValue >'
+                    : (isComplex ? '「$itemValue」' : itemValue));
           final isBold =
               key == 'pattern' || key == 'grammar' || key == 'region';
           final labelWidget = _buildLabelWidget(
@@ -3906,6 +3917,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             isPattern: key == 'pattern',
             isBold: isBold,
             overrideColor: pronunciationOverride,
+            fontSize: isComplex ? 15.0 : null,
           );
           // 将Widget包装为WidgetSpan
           spans.add(
@@ -3918,7 +3930,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
       } else {
         final formattedValue = key == 'pattern'
             ? '[$displayValue]'
-            : (key == 'grammar' ? '< $displayValue >' : displayValue);
+            : (key == 'grammar'
+                  ? '< $displayValue >'
+                  : (isComplex ? '「$displayValue」' : displayValue));
         final isBold = key == 'pattern' || key == 'grammar' || key == 'region';
         final labelWidget = _buildLabelWidget(
           context,
@@ -3929,6 +3943,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           isPattern: key == 'pattern',
           isBold: isBold,
           overrideColor: pronunciationOverride,
+          fontSize: isComplex ? 15.0 : null,
         );
         // 将Widget包装为WidgetSpan
         spans.add(
@@ -5278,6 +5293,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<String> path,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textStyle = TextStyle(
+      fontSize: 13,
+      color: colorScheme.onSurface,
+      letterSpacing: 0.15,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -5303,15 +5323,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 return _buildTappableWidget(
                   context: context,
                   pathData: _PathData(itemPath, 'Inline Item'),
+                  text: entry.value,
+                  textStyle: textStyle,
                   child: RichText(
                     text: TextSpan(
                       children: _parseFormattedText(
                         entry.value,
-                        TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.onSurface,
-                          letterSpacing: 0.15,
-                        ),
+                        textStyle,
                         context: context,
                       ).spans,
                     ),

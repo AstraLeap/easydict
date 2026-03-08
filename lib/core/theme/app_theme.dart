@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:easydict/i18n/strings.g.dart';
 
 class AppTheme {
   /// 主字体族：Windows 下以 Microsoft YaHei UI 为主（含中文+拉丁），
@@ -16,27 +17,19 @@ class AppTheme {
   static List<String> get fontFamilyFallback {
     if (Platform.isWindows) {
       return [
-        'Segoe UI',           // Windows 拉丁优选
-        'Microsoft YaHei',    // 备用 CJK
+        'Segoe UI', // Windows 拉丁优选
+        'Microsoft YaHei Variable', // 可变字重版本（Windows 11+）
+        'Microsoft YaHei', // 备用 CJK
         'Arial',
         'SimHei',
         'SimSun',
       ];
     }
     if (Platform.isMacOS || Platform.isIOS) {
-      return [
-        'Helvetica Neue',
-        'PingFang SC',
-        'Arial',
-      ];
+      return ['Helvetica Neue', 'PingFang SC', 'Arial'];
     }
     // Android / Linux
-    return [
-      'Noto Sans CJK SC',
-      'Noto Sans SC',
-      'Ubuntu',
-      'Arial',
-    ];
+    return ['Noto Sans CJK SC', 'Noto Sans SC', 'Ubuntu', 'Arial'];
   }
 
   static SystemUiOverlayStyle lightSystemUiOverlayStyle() {
@@ -63,26 +56,39 @@ class AppTheme {
     );
   }
 
-  /// 为 TextTheme 每个样式附加 zh-CN locale，确保 CJK 统一汉字在所有
-  /// 平台（尤其 Windows DWrite）上统一使用简体中文字形，而非日文字形。
-  static TextTheme _withChineseLocale(TextTheme theme) {
-    const loc = Locale('zh', 'CN');
+  /// 根据应用语言获取字体渲染的 locale。
+  ///
+  /// 当应用语言为中文时，返回 zh-CN 以确保使用简体中文字形；
+  /// 其他情况返回 null，让系统根据系统 locale 自动选择字形。
+  static Locale? _getFontLocale() {
+    final currentLocale = LocaleSettings.currentLocale;
+    if (currentLocale == AppLocale.zh) {
+      return const Locale('zh', 'CN');
+    }
+    return null;
+  }
+
+  /// 为 TextTheme 每个样式附加 locale，确保 CJK 统一汉字使用正确的字形。
+  /// 当应用语言为中文时，强制使用简体中文字形（避免日文字形）。
+  static TextTheme _withLocale(TextTheme theme) {
+    final loc = _getFontLocale();
+    if (loc == null) return theme;
     return theme.copyWith(
-      displayLarge:   theme.displayLarge?.copyWith(locale: loc),
-      displayMedium:  theme.displayMedium?.copyWith(locale: loc),
-      displaySmall:   theme.displaySmall?.copyWith(locale: loc),
-      headlineLarge:  theme.headlineLarge?.copyWith(locale: loc),
+      displayLarge: theme.displayLarge?.copyWith(locale: loc),
+      displayMedium: theme.displayMedium?.copyWith(locale: loc),
+      displaySmall: theme.displaySmall?.copyWith(locale: loc),
+      headlineLarge: theme.headlineLarge?.copyWith(locale: loc),
       headlineMedium: theme.headlineMedium?.copyWith(locale: loc),
-      headlineSmall:  theme.headlineSmall?.copyWith(locale: loc),
-      titleLarge:     theme.titleLarge?.copyWith(locale: loc),
-      titleMedium:    theme.titleMedium?.copyWith(locale: loc),
-      titleSmall:     theme.titleSmall?.copyWith(locale: loc),
-      bodyLarge:      theme.bodyLarge?.copyWith(locale: loc),
-      bodyMedium:     theme.bodyMedium?.copyWith(locale: loc),
-      bodySmall:      theme.bodySmall?.copyWith(locale: loc),
-      labelLarge:     theme.labelLarge?.copyWith(locale: loc),
-      labelMedium:    theme.labelMedium?.copyWith(locale: loc),
-      labelSmall:     theme.labelSmall?.copyWith(locale: loc),
+      headlineSmall: theme.headlineSmall?.copyWith(locale: loc),
+      titleLarge: theme.titleLarge?.copyWith(locale: loc),
+      titleMedium: theme.titleMedium?.copyWith(locale: loc),
+      titleSmall: theme.titleSmall?.copyWith(locale: loc),
+      bodyLarge: theme.bodyLarge?.copyWith(locale: loc),
+      bodyMedium: theme.bodyMedium?.copyWith(locale: loc),
+      bodySmall: theme.bodySmall?.copyWith(locale: loc),
+      labelLarge: theme.labelLarge?.copyWith(locale: loc),
+      labelMedium: theme.labelMedium?.copyWith(locale: loc),
+      labelSmall: theme.labelSmall?.copyWith(locale: loc),
     );
   }
 
@@ -93,7 +99,7 @@ class AppTheme {
     final fallback = fontFamilyFallback;
     final typo = Typography.material2021(platform: defaultTargetPlatform);
     final isDark = colorScheme.brightness == Brightness.dark;
-    final textTheme = _withChineseLocale(
+    final textTheme = _withLocale(
       (isDark ? typo.white : typo.black).apply(
         fontFamily: family,
         fontFamilyFallback: fallback,

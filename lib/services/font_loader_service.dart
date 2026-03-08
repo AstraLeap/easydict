@@ -288,6 +288,71 @@ class FontLoaderService {
     );
   }
 
+  /// 获取统一的字体回退链，用于 AI 聊天等需要统一字体排序的场景。
+  ///
+  /// 排序规则：
+  /// 1. 大框架：英文字体 → 中文字体 → 日文字体 → 韩文字体 → 其他语言字体
+  /// 2. 每个语言内部：用户自定义字体 → 系统默认字体（SourceSans3/SourceSerif4）
+  ///
+  /// [isSerif] 是否使用衬线字体
+  /// [isItalic] 是否使用斜体
+  List<String> getUnifiedFontFallbackChain({bool isSerif = false, bool isItalic = false}) {
+    final chain = <String>[];
+    final addedFonts = <String>{};
+
+    String fontType;
+    if (isSerif) {
+      fontType = isItalic ? 'serif_italic' : 'serif_regular';
+    } else {
+      fontType = isItalic ? 'sans_italic' : 'sans_regular';
+    }
+
+    final bundledFont = isSerif ? 'SourceSerif4' : 'SourceSans3';
+
+    void addFontIfExists(String language) {
+      final fontKey = '${language}_$fontType';
+      if (_loadedFonts[fontKey] == true) {
+        final fontFamily = _getFontFamilyName(language, fontType);
+        if (!addedFonts.contains(fontFamily)) {
+          chain.add(fontFamily);
+          addedFonts.add(fontFamily);
+        }
+      }
+    }
+
+    final languageOrder = [
+      'en',
+      'zh-hans',
+      'zh-hant',
+      'ja',
+      'ko',
+      'fr',
+      'de',
+      'es',
+      'it',
+      'ru',
+      'pt',
+      'ar',
+    ];
+
+    for (final lang in languageOrder) {
+      addFontIfExists(lang);
+    }
+
+    final allFonts = getAllAvailableFonts();
+    for (final lang in allFonts.keys) {
+      if (!languageOrder.contains(lang)) {
+        addFontIfExists(lang);
+      }
+    }
+
+    if (!addedFonts.contains(bundledFont)) {
+      chain.add(bundledFont);
+    }
+
+    return chain;
+  }
+
   String? _findFallbackFontType(String language, {required bool isSerif}) {
     final types = isSerif ? _serifTypes : _sansTypes;
     for (final type in types) {

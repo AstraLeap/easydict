@@ -513,6 +513,32 @@ class WordBankService {
     return tables.map((t) => t['name'] as String).toList();
   }
 
+  /// 获取有单词的语言列表
+  Future<List<String>> getAvailableLanguages() async {
+    final db = await database;
+    final tables = await db.rawQuery('''
+      SELECT name FROM sqlite_master 
+      WHERE type='table' 
+      AND name NOT LIKE 'sqlite_%'
+      AND name NOT LIKE 'android_%'
+    ''');
+    
+    final languages = <String>[];
+    for (final table in tables) {
+      final tableName = table['name'] as String;
+      try {
+        final result = await db.rawQuery(
+          'SELECT COUNT(*) as count FROM $tableName',
+        );
+        final count = Sqflite.firstIntValue(result) ?? 0;
+        if (count > 0) {
+          languages.add(tableName);
+        }
+      } catch (_) {}
+    }
+    return languages;
+  }
+
   /// 添加单词到单词本
   /// [word] 单词
   /// [language] 语言代码（如 'en'）

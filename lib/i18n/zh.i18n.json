@@ -151,7 +151,16 @@
     "searchResults": "搜索结果",
     "noEnabledDicts": "当前没有已启用的词典",
     "wildcardHint": "LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字；h_llo → hello、hallo\n\nGLOB 模式（输入含 * ? [ ] ^），区分大小写：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符\n  例：h?llo → hello、hallo；[aeiou]* → 所有元音字母开头的词",
-    "dbDownloaded": "下载完成，搜索 \"{word}\" 以测试功能"
+    "dbDownloaded": "下载完成，搜索 \"{word}\" 以测试功能",
+    "dailyWords": "每日单词",
+    "dailyWordsRefresh": "刷新",
+    "dailyWordsSettings": "设置",
+    "dailyWordsCount": "单词数量",
+    "dailyWordsLanguage": "词表语言",
+    "dailyWordsList": "词表范围",
+    "dailyWordsAllLists": "全部词表",
+    "dailyWordsNoWords": "词表中暂无单词",
+    "dailyWordsNoList": "暂无可用词表"
   },
   "wordBank": {
     "title": "单词本",
@@ -648,6 +657,8 @@
     "wordNotFound": "未找到单词: {word}",
     "noPageContent": "当前页没有内容",
     "copiedToClipboard": "已复制到剪贴板",
+    "pathCopiedToClipboard": "路径已复制到剪贴板",
+    "pathNotFound": "路径不存在",
     "aiRequestFailed": "AI请求失败: {error}",
     "aiRequestFailedShort": "请求失败:",
     "aiChatFailed": "AI请求失败: {error}",
