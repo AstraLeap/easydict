@@ -799,6 +799,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'sense',
       'sense_group',
       'phrase', // toJson() 输出 'phrase'，不生成目录
+      'phrases', // 原始 JSON 中的 'phrases' 字段，已被识别为 phrase 元素
       'data',
       'hiddenLanguages',
       'hidden_languages',

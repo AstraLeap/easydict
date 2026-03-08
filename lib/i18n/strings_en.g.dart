@@ -185,6 +185,15 @@ class _TranslationsSearchEn extends TranslationsSearchZh {
 	@override String get noEnabledDicts => 'No dictionaries are enabled';
 	@override String get wildcardHint => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help; h_llo → hello, hallo\n\nGLOB pattern (enter * ? [ ] ^), case-sensitive:\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them\n  e.g. h?llo → hello, hallo; [aeiou]* → words starting with a vowel';
 	@override String dbDownloaded({required Object word}) => 'Download complete, search "${word}" to test';
+	@override String get dailyWords => 'Daily Words';
+	@override String get dailyWordsRefresh => 'Refresh';
+	@override String get dailyWordsSettings => 'Settings';
+	@override String get dailyWordsCount => 'Word Count';
+	@override String get dailyWordsLanguage => 'List Language';
+	@override String get dailyWordsList => 'List Scope';
+	@override String get dailyWordsAllLists => 'All Lists';
+	@override String get dailyWordsNoWords => 'No words in the list';
+	@override String get dailyWordsNoList => 'No list available';
 }
 
 // Path: wordBank
@@ -728,6 +737,8 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String wordNotFound({required Object word}) => 'Word not found: ${word}';
 	@override String get noPageContent => 'No content on this page';
 	@override String get copiedToClipboard => 'Copied to clipboard';
+	@override String get pathCopiedToClipboard => 'Path copied to clipboard';
+	@override String get pathNotFound => 'Path not found';
 	@override String aiRequestFailed({required Object error}) => 'AI request failed: ${error}';
 	@override String get aiRequestFailedShort => 'Request failed:';
 	@override String aiChatFailed({required Object error}) => 'AI request failed: ${error}';
@@ -1065,6 +1076,15 @@ extension on TranslationsEn {
 			'search.noEnabledDicts' => 'No dictionaries are enabled',
 			'search.wildcardHint' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help; h_llo → hello, hallo\n\nGLOB pattern (enter * ? [ ] ^), case-sensitive:\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them\n  e.g. h?llo → hello, hallo; [aeiou]* → words starting with a vowel',
 			'search.dbDownloaded' => ({required Object word}) => 'Download complete, search "${word}" to test',
+			'search.dailyWords' => 'Daily Words',
+			'search.dailyWordsRefresh' => 'Refresh',
+			'search.dailyWordsSettings' => 'Settings',
+			'search.dailyWordsCount' => 'Word Count',
+			'search.dailyWordsLanguage' => 'List Language',
+			'search.dailyWordsList' => 'List Scope',
+			'search.dailyWordsAllLists' => 'All Lists',
+			'search.dailyWordsNoWords' => 'No words in the list',
+			'search.dailyWordsNoList' => 'No list available',
 			'wordBank.title' => 'Word Bank',
 			'wordBank.empty' => 'Your word bank is empty',
 			'wordBank.emptyHint' => 'Tap the favorite button while looking up words to add them',
@@ -1434,6 +1454,8 @@ extension on TranslationsEn {
 			'dict.androidChoiceTitle' => 'Dictionary Storage',
 			'dict.androidAppDir' => 'App-specific directory',
 			'dict.androidAppDirWarning' => 'Data will be deleted if app is uninstalled',
+			_ => null,
+		} ?? switch (path) {
 			'dict.androidExtDir' => 'External public directory',
 			'dict.androidExtDirNote' => 'Data persists after app updates/uninstall',
 			'dict.androidRecommended' => 'Recommended',
@@ -1443,8 +1465,6 @@ extension on TranslationsEn {
 			'dict.permissionNeeded' => 'Requires All Files Access permission',
 			'dict.cantWrite' => ({required Object dir}) => 'Cannot write to ${dir}, check permissions',
 			'dict.cantWritePicked' => 'Cannot write to selected directory, please choose another',
-			_ => null,
-		} ?? switch (path) {
 			'dict.permissionDialogBody' => 'Tap OK to open Settings, enable "Manage All Files" permission, then return to the app.',
 			'dict.statsTitle' => 'Statistics',
 			'dict.entryCount' => 'Entries',
@@ -1543,6 +1563,8 @@ extension on TranslationsEn {
 			'entry.wordNotFound' => ({required Object word}) => 'Word not found: ${word}',
 			'entry.noPageContent' => 'No content on this page',
 			'entry.copiedToClipboard' => 'Copied to clipboard',
+			'entry.pathCopiedToClipboard' => 'Path copied to clipboard',
+			'entry.pathNotFound' => 'Path not found',
 			'entry.aiRequestFailed' => ({required Object error}) => 'AI request failed: ${error}',
 			'entry.aiRequestFailedShort' => 'Request failed:',
 			'entry.aiChatFailed' => ({required Object error}) => 'AI request failed: ${error}',

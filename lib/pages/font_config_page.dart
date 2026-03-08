@@ -1181,7 +1181,6 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
         ],
       ),
       actions: [
-        // 整行自定义：重置靠左，取消/确认靠右
         Row(
           children: [
             OutlinedButton.icon(
@@ -1193,7 +1192,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                 });
               },
               icon: const Icon(Icons.refresh, size: 16),
-              label: Text(context.t.common.reset),
+              label: Text(context.t.common.reset, locale: getFontLocale()),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -1205,7 +1204,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
             const Spacer(),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(context.t.common.cancel),
+              child: Text(context.t.common.cancel, locale: getFontLocale()),
             ),
             const SizedBox(width: 8),
             FilledButton(
@@ -1216,7 +1215,7 @@ class _ScaleDialogWidgetState extends State<ScaleDialogWidget> {
                   Navigator.pop(context);
                 }
               },
-              child: Text(context.t.common.ok),
+              child: Text(context.t.common.ok, locale: getFontLocale()),
             ),
           ],
         ),

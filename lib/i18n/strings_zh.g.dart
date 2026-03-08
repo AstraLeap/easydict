@@ -351,6 +351,33 @@ class TranslationsSearchZh {
 
 	/// zh: '下载完成，搜索 "{word}" 以测试功能'
 	String dbDownloaded({required Object word}) => '下载完成，搜索 "${word}" 以测试功能';
+
+	/// zh: '每日单词'
+	String get dailyWords => '每日单词';
+
+	/// zh: '刷新'
+	String get dailyWordsRefresh => '刷新';
+
+	/// zh: '设置'
+	String get dailyWordsSettings => '设置';
+
+	/// zh: '单词数量'
+	String get dailyWordsCount => '单词数量';
+
+	/// zh: '词表语言'
+	String get dailyWordsLanguage => '词表语言';
+
+	/// zh: '词表范围'
+	String get dailyWordsList => '词表范围';
+
+	/// zh: '全部词表'
+	String get dailyWordsAllLists => '全部词表';
+
+	/// zh: '词表中暂无单词'
+	String get dailyWordsNoWords => '词表中暂无单词';
+
+	/// zh: '暂无可用词表'
+	String get dailyWordsNoList => '暂无可用词表';
 }
 
 // Path: wordBank
@@ -1818,6 +1845,12 @@ class TranslationsEntryZh {
 	/// zh: '已复制到剪贴板'
 	String get copiedToClipboard => '已复制到剪贴板';
 
+	/// zh: '路径已复制到剪贴板'
+	String get pathCopiedToClipboard => '路径已复制到剪贴板';
+
+	/// zh: '路径不存在'
+	String get pathNotFound => '路径不存在';
+
 	/// zh: 'AI请求失败: {error}'
 	String aiRequestFailed({required Object error}) => 'AI请求失败: ${error}';
 
@@ -2432,6 +2465,15 @@ extension on Translations {
 			'search.noEnabledDicts' => '当前没有已启用的词典',
 			'search.wildcardHint' => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字；h_llo → hello、hallo\n\nGLOB 模式（输入含 * ? [ ] ^），区分大小写：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符\n  例：h?llo → hello、hallo；[aeiou]* → 所有元音字母开头的词',
 			'search.dbDownloaded' => ({required Object word}) => '下载完成，搜索 "${word}" 以测试功能',
+			'search.dailyWords' => '每日单词',
+			'search.dailyWordsRefresh' => '刷新',
+			'search.dailyWordsSettings' => '设置',
+			'search.dailyWordsCount' => '单词数量',
+			'search.dailyWordsLanguage' => '词表语言',
+			'search.dailyWordsList' => '词表范围',
+			'search.dailyWordsAllLists' => '全部词表',
+			'search.dailyWordsNoWords' => '词表中暂无单词',
+			'search.dailyWordsNoList' => '暂无可用词表',
 			'wordBank.title' => '单词本',
 			'wordBank.empty' => '单词本还是空的',
 			'wordBank.emptyHint' => '在查词时点击收藏按钮添加单词',
@@ -2801,6 +2843,8 @@ extension on Translations {
 			'dict.androidChoiceTitle' => '词典存储位置',
 			'dict.androidAppDir' => '应用专属目录',
 			'dict.androidAppDirWarning' => '卸载应用后词典数据将被删除',
+			_ => null,
+		} ?? switch (path) {
 			'dict.androidExtDir' => '外部公共目录',
 			'dict.androidExtDirNote' => '卸载或更新应用后词典仍可保留',
 			'dict.androidRecommended' => '推荐',
@@ -2810,8 +2854,6 @@ extension on Translations {
 			'dict.permissionNeeded' => '需申请「所有文件访问」权限',
 			'dict.cantWrite' => ({required Object dir}) => '无法写入 ${dir}，请检查权限',
 			'dict.cantWritePicked' => '无法写入所选目录，请重新选择',
-			_ => null,
-		} ?? switch (path) {
 			'dict.permissionDialogBody' => '点击「确定」后系统将跳转到设置页面，请开启「管理所有文件」权限后返回应用。',
 			'dict.statsTitle' => '统计信息',
 			'dict.entryCount' => '词条数',
@@ -2910,6 +2952,8 @@ extension on Translations {
 			'entry.wordNotFound' => ({required Object word}) => '未找到单词: ${word}',
 			'entry.noPageContent' => '当前页没有内容',
 			'entry.copiedToClipboard' => '已复制到剪贴板',
+			'entry.pathCopiedToClipboard' => '路径已复制到剪贴板',
+			'entry.pathNotFound' => '路径不存在',
 			'entry.aiRequestFailed' => ({required Object error}) => 'AI请求失败: ${error}',
 			'entry.aiRequestFailedShort' => '请求失败:',
 			'entry.aiChatFailed' => ({required Object error}) => 'AI请求失败: ${error}',

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/database_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../i18n/strings.g.dart';
+import '../widgets/path_navigator.dart';
 
 /// 表示 JSON 编辑器中可折叠的行范围。
 class _FoldRange {
@@ -22,9 +23,18 @@ List<_FoldRange> _computeFoldRanges(String text) {
     bool escaped = false;
     for (int j = 0; j < line.length; j++) {
       final ch = line[j];
-      if (escaped) { escaped = false; continue; }
-      if (ch == '\\' && inString) { escaped = true; continue; }
-      if (ch == '"') { inString = !inString; continue; }
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch == '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+      if (ch == '"') {
+        inString = !inString;
+        continue;
+      }
       if (inString) continue;
       if (ch == '{' || ch == '[') {
         stack.add(i);
@@ -75,6 +85,10 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
   int _currentEditPosition = 0;
   bool _hasSyntaxError = false;
   String? _errorMessage;
+  bool _isFullScreen = false;
+  List<String> _currentPath = [];
+  final GlobalKey<_FoldableCodeEditorState> _editorKey = GlobalKey();
+  final GlobalKey<PathNavigatorState> _pathNavigatorKey = GlobalKey();
 
   @override
   void initState() {
@@ -156,7 +170,10 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
 
   void _handleSave() async {
     if (_hasSyntaxError) {
-      showToast(context, context.t.entry.jsonSyntaxError(error: _errorMessage ?? ''));
+      showToast(
+        context,
+        context.t.entry.jsonSyntaxError(error: _errorMessage ?? ''),
+      );
       return;
     }
 
@@ -169,151 +186,222 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
     }
   }
 
+  void _scrollToPathLine(List<String> cursorPath) {
+    _editorKey.currentState?.scrollToPath(cursorPath);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final statusBarHeight = MediaQuery.of(context).viewPadding.top;
+    final screenSize = MediaQuery.of(context).size;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16,
-        right: 16,
-        top: 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return DraggableScrollableSheet(
+      initialChildSize: _isFullScreen ? 1.0 : 0.7,
+      minChildSize: _isFullScreen ? 1.0 : 0.5,
+      maxChildSize: _isFullScreen
+          ? 1.0
+          : (screenSize.height - statusBarHeight - 8) / screenSize.height,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          width: _isFullScreen ? screenSize.width : null,
+          padding: EdgeInsets.only(
+            top: _isFullScreen ? statusBarHeight + 8 : 16,
+            left: 16,
+            right: 16,
+            bottom: 16,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: _isFullScreen
+                ? BorderRadius.zero
+                : const BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: PathNavigator(
+                      key: _pathNavigatorKey,
+                      pathParts: widget.pathParts,
+                      cursorPath: _currentPath.isNotEmpty ? _currentPath : null,
+                      onNavigate: (newPathParts) {
+                        Navigator.pop(context);
+                        dynamic currentValue;
+                        try {
+                          currentValue = jsonDecode(_controller.text);
+                        } catch (_) {
+                          final json = widget.entry.toJson();
+                          currentValue = json;
+                        }
+                        for (final part in newPathParts) {
+                          if (currentValue is Map) {
+                            currentValue = currentValue[part];
+                          } else if (currentValue is List) {
+                            final index = int.tryParse(part);
+                            if (index != null) {
+                              currentValue = currentValue[index];
+                            }
+                          }
+                        }
+                        widget.onNavigate(newPathParts, currentValue);
+                      },
+                      onHomeTap: () {
+                        Navigator.pop(context);
+                        final json = widget.entry.toJson();
+                        widget.onNavigate([], json);
+                      },
+                      onCursorPathTap: (cursorPath) {
+                        _scrollToPathLine(cursorPath);
+                      },
+                      showReturnToStart:
+                          widget.initialPath != null &&
+                          widget.pathParts.join('.') !=
+                              widget.initialPath!.join('.'),
+                      onReturnToStart:
+                          widget.initialPath != null &&
+                              widget.pathParts.join('.') !=
+                                  widget.initialPath!.join('.')
+                          ? () {
+                              Navigator.pop(context);
+                              final startPath = widget.initialPath!;
+                              final json = widget.entry.toJson();
+                              dynamic currentValue = json;
+                              for (final part in startPath) {
+                                if (currentValue is Map) {
+                                  currentValue = currentValue[part];
+                                } else if (currentValue is List) {
+                                  int? index = int.tryParse(part);
+                                  if (index != null)
+                                    currentValue = currentValue[index];
+                                }
+                              }
+                              widget.onNavigate(startPath, currentValue);
+                            }
+                          : null,
+                      validatePath: (newPath) {
+                        final json = widget.entry.toJson();
+                        dynamic currentValue = json;
+
+                        for (final part in newPath) {
+                          if (currentValue is Map) {
+                            if (currentValue.containsKey(part)) {
+                              currentValue = currentValue[part];
+                            } else {
+                              return context.t.entry.pathNotFound;
+                            }
+                          } else if (currentValue is List) {
+                            final index = int.tryParse(part);
+                            if (index != null &&
+                                index >= 0 &&
+                                index < currentValue.length) {
+                              currentValue = currentValue[index];
+                            } else {
+                              return context.t.entry.pathNotFound;
+                            }
+                          } else {
+                            return context.t.entry.pathNotFound;
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _buildToolbarIconButton(
+                    icon: Icons.save,
+                    onPressed: _hasSyntaxError ? null : _handleSave,
+                    tooltip: context.t.common.save,
+                    color: _hasSyntaxError ? null : colorScheme.primary,
+                  ),
+                  _buildToolbarIconButton(
+                    icon: Icons.undo,
+                    onPressed: _currentEditPosition > 0 ? _undo : null,
+                    tooltip: context.t.common.undo,
+                  ),
+                  _buildToolbarIconButton(
+                    icon: Icons.redo,
+                    onPressed: _currentEditPosition < _undoStack.length - 1
+                        ? _redo
+                        : null,
+                    tooltip: context.t.common.redo,
+                  ),
+                  _buildToolbarIconButton(
+                    icon: Icons.format_align_left,
+                    onPressed: _formatJson,
+                    tooltip: context.t.entry.formatJson,
+                  ),
+                  _buildToolbarIconButton(
+                    icon: _hasSyntaxError
+                        ? Icons.error
+                        : Icons.check_circle_outline,
+                    onPressed: _validateJson,
+                    tooltip: _hasSyntaxError
+                        ? context.t.entry.syntaxError
+                        : context.t.entry.syntaxCheck,
+                    color: _hasSyntaxError ? colorScheme.error : null,
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _isFullScreen = !_isFullScreen;
+                      });
+                    },
+                    icon: Icon(
+                      _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                      size: 20,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: _isFullScreen
+                        ? context.t.common.exitFullscreen
+                        : context.t.common.fullscreen,
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, size: 20),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              if (_hasSyntaxError && _errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    context.t.entry.jsonErrorLabel(error: _errorMessage!),
+                    style: TextStyle(color: colorScheme.error, fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 12),
               Expanded(
-                child: _buildPathNavigator(
-                  context,
-                  widget.pathParts,
-                  (newPathParts) {
-                    Navigator.pop(context);
-                    final json = widget.entry.toJson();
-                    dynamic currentValue = json;
-                    for (final part in newPathParts) {
-                      if (currentValue is Map) {
-                        currentValue = currentValue[part];
-                      } else if (currentValue is List) {
-                        int? index = int.tryParse(part);
-                        if (index != null) currentValue = currentValue[index];
-                      }
-                    }
-                    widget.onNavigate(newPathParts, currentValue);
+                child: _FoldableCodeEditor(
+                  key: _editorKey,
+                  controller: _controller,
+                  hasSyntaxError: _hasSyntaxError,
+                  onTopLinePathChanged: (path) {
+                    setState(() {
+                      _currentPath = path;
+                    });
                   },
-                  onHomeTap: () {
-                    Navigator.pop(context);
-                    final json = widget.entry.toJson();
-                    widget.onNavigate([], json);
+                  onTap: () {
+                    _pathNavigatorKey.currentState?.stopEditing();
                   },
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              if (widget.initialPath != null &&
-                  widget.pathParts.join('.') != widget.initialPath!.join('.'))
-                _buildToolbarIconButton(
-                  icon: Icons.first_page,
-                  onPressed: () {
-                    Navigator.pop(context);
-                    final startPath = widget.initialPath!;
-                    final json = widget.entry.toJson();
-                    dynamic currentValue = json;
-                    for (final part in startPath) {
-                      if (currentValue is Map) {
-                        currentValue = currentValue[part];
-                      } else if (currentValue is List) {
-                        int? index = int.tryParse(part);
-                        if (index != null) currentValue = currentValue[index];
-                      }
-                    }
-                    widget.onNavigate(startPath, currentValue);
-                  },
-                  tooltip: context.t.entry.returnToStart,
-                  color: colorScheme.primary,
-                ),
-              _buildToolbarIconButton(
-                icon: Icons.undo,
-                onPressed: _currentEditPosition > 0 ? _undo : null,
-                tooltip: context.t.common.undo,
-              ),
-              _buildToolbarIconButton(
-                icon: Icons.redo,
-                onPressed: _currentEditPosition < _undoStack.length - 1
-                    ? _redo
-                    : null,
-                tooltip: context.t.common.redo,
-              ),
-              _buildToolbarIconButton(
-                icon: Icons.format_align_left,
-                onPressed: _formatJson,
-                tooltip: context.t.entry.formatJson,
-              ),
-              _buildToolbarIconButton(
-                icon: _hasSyntaxError
-                    ? Icons.error
-                    : Icons.check_circle_outline,
-                onPressed: _validateJson,
-                tooltip: _hasSyntaxError ? context.t.entry.syntaxError : context.t.entry.syntaxCheck,
-                color: _hasSyntaxError ? colorScheme.error : null,
-              ),
-            ],
-          ),
-          if (_hasSyntaxError && _errorMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                context.t.entry.jsonErrorLabel(error: _errorMessage!),
-                style: TextStyle(color: colorScheme.error, fontSize: 12),
-              ),
-            ),
-          const SizedBox(height: 12),
-          _FoldableCodeEditor(
-            controller: _controller,
-            hasSyntaxError: _hasSyntaxError,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(context.t.common.cancel),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _hasSyntaxError ? null : _handleSave,
-                child: Text(context.t.common.save),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
+        );
+      },
     );
-  }
-
-  Widget _buildFoldView(BuildContext context) {
-    // Kept for compatibility — no longer used directly.
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildFoldLine(
-    BuildContext context, {
-    required int lineIndex,
-    required String lineText,
-    required int? foldEndLine,
-    required bool isFolded,
-    required int hiddenCount,
-    required ColorScheme colorScheme,
-  }) {
-    return const SizedBox.shrink();
   }
 
   Widget _buildToolbarIconButton({
@@ -338,74 +426,6 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
     );
   }
-
-  Widget _buildPathNavigator(
-    BuildContext context,
-    List<String> pathParts,
-    Function(List<String>) onPathSelected, {
-    VoidCallback? onHomeTap,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        if (onHomeTap != null)
-          InkWell(
-            onTap: onHomeTap,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Icon(Icons.home, size: 18, color: colorScheme.primary),
-            ),
-          ),
-        ...pathParts.asMap().entries.expand((entry) {
-          final index = entry.key;
-          final part = entry.value;
-          final currentPath = pathParts.sublist(0, index + 1);
-
-          final widgets = <Widget>[];
-
-          if (index > 0) {
-            widgets.add(
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  '>',
-                  style: TextStyle(
-                    color: colorScheme.outline,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            );
-          }
-
-          final isLast = index == pathParts.length - 1;
-          widgets.add(
-            InkWell(
-              onTap: isLast ? null : () => onPathSelected(currentPath),
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  part,
-                  style: TextStyle(
-                    color: isLast
-                        ? colorScheme.primary
-                        : colorScheme.primary.withValues(alpha: 0.8),
-                    fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ),
-          );
-
-          return widgets;
-        }),
-      ],
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -422,13 +442,30 @@ class _LineNode {
   bool get isFolded => folded != null;
 }
 
+class _PathStackEntry {
+  final String key;
+  final String bracket;
+  int arrayIndex;
+
+  _PathStackEntry({
+    required this.key,
+    required this.bracket,
+    this.arrayIndex = 0,
+  });
+}
+
 class _FoldableCodeEditor extends StatefulWidget {
   final TextEditingController controller;
   final bool hasSyntaxError;
+  final void Function(List<String> path)? onTopLinePathChanged;
+  final VoidCallback? onTap;
 
   const _FoldableCodeEditor({
+    super.key,
     required this.controller,
     required this.hasSyntaxError,
+    this.onTopLinePathChanged,
+    this.onTap,
   });
 
   @override
@@ -436,22 +473,21 @@ class _FoldableCodeEditor extends StatefulWidget {
 }
 
 class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
-  // Logical line list (visible lines only; folded content lives in _LineNode.folded).
   final List<_LineNode> _nodes = [];
 
-  // Single TextField controller – enables native multi-line selection.
   late TextEditingController _displayCtrl;
 
-  // Scroll controller: manages editor scrolling.
   final ScrollController _textScrollCtrl = ScrollController();
+  final ScrollController _horizontalScrollCtrl = ScrollController();
 
-  // Foldable ranges computed from the current display text: startLine -> endLine.
   Map<int, int> _foldRanges = {};
 
   bool _syncing = false;
-  List<(int, String)> _stickyContextLines = [];
+  List<String> _currentPath = [];
+  int _cursorLine = -1;
+  bool _isProgrammaticScrolling = false;
 
-  static const double _lineHeight = 21.0; // fontSize(14) × height(1.5)
+  static const double _lineHeight = 21.0;
   static const TextStyle _lineStyle = TextStyle(
     fontFamily: 'Consolas',
     fontSize: 14,
@@ -469,6 +505,11 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _recomputeFoldRanges();
     widget.controller.addListener(_onParentChanged);
     _textScrollCtrl.addListener(_onScrollChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cursorLine = 0;
+      _displayCtrl.selection = const TextSelection.collapsed(offset: 0);
+      _updateCurrentPath();
+    });
   }
 
   @override
@@ -478,6 +519,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _displayCtrl.dispose();
     _textScrollCtrl.removeListener(_onScrollChanged);
     _textScrollCtrl.dispose();
+    _horizontalScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -515,14 +557,13 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _syncing = true;
     widget.controller.text = _fullText;
     _syncing = false;
-    // Recompute fold ranges after the current frame so we don't call setState
-    // inside a listener callback.
     final ranges = _computeFoldRanges(_displayText);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() {
           _foldRanges = {for (final r in ranges) r.startLine: r.endLine};
         });
+        _onSelectionChanged();
       }
     });
   }
@@ -538,7 +579,9 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _displayCtrl.text = _displayText;
     _syncing = false;
     _recomputeFoldRanges();
-    if (mounted) setState(() { _stickyContextLines = _computeStickyContext(); });
+    if (mounted) {
+      _updateCurrentPath();
+    }
   }
 
   // ── Text reconciliation ─────────────────────────────────────────
@@ -567,48 +610,419 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
       newEnd--;
     }
     // Replace the differing range.
-    final replacement =
-        newLines.sublist(start, newEnd + 1).map(_LineNode.new).toList();
+    final replacement = newLines
+        .sublist(start, newEnd + 1)
+        .map(_LineNode.new)
+        .toList();
     _nodes.replaceRange(start, oldEnd + 1, replacement);
   }
 
-  // ── Sticky context (VS Code-like) ─────────────────────────────
-
   void _onScrollChanged() {
     if (!mounted) return;
-    final newSticky = _computeStickyContext();
-    if (!_stickyEquals(newSticky, _stickyContextLines)) {
-      setState(() { _stickyContextLines = newSticky; });
+    _updateCurrentPath();
+    _keepCursorInView();
+  }
+
+  void _onSelectionChanged() {
+    if (!mounted) return;
+    final selection = _displayCtrl.selection;
+    if (selection.isValid) {
+      final cursorPos = selection.baseOffset;
+      final textBeforeCursor = _displayCtrl.text.substring(0, cursorPos);
+      final newCursorLine = '\n'.allMatches(textBeforeCursor).length;
+      if (newCursorLine != _cursorLine) {
+        _cursorLine = newCursorLine;
+        _updateCurrentPath();
+      }
+    } else if (_cursorLine != -1) {
+      _cursorLine = -1;
+      _updateCurrentPath();
     }
   }
 
-  bool _stickyEquals(List<(int, String)> a, List<(int, String)> b) {
+  void _keepCursorInView() {
+    if (!_textScrollCtrl.hasClients ||
+        _cursorLine < 0 ||
+        _nodes.isEmpty ||
+        _isProgrammaticScrolling) {
+      return;
+    }
+
+    final viewportHeight = _textScrollCtrl.position.viewportDimension;
+    final currentOffset = _textScrollCtrl.offset;
+    const topPadding = 8.0;
+
+    final firstFullyVisibleLine =
+        ((currentOffset - topPadding + _lineHeight - 0.1) / _lineHeight)
+            .ceil()
+            .clamp(0, _nodes.length - 1);
+    final lastFullyVisibleLine =
+        ((currentOffset + viewportHeight - topPadding - _lineHeight) /
+                _lineHeight)
+            .floor()
+            .clamp(0, _nodes.length - 1);
+
+    if (firstFullyVisibleLine > lastFullyVisibleLine) {
+      return;
+    }
+
+    if (_cursorLine < firstFullyVisibleLine) {
+      _setCursorToLineStart(firstFullyVisibleLine);
+    } else if (_cursorLine > lastFullyVisibleLine) {
+      _setCursorToLineStart(lastFullyVisibleLine);
+    }
+  }
+
+  void _setCursorToLineStart(int lineIndex) {
+    if (lineIndex < 0 || lineIndex >= _nodes.length) return;
+
+    int offset = 0;
+    for (int i = 0; i < lineIndex; i++) {
+      offset += _nodes[i].content.length + 1;
+    }
+
+    _displayCtrl.selection = TextSelection.collapsed(offset: offset);
+    _cursorLine = lineIndex;
+    _updateCurrentPath();
+  }
+
+  void scrollToPath(List<String> targetPath) {
+    if (targetPath.isEmpty || _nodes.isEmpty) return;
+
+    final targetLine = _findLineForPath(targetPath);
+    if (targetLine < 0) return;
+
+    const topPadding = 8.0;
+    final targetOffset = topPadding + targetLine * _lineHeight;
+
+    if (_textScrollCtrl.hasClients) {
+      _isProgrammaticScrolling = true;
+      _textScrollCtrl
+          .animateTo(
+            targetOffset,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          )
+          .then((_) {
+            if (mounted) {
+              _isProgrammaticScrolling = false;
+              _setCursorToLineStart(targetLine);
+            }
+          });
+    } else {
+      _setCursorToLineStart(targetLine);
+    }
+  }
+
+  int _findLineForPath(List<String> targetPath) {
+    if (targetPath.isEmpty) return -1;
+
+    final path = <String>[];
+    final stack = <_PathStackEntry>[];
+
+    for (int i = 0; i < _nodes.length; i++) {
+      final node = _nodes[i];
+      final line = node.content;
+
+      _parseLineForPath(line, stack, path, false);
+
+      if (_pathEquals(path, targetPath)) {
+        return i;
+      }
+
+      if (node.isFolded && node.folded != null) {
+        for (final hiddenLine in node.folded!) {
+          _parseLineForPath(hiddenLine, stack, path, false);
+          if (_pathEquals(path, targetPath)) {
+            return i;
+          }
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  void _updateCurrentPath() {
+    final newPath = _computePathForLine(_cursorLine);
+    if (!_pathEquals(newPath, _currentPath)) {
+      _currentPath = newPath;
+      widget.onTopLinePathChanged?.call(newPath);
+    }
+  }
+
+  bool _pathEquals(List<String> a, List<String> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
-      if (a[i].$1 != b[i].$1 || a[i].$2 != b[i].$2) return false;
+      if (a[i] != b[i]) return false;
     }
     return true;
   }
 
-  List<(int, String)> _computeStickyContext() {
+  List<String> _computePathForLine(int? targetLine) {
     final offset = _textScrollCtrl.hasClients ? _textScrollCtrl.offset : 0.0;
     const topPadding = 8.0;
-    final topLineIndex =
-        ((offset - topPadding) / _lineHeight).floor().clamp(0, _nodes.length);
-    if (topLineIndex <= 0) return [];
-    final stack = <(int, String)>[];
-    for (int i = 0; i < topLineIndex; i++) {
-      final line = _nodes[i].content;
-      final trimmedLeft = line.trimLeft();
-      if (trimmedLeft.startsWith('}') || trimmedLeft.startsWith(']')) {
-        if (stack.isNotEmpty) stack.removeLast();
-      }
-      final trimmedRight = line.trimRight();
-      if (trimmedRight.endsWith('{') || trimmedRight.endsWith('[')) {
-        stack.add((i, line));
+    final topLineIndex = ((offset - topPadding) / _lineHeight).floor().clamp(
+      0,
+      _nodes.length - 1,
+    );
+
+    final lineToCompute = targetLine ?? topLineIndex;
+    if (lineToCompute < 0 || _nodes.isEmpty) return [];
+
+    final path = <String>[];
+    final stack = <_PathStackEntry>[];
+
+    for (int i = 0; i <= lineToCompute && i < _nodes.length; i++) {
+      final node = _nodes[i];
+      final line = node.content;
+
+      _parseLineForPath(line, stack, path, i == lineToCompute);
+
+      if (node.isFolded && node.folded != null) {
+        for (final hiddenLine in node.folded!) {
+          _parseLineForPath(hiddenLine, stack, path, false);
+        }
       }
     }
-    return stack;
+
+    return path;
+  }
+
+  void _parseLineForPath(
+    String line,
+    List<_PathStackEntry> stack,
+    List<String> path,
+    bool isTargetLine,
+  ) {
+    bool inString = false;
+    bool escaped = false;
+    String? currentKey;
+    bool afterColon = false;
+    int charIndex = 0;
+
+    void processOpenBracket(String bracket) {
+      if (bracket == '{') {
+        if (currentKey != null) {
+          stack.add(_PathStackEntry(key: currentKey!, bracket: '{'));
+          path.add(currentKey!);
+        } else if (stack.isNotEmpty && stack.last.bracket == '[') {
+          final idx = stack.last.arrayIndex;
+          stack.add(_PathStackEntry(key: '$idx', bracket: '{'));
+          path.add('$idx');
+        }
+      } else {
+        if (currentKey != null) {
+          stack.add(
+            _PathStackEntry(key: currentKey!, bracket: '[', arrayIndex: 0),
+          );
+          path.add(currentKey!);
+        } else if (stack.isNotEmpty && stack.last.bracket == '[') {
+          final idx = stack.last.arrayIndex;
+          stack.add(_PathStackEntry(key: '$idx', bracket: '[', arrayIndex: 0));
+          path.add('$idx');
+        } else if (stack.isEmpty) {
+          stack.add(_PathStackEntry(key: '', bracket: '[', arrayIndex: 0));
+        }
+      }
+      currentKey = null;
+      afterColon = false;
+    }
+
+    void processCloseBracket() {
+      if (stack.isNotEmpty) {
+        stack.removeLast();
+        if (path.isNotEmpty) {
+          path.removeLast();
+        }
+        if (stack.isNotEmpty && stack.last.bracket == '[') {
+          stack.last.arrayIndex++;
+        }
+      }
+    }
+
+    void processCloseBracketForTargetLine() {
+      if (stack.isNotEmpty) {
+        stack.removeLast();
+        if (stack.isNotEmpty && stack.last.bracket == '[') {
+          stack.last.arrayIndex++;
+        }
+      }
+    }
+
+    void processValue() {
+      if (isTargetLine && stack.isNotEmpty) {
+        if (currentKey != null && stack.last.bracket == '{') {
+          path.add(currentKey!);
+        } else if (currentKey == null && stack.last.bracket == '[') {
+          path.add('${stack.last.arrayIndex}');
+        }
+      }
+      if (stack.isNotEmpty && stack.last.bracket == '[' && currentKey == null) {
+        stack.last.arrayIndex++;
+      }
+      currentKey = null;
+      afterColon = false;
+    }
+
+    while (charIndex < line.length) {
+      final ch = line[charIndex];
+
+      if (escaped) {
+        escaped = false;
+        charIndex++;
+        continue;
+      }
+
+      if (ch == '\\' && inString) {
+        escaped = true;
+        charIndex++;
+        continue;
+      }
+
+      if (ch == '"') {
+        if (!inString && !afterColon) {
+          if (stack.isNotEmpty && stack.last.bracket == '[') {
+            processValue();
+          } else {
+            final keyStart = charIndex + 1;
+            int keyEnd = keyStart;
+            bool keyEscaped = false;
+            while (keyEnd < line.length) {
+              final keyCh = line[keyEnd];
+              if (keyEscaped) {
+                keyEscaped = false;
+              } else if (keyCh == '\\') {
+                keyEscaped = true;
+              } else if (keyCh == '"') {
+                break;
+              }
+              keyEnd++;
+            }
+            if (keyEnd > keyStart) {
+              final keyBuilder = StringBuffer();
+              bool kEscaped = false;
+              for (int k = keyStart; k < keyEnd; k++) {
+                final keyCh = line[k];
+                if (kEscaped) {
+                  keyBuilder.write(keyCh);
+                  kEscaped = false;
+                } else if (keyCh == '\\') {
+                  kEscaped = true;
+                } else {
+                  keyBuilder.write(keyCh);
+                }
+              }
+              currentKey = keyBuilder.toString();
+            }
+          }
+        } else if (inString && afterColon) {
+          processValue();
+        }
+        inString = !inString;
+        charIndex++;
+        continue;
+      }
+
+      if (inString) {
+        charIndex++;
+        continue;
+      }
+
+      if (ch == ':') {
+        afterColon = true;
+        charIndex++;
+        continue;
+      }
+
+      if (ch == '{') {
+        processOpenBracket('{');
+        charIndex++;
+        continue;
+      }
+
+      if (ch == '[') {
+        processOpenBracket('[');
+        charIndex++;
+        continue;
+      }
+
+      if (ch == '}') {
+        if (isTargetLine) {
+          processCloseBracketForTargetLine();
+        } else {
+          processCloseBracket();
+        }
+        charIndex++;
+        continue;
+      }
+
+      if (ch == ']') {
+        if (isTargetLine) {
+          processCloseBracketForTargetLine();
+        } else {
+          processCloseBracket();
+        }
+        charIndex++;
+        continue;
+      }
+
+      if (ch == ',') {
+        currentKey = null;
+        afterColon = false;
+        charIndex++;
+        continue;
+      }
+
+      if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
+        if (afterColon) {
+          if (ch == 'n' &&
+              charIndex + 3 < line.length &&
+              line.substring(charIndex, charIndex + 4) == 'null') {
+            processValue();
+            charIndex += 4;
+            continue;
+          }
+          if (ch == 't' &&
+              charIndex + 3 < line.length &&
+              line.substring(charIndex, charIndex + 4) == 'true') {
+            processValue();
+            charIndex += 4;
+            continue;
+          }
+          if (ch == 'f' &&
+              charIndex + 4 < line.length &&
+              line.substring(charIndex, charIndex + 5) == 'false') {
+            processValue();
+            charIndex += 5;
+            continue;
+          }
+          final code = ch.codeUnitAt(0);
+          if (ch == '-' || (code >= 48 && code <= 57)) {
+            processValue();
+            int endIdx = charIndex + 1;
+            while (endIdx < line.length) {
+              final numCh = line[endIdx];
+              final numCode = numCh.codeUnitAt(0);
+              if ((numCode >= 48 && numCode <= 57) ||
+                  numCh == '.' ||
+                  numCh == 'e' ||
+                  numCh == 'E' ||
+                  numCh == '+' ||
+                  numCh == '-') {
+                endIdx++;
+              } else {
+                break;
+              }
+            }
+            charIndex = endIdx;
+            continue;
+          }
+        }
+      }
+
+      charIndex++;
+    }
   }
 
   // ── Fold / unfold ───────────────────────────────────────────────
@@ -655,112 +1069,76 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
         decoration: BoxDecoration(
           color: colorScheme.surface,
           border: Border.all(
-            color:
-                widget.hasSyntaxError ? colorScheme.error : colorScheme.outline,
+            color: widget.hasSyntaxError
+                ? colorScheme.error
+                : colorScheme.outline,
           ),
           borderRadius: BorderRadius.circular(4),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(3),
-          child: Stack(
-            children: [
-              SingleChildScrollView(
-                controller: _textScrollCtrl,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Gutter: fold icons
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Column(
-                        children: [
-                          for (int i = 0; i < _nodes.length; i++)
-                            _buildGutterCell(i, colorScheme),
-                        ],
-                      ),
-                    ),
-                    // Single TextField – supports native cursor + multi-line selection.
-                    Expanded(
-                      child: TextField(
-                        controller: _displayCtrl,
-                        style: _lineStyle,
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_stickyContextLines.isNotEmpty)
-                _buildStickyHeader(colorScheme),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStickyHeader(ColorScheme colorScheme) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerLow,
-          border: Border(
-            bottom: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-              width: 1,
-            ),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: _stickyContextLines.map((entry) {
-            final (lineIndex, lineContent) = entry;
-            return MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: () {
-                  final targetOffset = lineIndex * _lineHeight + 8.0;
-                  _textScrollCtrl.animateTo(
-                    targetOffset,
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
-                  );
-                },
-                child: SizedBox(
-                  height: _lineHeight,
-                  child: Row(
+          child: SingleChildScrollView(
+            controller: _textScrollCtrl,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Column(
                     children: [
-                      const SizedBox(width: 20), // gutter space
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text(
-                            lineContent,
-                            style: _lineStyle.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
+                      for (int i = 0; i < _nodes.length; i++)
+                        _buildGutterCell(i, colorScheme),
                     ],
                   ),
                 ),
-              ),
-            );
-          }).toList(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _horizontalScrollCtrl,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: 5000,
+                      child: Stack(
+                        children: [
+                          if (_cursorLine >= 0 && _cursorLine < _nodes.length)
+                            Positioned(
+                              top: _cursorLine * _lineHeight + 5.0,
+                              left: 0,
+                              right: 0,
+                              height: _lineHeight,
+                              child: Container(
+                                color: colorScheme.primaryContainer.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
+                            ),
+                          TextField(
+                            controller: _displayCtrl,
+                            style: _lineStyle,
+                            maxLines: null,
+                            keyboardType: TextInputType.multiline,
+                            onTap: () {
+                              widget.onTap?.call();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _onSelectionChanged();
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 8,
+                              ),
+                              isDense: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -769,6 +1147,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
   Widget _buildGutterCell(int i, ColorScheme colorScheme) {
     final node = _nodes[i];
     final isFoldable = _foldRanges.containsKey(i) || node.isFolded;
+
     return SizedBox(
       height: _lineHeight,
       width: 20,
@@ -787,4 +1166,3 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     );
   }
 }
-

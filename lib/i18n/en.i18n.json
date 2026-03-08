@@ -151,7 +151,16 @@
     "searchResults": "Search Results",
     "noEnabledDicts": "No dictionaries are enabled",
     "wildcardHint": "LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help; h_llo → hello, hallo\n\nGLOB pattern (enter * ? [ ] ^), case-sensitive:\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them\n  e.g. h?llo → hello, hallo; [aeiou]* → words starting with a vowel",
-    "dbDownloaded": "Download complete, search \"{word}\" to test"
+    "dbDownloaded": "Download complete, search \"{word}\" to test",
+    "dailyWords": "Daily Words",
+    "dailyWordsRefresh": "Refresh",
+    "dailyWordsSettings": "Settings",
+    "dailyWordsCount": "Word Count",
+    "dailyWordsLanguage": "List Language",
+    "dailyWordsList": "List Scope",
+    "dailyWordsAllLists": "All Lists",
+    "dailyWordsNoWords": "No words in the list",
+    "dailyWordsNoList": "No list available"
   },
   "wordBank": {
     "title": "Word Bank",
@@ -648,6 +657,8 @@
     "wordNotFound": "Word not found: {word}",
     "noPageContent": "No content on this page",
     "copiedToClipboard": "Copied to clipboard",
+    "pathCopiedToClipboard": "Path copied to clipboard",
+    "pathNotFound": "Path not found",
     "aiRequestFailed": "AI request failed: {error}",
     "aiRequestFailedShort": "Request failed:",
     "aiChatFailed": "AI request failed: {error}",

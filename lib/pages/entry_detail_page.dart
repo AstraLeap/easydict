@@ -18,6 +18,7 @@ import '../services/llm_client.dart';
 import '../data/services/ai_chat_database_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
+import '../widgets/path_navigator.dart';
 import '../services/entry_event_bus.dart';
 import '../core/logger.dart';
 import '../services/preferences_service.dart';
@@ -1944,77 +1945,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     return null;
   }
 
-  Widget _buildPathNavigator(
-    DictionaryEntry entry,
-    List<String> pathParts,
-    Function(List<String>) onPathSelected, {
-    String? title,
-    VoidCallback? onHomeTap,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        if (onHomeTap != null)
-          InkWell(
-            onTap: onHomeTap,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Icon(Icons.home, size: 18, color: colorScheme.primary),
-            ),
-          ),
-        ...pathParts.asMap().entries.expand((entry) {
-          final index = entry.key;
-          final part = entry.value;
-          final currentPath = pathParts.sublist(0, index + 1);
-
-          final widgets = <Widget>[];
-
-          // 添加分隔符（除了第一个）
-          if (index > 0) {
-            widgets.add(
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  '>',
-                  style: TextStyle(
-                    color: colorScheme.outline,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            );
-          }
-
-          // 添加可点击的路径段
-          final isLast = index == pathParts.length - 1;
-          widgets.add(
-            InkWell(
-              onTap: isLast ? null : () => onPathSelected(currentPath),
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  part,
-                  style: TextStyle(
-                    color: isLast
-                        ? colorScheme.primary
-                        : colorScheme.primary.withOpacity(0.8),
-                    fontWeight: isLast ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ),
-          );
-
-          return widgets;
-        }),
-      ],
-    );
-  }
-
   Future<DictionaryEntry?> _saveElementChange(
     DictionaryEntry entry,
     List<String> pathParts,
@@ -2591,54 +2521,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 路径导航栏（包含返回初始路径按钮）
                 Row(
                   children: [
                     Expanded(
-                      child: _buildPathNavigator(entry, pathParts, (
-                        newPathParts,
-                      ) {
-                        Navigator.pop(context);
-                        // 获取新路径对应的值
-                        final json = entry.toJson();
-                        dynamic currentValue = json;
-                        for (final part in newPathParts) {
-                          if (currentValue is Map) {
-                            currentValue = currentValue[part];
-                          } else if (currentValue is List) {
-                            int? index;
-                            if (part.startsWith('[') && part.endsWith(']')) {
-                              index = int.tryParse(
-                                part.substring(1, part.length - 1),
-                              );
-                            } else {
-                              index = int.tryParse(part);
-                            }
-                            if (index != null && index < currentValue.length) {
-                              currentValue = currentValue[index];
-                            }
-                          }
-                        }
-                        // 重新打开AI对话框，显示新路径的内容
-                        _showAiElementDialog(
-                          entry,
-                          newPathParts,
-                          currentValue,
-                          initialPath: startPath, // 传递初始路径
-                        );
-                      }, title: context.t.entry.path),
-                    ),
-                    // 返回初始路径按钮
-                    if (startPath != null &&
-                        pathParts.join('.') != startPath.join('.'))
-                      IconButton(
-                        onPressed: () {
+                      child: PathNavigator(
+                        pathParts: pathParts,
+                        onNavigate: (newPathParts) {
                           Navigator.pop(context);
-
-                          // 获取初始路径对应的值
                           final json = entry.toJson();
                           dynamic currentValue = json;
-                          for (final part in startPath) {
+                          for (final part in newPathParts) {
                             if (currentValue is Map) {
                               currentValue = currentValue[part];
                             } else if (currentValue is List) {
@@ -2656,21 +2548,94 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               }
                             }
                           }
-
-                          // 重新打开AI对话框，显示初始路径的内容
                           _showAiElementDialog(
                             entry,
-                            startPath,
+                            newPathParts,
                             currentValue,
-                            initialPath: startPath, // 保持初始路径不变
+                            initialPath: startPath,
                           );
                         },
-                        icon: const Icon(
-                          Icons.first_page,
-                        ), // 使用 first_page 图标表示返回初始位置
-                        tooltip: context.t.entry.returnToStart,
-                        color: Theme.of(context).colorScheme.primary,
+                        onHomeTap: () {
+                          Navigator.pop(context);
+                          final json = entry.toJson();
+                          _showAiElementDialog(
+                            entry,
+                            [],
+                            json,
+                            initialPath: startPath,
+                          );
+                        },
+                        showReturnToStart:
+                            startPath != null &&
+                            pathParts.join('.') != startPath.join('.'),
+                        onReturnToStart:
+                            startPath != null &&
+                                pathParts.join('.') != startPath.join('.')
+                            ? () {
+                                Navigator.pop(context);
+                                final json = entry.toJson();
+                                dynamic currentValue = json;
+                                for (final part in startPath) {
+                                  if (currentValue is Map) {
+                                    currentValue = currentValue[part];
+                                  } else if (currentValue is List) {
+                                    int? index;
+                                    if (part.startsWith('[') &&
+                                        part.endsWith(']')) {
+                                      index = int.tryParse(
+                                        part.substring(1, part.length - 1),
+                                      );
+                                    } else {
+                                      index = int.tryParse(part);
+                                    }
+                                    if (index != null &&
+                                        index < currentValue.length) {
+                                      currentValue = currentValue[index];
+                                    }
+                                  }
+                                }
+                                _showAiElementDialog(
+                                  entry,
+                                  startPath,
+                                  currentValue,
+                                  initialPath: startPath,
+                                );
+                              }
+                            : null,
+                        validatePath: (newPath) {
+                          final json = entry.toJson();
+                          dynamic currentValue = json;
+                          for (final part in newPath) {
+                            if (currentValue is Map) {
+                              if (currentValue.containsKey(part)) {
+                                currentValue = currentValue[part];
+                              } else {
+                                return context.t.entry.pathNotFound;
+                              }
+                            } else if (currentValue is List) {
+                              int? index;
+                              if (part.startsWith('[') && part.endsWith(']')) {
+                                index = int.tryParse(
+                                  part.substring(1, part.length - 1),
+                                );
+                              } else {
+                                index = int.tryParse(part);
+                              }
+                              if (index != null &&
+                                  index >= 0 &&
+                                  index < currentValue.length) {
+                                currentValue = currentValue[index];
+                              } else {
+                                return context.t.entry.pathNotFound;
+                              }
+                            } else {
+                              return context.t.entry.pathNotFound;
+                            }
+                          }
+                          return null;
+                        },
                       ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -3195,12 +3160,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
     bool isThreadView = activeConversationId != null;
 
-    // 获取字典源语言，用于 Markdown 字体回退链
-    final sourceLang = await _getCurrentLanguage();
-    final targetLang = LocaleSettings.instance.currentLocale == AppLocale.zh
-        ? 'zh'
-        : 'en';
-
     final ScrollController threadScrollController = ScrollController();
     final ScrollController listScrollController = ScrollController();
     final freeChatController = TextEditingController();
@@ -3230,11 +3189,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             expand: false,
             builder: (context, scrollController) {
               _chatScrollController = scrollController;
-              final aiMdStyleSheet = _buildAiMarkdownStyleSheet(
-                context,
-                sourceLang: sourceLang,
-                targetLang: targetLang,
-              );
+              final aiMdStyleSheet = _buildAiMarkdownStyleSheet(context);
               // 预计算当前会话消息和会话列表（随 setModalState 重建）
               final threadMessages =
                   (isThreadView && activeConversationId != null)
@@ -3402,7 +3357,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                       _aiChatHistory.clear();
                                       _aiChatDatabaseService.clearAllRecords();
                                       _isAiChatHistoryLoaded = false;
-                                      setModalState(() {});
+                                      freeChatFocusNode.dispose();
                                       Navigator.pop(context);
                                     },
                                   ),
@@ -4190,7 +4145,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   ],
                 ),
               );
-              return Material(
+              Widget modalContent = Material(
                 color: colorScheme.surfaceContainerLow,
                 borderRadius: isFullScreen
                     ? null
@@ -4198,6 +4153,21 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 clipBehavior: isFullScreen ? Clip.none : Clip.antiAlias,
                 child: content,
               );
+              if (isThreadView) {
+                modalContent = PopScope(
+                  canPop: false,
+                  onPopInvokedWithResult: (didPop, result) {
+                    if (!didPop) {
+                      setModalState(() {
+                        isThreadView = false;
+                        activeConversationId = null;
+                      });
+                    }
+                  },
+                  child: modalContent,
+                );
+              }
+              return modalContent;
             },
           );
         },
@@ -4208,7 +4178,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       threadScrollController.dispose();
       listScrollController.dispose();
       freeChatController.dispose();
-      freeChatFocusNode.dispose();
+      try {
+        freeChatFocusNode.dispose();
+      } catch (_) {}
     });
   }
 

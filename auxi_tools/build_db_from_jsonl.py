@@ -15,9 +15,15 @@ def is_ideographic_lang(lang_code):
 
 def normalize_text(text, lang_code=None, remove_spaces=False):
     """基础文本规范化：转小写、去除重音、去除空格"""
-    text = "".join(
-        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
-    ).strip()
+    text = (
+        "".join(
+            c
+            for c in unicodedata.normalize("NFD", text)
+            if unicodedata.category(c) != "Mn"
+        )
+        .strip()
+        .lower()
+    )
     if remove_spaces:
         text = text.replace(" ", "")
     if lang_code in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"}:
@@ -199,6 +205,7 @@ def build_database_from_jsonl(
     print(f"\nBuild Complete!")
     print(f"DB Path: {db_path}")
     print(f"Total Entries: {total_count}")
+
 
 # --- 命令行入口 ---
 
