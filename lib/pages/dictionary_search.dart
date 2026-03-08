@@ -1118,458 +1118,198 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, dialogSetState) {
+          final colorScheme = Theme.of(context).colorScheme;
           return AlertDialog(
             titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-            actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.calendar_today,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  context.t.search.dailyWordsSettings,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ],
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+            title: Text(
+              context.t.search.dailyWordsSettings,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
             content: SizedBox(
-              width: 480,
+              width: 420,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.translate,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                context.t.search.dailyWordsLanguage,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                    ),
-                              ),
-                              const Spacer(),
-                              if (selectedLanguages.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primaryContainer,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    '${selectedLanguages.length}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _availableWordBankLanguages.map((lang) {
-                              final isSelected = selectedLanguages.contains(
-                                lang,
-                              );
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                child: FilterChip(
-                                  avatar: isSelected
-                                      ? Icon(
-                                          Icons.check_circle,
-                                          size: 16,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onPrimary,
-                                        )
-                                      : null,
-                                  label: Text(_langDisplayName(lang)),
-                                  selected: isSelected,
-                                  labelStyle: TextStyle(
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                  onSelected: (selected) {
-                                    if (selected) {
-                                      selectedLanguages.add(lang);
-                                    } else {
-                                      selectedLanguages.remove(lang);
-                                      selectedLists.remove(lang);
-                                    }
-                                    dialogSetState(() {});
-                                  },
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ],
+                    Text(
+                      context.t.search.dailyWordsLanguage,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    if (selectedLanguages.isNotEmpty)
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.list_alt,
-                                  size: 18,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  context.t.search.dailyWordsList,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            ...selectedLanguages.map((lang) {
-                              final lists = dialogWordListsMap[lang] ?? [];
-                              final selectedListNames =
-                                  selectedLists[lang] ?? [];
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primaryContainer,
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            _langDisplayName(lang),
-                                            style: TextStyle(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.onPrimaryContainer,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Icon(
-                                          Icons.arrow_forward,
-                                          size: 14,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.outline,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          selectedListNames.isEmpty
-                                              ? context
-                                                    .t
-                                                    .search
-                                                    .dailyWordsAllLists
-                                              : '${selectedListNames.length}/${lists.length}',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    if (lists.isEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.all(8),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.info_outline,
-                                              size: 16,
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.outline,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              context.t.search.dailyWordsNoList,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall
-                                                  ?.copyWith(
-                                                    fontStyle: FontStyle.italic,
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.outline,
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
-                                      )
-                                    else
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: [
-                                          FilterChip(
-                                            label: Text(
-                                              context
-                                                  .t
-                                                  .search
-                                                  .dailyWordsAllLists,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            selected: selectedListNames.isEmpty,
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            onSelected: (selected) {
-                                              selectedLists[lang] = [];
-                                              dialogSetState(() {});
-                                            },
-                                          ),
-                                          ...lists.map((list) {
-                                            final isSelected = selectedListNames
-                                                .contains(list.name);
-                                            return FilterChip(
-                                              label: Text(
-                                                list.displayName,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                              selected: isSelected,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              onSelected: (s) {
-                                                selectedLists.putIfAbsent(
-                                                  lang,
-                                                  () => [],
-                                                );
-                                                if (s) {
-                                                  selectedLists[lang]!.add(
-                                                    list.name,
-                                                  );
-                                                } else {
-                                                  selectedLists[lang]!.remove(
-                                                    list.name,
-                                                  );
-                                                }
-                                                dialogSetState(() {});
-                                              },
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _availableWordBankLanguages.map((lang) {
+                        final isSelected = selectedLanguages.contains(lang);
+                        return ChoiceChip(
+                          label: Text(_langDisplayName(lang)),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            if (selected) {
+                              selectedLanguages.add(lang);
+                            } else {
+                              selectedLanguages.remove(lang);
+                              selectedLists.remove(lang);
+                            }
+                            dialogSetState(() {});
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    if (selectedLanguages.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      Text(
+                        context.t.search.dailyWordsList,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      const SizedBox(height: 10),
+                      ...selectedLanguages.map((lang) {
+                        final lists = dialogWordListsMap[lang] ?? [];
+                        final selectedListNames = selectedLists[lang] ?? [];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                Icons.format_list_numbered,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.primary,
+                              Row(
+                                children: [
+                                  Text(
+                                    _langDisplayName(lang),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    selectedListNames.isEmpty
+                                        ? context.t.search.dailyWordsAllLists
+                                        : '${selectedListNames.length}/${lists.length}',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: colorScheme.outline),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                context.t.search.dailyWordsCount,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                    ),
-                              ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Theme.of(context).colorScheme.primary,
-                                      Theme.of(context).colorScheme.primary
-                                          .withValues(alpha: 0.8),
+                              if (lists.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    context.t.search.dailyWordsNoList,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          fontStyle: FontStyle.italic,
+                                          color: colorScheme.outline,
+                                        ),
+                                  ),
+                                )
+                              else
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: [
+                                      ChoiceChip(
+                                        label: Text(
+                                          context.t.search.dailyWordsAllLists,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                        selected: selectedListNames.isEmpty,
+                                        visualDensity: VisualDensity.compact,
+                                        onSelected: (selected) {
+                                          selectedLists[lang] = [];
+                                          dialogSetState(() {});
+                                        },
+                                      ),
+                                      ...lists.map((list) {
+                                        final isSelected = selectedListNames
+                                            .contains(list.name);
+                                        return ChoiceChip(
+                                          label: Text(
+                                            list.displayName,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          selected: isSelected,
+                                          visualDensity: VisualDensity.compact,
+                                          onSelected: (s) {
+                                            selectedLists.putIfAbsent(
+                                              lang,
+                                              () => [],
+                                            );
+                                            if (s) {
+                                              selectedLists[lang]!.add(
+                                                list.name,
+                                              );
+                                            } else {
+                                              selectedLists[lang]!.remove(
+                                                list.name,
+                                              );
+                                            }
+                                            dialogSetState(() {});
+                                          },
+                                        );
+                                      }),
                                     ],
                                   ),
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary
-                                          .withValues(alpha: 0.3),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
                                 ),
-                                child: Text(
-                                  currentWordCount.toString(),
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onPrimary,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
                             ],
                           ),
-                          const SizedBox(height: 12),
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              valueIndicatorShape:
-                                  const PaddleSliderValueIndicatorShape(),
-                              valueIndicatorTextStyle: TextStyle(
-                                color: Theme.of(context).colorScheme.onPrimary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            child: Slider(
-                              value: currentWordCount.toDouble(),
-                              min: 1,
-                              max: 20,
-                              divisions: 19,
-                              label: currentWordCount.toString(),
-                              onChanged: (value) async {
-                                await _dailyWordService.setWordCount(
-                                  value.round(),
-                                );
-                                currentWordCount = value.round();
-                                dialogSetState(() {});
-                              },
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '1',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.outline,
-                                      ),
-                                ),
-                                Text(
-                                  '20',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.outline,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                        );
+                      }),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      context.t.search.dailyWordsCount,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            value: currentWordCount.toDouble(),
+                            min: 1,
+                            max: 20,
+                            divisions: 19,
+                            label: currentWordCount.toString(),
+                            onChanged: (value) async {
+                              await _dailyWordService.setWordCount(
+                                value.round(),
+                              );
+                              currentWordCount = value.round();
+                              dialogSetState(() {});
+                            },
+                          ),
+                        ),
+                        Container(
+                          width: 40,
+                          alignment: Alignment.center,
+                          child: Text(
+                            currentWordCount.toString(),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.primary,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1580,7 +1320,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 onPressed: () => Navigator.pop(context),
                 child: Text(context.t.common.close),
               ),
-              FilledButton.icon(
+              FilledButton(
                 onPressed: selectedLanguages.isEmpty
                     ? null
                     : () async {
@@ -1593,7 +1333,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         for (final lang in selectedLanguages) {
                           await _loadWordListsForLanguage(lang);
                         }
-                        await _loadDailyWords();
+                        // 强制刷新每日单词
+                        await _refreshDailyWords();
                         if (mounted) {
                           setState(() {});
                         }
@@ -1601,8 +1342,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                           Navigator.pop(context);
                         }
                       },
-                icon: const Icon(Icons.check),
-                label: Text(context.t.common.save),
+                child: Text(context.t.common.save),
               ),
             ],
           );

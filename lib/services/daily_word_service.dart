@@ -12,7 +12,6 @@ class DailyWordService {
   static const String _wordCountKey = 'daily_word_count';
   static const String _lastRefreshDateKey = 'daily_word_last_refresh_date';
   static const String _cachedWordsKey = 'daily_word_cached_words';
-  static const String _cachedSeedKey = 'daily_word_cached_seed';
 
   final WordBankService _wordBankService = WordBankService();
 
@@ -83,7 +82,7 @@ class DailyWordService {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
-  Future<List<String>> getDailyWords({bool forceRefresh = false}) async {
+  Future<List<String>> getDailyWords() async {
     final prefs = await _prefs;
     final languages = await getSelectedLanguages();
     final listsMap = await getSelectedLists();
@@ -96,13 +95,8 @@ class DailyWordService {
     final todayDate = _getTodayDateString();
     final lastRefreshDate = prefs.getString(_lastRefreshDateKey);
     final cachedWords = prefs.getStringList(_cachedWordsKey) ?? [];
-    final cachedSeed = prefs.getInt(_cachedSeedKey) ?? 0;
-    final currentSeed = _getDailySeed();
 
-    if (!forceRefresh &&
-        lastRefreshDate == todayDate &&
-        cachedWords.isNotEmpty &&
-        cachedSeed == currentSeed) {
+    if (lastRefreshDate == todayDate && cachedWords.isNotEmpty) {
       return cachedWords;
     }
 
@@ -137,6 +131,7 @@ class DailyWordService {
     }
 
     final words = allWords.map((w) => Map<String, dynamic>.from(w)).toList();
+    final currentSeed = _getDailySeed();
     final random = Random(currentSeed);
     words.shuffle(random);
 
@@ -147,7 +142,6 @@ class DailyWordService {
 
     await prefs.setString(_lastRefreshDateKey, todayDate);
     await prefs.setStringList(_cachedWordsKey, selectedWords);
-    await prefs.setInt(_cachedSeedKey, currentSeed);
 
     return selectedWords;
   }
@@ -200,9 +194,9 @@ class DailyWordService {
         .map((w) => w['word'] as String)
         .toList();
 
-    final currentSeed = DateTime.now().millisecondsSinceEpoch;
+    final todayDate = _getTodayDateString();
+    await prefs.setString(_lastRefreshDateKey, todayDate);
     await prefs.setStringList(_cachedWordsKey, selectedWords);
-    await prefs.setInt(_cachedSeedKey, currentSeed);
 
     return selectedWords;
   }

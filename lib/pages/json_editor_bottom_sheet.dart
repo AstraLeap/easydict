@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../data/database_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../i18n/strings.g.dart';
@@ -431,6 +432,38 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
 // ─────────────────────────────────────────────────────────────────
 // VS Code-like foldable code editor
 // ─────────────────────────────────────────────────────────────────
+
+// ── Tab Intent and Actions ───────────────────────────────────────
+
+class _InsertTabIntent extends Intent {
+  const _InsertTabIntent();
+}
+
+class _RemoveTabIntent extends Intent {
+  const _RemoveTabIntent();
+}
+
+class _InsertTabAction extends Action<_InsertTabIntent> {
+  final _FoldableCodeEditorState state;
+  _InsertTabAction(this.state);
+
+  @override
+  Object? invoke(_InsertTabIntent intent) {
+    state.insertTab();
+    return null;
+  }
+}
+
+class _RemoveTabAction extends Action<_RemoveTabIntent> {
+  final _FoldableCodeEditorState state;
+  _RemoveTabAction(this.state);
+
+  @override
+  Object? invoke(_RemoveTabIntent intent) {
+    state.removeTab();
+    return null;
+  }
+}
 
 /// A single node in the editor's logical line list.
 /// When [folded] is non-null this is a fold anchor and [folded] contains the
@@ -1058,85 +1091,218 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     });
   }
 
+  // ── Tab indentation ─────────────────────────────────────────────
+
+  void insertTab() {
+    final selection = _displayCtrl.selection;
+    final text = _displayCtrl.text;
+
+    if (selection.isCollapsed) {
+      // 无选区：在光标位置插入两个空格
+      final offset = selection.baseOffset;
+      final newText = text.substring(0, offset) + '  ' + text.substring(offset);
+      _displayCtrl.text = newText;
+      _displayCtrl.selection = TextSelection.collapsed(offset: offset + 2);
+    } else {
+      // 有选区：在选区内的每行开头添加两个空格
+      final lines = text.split('\n');
+      final startOffset = selection.start;
+      final endOffset = selection.end;
+
+      // 计算起始和结束行号
+      int startLine = 0;
+      int endLine = 0;
+      int currentOffset = 0;
+      for (int i = 0; i < lines.length; i++) {
+        if (currentOffset <= startOffset) startLine = i;
+        if (currentOffset <= endOffset) endLine = i;
+        currentOffset += lines[i].length + 1; // +1 for newline
+      }
+
+      // 在每行开头添加两个空格
+      for (int i = startLine; i <= endLine; i++) {
+        lines[i] = '  ' + lines[i];
+      }
+
+      final newText = lines.join('\n');
+      _displayCtrl.text = newText;
+
+      // 更新选区
+      final addedSpaces = (endLine - startLine + 1) * 2;
+      _displayCtrl.selection = TextSelection(
+        baseOffset: startOffset + 2,
+        extentOffset: endOffset + addedSpaces,
+      );
+    }
+  }
+
+  void removeTab() {
+    final selection = _displayCtrl.selection;
+    final text = _displayCtrl.text;
+
+    if (selection.isCollapsed) {
+      // 无选区：删除光标前的空格（如果有）
+      final offset = selection.baseOffset;
+      if (offset >= 2 && text.substring(offset - 2, offset) == '  ') {
+        final newText = text.substring(0, offset - 2) + text.substring(offset);
+        _displayCtrl.text = newText;
+        _displayCtrl.selection = TextSelection.collapsed(offset: offset - 2);
+      } else if (offset >= 1 && text.substring(offset - 1, offset) == ' ') {
+        final newText = text.substring(0, offset - 1) + text.substring(offset);
+        _displayCtrl.text = newText;
+        _displayCtrl.selection = TextSelection.collapsed(offset: offset - 1);
+      }
+    } else {
+      // 有选区：在选区内的每行开头删除两个空格（如果有）
+      final lines = text.split('\n');
+      final startOffset = selection.start;
+      final endOffset = selection.end;
+
+      // 计算起始和结束行号
+      int startLine = 0;
+      int endLine = 0;
+      int currentOffset = 0;
+      for (int i = 0; i < lines.length; i++) {
+        if (currentOffset <= startOffset) startLine = i;
+        if (currentOffset <= endOffset) endLine = i;
+        currentOffset += lines[i].length + 1; // +1 for newline
+      }
+
+      // 在每行开头删除两个空格（如果有）
+      int removedSpaces = 0;
+      for (int i = startLine; i <= endLine; i++) {
+        if (lines[i].startsWith('  ')) {
+          lines[i] = lines[i].substring(2);
+          removedSpaces += 2;
+        } else if (lines[i].startsWith(' ')) {
+          lines[i] = lines[i].substring(1);
+          removedSpaces += 1;
+        }
+      }
+
+      final newText = lines.join('\n');
+      _displayCtrl.text = newText;
+
+      // 更新选区
+      final startLineRemoved = _calculateRemovedSpacesForLine(
+        text,
+        startLine,
+        lines,
+      );
+      _displayCtrl.selection = TextSelection(
+        baseOffset: startOffset - startLineRemoved,
+        extentOffset: endOffset - removedSpaces,
+      );
+    }
+  }
+
+  int _calculateRemovedSpacesForLine(
+    String originalText,
+    int lineIndex,
+    List<String> newLines,
+  ) {
+    final lines = originalText.split('\n');
+    if (lineIndex >= lines.length) return 0;
+    final originalLine = lines[lineIndex];
+    final newLine = newLines[lineIndex];
+    return originalLine.length - newLine.length;
+  }
+
   // ── Build ───────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 300, minHeight: 60),
-      child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          border: Border.all(
-            color: widget.hasSyntaxError
-                ? colorScheme.error
-                : colorScheme.outline,
-          ),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: SingleChildScrollView(
-            controller: _textScrollCtrl,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Column(
+    return Shortcuts(
+      shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(LogicalKeyboardKey.tab): const _InsertTabIntent(),
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.tab):
+            const _RemoveTabIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          _InsertTabIntent: _InsertTabAction(this),
+          _RemoveTabIntent: _RemoveTabAction(this),
+        },
+        child: Focus(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 300, minHeight: 60),
+            child: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border.all(
+                  color: widget.hasSyntaxError
+                      ? colorScheme.error
+                      : colorScheme.outline,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SingleChildScrollView(
+                  controller: _textScrollCtrl,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (int i = 0; i < _nodes.length; i++)
-                        _buildGutterCell(i, colorScheme),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Column(
+                          children: [
+                            for (int i = 0; i < _nodes.length; i++)
+                              _buildGutterCell(i, colorScheme),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: _horizontalScrollCtrl,
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: 5000,
+                            child: Stack(
+                              children: [
+                                if (_cursorLine >= 0 &&
+                                    _cursorLine < _nodes.length)
+                                  Positioned(
+                                    top: _cursorLine * _lineHeight + 5.0,
+                                    left: 0,
+                                    right: 0,
+                                    height: _lineHeight,
+                                    child: Container(
+                                      color: colorScheme.primaryContainer
+                                          .withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                TextField(
+                                  controller: _displayCtrl,
+                                  style: _lineStyle,
+                                  maxLines: null,
+                                  keyboardType: TextInputType.multiline,
+                                  onTap: () {
+                                    widget.onTap?.call();
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                          _onSelectionChanged();
+                                        });
+                                  },
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 8,
+                                    ),
+                                    isDense: true,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _horizontalScrollCtrl,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: 5000,
-                      child: Stack(
-                        children: [
-                          if (_cursorLine >= 0 && _cursorLine < _nodes.length)
-                            Positioned(
-                              top: _cursorLine * _lineHeight + 5.0,
-                              left: 0,
-                              right: 0,
-                              height: _lineHeight,
-                              child: Container(
-                                color: colorScheme.primaryContainer.withValues(
-                                  alpha: 0.3,
-                                ),
-                              ),
-                            ),
-                          TextField(
-                            controller: _displayCtrl,
-                            style: _lineStyle,
-                            maxLines: null,
-                            keyboardType: TextInputType.multiline,
-                            onTap: () {
-                              widget.onTap?.call();
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _onSelectionChanged();
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 8,
-                              ),
-                              isDense: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -1147,22 +1313,40 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
   Widget _buildGutterCell(int i, ColorScheme colorScheme) {
     final node = _nodes[i];
     final isFoldable = _foldRanges.containsKey(i) || node.isFolded;
+    final lineNumber = i + 1;
 
     return SizedBox(
       height: _lineHeight,
-      width: 20,
-      child: isFoldable
-          ? InkWell(
-              onTap: () => _toggleFold(i),
-              child: Center(
-                child: Icon(
-                  node.isFolded ? Icons.chevron_right : Icons.expand_more,
-                  size: 14,
-                  color: colorScheme.primary,
-                ),
-              ),
-            )
-          : null,
+      width: 48,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            '$lineNumber',
+            style: TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 12,
+              color: colorScheme.outline,
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 20,
+            child: isFoldable
+                ? InkWell(
+                    onTap: () => _toggleFold(i),
+                    child: Center(
+                      child: Icon(
+                        node.isFolded ? Icons.chevron_right : Icons.expand_more,
+                        size: 14,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+        ],
+      ),
     );
   }
 }

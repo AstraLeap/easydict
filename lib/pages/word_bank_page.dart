@@ -28,9 +28,12 @@ enum SortMode {
 
   String label(BuildContext context) {
     switch (this) {
-      case SortMode.addTimeDesc: return context.t.wordBank.sortAddTimeDesc;
-      case SortMode.alphabetical: return context.t.wordBank.sortAlphabetical;
-      case SortMode.random: return context.t.wordBank.sortRandom;
+      case SortMode.addTimeDesc:
+        return context.t.wordBank.sortAddTimeDesc;
+      case SortMode.alphabetical:
+        return context.t.wordBank.sortAlphabetical;
+      case SortMode.random:
+        return context.t.wordBank.sortRandom;
     }
   }
 }
@@ -147,14 +150,18 @@ class _WordBankPageState extends State<WordBankPage> {
         .map(LanguageUtils.normalizeSourceLanguage)
         .where((l) => l.isNotEmpty)
         .toSet();
-    final enabledDicts = await DictionaryManager().getEnabledDictionariesMetadata();
+    final enabledDicts = await DictionaryManager()
+        .getEnabledDictionariesMetadata();
     final dictLangs = enabledDicts
         .map((d) => LanguageUtils.normalizeSourceLanguage(d.sourceLanguage))
         .where((l) => l.isNotEmpty)
         .toSet();
     final merged = {...wordBankLangs, ...dictLangs}.toList();
     final savedOrder = await _advancedSettingsService.getLanguageOrder();
-    return AdvancedSearchSettingsService.sortLanguagesByOrder(merged, savedOrder);
+    return AdvancedSearchSettingsService.sortLanguagesByOrder(
+      merged,
+      savedOrder,
+    );
   }
 
   /// 词典启用状态变化时，重新加载语言列表
@@ -550,7 +557,12 @@ class _WordBankPageState extends State<WordBankPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      context.t.wordBank.importToLanguage(language: LanguageUtils.getDisplayName(language, context.t)),
+                      context.t.wordBank.importToLanguage(
+                        language: LanguageUtils.getDisplayName(
+                          language,
+                          context.t,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -644,8 +656,13 @@ class _WordBankPageState extends State<WordBankPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        context.t.wordBank.previewCount(count: previewWords.length),
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        context.t.wordBank.previewCount(
+                          count: previewWords.length,
+                        ),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
                       ),
                     ],
                   ],
@@ -685,7 +702,10 @@ class _WordBankPageState extends State<WordBankPage> {
                               Navigator.pop(context, true);
                               showToast(
                                 context,
-                                context.t.wordBank.importSuccess(count: count, list: listName),
+                                context.t.wordBank.importSuccess(
+                                  count: count,
+                                  list: listName,
+                                ),
                               );
 
                               // 刷新数据
@@ -693,13 +713,16 @@ class _WordBankPageState extends State<WordBankPage> {
                             }
                           } catch (e) {
                             if (mounted) {
-                              String errorMessage = context.t.wordBank.importFailed;
+                              String errorMessage =
+                                  context.t.wordBank.importFailed;
                               if (e.toString().contains('已存在')) {
-                                errorMessage = context.t.wordBank.importListExists(list: listName);
+                                errorMessage = context.t.wordBank
+                                    .importListExists(list: listName);
                               } else if (e.toString().contains(
                                 'No such file',
                               )) {
-                                errorMessage = context.t.wordBank.importFileError;
+                                errorMessage =
+                                    context.t.wordBank.importFileError;
                               }
                               showToast(context, errorMessage);
                             }
@@ -755,7 +778,12 @@ class _WordBankPageState extends State<WordBankPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      context.t.wordBank.editListsTitle(language: LanguageUtils.getDisplayName(_selectedLanguage!, context.t)),
+                      context.t.wordBank.editListsTitle(
+                        language: LanguageUtils.getDisplayName(
+                          _selectedLanguage!,
+                          context.t,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -822,12 +850,20 @@ class _WordBankPageState extends State<WordBankPage> {
                                         context: context,
                                         builder: (context) {
                                           return AlertDialog(
-                                            title: Text(context.t.wordBank.renameList),
+                                            title: Text(
+                                              context.t.wordBank.renameList,
+                                            ),
                                             content: TextField(
                                               controller: controller,
                                               decoration: InputDecoration(
-                                                labelText: context.t.wordBank.listNameFieldLabel,
-                                                hintText: context.t.wordBank.listNameFieldHint,
+                                                labelText: context
+                                                    .t
+                                                    .wordBank
+                                                    .listNameFieldLabel,
+                                                hintText: context
+                                                    .t
+                                                    .wordBank
+                                                    .listNameFieldHint,
                                               ),
                                               autofocus: true,
                                             ),
@@ -835,14 +871,18 @@ class _WordBankPageState extends State<WordBankPage> {
                                               TextButton(
                                                 onPressed: () =>
                                                     Navigator.pop(context),
-                                                child: Text(context.t.common.cancel),
+                                                child: Text(
+                                                  context.t.common.cancel,
+                                                ),
                                               ),
                                               TextButton(
                                                 onPressed: () => Navigator.pop(
                                                   context,
                                                   controller.text.trim(),
                                                 ),
-                                                child: Text(context.t.common.ok),
+                                                child: Text(
+                                                  context.t.common.ok,
+                                                ),
                                               ),
                                             ],
                                           );
@@ -882,11 +922,16 @@ class _WordBankPageState extends State<WordBankPage> {
                                                   ).colorScheme.error,
                                                 ),
                                                 const SizedBox(width: 8),
-                                                Text(context.t.wordBank.deleteList),
+                                                Text(
+                                                  context.t.wordBank.deleteList,
+                                                ),
                                               ],
                                             ),
                                             content: Text(
-                                              context.t.wordBank.deleteListConfirm(name: list.currentName),
+                                              context.t.wordBank
+                                                  .deleteListConfirm(
+                                                    name: list.currentName,
+                                                  ),
                                             ),
                                             actions: [
                                               TextButton(
@@ -894,7 +939,9 @@ class _WordBankPageState extends State<WordBankPage> {
                                                   context,
                                                   false,
                                                 ),
-                                                child: Text(context.t.common.cancel),
+                                                child: Text(
+                                                  context.t.common.cancel,
+                                                ),
                                               ),
                                               TextButton(
                                                 onPressed: () => Navigator.pop(
@@ -906,7 +953,9 @@ class _WordBankPageState extends State<WordBankPage> {
                                                     context,
                                                   ).colorScheme.error,
                                                 ),
-                                                child: Text(context.t.common.delete),
+                                                child: Text(
+                                                  context.t.common.delete,
+                                                ),
                                               ),
                                             ],
                                           );
@@ -1024,7 +1073,10 @@ class _WordBankPageState extends State<WordBankPage> {
           padding: const EdgeInsets.only(right: 8),
           child: FilterChip(
             selected: _selectedList == null,
-            label: Text(context.t.common.all, style: const TextStyle(fontSize: 13)),
+            label: Text(
+              context.t.common.all,
+              style: const TextStyle(fontSize: 13),
+            ),
             onSelected: (selected) {
               setState(() {
                 _selectedList = null;
@@ -1110,7 +1162,10 @@ class _WordBankPageState extends State<WordBankPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
                         selected: isSelected,
-                        label: Text(context.t.common.all, style: const TextStyle(fontSize: 13)),
+                        label: Text(
+                          context.t.common.all,
+                          style: const TextStyle(fontSize: 13),
+                        ),
                         onSelected: (selected) {
                           setState(() {
                             _selectedList = null;
@@ -1163,10 +1218,9 @@ class _WordBankPageState extends State<WordBankPage> {
                         colors: [
                           Theme.of(context).colorScheme.surface,
                           Theme.of(context).colorScheme.surface,
-                          Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withOpacity(0.0),
+                          Theme.of(
+                            context,
+                          ).colorScheme.surface.withOpacity(0.0),
                         ],
                         // stop 0.714 ≈ 20/28，对应直径 40 内切圆半径 20px 与外层 28px 之比
                         stops: const [0.0, 0.714, 1.0],
@@ -1178,10 +1232,9 @@ class _WordBankPageState extends State<WordBankPage> {
                     color: Theme.of(context).colorScheme.surface,
                     shape: CircleBorder(
                       side: BorderSide(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .outline
-                            .withOpacity(0.35),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outline.withOpacity(0.35),
                         width: 1,
                       ),
                     ),
@@ -1229,7 +1282,7 @@ class _WordBankPageState extends State<WordBankPage> {
               child: Text(
                 word,
                 style: const TextStyle(
-                  fontSize: 17,
+                  fontSize: 16.5,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1443,154 +1496,165 @@ class _WordBankPageState extends State<WordBankPage> {
         child: SafeArea(
           bottom: false,
           child: Column(
-          children: [
-            Container(
-              color: Theme.of(context).colorScheme.surface,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: 12,
-                      bottom: 12,
-                    ),
-                    child: UnifiedSearchBarFactory.withLanguageSelector(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      selectedLanguage: _selectedLanguage ?? 'ALL',
-                      availableLanguages: _languages,
-                      onLanguageSelected: (value) async {
-                        setState(() {
-                          _selectedLanguage = value == 'ALL' ? null : value;
-                          _selectedList = null;
-                        });
-                        if (value == null || value == 'ALL') {
-                          await _wordBankService.saveLastSelectedLanguage(
-                            'ALL',
-                          );
-                        } else {
-                          await _wordBankService.saveLastSelectedLanguage(
-                            value,
-                          );
-                        }
-                        await _loadWords();
-                      },
-                      hintText: context.t.search.hintWordBank,
-                      showAllOption: true,
-                      onTap: () {
-                        if (!_wasFocused && _searchController.text.isNotEmpty) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            _searchController.selection = TextSelection(
-                              baseOffset: 0,
-                              extentOffset: _searchController.text.length,
-                            );
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.surface,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 12,
+                        bottom: 12,
+                      ),
+                      child: UnifiedSearchBarFactory.withLanguageSelector(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        selectedLanguage: _selectedLanguage ?? 'ALL',
+                        availableLanguages: _languages,
+                        onLanguageSelected: (value) async {
+                          setState(() {
+                            _selectedLanguage = value == 'ALL' ? null : value;
+                            _selectedList = null;
                           });
-                        }
-                        _wasFocused = true;
-                      },
-                      extraSuffixIcons: [
-                        PopupMenuButton<SortMode>(
-                          tooltip: context.t.wordBank.sortTooltip,
-                          offset: const Offset(0, 40),
-                          icon: Icon(
-                            Icons.swap_vert,
-                            size: 20,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                          onSelected: (mode) => _changeSortMode(mode),
-                          itemBuilder: (context) => SortMode.values
-                              .map(
-                                (mode) => PopupMenuItem<SortMode>(
-                                  value: mode,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        _currentSortMode == mode
-                                            ? Icons.check_circle
-                                            : Icons.circle_outlined,
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(mode.label(context)),
-                                    ],
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.arrow_forward, size: 20),
-                          onPressed: () {
-                            _loadWords();
-                          },
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 40,
-                            minHeight: 40,
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                      },
-                      onSubmitted: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                        _loadWords();
-                      },
-                    ),
-                  ),
-                  // 词表筛选器
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildListFilter(),
-                  ),
-                ],
-              ),
-            ),
-            // 可滚动的单词列表
-            Expanded(
-              child: _isLoadingWords
-                  ? const Center(child: CircularProgressIndicator())
-                  : NotificationListener<ScrollNotification>(
-                      onNotification: (ScrollNotification scrollInfo) {
-                        if (!_isLoadingMore &&
-                            _hasMoreData &&
-                            scrollInfo.metrics.pixels >=
-                                scrollInfo.metrics.maxScrollExtent - 200) {
-                          _loadMoreWords();
-                        }
-                        return false;
-                      },
-                      child: CustomScrollView(
-                        slivers: [
-                          // 单词列表
-                          ..._buildWordList(),
-                          // 加载更多指示器
-                          if (_isLoadingMore)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
+                          if (value == null || value == 'ALL') {
+                            await _wordBankService.saveLastSelectedLanguage(
+                              'ALL',
+                            );
+                          } else {
+                            await _wordBankService.saveLastSelectedLanguage(
+                              value,
+                            );
+                          }
+                          await _loadWords();
+                        },
+                        hintText: context.t.search.hintWordBank,
+                        showAllOption: true,
+                        onTap: () {
+                          if (!_wasFocused &&
+                              _searchController.text.isNotEmpty) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              _searchController.selection = TextSelection(
+                                baseOffset: 0,
+                                extentOffset: _searchController.text.length,
+                              );
+                            });
+                          }
+                          _wasFocused = true;
+                        },
+                        extraSuffixIcons: [
+                          PopupMenuButton<SortMode>(
+                            tooltip: context.t.wordBank.sortTooltip,
+                            offset: const Offset(-8, 45),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                          // 底部留白
-                          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                            elevation: 4,
+                            color: Theme.of(context).colorScheme.surface,
+                            icon: Icon(
+                              Icons.swap_vert,
+                              size: 20,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                            onSelected: (mode) => _changeSortMode(mode),
+                            itemBuilder: (context) => SortMode.values
+                                .map(
+                                  (mode) => PopupMenuItem<SortMode>(
+                                    value: mode,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _currentSortMode == mode
+                                              ? Icons.check_circle
+                                              : Icons.circle_outlined,
+                                          size: 18,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Text(mode.label(context)),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.arrow_forward, size: 20),
+                            onPressed: () {
+                              _loadWords();
+                            },
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 40,
+                            ),
+                          ),
                         ],
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                        onSubmitted: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                          _loadWords();
+                        },
                       ),
                     ),
-            ),
-          ],
-        ),
+                    // 词表筛选器
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildListFilter(),
+                    ),
+                  ],
+                ),
+              ),
+              // 可滚动的单词列表
+              Expanded(
+                child: _isLoadingWords
+                    ? const Center(child: CircularProgressIndicator())
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: (ScrollNotification scrollInfo) {
+                          if (!_isLoadingMore &&
+                              _hasMoreData &&
+                              scrollInfo.metrics.pixels >=
+                                  scrollInfo.metrics.maxScrollExtent - 200) {
+                            _loadMoreWords();
+                          }
+                          return false;
+                        },
+                        child: CustomScrollView(
+                          slivers: [
+                            // 单词列表
+                            ..._buildWordList(),
+                            // 加载更多指示器
+                            if (_isLoadingMore)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                ),
+                              ),
+                            // 底部留白
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 32),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );

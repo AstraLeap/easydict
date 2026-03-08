@@ -390,13 +390,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         _buildSettingsTile(
                           context,
-                          title: context.t.settings.appLanguage,
-                          icon: Icons.language_outlined,
-                          iconColor: colorScheme.primary,
-                          onTap: _showLanguageDialog,
-                        ),
-                        _buildSettingsTile(
-                          context,
                           title: context.t.settings.themeSettings,
                           icon: Icons.palette_outlined,
                           iconColor: colorScheme.primary,
@@ -409,6 +402,13 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             );
                           },
+                        ),
+                        _buildSettingsTile(
+                          context,
+                          title: context.t.settings.appLanguage,
+                          icon: Icons.language_outlined,
+                          iconColor: colorScheme.primary,
+                          onTap: _showLanguageDialog,
                         ),
                         _buildSettingsTile(
                           context,
