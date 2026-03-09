@@ -266,9 +266,153 @@ class _RenderTappable extends RenderProxyBox {
 
 // 预编译的正则表达式常量，避免每次调用时重新创建对象
 final RegExp _removeFormattingPattern = RegExp(r'\[([^\]]*?)\]\([^\)]*?\)');
-final RegExp _formattedTextPattern = RegExp(r'\[([^\]]*?)\]\(([^)]*?)\)');
 
-/// 去除文本格式，将 [text](style) 转换为 text
+const int _maxNestingDepth = 10;
+
+class _ParseContext {
+  final String text;
+  int pos = 0;
+  final int maxDepth;
+  int currentDepth = 0;
+
+  _ParseContext(this.text, {this.maxDepth = _maxNestingDepth});
+
+  bool get isAtEnd => pos >= text.length;
+  String get currentChar => isAtEnd ? '' : text[pos];
+  String get peekNext => pos + 1 >= text.length ? '' : text[pos + 1];
+}
+
+class _ParsedSegment {
+  final String? plainText;
+  final String? formattedText;
+  final String? typesStr;
+  final List<_ParsedSegment>? children;
+
+  _ParsedSegment.plain(this.plainText)
+    : formattedText = null,
+      typesStr = null,
+      children = null;
+
+  _ParsedSegment.formatted(this.formattedText, this.typesStr, this.children)
+    : plainText = null;
+
+  bool get isPlain => plainText != null;
+  bool get isFormatted => formattedText != null;
+}
+
+List<_ParsedSegment> _parseSegments(_ParseContext ctx) {
+  final segments = <_ParsedSegment>[];
+  final buffer = StringBuffer();
+
+  while (!ctx.isAtEnd) {
+    if (ctx.currentChar == '[') {
+      if (buffer.isNotEmpty) {
+        segments.add(_ParsedSegment.plain(buffer.toString()));
+        buffer.clear();
+      }
+
+      final segment = _tryParseFormattedSegment(ctx);
+      if (segment != null) {
+        segments.add(segment);
+      } else {
+        buffer.write('[');
+        ctx.pos++;
+      }
+    } else {
+      buffer.write(ctx.currentChar);
+      ctx.pos++;
+    }
+  }
+
+  if (buffer.isNotEmpty) {
+    segments.add(_ParsedSegment.plain(buffer.toString()));
+  }
+
+  return segments;
+}
+
+_ParsedSegment? _tryParseFormattedSegment(_ParseContext ctx) {
+  if (ctx.currentChar != '[') return null;
+
+  final startPos = ctx.pos;
+  ctx.pos++;
+
+  final contentBuffer = StringBuffer();
+  int bracketDepth = 1;
+
+  while (!ctx.isAtEnd && bracketDepth > 0) {
+    final ch = ctx.currentChar;
+
+    if (ch == '[') {
+      bracketDepth++;
+      contentBuffer.write(ch);
+      ctx.pos++;
+    } else if (ch == ']') {
+      bracketDepth--;
+      if (bracketDepth > 0) {
+        contentBuffer.write(ch);
+      }
+      ctx.pos++;
+    } else {
+      contentBuffer.write(ch);
+      ctx.pos++;
+    }
+  }
+
+  if (ctx.isAtEnd || ctx.currentChar != '(') {
+    ctx.pos = startPos;
+    return null;
+  }
+
+  ctx.pos++;
+
+  final typesBuffer = StringBuffer();
+  int parenDepth = 1;
+
+  while (!ctx.isAtEnd && parenDepth > 0) {
+    final ch = ctx.currentChar;
+
+    if (ch == '(') {
+      parenDepth++;
+      typesBuffer.write(ch);
+      ctx.pos++;
+    } else if (ch == ')') {
+      parenDepth--;
+      if (parenDepth > 0) {
+        typesBuffer.write(ch);
+      }
+      ctx.pos++;
+    } else {
+      typesBuffer.write(ch);
+      ctx.pos++;
+    }
+  }
+
+  if (parenDepth != 0) {
+    ctx.pos = startPos;
+    return null;
+  }
+
+  final content = contentBuffer.toString();
+  final typesStr = typesBuffer.toString();
+
+  if (content.contains('[') && content.contains('](')) {
+    if (ctx.currentDepth >= ctx.maxDepth) {
+      return _ParsedSegment.formatted(content, typesStr, null);
+    }
+
+    ctx.currentDepth++;
+    final nestedCtx = _ParseContext(content, maxDepth: ctx.maxDepth)
+      ..currentDepth = ctx.currentDepth;
+    final children = _parseSegments(nestedCtx);
+    ctx.currentDepth--;
+
+    return _ParsedSegment.formatted(content, typesStr, children);
+  }
+
+  return _ParsedSegment.formatted(content, typesStr, null);
+}
+
 String _removeFormatting(String text) {
   return text.replaceAllMapped(
     _removeFormattingPattern,
@@ -334,6 +478,151 @@ String? _determineEffectiveLanguage({
   }
 }
 
+class _StyleInfo {
+  TextStyle style;
+  List<TextDecoration> decorations;
+  bool isSup;
+  bool isSub;
+  bool aiTextMark;
+  bool isWordLabel;
+  bool isLabelType;
+  Color? customColor;
+  String? linkTarget;
+  String? exactJumpTarget;
+
+  _StyleInfo({
+    required this.style,
+    this.decorations = const [],
+    this.isSup = false,
+    this.isSub = false,
+    this.aiTextMark = false,
+    this.isWordLabel = false,
+    this.isLabelType = false,
+    this.customColor,
+    this.linkTarget,
+    this.exactJumpTarget,
+  });
+}
+
+_StyleInfo _parseTypes(
+  String typesStr,
+  TextStyle baseStyle,
+  BuildContext? context,
+) {
+  final types = typesStr.split(',').map((t) => t.trim()).toList();
+
+  TextStyle style = baseStyle;
+  List<TextDecoration> decorations = [];
+  bool isSup = false;
+  bool isSub = false;
+  bool aiTextMark = false;
+  bool isWordLabel = false;
+  Color? customColor;
+  String? linkTarget;
+  String? exactJumpTarget;
+
+  for (final type in types) {
+    if (_colorMap.containsKey(type.toLowerCase())) {
+      customColor = _colorMap[type.toLowerCase()];
+      continue;
+    }
+
+    if (type.startsWith('->')) {
+      linkTarget = type.substring(2).trim();
+      continue;
+    }
+
+    if (type.startsWith('==')) {
+      exactJumpTarget = type.substring(2).trim();
+      continue;
+    }
+
+    switch (type) {
+      case 'strike':
+        decorations.add(TextDecoration.lineThrough);
+        break;
+      case 'underline':
+        decorations.add(TextDecoration.underline);
+        break;
+      case 'double_underline':
+        style = style.copyWith(
+          decoration: TextDecoration.combine([
+            TextDecoration.underline,
+            TextDecoration.underline,
+          ]),
+          decorationColor: baseStyle.color,
+        );
+        break;
+      case 'wavy':
+        style = style.copyWith(
+          decoration: TextDecoration.underline,
+          decorationStyle: TextDecorationStyle.wavy,
+          decorationColor: baseStyle.color,
+        );
+        break;
+      case 'bold':
+        style = style.copyWith(
+          fontWeight: types.contains('label')
+              ? FontWeight.w600
+              : FontWeight.bold,
+        );
+        break;
+      case 'italic':
+        style = style.copyWith(fontStyle: FontStyle.italic);
+        break;
+      case 'sup':
+        isSup = true;
+        break;
+      case 'sub':
+        isSub = true;
+        break;
+      case 'special':
+        style = style.copyWith(
+          fontStyle: FontStyle.italic,
+          color: context != null ? Theme.of(context).colorScheme.primary : null,
+        );
+        break;
+      case 'ai':
+        aiTextMark = true;
+        break;
+      case 'label':
+        isSup = false;
+        style = style.copyWith(fontWeight: FontWeight.w500);
+        break;
+      case 'word':
+        isWordLabel = true;
+        style = style.copyWith(fontWeight: FontWeight.w700);
+        break;
+    }
+  }
+
+  final isLabelType = types.contains('label');
+
+  if (decorations.isNotEmpty) {
+    style = style.copyWith(
+      decoration: TextDecoration.combine(decorations),
+      decorationColor: baseStyle.color,
+    );
+  }
+
+  if (customColor != null) {
+    style = style.copyWith(color: customColor);
+  }
+
+  return _StyleInfo(
+    style: style,
+    decorations: decorations,
+    isSup: isSup,
+    isSub: isSub,
+    aiTextMark: aiTextMark,
+    isWordLabel: isWordLabel,
+    isLabelType: isLabelType,
+    customColor: customColor,
+    linkTarget: linkTarget,
+    exactJumpTarget: exactJumpTarget,
+  );
+}
+
 FormattedTextResult parseFormattedText(
   String text,
   TextStyle baseStyle, {
@@ -349,27 +638,18 @@ FormattedTextResult parseFormattedText(
   Map<String, Map<String, double>>? fontScales,
   bool isSerif = false,
   bool isBold = false,
-
-  /// 可选：通过元素类型直接指定排版类别，自动覆盖 [isSerif]。
   DictElementType? elementType,
-
-  /// 可选：覆盖带 recognizer 的 TextSpan 的鼠标样式（不影响链接跳转 span）。
   MouseCursor? mouseCursor,
-
-  /// 是否应用用户自定义字体，默认为 true。
-  /// AI 内容、JSON 编辑器等非字典内容应设为 false。
   bool useCustomFont = true,
 }) {
-  // elementType 优先覆盖 isSerif
   final effectiveIsSerif = elementType != null
       ? DictTypography.isSerif(elementType)
       : isSerif;
-  // 如果被隐藏，返回空的 spans
+
   if (hidden) {
     return FormattedTextResult([], [], hidden: true);
   }
 
-  // 应用自定义字体和缩放
   TextStyle effectiveBaseStyle = baseStyle;
 
   final effectiveLanguage = _determineEffectiveLanguage(
@@ -378,7 +658,6 @@ FormattedTextResult parseFormattedText(
     sourceLanguage: sourceLanguage,
   );
 
-  // 仅当 useCustomFont 为 true 时才应用自定义字体
   if (useCustomFont && effectiveLanguage != null) {
     final fontService = FontLoaderService();
     final fontInfo = fontService.getFontInfo(
@@ -398,7 +677,6 @@ FormattedTextResult parseFormattedText(
               1.0)
         : 1.0;
 
-    // 只有当 baseStyle 没有指定 fontFamily 时，才应用自定义字体
     if (fontInfo != null && baseStyle.fontFamily == null) {
       effectiveBaseStyle = effectiveBaseStyle.copyWith(
         fontFamily: fontInfo.fontFamily,
@@ -412,277 +690,219 @@ FormattedTextResult parseFormattedText(
     }
   }
 
-  // 强制所有样式使用简体中文 Locale
   effectiveBaseStyle = effectiveBaseStyle.copyWith(
     locale: const Locale('zh', 'CN'),
   );
 
-  final RegExp pattern = _formattedTextPattern;
-  final List<InlineSpan> spans = [];
-  final List<String> plainTexts = [];
-  int lastIndex = 0;
+  final ctx = _ParseContext(text);
+  final segments = _parseSegments(ctx);
 
-  for (final match in pattern.allMatches(text)) {
-    if (match.start > lastIndex) {
-      final normalText = text.substring(lastIndex, match.start);
+  final spans = <InlineSpan>[];
+  final plainTexts = <String>[];
+
+  _processSegments(
+    segments: segments,
+    baseStyle: effectiveBaseStyle,
+    context: context,
+    recognizer: recognizer,
+    mouseCursor: mouseCursor,
+    effectiveLanguage: effectiveLanguage,
+    spans: spans,
+    plainTexts: plainTexts,
+  );
+
+  return FormattedTextResult(spans, plainTexts, hidden: hidden);
+}
+
+void _processSegments({
+  required List<_ParsedSegment> segments,
+  required TextStyle baseStyle,
+  required BuildContext? context,
+  required GestureRecognizer? recognizer,
+  required MouseCursor? mouseCursor,
+  required String? effectiveLanguage,
+  required List<InlineSpan> spans,
+  required List<String> plainTexts,
+}) {
+  for (final segment in segments) {
+    if (segment.isPlain) {
+      final text = segment.plainText!;
       spans.add(
         TextSpan(
-          text: normalText,
-          style: effectiveBaseStyle,
+          text: text,
+          style: baseStyle,
           recognizer: recognizer,
           mouseCursor: mouseCursor,
         ),
       );
-      plainTexts.add(normalText);
-    }
-
-    final formattedText = match.group(1) ?? '';
-    final typesStr = match.group(2) ?? '';
-    final types = typesStr.split(',').map((t) => t.trim()).toList();
-
-    TextStyle style = effectiveBaseStyle;
-    List<TextDecoration> decorations = [];
-    bool isSup = false;
-    bool isSub = false;
-    bool aiTextMark = false;
-    bool isWordLabel = false;
-    Color? customColor;
-    String? linkTarget;
-    String? exactJumpTarget;
-
-    for (final type in types) {
-      // 检查是否是颜色
-      if (_colorMap.containsKey(type.toLowerCase())) {
-        customColor = _colorMap[type.toLowerCase()];
-        continue;
-      }
-
-      // 检查是否是查词链接 (->word)
-      if (type.startsWith('->')) {
-        linkTarget = type.substring(2).trim();
-        continue;
-      }
-
-      // 检查是否是精确跳转 (==entry_id.path)
-      if (type.startsWith('==')) {
-        exactJumpTarget = type.substring(2).trim();
-        continue;
-      }
-
-      switch (type) {
-        case 'strike':
-          decorations.add(TextDecoration.lineThrough);
-          break;
-        case 'underline':
-          decorations.add(TextDecoration.underline);
-          break;
-        case 'double_underline':
-          style = style.copyWith(
-            decoration: TextDecoration.combine([
-              TextDecoration.underline,
-              TextDecoration.underline,
-            ]),
-            decorationColor: effectiveBaseStyle.color,
-          );
-          break;
-        case 'wavy':
-          style = style.copyWith(
-            decoration: TextDecoration.underline,
-            decorationStyle: TextDecorationStyle.wavy,
-            decorationColor: effectiveBaseStyle.color,
-          );
-          break;
-        case 'bold':
-          // Inside a label, bold becomes w600 instead of w700
-          style = style.copyWith(
-            fontWeight: types.contains('label')
-                ? FontWeight.w600
-                : FontWeight.bold,
-          );
-          break;
-        case 'italic':
-          style = style.copyWith(fontStyle: FontStyle.italic);
-          break;
-        case 'sup':
-          isSup = true;
-          break;
-        case 'sub':
-          isSub = true;
-          break;
-        case 'special':
-          style = style.copyWith(
-            fontStyle: FontStyle.italic,
-            color: context != null
-                ? Theme.of(context).colorScheme.primary
-                : null,
-          );
-          break;
-        case 'ai':
-          aiTextMark = true;
-          break;
-        case 'label':
-          // 标签样式交由后续 WidgetSpan 处理，用 bool 标记
-          isSup = false; // 复用一下逻辑，下面单独判断
-          style = style.copyWith(fontWeight: FontWeight.w500);
-          break;
-        case 'word':
-          isWordLabel = true;
-          style = style.copyWith(fontWeight: FontWeight.w700);
-          break;
-      }
-    }
-
-    // 检查是否为 label 类型（通过 types 列表判断）
-    final isLabelType = types.contains('label');
-
-    if (decorations.isNotEmpty) {
-      style = style.copyWith(
-        decoration: TextDecoration.combine(decorations),
-        decorationColor: effectiveBaseStyle.color,
+      plainTexts.add(text);
+    } else if (segment.isFormatted) {
+      _processFormattedSegment(
+        segment: segment,
+        baseStyle: baseStyle,
+        context: context,
+        recognizer: recognizer,
+        mouseCursor: mouseCursor,
+        effectiveLanguage: effectiveLanguage,
+        spans: spans,
+        plainTexts: plainTexts,
       );
     }
-
-    if (customColor != null) {
-      style = style.copyWith(color: customColor);
-    }
-
-    // 处理链接跳转（优先级更高）
-    if (linkTarget != null && context != null) {
-      style = style.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        decoration: TextDecoration.underline,
-      );
-      spans.add(
-        TextSpan(
-          text: formattedText,
-          style: style,
-          recognizer: TapGestureRecognizer()
-            ..onTap = () {
-              _handleLinkTap(context, linkTarget!);
-            },
-        ),
-      );
-    } else if (exactJumpTarget != null && context != null) {
-      style = style.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        decoration: TextDecoration.underline,
-        decorationStyle: TextDecorationStyle.dotted,
-      );
-      spans.add(
-        TextSpan(
-          text: formattedText,
-          style: style,
-          recognizer: TapGestureRecognizer()
-            ..onTap = () {
-              _handleExactJump(context, exactJumpTarget!);
-            },
-        ),
-      );
-    } else if (isLabelType && context != null) {
-      final labelBaseSize = effectiveBaseStyle.fontSize ?? 12.0;
-      var labelStyle = style.copyWith(fontSize: labelBaseSize * 0.85);
-      if (isWordLabel) {
-        // word label: serif font
-        final serifFontInfo = FontLoaderService().getFontInfo(
-          effectiveLanguage ?? '',
-          isSerif: true,
-        );
-        if (serifFontInfo != null) {
-          labelStyle = labelStyle.copyWith(
-            fontFamily: serifFontInfo.fontFamily,
-          );
-        }
-      }
-      final borderColor = Theme.of(
-        context,
-      ).colorScheme.outline.withValues(alpha: 0.55);
-      final bgColor = Theme.of(
-        context,
-      ).colorScheme.onSurface.withValues(alpha: 0.05);
-      spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 1),
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-              color: bgColor,
-              border: Border.all(color: borderColor, width: 0.7),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(formattedText, style: labelStyle),
-          ),
-        ),
-      );
-    } else if (isSup) {
-      spans.add(
-        WidgetSpan(
-          child: Transform.translate(
-            offset: Offset(0, -effectiveBaseStyle.fontSize! * 0.1),
-            child: Text(
-              formattedText,
-              style: style.copyWith(
-                fontSize: effectiveBaseStyle.fontSize != null
-                    ? effectiveBaseStyle.fontSize! * 0.7
-                    : null,
-              ),
-            ),
-          ),
-          alignment: PlaceholderAlignment.middle,
-        ),
-      );
-    } else if (isSub) {
-      spans.add(
-        WidgetSpan(
-          child: Transform.translate(
-            offset: Offset(0, effectiveBaseStyle.fontSize! * 0.3),
-            child: Text(
-              formattedText,
-              style: style.copyWith(
-                fontSize: effectiveBaseStyle.fontSize != null
-                    ? effectiveBaseStyle.fontSize! * 0.7
-                    : null,
-              ),
-            ),
-          ),
-          alignment: PlaceholderAlignment.middle,
-        ),
-      );
-    } else {
-      if (aiTextMark && context != null) {
-        // AI 生成内容：不修改文字颜色/字体，用主题色 primaryContainer 背景与普通文本区分
-        final bgColor = Theme.of(context).colorScheme.primaryContainer;
-        style = style.copyWith(
-          backgroundColor: bgColor.withValues(alpha: 0.45),
-        );
-      }
-      spans.add(
-        TextSpan(
-          text: formattedText,
-          style: style,
-          recognizer: recognizer,
-          mouseCursor: mouseCursor,
-        ),
-      );
-    }
-    plainTexts.add(formattedText);
-    lastIndex = match.end;
   }
+}
 
-  if (lastIndex < text.length) {
-    final remainingText = text.substring(lastIndex);
+void _processFormattedSegment({
+  required _ParsedSegment segment,
+  required TextStyle baseStyle,
+  required BuildContext? context,
+  required GestureRecognizer? recognizer,
+  required MouseCursor? mouseCursor,
+  required String? effectiveLanguage,
+  required List<InlineSpan> spans,
+  required List<String> plainTexts,
+}) {
+  final typesStr = segment.typesStr ?? '';
+  final styleInfo = _parseTypes(typesStr, baseStyle, context);
+
+  if (segment.children != null && segment.children!.isNotEmpty) {
+    final childSpans = <InlineSpan>[];
+    final childPlainTexts = <String>[];
+
+    _processSegments(
+      segments: segment.children!,
+      baseStyle: styleInfo.style,
+      context: context,
+      recognizer: recognizer,
+      mouseCursor: mouseCursor,
+      effectiveLanguage: effectiveLanguage,
+      spans: childSpans,
+      plainTexts: childPlainTexts,
+    );
+
     spans.add(
       TextSpan(
-        text: remainingText,
-        style: effectiveBaseStyle,
+        children: childSpans,
+        style: styleInfo.style,
         recognizer: recognizer,
         mouseCursor: mouseCursor,
       ),
     );
-    plainTexts.add(remainingText);
+    plainTexts.addAll(childPlainTexts);
+    return;
   }
 
-  return FormattedTextResult(spans, plainTexts, hidden: hidden);
+  final formattedText = segment.formattedText ?? '';
+
+  if (styleInfo.linkTarget != null && context != null) {
+    var style = styleInfo.style.copyWith(
+      color: Theme.of(context).colorScheme.primary,
+      decoration: TextDecoration.underline,
+    );
+    spans.add(
+      TextSpan(
+        text: formattedText,
+        style: style,
+        recognizer: TapGestureRecognizer()
+          ..onTap = () {
+            _handleLinkTap(context, styleInfo.linkTarget!);
+          },
+      ),
+    );
+  } else if (styleInfo.exactJumpTarget != null && context != null) {
+    var style = styleInfo.style.copyWith(
+      color: Theme.of(context).colorScheme.primary,
+      decoration: TextDecoration.underline,
+      decorationStyle: TextDecorationStyle.dotted,
+    );
+    spans.add(
+      TextSpan(
+        text: formattedText,
+        style: style,
+        recognizer: TapGestureRecognizer()
+          ..onTap = () {
+            _handleExactJump(context, styleInfo.exactJumpTarget!);
+          },
+      ),
+    );
+  } else if (styleInfo.isLabelType && context != null) {
+    final labelBaseSize = baseStyle.fontSize ?? 12.0;
+    var labelStyle = styleInfo.style.copyWith(fontSize: labelBaseSize * 0.85);
+    if (styleInfo.isWordLabel) {
+      final serifFontInfo = FontLoaderService().getFontInfo(
+        effectiveLanguage ?? '',
+        isSerif: true,
+      );
+      if (serifFontInfo != null) {
+        labelStyle = labelStyle.copyWith(fontFamily: serifFontInfo.fontFamily);
+      }
+    }
+    final borderColor = Theme.of(context).colorScheme.outline.withAlpha(140);
+    final bgColor = Theme.of(context).colorScheme.onSurface.withAlpha(13);
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: bgColor,
+            border: Border.all(color: borderColor, width: 0.7),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(formattedText, style: labelStyle),
+        ),
+      ),
+    );
+  } else if (styleInfo.isSup) {
+    spans.add(
+      WidgetSpan(
+        child: Transform.translate(
+          offset: Offset(0, -baseStyle.fontSize! * 0.1),
+          child: Text(
+            formattedText,
+            style: styleInfo.style.copyWith(
+              fontSize: baseStyle.fontSize != null
+                  ? baseStyle.fontSize! * 0.7
+                  : null,
+            ),
+          ),
+        ),
+        alignment: PlaceholderAlignment.middle,
+      ),
+    );
+  } else if (styleInfo.isSub) {
+    spans.add(
+      WidgetSpan(
+        child: Transform.translate(
+          offset: Offset(0, baseStyle.fontSize! * 0.3),
+          child: Text(
+            formattedText,
+            style: styleInfo.style.copyWith(
+              fontSize: baseStyle.fontSize != null
+                  ? baseStyle.fontSize! * 0.7
+                  : null,
+            ),
+          ),
+        ),
+        alignment: PlaceholderAlignment.middle,
+      ),
+    );
+  } else {
+    var style = styleInfo.style;
+    if (styleInfo.aiTextMark && context != null) {
+      final bgColor = Theme.of(context).colorScheme.primaryContainer;
+      style = style.copyWith(backgroundColor: bgColor.withAlpha(115));
+    }
+    spans.add(
+      TextSpan(
+        text: formattedText,
+        style: style,
+        recognizer: recognizer,
+        mouseCursor: mouseCursor,
+      ),
+    );
+  }
+  plainTexts.add(formattedText);
 }
 
 Future<void> _handleLinkTap(BuildContext context, String word) async {
