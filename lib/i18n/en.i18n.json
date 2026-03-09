@@ -152,7 +152,7 @@
     "noEnabledDicts": "No dictionaries are enabled",
     "wildcardHint": "LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help; h_llo → hello, hallo\n\nGLOB pattern (enter * ? [ ] ^), case-sensitive:\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them\n  e.g. h?llo → hello, hallo; [aeiou]* → words starting with a vowel",
     "dbDownloaded": "Download complete, search \"{word}\" to test",
-    "dailyWords": "Daily Words",
+    "dailyWords": "Daily Vocabulary",
     "dailyWordsRefresh": "Refresh",
     "dailyWordsSettings": "Settings",
     "dailyWordsCount": "Word Count",

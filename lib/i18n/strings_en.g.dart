@@ -185,7 +185,7 @@ class _TranslationsSearchEn extends TranslationsSearchZh {
 	@override String get noEnabledDicts => 'No dictionaries are enabled';
 	@override String get wildcardHint => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help; h_llo → hello, hallo\n\nGLOB pattern (enter * ? [ ] ^), case-sensitive:\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them\n  e.g. h?llo → hello, hallo; [aeiou]* → words starting with a vowel';
 	@override String dbDownloaded({required Object word}) => 'Download complete, search "${word}" to test';
-	@override String get dailyWords => 'Daily Words';
+	@override String get dailyWords => 'Daily Vocabulary';
 	@override String get dailyWordsRefresh => 'Refresh';
 	@override String get dailyWordsSettings => 'Settings';
 	@override String get dailyWordsCount => 'Word Count';
@@ -1076,7 +1076,7 @@ extension on TranslationsEn {
 			'search.noEnabledDicts' => 'No dictionaries are enabled',
 			'search.wildcardHint' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help; h_llo → hello, hallo\n\nGLOB pattern (enter * ? [ ] ^), case-sensitive:\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them\n  e.g. h?llo → hello, hallo; [aeiou]* → words starting with a vowel',
 			'search.dbDownloaded' => ({required Object word}) => 'Download complete, search "${word}" to test',
-			'search.dailyWords' => 'Daily Words',
+			'search.dailyWords' => 'Daily Vocabulary',
 			'search.dailyWordsRefresh' => 'Refresh',
 			'search.dailyWordsSettings' => 'Settings',
 			'search.dailyWordsCount' => 'Word Count',
