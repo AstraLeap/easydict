@@ -120,7 +120,7 @@
       "keep90Days": "Keep last 90 days"
     },
     "actionLabel": {
-      "aiTranslate": "Toggle Translation",
+      "aiTranslate": "Translate",
       "copy": "Copy Text",
       "askAi": "Ask AI",
       "edit": "Edit",

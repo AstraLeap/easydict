@@ -43,7 +43,7 @@ android {
 
     buildTypes {
         release {
-        val envKeystoreFile     = System.getenv("KEYSTORE_FILE") ?: findProperty("KEYSTORE_FILE")?.toString()
+            val envKeystoreFile     = System.getenv("KEYSTORE_FILE") ?: findProperty("KEYSTORE_FILE")?.toString()
             val envKeystorePassword = System.getenv("KEYSTORE_PASSWORD") ?: findProperty("KEYSTORE_PASSWORD")?.toString()
             val envKeyAlias         = System.getenv("KEY_ALIAS") ?: findProperty("KEY_ALIAS")?.toString()
             val envKeyPassword      = System.getenv("KEY_PASSWORD") ?: findProperty("KEY_PASSWORD")?.toString()
@@ -58,6 +58,10 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appName"] = "EasyDict-Debug"
         }
     }
 }
