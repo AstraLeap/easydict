@@ -69,6 +69,13 @@
     "misc": "其他设置",
     "about": "关于软件",
     "appLanguage": "应用语言",
+    "audioBackend": "音频播放引擎",
+    "audioBackendDialog": {
+      "title": "音频播放引擎",
+      "subtitle": "选择音频播放后端（Android 如遇播放卡顿可尝试切换）",
+      "mediaKit": "MediaKit (默认)",
+      "audioplayers": "AudioPlayers"
+    },
     "scaleDialog": {
       "title": "软件布局缩放",
       "subtitle": "调整词典内容显示的整体缩放比例",

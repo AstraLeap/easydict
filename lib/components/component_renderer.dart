@@ -2139,14 +2139,23 @@ class ComponentRendererState extends State<ComponentRenderer> {
   Future<void> _playTtsAudio(List<int> audioData) async {
     Directory? tempDir;
     try {
-      // 同步清理旧播放器，避免切换时出现前帧抖动
-      await _cleanupPlayer();
+      // 取消之前的完成监听，但不停止播放
+      // 让 open() 自动处理切换，避免 stop() 导致的音频管道重置
+      _playbackCompletionSub?.cancel();
+      _playbackCompletionSub = null;
 
-      final player = Player();
-      _currentPlayer = player;
-
-      // 注册到管理器以便热重启时清理
-      MediaKitManager().registerPlayer(player);
+      // 复用现有 player 或创建新实例
+      Player player;
+      if (_currentPlayer != null) {
+        player = _currentPlayer!;
+        Logger.d('复用现有播放器', tag: '_playTtsAudio');
+      } else {
+        player = Player();
+        _currentPlayer = player;
+        // 注册到管理器以便热重启时清理
+        MediaKitManager().registerPlayer(player);
+        Logger.d('创建新播放器', tag: '_playTtsAudio');
+      }
 
       tempDir = await Directory.systemTemp.createTemp();
       final audioFile = File('${tempDir.path}/tts_audio.mp3');
@@ -2162,21 +2171,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final fileSize = await audioFile.length();
       Logger.d('TTS音频文件大小: $fileSize bytes', tag: '_playTtsAudio');
 
-      // 先打开媒体，等待缓冲区就绪后再播放，解决 Android 开头抖动
-      await player.open(Media(audioFile.path), play: false);
-
-      // 等待播放器准备好（简单延迟，避免 stream 监听导致的 dispose 问题）
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      // 检查 player 是否仍然有效
-      if (_currentPlayer != player) {
-        Logger.d('播放器已被替换，取消播放', tag: '_playTtsAudio');
-        return;
-      }
-
-      // 直接开始播放，不再 seek
-      // Android 上 seek 操作可能导致播放位置被重置或卡顿
-      await player.play();
+      // 直接打开并播放，避免 open 和 play 之间的间隙导致 Android 抖动
+      // 使用 play: true 让播放器内部处理缓冲和播放的衔接
+      await player.open(Media(audioFile.path), play: true);
 
       // 监听播放完成，稍等尾帧稳定后再清理，避免结尾被截断
       _playbackCompletionSub?.cancel();
@@ -2748,7 +2745,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     super.dispose();
   }
 
-  /// 安全清理音频播放器
+  /// 安全清理音频播放器（只停止，不销毁，以便复用）
   Future<void> _cleanupPlayer() async {
     try {
       _playbackCompletionSub?.cancel();
@@ -2756,13 +2753,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final player = _currentPlayer;
       if (player != null) {
-        // 从管理器中注销
-        MediaKitManager().unregisterPlayer(player);
-        // 先停止播放
+        // 只停止播放，不销毁 player，以便复用
         await player.stop();
-        // 释放资源
-        await player.dispose();
-        _currentPlayer = null;
+        // 注意：不再 dispose 和置 null，保持 player 实例以便复用
       }
     } catch (e) {
       // 忽略清理过程中的错误
@@ -5708,31 +5701,27 @@ class ComponentRendererState extends State<ComponentRenderer> {
         Logger.d('使用在线音频: $audioSource', tag: '_playAudio');
       }
 
-      // 清理旧播放器
-      await _cleanupPlayer();
+      // 取消之前的完成监听，但不停止播放
+      // 让 open() 自动处理切换，避免 stop() 导致的音频管道重置
+      _playbackCompletionSub?.cancel();
+      _playbackCompletionSub = null;
 
-      player = Player();
-      _currentPlayer = player;
-
-      // 注册到管理器以便热重启时清理
-      MediaKitManager().registerPlayer(player);
-
-      Logger.d('播放音频: ${isLocal ? "本地" : "在线"}', tag: '_playAudio');
-      // 先打开媒体，等待缓冲区就绪后再播放，解决 Android 开头抖动
-      await player.open(Media(audioSource), play: false);
-
-      // 等待播放器准备好（增加延迟确保 Android 上缓冲区充足）
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      // 检查 player 是否仍然有效
-      if (_currentPlayer != player) {
-        Logger.d('播放器已被替换，取消播放', tag: '_playAudio');
-        return;
+      // 复用现有 player 或创建新实例
+      if (_currentPlayer != null) {
+        player = _currentPlayer!;
+        Logger.d('复用现有播放器', tag: '_playAudio');
+      } else {
+        player = Player();
+        _currentPlayer = player;
+        // 注册到管理器以便热重启时清理
+        MediaKitManager().registerPlayer(player);
+        Logger.d('创建新播放器', tag: '_playAudio');
       }
 
-      // 直接开始播放，不再 seek
-      // Android 上 seek 操作可能导致播放位置被重置或卡顿
-      await player.play();
+      Logger.d('播放音频: ${isLocal ? "本地" : "在线"}', tag: '_playAudio');
+      // 直接打开并播放，避免 open 和 play 之间的间隙导致 Android 抖动
+      // 使用 play: true 让播放器内部处理缓冲和播放的衔接
+      await player.open(Media(audioSource), play: true);
 
       // 监听播放完成，等待尾帧稳定后再清理，避免尾部被截断
       _playbackCompletionSub?.cancel();

@@ -152,6 +152,8 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 	@override String get misc => 'Other Settings';
 	@override String get about => 'About';
 	@override String get appLanguage => 'App Language';
+	@override String get audioBackend => 'Audio Playback Engine';
+	@override late final _TranslationsSettingsAudioBackendDialogEn audioBackendDialog = _TranslationsSettingsAudioBackendDialogEn._(_root);
 	@override late final _TranslationsSettingsScaleDialogEn scaleDialog = _TranslationsSettingsScaleDialogEn._(_root);
 	@override late final _TranslationsSettingsClickActionDialogEn clickActionDialog = _TranslationsSettingsClickActionDialogEn._(_root);
 	@override late final _TranslationsSettingsToolbarDialogEn toolbarDialog = _TranslationsSettingsToolbarDialogEn._(_root);
@@ -813,6 +815,19 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get morphThirdSingFull => 'Third person singular';
 }
 
+// Path: settings.audioBackendDialog
+class _TranslationsSettingsAudioBackendDialogEn extends TranslationsSettingsAudioBackendDialogZh {
+	_TranslationsSettingsAudioBackendDialogEn._(TranslationsEn root) : this._root = root, super.internal(root);
+
+	final TranslationsEn _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'Audio Playback Engine';
+	@override String get subtitle => 'Select audio backend (switch if Android playback stutters)';
+	@override String get mediaKit => 'MediaKit (Default)';
+	@override String get audioplayers => 'AudioPlayers';
+}
+
 // Path: settings.scaleDialog
 class _TranslationsSettingsScaleDialogEn extends TranslationsSettingsScaleDialogZh {
 	_TranslationsSettingsScaleDialogEn._(TranslationsEn root) : this._root = root, super.internal(root);
@@ -898,7 +913,7 @@ class _TranslationsSettingsActionLabelEn extends TranslationsSettingsActionLabel
 	final TranslationsEn _root; // ignore: unused_field
 
 	// Translations
-	@override String get aiTranslate => 'Toggle Translation';
+	@override String get aiTranslate => 'Translate';
 	@override String get copy => 'Copy Text';
 	@override String get askAi => 'Ask AI';
 	@override String get edit => 'Edit';
@@ -1005,6 +1020,11 @@ extension on TranslationsEn {
 			'settings.misc' => 'Other Settings',
 			'settings.about' => 'About',
 			'settings.appLanguage' => 'App Language',
+			'settings.audioBackend' => 'Audio Playback Engine',
+			'settings.audioBackendDialog.title' => 'Audio Playback Engine',
+			'settings.audioBackendDialog.subtitle' => 'Select audio backend (switch if Android playback stutters)',
+			'settings.audioBackendDialog.mediaKit' => 'MediaKit (Default)',
+			'settings.audioBackendDialog.audioplayers' => 'AudioPlayers',
 			'settings.scaleDialog.title' => 'Layout Scale',
 			'settings.scaleDialog.subtitle' => 'Adjust the overall scale of dictionary content display',
 			'settings.scaleDialog.confirmTitle' => 'Keep scale change?',
@@ -1047,7 +1067,7 @@ extension on TranslationsEn {
 			'settings.misc_page.keep7Days' => 'Keep last 7 days',
 			'settings.misc_page.keep30Days' => 'Keep last 30 days',
 			'settings.misc_page.keep90Days' => 'Keep last 90 days',
-			'settings.actionLabel.aiTranslate' => 'Toggle Translation',
+			'settings.actionLabel.aiTranslate' => 'Translate',
 			'settings.actionLabel.copy' => 'Copy Text',
 			'settings.actionLabel.askAi' => 'Ask AI',
 			'settings.actionLabel.edit' => 'Edit',
@@ -1449,13 +1469,13 @@ extension on TranslationsEn {
 			'dict.dateUnknown' => 'Unknown',
 			'dict.noFileSelected' => 'No file selected to update',
 			'dict.configCloudFirst' => 'Please configure cloud service first',
+			_ => null,
+		} ?? switch (path) {
 			'dict.getDictInfoFailed' => 'Cannot get dictionary info',
 			'dict.versionUpdated' => ({required Object version}) => 'Version updated to ${version}, no download needed',
 			'dict.androidChoiceTitle' => 'Dictionary Storage',
 			'dict.androidAppDir' => 'App-specific directory',
 			'dict.androidAppDirWarning' => 'Data will be deleted if app is uninstalled',
-			_ => null,
-		} ?? switch (path) {
 			'dict.androidExtDir' => 'External public directory',
 			'dict.androidExtDirNote' => 'Data persists after app updates/uninstall',
 			'dict.androidRecommended' => 'Recommended',

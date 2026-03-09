@@ -69,6 +69,13 @@
     "misc": "Other Settings",
     "about": "About",
     "appLanguage": "App Language",
+    "audioBackend": "Audio Playback Engine",
+    "audioBackendDialog": {
+      "title": "Audio Playback Engine",
+      "subtitle": "Select audio backend (switch if Android playback stutters)",
+      "mediaKit": "MediaKit (Default)",
+      "audioplayers": "AudioPlayers"
+    },
     "scaleDialog": {
       "title": "Layout Scale",
       "subtitle": "Adjust the overall scale of dictionary content display",
