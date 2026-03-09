@@ -280,6 +280,10 @@ class TranslationsSettingsZh {
 	/// zh: '应用语言'
 	String get appLanguage => '应用语言';
 
+	/// zh: '音频播放引擎'
+	String get audioBackend => '音频播放引擎';
+
+	late final TranslationsSettingsAudioBackendDialogZh audioBackendDialog = TranslationsSettingsAudioBackendDialogZh.internal(_root);
 	late final TranslationsSettingsScaleDialogZh scaleDialog = TranslationsSettingsScaleDialogZh.internal(_root);
 	late final TranslationsSettingsClickActionDialogZh clickActionDialog = TranslationsSettingsClickActionDialogZh.internal(_root);
 	late final TranslationsSettingsToolbarDialogZh toolbarDialog = TranslationsSettingsToolbarDialogZh.internal(_root);
@@ -2068,6 +2072,27 @@ class TranslationsEntryZh {
 	String get morphThirdSingFull => '第三人称单数';
 }
 
+// Path: settings.audioBackendDialog
+class TranslationsSettingsAudioBackendDialogZh {
+	TranslationsSettingsAudioBackendDialogZh.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// zh: '音频播放引擎'
+	String get title => '音频播放引擎';
+
+	/// zh: '选择音频播放后端（Android 如遇播放卡顿可尝试切换）'
+	String get subtitle => '选择音频播放后端（Android 如遇播放卡顿可尝试切换）';
+
+	/// zh: 'MediaKit (默认)'
+	String get mediaKit => 'MediaKit (默认)';
+
+	/// zh: 'AudioPlayers'
+	String get audioplayers => 'AudioPlayers';
+}
+
 // Path: settings.scaleDialog
 class TranslationsSettingsScaleDialogZh {
 	TranslationsSettingsScaleDialogZh.internal(this._root);
@@ -2394,6 +2419,11 @@ extension on Translations {
 			'settings.misc' => '其他设置',
 			'settings.about' => '关于软件',
 			'settings.appLanguage' => '应用语言',
+			'settings.audioBackend' => '音频播放引擎',
+			'settings.audioBackendDialog.title' => '音频播放引擎',
+			'settings.audioBackendDialog.subtitle' => '选择音频播放后端（Android 如遇播放卡顿可尝试切换）',
+			'settings.audioBackendDialog.mediaKit' => 'MediaKit (默认)',
+			'settings.audioBackendDialog.audioplayers' => 'AudioPlayers',
 			'settings.scaleDialog.title' => '软件布局缩放',
 			'settings.scaleDialog.subtitle' => '调整词典内容显示的整体缩放比例',
 			'settings.scaleDialog.confirmTitle' => '保持缩放更改？',
@@ -2838,13 +2868,13 @@ extension on Translations {
 			'dict.dateUnknown' => '未知',
 			'dict.noFileSelected' => '没有选择要更新的文件',
 			'dict.configCloudFirst' => '请先配置云服务地址',
+			_ => null,
+		} ?? switch (path) {
 			'dict.getDictInfoFailed' => '无法获取词典信息',
 			'dict.versionUpdated' => ({required Object version}) => '版本已更新至 ${version}，无需下载文件',
 			'dict.androidChoiceTitle' => '词典存储位置',
 			'dict.androidAppDir' => '应用专属目录',
 			'dict.androidAppDirWarning' => '卸载应用后词典数据将被删除',
-			_ => null,
-		} ?? switch (path) {
 			'dict.androidExtDir' => '外部公共目录',
 			'dict.androidExtDirNote' => '卸载或更新应用后词典仍可保留',
 			'dict.androidRecommended' => '推荐',

@@ -310,9 +310,15 @@ class _MyAppState extends State<MyApp>
     if (!mounted) return;
     if (_isMultiWindow != isMultiWindow) {
       setState(() => _isMultiWindow = isMultiWindow);
-      Logger.i('[WindowChannel] setState: _isMultiWindow 更新为 $isMultiWindow', tag: 'EasyDictWindow');
+      Logger.i(
+        '[WindowChannel] setState: _isMultiWindow 更新为 $isMultiWindow',
+        tag: 'EasyDictWindow',
+      );
     } else {
-      Logger.i('[WindowChannel] _isMultiWindow 无变化，跳过 setState', tag: 'EasyDictWindow');
+      Logger.i(
+        '[WindowChannel] _isMultiWindow 无变化，跳过 setState',
+        tag: 'EasyDictWindow',
+      );
     }
   }
 
@@ -407,12 +413,11 @@ class _MyAppState extends State<MyApp>
     final argb = color.toARGB32();
     if (_lastWindowBgColor == argb) return;
     _lastWindowBgColor = argb;
-    _windowChannel.invokeMethod<void>(
-      'setWindowBackground',
-      {'color': argb},
-    ).catchError((e) {
-      Logger.w('setWindowBackground 失败: $e', tag: 'MyApp');
-    });
+    _windowChannel
+        .invokeMethod<void>('setWindowBackground', {'color': argb})
+        .catchError((e) {
+          Logger.w('setWindowBackground 失败: $e', tag: 'MyApp');
+        });
   }
 
   @override
@@ -491,7 +496,10 @@ class _MyAppState extends State<MyApp>
                 builder: (context, scale, _) {
                   // 始终保持 ScaleLayoutWrapper 在树中，避免 scale 在 1.0/非1.0 间切换时
                   // 因子节点类型变化导致全局 widget 树（包括 _LazyImageLoader）被销毁重建
-                  final scaledContent = ScaleLayoutWrapper(scale: scale, child: content);
+                  final scaledContent = ScaleLayoutWrapper(
+                    scale: scale,
+                    child: content,
+                  );
                   return AnnotatedRegion<SystemUiOverlayStyle>(
                     value: isDark
                         ? AppTheme.darkSystemUiOverlayStyle()
@@ -616,8 +624,7 @@ class _MainScreenState extends State<MainScreen> {
     final appUpdateService = context.watch<AppUpdateService>();
     final dictUpdateCount = updateCheckService.updatableCount;
     // 字典更新或应用更新均在设置层tab显示小红点
-    final hasAnyUpdate =
-        dictUpdateCount > 0 || appUpdateService.hasUpdate;
+    final hasAnyUpdate = dictUpdateCount > 0 || appUpdateService.hasUpdate;
 
     final bottomNav = NavigationBar(
       selectedIndex: _selectedIndex,
@@ -652,4 +659,3 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 }
-
