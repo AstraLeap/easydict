@@ -15,7 +15,7 @@ class DailyWordService {
 
   final WordBankService _wordBankService = WordBankService();
 
-  int _wordCount = 5;
+  int _wordCount = 7;
 
   int get wordCount => _wordCount;
 
@@ -31,7 +31,7 @@ class DailyWordService {
 
   Future<int> getWordCount() async {
     final prefs = await _prefs;
-    _wordCount = prefs.getInt(_wordCountKey) ?? 5;
+    _wordCount = prefs.getInt(_wordCountKey) ?? 7;
     return _wordCount;
   }
 

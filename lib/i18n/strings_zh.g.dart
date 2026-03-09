@@ -352,8 +352,8 @@ class TranslationsSearchZh {
 	/// zh: '下载完成，搜索 "{word}" 以测试功能'
 	String dbDownloaded({required Object word}) => '下载完成，搜索 "${word}" 以测试功能';
 
-	/// zh: '每日单词'
-	String get dailyWords => '每日单词';
+	/// zh: '每日词汇'
+	String get dailyWords => '每日词汇';
 
 	/// zh: '刷新'
 	String get dailyWordsRefresh => '刷新';
@@ -2465,7 +2465,7 @@ extension on Translations {
 			'search.noEnabledDicts' => '当前没有已启用的词典',
 			'search.wildcardHint' => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字；h_llo → hello、hallo\n\nGLOB 模式（输入含 * ? [ ] ^），区分大小写：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符\n  例：h?llo → hello、hallo；[aeiou]* → 所有元音字母开头的词',
 			'search.dbDownloaded' => ({required Object word}) => '下载完成，搜索 "${word}" 以测试功能',
-			'search.dailyWords' => '每日单词',
+			'search.dailyWords' => '每日词汇',
 			'search.dailyWordsRefresh' => '刷新',
 			'search.dailyWordsSettings' => '设置',
 			'search.dailyWordsCount' => '单词数量',

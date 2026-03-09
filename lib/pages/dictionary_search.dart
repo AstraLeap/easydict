@@ -786,15 +786,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                           margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant.withOpacity(0.5),
-                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -991,25 +987,24 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
-        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
             child: Row(
               children: [
                 Icon(
                   Icons.calendar_today,
-                  size: 18,
+                  size: 16,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Text(
                   context.t.search.dailyWords,
                   style: Theme.of(
@@ -1022,20 +1017,20 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                     onPressed: _isLoadingDailyWords ? null : _refreshDailyWords,
                     icon: _isLoadingDailyWords
                         ? SizedBox(
-                            width: 16,
-                            height: 16,
+                            width: 14,
+                            height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Theme.of(context).colorScheme.primary,
                             ),
                           )
-                        : const Icon(Icons.refresh, size: 18),
+                        : const Icon(Icons.refresh, size: 16),
                     visualDensity: VisualDensity.compact,
                     tooltip: context.t.search.dailyWordsRefresh,
                   ),
                   IconButton(
                     onPressed: () => _showDailyWordsSettingsDialog(),
-                    icon: const Icon(Icons.settings_outlined, size: 18),
+                    icon: const Icon(Icons.settings_outlined, size: 16),
                     visualDensity: VisualDensity.compact,
                     tooltip: context.t.search.dailyWordsSettings,
                   ),
@@ -1047,7 +1042,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             _buildDailyWordsEmptyState()
           else if (_dailyWords.isEmpty && !_isLoadingDailyWords)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Text(
                 context.t.search.dailyWordsNoWords,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1057,17 +1052,27 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             )
           else
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
               child: Wrap(
-                spacing: 8,
+                spacing: 10,
                 runSpacing: 8,
                 children: _dailyWords.map((word) {
-                  return ActionChip(
-                    label: Text(word),
-                    onPressed: () => _searchFromDailyWord(word),
-                    backgroundColor: Theme.of(context).colorScheme.surface,
-                    side: BorderSide(
-                      color: Theme.of(context).colorScheme.outlineVariant,
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => _searchFromDailyWord(word),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        word,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   );
                 }).toList(),
@@ -1081,7 +1086,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   /// 构建每日单词空状态（未选择语言）
   Widget _buildDailyWordsEmptyState() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Row(
         children: [
           Text(
@@ -1501,7 +1506,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 4),
+            padding: const EdgeInsets.only(left: 24, right: 16, bottom: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

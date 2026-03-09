@@ -58,6 +58,8 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
     "source": "Oxford 3000",
   }, // 可选，还没想好怎么实现
   "topic": ["赛车", "时尚", "经济"], // 可选，还没想好怎么实现，感觉这个可以单独在dictionary.db中生成一个表，记录每个类中有哪些子类和哪些单词。
+  "stroke": "3", // 可选，笔画数
+  "pos": "n", // 可选，词性
   "pronunciation": [
     {
       "region": "US",
