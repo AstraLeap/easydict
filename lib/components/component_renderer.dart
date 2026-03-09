@@ -2137,17 +2137,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   Future<void> _playTtsAudio(List<int> audioData) async {
+    Directory? tempDir;
     try {
-      final oldPlayer = _currentPlayer;
-      _currentPlayer = null;
-      if (oldPlayer != null) {
-        try {
-          await oldPlayer.stop();
-          await oldPlayer.dispose();
-        } catch (e) {
-          // ignore: player may already be disposed
-        }
-      }
+      // 同步清理旧播放器，避免切换时出现前帧抖动
+      await _cleanupPlayer();
 
       final player = Player();
       _currentPlayer = player;
@@ -2155,9 +2148,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 注册到管理器以便热重启时清理
       MediaKitManager().registerPlayer(player);
 
-      final tempDir = await Directory.systemTemp.createTemp();
+      tempDir = await Directory.systemTemp.createTemp();
       final audioFile = File('${tempDir.path}/tts_audio.mp3');
-      await audioFile.writeAsBytes(audioData);
+      await audioFile.writeAsBytes(audioData, flush: true);
 
       Logger.d('播放TTS音频: ${audioFile.path}', tag: '_playTtsAudio');
 
@@ -2169,45 +2162,61 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final fileSize = await audioFile.length();
       Logger.d('TTS音频文件大小: $fileSize bytes', tag: '_playTtsAudio');
 
-      await player.open(Media(audioFile.path), play: true);
+      // 先打开媒体，等待缓冲区就绪后再播放，解决 Android 开头抖动
+      await player.open(Media(audioFile.path), play: false);
 
-      // 监听播放状态 - 使用弱引用避免热重启时回调错误
-      StreamSubscription? completionSub;
-      completionSub = player.stream.completed.listen((completed) async {
-        if (completed) {
-          Logger.d('TTS音频播放完成', tag: '_playTtsAudio');
-          // 取消订阅避免内存泄漏
-          completionSub?.cancel();
-          _streamSubscriptions.remove(completionSub);
+      // 等待播放器准备好（简单延迟，避免 stream 监听导致的 dispose 问题）
+      await Future.delayed(const Duration(milliseconds: 200));
 
-          // 清理 player
-          try {
-            await player.stop();
-            MediaKitManager().unregisterPlayer(player);
-            await player.dispose();
-            if (_currentPlayer == player) {
-              _currentPlayer = null;
-            }
-          } catch (e) {
-            // ignore
-          }
+      // 检查 player 是否仍然有效
+      if (_currentPlayer != player) {
+        Logger.d('播放器已被替换，取消播放', tag: '_playTtsAudio');
+        return;
+      }
 
-          // 延迟删除，确保播放完全结束
-          Future.delayed(const Duration(seconds: 1), () {
-            try {
-              tempDir.delete(recursive: true);
-            } catch (e) {
-              // ignore
-            }
-          });
+      // 直接开始播放，不再 seek
+      // Android 上 seek 操作可能导致播放位置被重置或卡顿
+      await player.play();
+
+      // 监听播放完成，稍等尾帧稳定后再清理，避免结尾被截断
+      _playbackCompletionSub?.cancel();
+      _playbackCompletionSub = player.stream.completed.listen((
+        completed,
+      ) async {
+        if (!completed) return;
+
+        Logger.d('TTS音频播放完成', tag: '_playTtsAudio');
+
+        _playbackCompletionSub?.cancel();
+        _playbackCompletionSub = null;
+
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (_currentPlayer == player) {
+          await _cleanupPlayer();
+        }
+
+        if (tempDir != null) {
+          unawaited(
+            Future.delayed(const Duration(seconds: 1), () async {
+              try {
+                await tempDir!.delete(recursive: true);
+              } catch (_) {}
+            }),
+          );
         }
       });
-      _streamSubscriptions.add(completionSub);
 
       Logger.d('TTS音频播放已启动', tag: '_playTtsAudio');
     } catch (e, stackTrace) {
       Logger.e('播放TTS音频失败: $e', tag: '_playTtsAudio', error: e);
       Logger.e('堆栈跟踪: $stackTrace', tag: '_playTtsAudio', error: stackTrace);
+      await _cleanupPlayer();
+      if (tempDir != null) {
+        try {
+          await tempDir.delete(recursive: true);
+        } catch (_) {}
+      }
       rethrow;
     }
   }
@@ -2730,7 +2739,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _streamSubscriptions.clear();
     _removeCurrentOverlay();
     _removePhraseOverlay();
-    _cleanupPlayer();
+    unawaited(_cleanupPlayer());
     // 清理闪烁动画控制器
     for (final controller in _highlightControllers.values) {
       controller.dispose();
@@ -2740,16 +2749,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   /// 安全清理音频播放器
-  void _cleanupPlayer() {
+  Future<void> _cleanupPlayer() async {
     try {
+      _playbackCompletionSub?.cancel();
+      _playbackCompletionSub = null;
+
       final player = _currentPlayer;
       if (player != null) {
         // 从管理器中注销
         MediaKitManager().unregisterPlayer(player);
         // 先停止播放
-        player.stop();
+        await player.stop();
         // 释放资源
-        player.dispose();
+        await player.dispose();
         _currentPlayer = null;
       }
     } catch (e) {
@@ -5629,6 +5641,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   Player? _currentPlayer;
+  StreamSubscription<bool>? _playbackCompletionSub;
 
   /// 检查是否为 opus 格式音频
   bool _isOpusFormat(String fileName) {
@@ -5696,7 +5709,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
 
       // 清理旧播放器
-      _cleanupPlayer();
+      await _cleanupPlayer();
 
       player = Player();
       _currentPlayer = player;
@@ -5705,31 +5718,42 @@ class ComponentRendererState extends State<ComponentRenderer> {
       MediaKitManager().registerPlayer(player);
 
       Logger.d('播放音频: ${isLocal ? "本地" : "在线"}', tag: '_playAudio');
-      await player.open(Media(audioSource), play: true);
+      // 先打开媒体，等待缓冲区就绪后再播放，解决 Android 开头抖动
+      await player.open(Media(audioSource), play: false);
 
-      // 监听播放完成，自动清理资源
-      StreamSubscription? completionSub;
-      completionSub = player.stream.completed.listen((completed) {
-        if (completed) {
-          completionSub?.cancel();
-          _streamSubscriptions.remove(completionSub);
-          _cleanupPlayer();
+      // 等待播放器准备好（增加延迟确保 Android 上缓冲区充足）
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // 检查 player 是否仍然有效
+      if (_currentPlayer != player) {
+        Logger.d('播放器已被替换，取消播放', tag: '_playAudio');
+        return;
+      }
+
+      // 直接开始播放，不再 seek
+      // Android 上 seek 操作可能导致播放位置被重置或卡顿
+      await player.play();
+
+      // 监听播放完成，等待尾帧稳定后再清理，避免尾部被截断
+      _playbackCompletionSub?.cancel();
+      _playbackCompletionSub = player.stream.completed.listen((
+        completed,
+      ) async {
+        if (!completed) return;
+
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (_currentPlayer == player) {
+          await _cleanupPlayer();
         }
       });
-      _streamSubscriptions.add(completionSub);
-
-      await Future.delayed(const Duration(milliseconds: 200));
 
       Logger.d('音频播放已启动: $audioFileName', tag: '_playAudio');
     } catch (e, stackTrace) {
       Logger.e('播放音频失败: $e', tag: '_playAudio', error: e);
       Logger.e('堆栈跟踪: $stackTrace', tag: '_playAudio');
 
-      try {
-        await player?.dispose();
-      } catch (_) {}
-
-      _currentPlayer = null;
+      await _cleanupPlayer();
 
       if (_isOpusFormat(audioFileName) && _isApplePlatform) {
         Logger.w('opus 格式在 iOS/macOS 上可能需要额外的配置支持', tag: '_playAudio');
