@@ -88,7 +88,7 @@ jobs:
             tar -czvf "easydict-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
           elif [ "$TARGET" = "macos" ]; then
             cd build/macos/Build/Products/Release/
-            zip -r "../../../../easydict-${VERSION}-macos.zip" *.app
+            zip -r "$GITHUB_WORKSPACE/easydict-${VERSION}-macos.zip" *.app
           fi
 
       - name: Upload to Staging
