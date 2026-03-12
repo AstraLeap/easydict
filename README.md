@@ -107,6 +107,7 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
       }, //可选
       "synonym":"test",//可以是string，也可以是list of string
       "antonym":["test","test2"],//可以是string，也可以是list of string
+      "related":["test","test2"],//可以是string，也可以是list of string
       "note": "常用于 'in a fog' 结构，描述因疲倦或震惊而无法正常思考。", //可选，批准部分
       "example": [
         {

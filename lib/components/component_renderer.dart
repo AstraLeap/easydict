@@ -4005,6 +4005,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Map<String, Map<String, double>>? fontScales,
     dynamic synonym,
     dynamic antonym,
+    dynamic related,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final spans = <InlineSpan>[];
@@ -4218,6 +4219,29 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
+    // 渲染 related（相关词）
+    if (related != null) {
+      final relatedList = related is List
+          ? related.map((e) => e.toString()).toList()
+          : [related.toString()];
+      if (relatedList.isNotEmpty) {
+        if (spans.isNotEmpty) {
+          spans.add(const TextSpan(text: '  '));
+        }
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _buildSynonymAntonymWidget(
+              context,
+              'Related',
+              relatedList,
+              Theme.of(context).colorScheme.secondary,
+            ),
+          ),
+        );
+      }
+    }
+
     if (spans.isEmpty) return const SizedBox.shrink();
     return Builder(
       key: definitionTextKey,
@@ -4238,8 +4262,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       color: color,
     ).copyWith(fontSize: 12);
 
-    // 简写标签：Synonym -> syn, Antonym -> ant
-    final shortLabel = label == 'Synonym' ? 'syn' : 'ant';
+    // 简写标签：Synonym -> syn, Antonym -> ant, Related -> rlt
+    final shortLabel = label == 'Synonym'
+        ? 'syn'
+        : (label == 'Antonym' ? 'ant' : 'rlt');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -4921,6 +4947,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'image',
     'synonym',
     'antonym',
+    'related',
   ];
 
   /// 渲染单个 sense 项
@@ -4965,6 +4992,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final image = sense['image'] as Map<String, dynamic>?;
     final synonym = sense['synonym'];
     final antonym = sense['antonym'];
+    final related = sense['related'];
 
     List<MapEntry<String, String>> definitions = [];
     if (definitionObj != null) {
@@ -5058,6 +5086,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           fontScales: _fontScales,
                           synonym: synonym,
                           antonym: antonym,
+                          related: related,
                         );
                       },
                     ),
