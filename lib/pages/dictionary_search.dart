@@ -789,7 +789,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             color: Theme.of(context)
                                 .colorScheme
                                 .surfaceContainerHighest
-                                .withValues(alpha: 0.5),
+                                .withOpacity(0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Column(
@@ -926,8 +926,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             final isSelected = index == _selectedResultIndex;
                             return Container(
                               color: isSelected
-                                  ? Theme.of(context).colorScheme.primary
-                                        .withValues(alpha: 0.15)
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.primary.withOpacity(0.15)
                                   : null,
                               child: ListTile(
                                 dense: true,
@@ -989,7 +990,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       decoration: BoxDecoration(
         color: Theme.of(
           context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -1068,8 +1069,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       child: Text(
                         word,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.85),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withOpacity(0.85),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1572,7 +1574,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(

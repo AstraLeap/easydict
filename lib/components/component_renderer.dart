@@ -1624,18 +1624,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
           // 根据region决定颜色
           Color iconColor;
+          final regionUpper = region.toUpperCase();
           if (!hasMultipleRegions) {
-            // 只有一种region或没有region，使用主题色
-            iconColor = colorScheme.primary;
+            // 只有一种region或没有region，使用主题色（浅一点）
+            iconColor = colorScheme.primary.withValues(alpha: 0.8);
           } else {
             // 多种region，使用不同颜色区分
-            if (region.toUpperCase() == 'UK') {
-              iconColor = colorScheme.tertiary; // UK用第三色
-            } else if (region.toUpperCase() == 'US') {
-              iconColor = colorScheme.primary; // US用主题色
+            if (regionUpper == 'UK' || regionUpper == 'GB') {
+              iconColor = colorScheme.tertiary.withValues(
+                alpha: 0.8,
+              ); // UK/GB用第三色
+            } else if (regionUpper == 'US') {
+              iconColor = colorScheme.primary.withValues(alpha: 0.8); // US用主题色
             } else {
               // 其他region用次要色
-              iconColor = colorScheme.secondary;
+              iconColor = colorScheme.secondary.withValues(alpha: 0.8);
             }
           }
 
@@ -1643,7 +1646,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             WidgetSpan(
               alignment: PlaceholderAlignment.middle,
               child: Transform.translate(
-                offset: const Offset(0, 2),
+                offset: const Offset(0, 1),
                 child: GestureDetector(
                   onTap: () {
                     _playAudio(dictId, audioFile);
@@ -1886,6 +1889,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               fontSize: 12,
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               fontStyle: FontStyle.italic,
+              fontFamily: 'SourceSans3',
             ),
           ),
         );
@@ -3544,10 +3548,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.info_outline,
-              size: 16,
-              color: colorScheme.onSurfaceVariant,
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -3996,6 +4003,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     String? sourceLanguage,
     required List<String> targetLanguages,
     Map<String, Map<String, double>>? fontScales,
+    dynamic synonym,
+    dynamic antonym,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final spans = <InlineSpan>[];
@@ -4163,10 +4172,113 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
+    // 渲染 synonym（同义词）
+    if (synonym != null) {
+      final synonymList = synonym is List
+          ? synonym.map((e) => e.toString()).toList()
+          : [synonym.toString()];
+      if (synonymList.isNotEmpty) {
+        if (spans.isNotEmpty) {
+          spans.add(const TextSpan(text: '  '));
+        }
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _buildSynonymAntonymWidget(
+              context,
+              'Synonym',
+              synonymList,
+              Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        );
+      }
+    }
+
+    // 渲染 antonym（反义词）
+    if (antonym != null) {
+      final antonymList = antonym is List
+          ? antonym.map((e) => e.toString()).toList()
+          : [antonym.toString()];
+      if (antonymList.isNotEmpty) {
+        if (spans.isNotEmpty) {
+          spans.add(const TextSpan(text: '  '));
+        }
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _buildSynonymAntonymWidget(
+              context,
+              'Antonym',
+              antonymList,
+              Theme.of(context).colorScheme.tertiary,
+            ),
+          ),
+        );
+      }
+    }
+
     if (spans.isEmpty) return const SizedBox.shrink();
     return Builder(
       key: definitionTextKey,
       builder: (context) => RichText(text: TextSpan(children: spans)),
+    );
+  }
+
+  /// 渲染同义词/反义词的内联标签
+  Widget _buildSynonymAntonymWidget(
+    BuildContext context,
+    String label,
+    List<String> words,
+    Color color,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.label,
+      color: color,
+    ).copyWith(fontSize: 12);
+
+    // 简写标签：Synonym -> syn, Antonym -> ant
+    final shortLabel = label == 'Synonym' ? 'syn' : 'ant';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.7),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$shortLabel: ',
+            style: textStyle.copyWith(fontWeight: FontWeight.w600),
+          ),
+          // 每个词都可以点击跳转查词
+          ...words.asMap().entries.map((entry) {
+            final index = entry.key;
+            final word = entry.value;
+            final isLast = index == words.length - 1;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () => _handleLinkTap(context, word),
+                  child: Text(
+                    word,
+                    style: textStyle.copyWith(
+                      decoration: TextDecoration.underline,
+                      decorationColor: color.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+                if (!isLast) Text(', ', style: textStyle),
+              ],
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -4807,6 +4919,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'subsense',
     'note',
     'image',
+    'synonym',
+    'antonym',
   ];
 
   /// 渲染单个 sense 项
@@ -4849,6 +4963,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final subSenses = sense['subsense'] as List<dynamic>?;
     final note = sense['note'] as String?;
     final image = sense['image'] as Map<String, dynamic>?;
+    final synonym = sense['synonym'];
+    final antonym = sense['antonym'];
 
     List<MapEntry<String, String>> definitions = [];
     if (definitionObj != null) {
@@ -4940,6 +5056,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           sourceLanguage: _sourceLanguage,
                           targetLanguages: _targetLanguages,
                           fontScales: _fontScales,
+                          synonym: synonym,
+                          antonym: antonym,
                         );
                       },
                     ),
@@ -4995,7 +5113,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
               if (note != null && note.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: _buildnote(context, {'note': note}),
+                  child: PathScope.append(
+                    context,
+                    key: 'note',
+                    child: Builder(
+                      builder: (context) => _buildnote(context, {'note': note}),
+                    ),
+                  ),
                 ),
               if (extraWidgets.isNotEmpty)
                 Padding(
