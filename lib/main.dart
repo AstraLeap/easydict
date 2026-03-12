@@ -460,13 +460,13 @@ class _MyAppState extends State<MyApp>
                   (themeMode == ThemeMode.system &&
                       brightness == Brightness.dark);
 
-              Logger.i(
-                '[WindowDebug] builder: _isMultiWindow=$_isMultiWindow '
-                'padding.top=${mq.padding.top} padding.bottom=${mq.padding.bottom} '
-                'viewPadding.top=${mq.viewPadding.top} viewPadding.bottom=${mq.viewPadding.bottom} '
-                'size=${mq.size.width.toInt()}x${mq.size.height.toInt()}',
-                tag: 'EasyDictWindow',
-              );
+              // Logger.i(
+              //   '[WindowDebug] builder: _isMultiWindow=$_isMultiWindow '
+              //   'padding.top=${mq.padding.top} padding.bottom=${mq.padding.bottom} '
+              //   'viewPadding.top=${mq.viewPadding.top} viewPadding.bottom=${mq.viewPadding.bottom} '
+              //   'size=${mq.size.width.toInt()}x${mq.size.height.toInt()}',
+              //   tag: 'EasyDictWindow',
+              // );
 
               final surfaceColor = Theme.of(context).colorScheme.surface;
               _syncWindowBackground(surfaceColor);
