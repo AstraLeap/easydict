@@ -382,23 +382,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
     final List<Widget> mixedItems = [];
 
-    // 添加上方词典
+    // 添加上方词典（只显示logo，不显示section按钮）
     for (int i = 0; i < currentDictIndex; i++) {
       final dict = allDicts[i];
       if (dict.pageGroups.isNotEmpty) {
         mixedItems.add(_buildDictionaryLogo(context, dict, false));
-
-        // 使用该词典当前选中的page
-        final pageIndex = dict.currentPageIndex < dict.pageGroups.length
-            ? dict.currentPageIndex
-            : 0;
-        final targetPage = dict.pageGroups[pageIndex];
-        for (int j = 0; j < targetPage.sections.length; j++) {
-          final section = targetPage.sections[j];
-          mixedItems.add(
-            _buildSectionItem(context, section, false, j, dict.dictionaryId),
-          );
-        }
       }
     }
 
@@ -425,23 +413,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       }
     }
 
-    // 添加下方词典
+    // 添加下方词典（只显示logo，不显示section按钮）
     for (int i = currentDictIndex + 1; i < allDicts.length; i++) {
       final dict = allDicts[i];
       if (dict.pageGroups.isNotEmpty) {
         mixedItems.add(_buildDictionaryLogo(context, dict, false));
-
-        // 使用该词典当前选中的page
-        final pageIndex = dict.currentPageIndex < dict.pageGroups.length
-            ? dict.currentPageIndex
-            : 0;
-        final targetPage = dict.pageGroups[pageIndex];
-        for (int j = 0; j < targetPage.sections.length; j++) {
-          final section = targetPage.sections[j];
-          mixedItems.add(
-            _buildSectionItem(context, section, false, j, dict.dictionaryId),
-          );
-        }
       }
     }
 
