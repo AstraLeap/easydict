@@ -2,26 +2,32 @@ import sqlite3
 import os
 import argparse
 
+
 def create_db_and_tables(conn):
     """初始化数据库表结构"""
     cursor = conn.cursor()
-    
+
     # 创建 audios 表
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS audios (
             name TEXT PRIMARY KEY,
             blob BLOB NOT NULL
         )
-    ''')
-    
+    """
+    )
+
     # 创建 images 表
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS images (
             name TEXT PRIMARY KEY,
             blob BLOB NOT NULL
         )
-    ''')
+    """
+    )
     conn.commit()
+
 
 def process_directory(conn, table_name, dir_path):
     """遍历文件夹并将文件写入指定的表"""
@@ -35,19 +41,20 @@ def process_directory(conn, table_name, dir_path):
         for filename in files:
             file_path = os.path.join(root, filename)
             try:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     blob_data = f.read()
-                
+
                 # 使用 INSERT OR REPLACE 以防文件名冲突
                 cursor.execute(
                     f"INSERT OR REPLACE INTO {table_name} (name, blob) VALUES (?, ?)",
-                    (filename, blob_data)
+                    (filename, blob_data),
                 )
             except Exception as e:
                 print(f"处理文件 {file_path} 时出错: {e}")
 
     conn.commit()
     print(f"完成 {table_name} 表的数据写入。")
+
 
 def create_indexes(conn):
     """为 name 字段创建索引"""
@@ -58,19 +65,31 @@ def create_indexes(conn):
     conn.commit()
     print("索引创建完毕。")
 
+
 def main():
-    parser = argparse.ArgumentParser(description="将文件夹中的文件转化为 BLOB 存储到 SQLite 数据库中。")
+    parser = argparse.ArgumentParser(
+        description="将文件夹中的文件转化为 BLOB 存储到 SQLite 数据库中。"
+    )
     parser.add_argument("audio_dir", help="包含音频文件的文件夹路径")
-    parser.add_argument("image_dir", nargs="?", default=None, help="包含图片文件的文件夹路径 (可选)")
-    
+    parser.add_argument(
+        "image_dir", nargs="?", default=None, help="包含图片文件的文件夹路径 (可选)"
+    )
+    parser.add_argument(
+        "--page-size", type=int, default=64, help="SQLite page 大小，单位 KB，默认 64KB"
+    )
+
     args = parser.parse_args()
 
     db_name = "media.db"
-    
+
     # 连接数据库（如果不存在则自动创建）
     conn = sqlite3.connect(db_name)
 
     try:
+        # 设置 page 大小（必须在创建表之前设置）
+        page_size_bytes = args.page_size * 1024
+        conn.execute(f"PRAGMA page_size = {page_size_bytes}")
+
         # 1. 创建表
         create_db_and_tables(conn)
 
@@ -89,6 +108,7 @@ def main():
     finally:
         conn.close()
         print(f"数据库 {db_name} 已生成。")
+
 
 if __name__ == "__main__":
     main()

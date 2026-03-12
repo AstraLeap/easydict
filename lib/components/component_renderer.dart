@@ -1587,6 +1587,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     onElementSecondaryTapWithPosition,
     Map<String, Map<String, double>>? fontScales,
     String? sourceLanguage,
+    List<Map<String, dynamic>> audios = const [],
+    Map<String, dynamic>? source,
+    String? dictId,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -1599,6 +1602,82 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontScales: fontScales ?? {},
       color: colorScheme.onSecondaryContainer,
     );
+
+    // 在例句之前渲染音频图标
+    if (audios.isNotEmpty) {
+      // 根据region数量决定颜色策略
+      final regions = audios
+          .map((a) => a['region'] as String? ?? '')
+          .where((r) => r.isNotEmpty)
+          .toSet()
+          .toList();
+      final hasMultipleRegions = regions.length > 1;
+
+      for (int i = 0; i < audios.length; i++) {
+        final audio = audios[i];
+        final region = audio['region'] as String? ?? '';
+        final audioFile = audio['audio_file'] as String? ?? '';
+
+        if (audioFile.isNotEmpty && dictId != null && dictId.isNotEmpty) {
+          final audioPath = [...basePath, 'audios.$i'];
+          final audioPathData = _PathData(audioPath, 'Example Audio');
+
+          // 根据region决定颜色
+          Color iconColor;
+          if (!hasMultipleRegions) {
+            // 只有一种region或没有region，使用主题色
+            iconColor = colorScheme.primary;
+          } else {
+            // 多种region，使用不同颜色区分
+            if (region.toUpperCase() == 'UK') {
+              iconColor = colorScheme.tertiary; // UK用第三色
+            } else if (region.toUpperCase() == 'US') {
+              iconColor = colorScheme.primary; // US用主题色
+            } else {
+              // 其他region用次要色
+              iconColor = colorScheme.secondary;
+            }
+          }
+
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Transform.translate(
+                offset: const Offset(0, 2),
+                child: GestureDetector(
+                  onTap: () {
+                    _playAudio(dictId, audioFile);
+                  },
+                  onSecondaryTapUp: (details) {
+                    if (onElementSecondaryTapWithPosition != null) {
+                      onElementSecondaryTapWithPosition(
+                        audioPath.join('.'),
+                        audioPathData.label,
+                        details.globalPosition,
+                      );
+                    }
+                  },
+                  onLongPressStart: (details) {
+                    if (onElementSecondaryTapWithPosition != null) {
+                      onElementSecondaryTapWithPosition(
+                        audioPath.join('.'),
+                        audioPathData.label,
+                        details.globalPosition,
+                      );
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(Icons.volume_up, size: 14, color: iconColor),
+                  ),
+                ),
+              ),
+            ),
+          );
+          currentTextOffset += 1;
+        }
+      }
+    }
 
     if (usage.isNotEmpty) {
       final usagePath = [...basePath, 'usage'];
@@ -1767,6 +1846,68 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
       spans.addAll(result.spans);
+    }
+
+    // 构建来源引用组件（右对齐）
+    Widget? sourceWidget;
+    if (source != null && source.isNotEmpty) {
+      final author = source['author'] as String? ?? '';
+      final title = source['title'] as String? ?? '';
+      final date = source['date'] as String? ?? '';
+      final publisher = source['publisher'] as String? ?? '';
+
+      final sourceParts = <String>[];
+      if (author.isNotEmpty) sourceParts.add(author);
+      if (title.isNotEmpty) sourceParts.add(title);
+      if (date.isNotEmpty) sourceParts.add(date);
+      if (publisher.isNotEmpty) sourceParts.add(publisher);
+
+      if (sourceParts.isNotEmpty) {
+        final sourceText = '— ${sourceParts.join(', ')}';
+        final sourcePath = [...basePath, 'source'];
+        final sourcePathData = _PathData(sourcePath, 'Example Source');
+
+        sourceWidget = GestureDetector(
+          onTap: () {
+            onElementTap(sourcePath.join('.'), sourcePathData.label);
+          },
+          onSecondaryTapUp: (details) {
+            if (onElementSecondaryTapWithPosition != null) {
+              onElementSecondaryTapWithPosition(
+                sourcePath.join('.'),
+                sourcePathData.label,
+                details.globalPosition,
+              );
+            }
+          },
+          child: Text(
+            sourceText,
+            style: TextStyle(
+              fontSize: 12,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        );
+      }
+    }
+
+    // 如果有来源引用，使用 Column 布局让引用右对齐
+    if (sourceWidget != null) {
+      return Container(
+        margin: EdgeInsets.only(bottom: 6, left: leftMargin),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Builder(
+              key: exampleTextKey,
+              builder: (context) => RichText(text: TextSpan(children: spans)),
+            ),
+            const SizedBox(height: 2),
+            Align(alignment: Alignment.centerRight, child: sourceWidget),
+          ],
+        ),
+      );
     }
 
     return Container(
@@ -3183,12 +3324,26 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }) {
     String usage = '';
     List<MapEntry<String, String>> texts = [];
+    Map<String, dynamic>? source;
+    List<Map<String, dynamic>> audios = [];
 
     if (value is String) {
       texts.add(MapEntry('', value));
     } else if (value is Map<String, dynamic>) {
       usage = value['usage'] as String? ?? '';
       final sourceLang = _sourceLanguage ?? 'en';
+
+      // 解析 source 字段
+      final sourceValue = value['source'];
+      if (sourceValue is Map<String, dynamic>) {
+        source = sourceValue;
+      }
+
+      // 解析 audios 字段
+      final audiosValue = value['audios'];
+      if (audiosValue is List<dynamic>) {
+        audios = audiosValue.whereType<Map<String, dynamic>>().toList();
+      }
 
       for (final entry in value.entries) {
         final key = entry.key;
@@ -3245,6 +3400,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
           },
           fontScales: _fontScales,
           sourceLanguage: _sourceLanguage,
+          audios: audios,
+          source: source,
+          dictId: _localEntry.dictId,
         );
       },
     );

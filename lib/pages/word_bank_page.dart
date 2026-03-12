@@ -1282,7 +1282,7 @@ class _WordBankPageState extends State<WordBankPage> {
               child: Text(
                 word,
                 style: const TextStyle(
-                  fontSize: 16.5,
+                  fontSize: 17,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1546,12 +1546,7 @@ class _WordBankPageState extends State<WordBankPage> {
                         extraSuffixIcons: [
                           PopupMenuButton<SortMode>(
                             tooltip: context.t.wordBank.sortTooltip,
-                            offset: const Offset(-8, 45),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 4,
-                            color: Theme.of(context).colorScheme.surface,
+                            offset: const Offset(0, 40),
                             icon: Icon(
                               Icons.swap_vert,
                               size: 20,
@@ -1571,11 +1566,8 @@ class _WordBankPageState extends State<WordBankPage> {
                                               ? Icons.check_circle
                                               : Icons.circle_outlined,
                                           size: 18,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
                                         ),
-                                        const SizedBox(width: 12),
+                                        const SizedBox(width: 8),
                                         Text(mode.label(context)),
                                       ],
                                     ),
