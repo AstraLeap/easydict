@@ -453,6 +453,7 @@ class _TranslationsCloudEn extends TranslationsCloudZh {
 	@override String get createPackageFailed => 'Failed to create settings package';
 	@override String uploadFailedError({required Object error}) => 'Upload failed: ${error}';
 	@override String get selectAtLeastOneFileToUpdate => 'Please select at least one file to update';
+	@override String fileNameMismatch({required Object expected, required Object actual}) => 'File name mismatch. Expected "${expected}", got "${actual}"';
 	@override String get downloadTitle => 'Download Settings';
 	@override String get downloadConfirm => 'Download settings from cloud? This will overwrite local data.';
 	@override String get downloadSuccess => 'Settings synced from cloud';
@@ -1313,6 +1314,7 @@ extension on TranslationsEn {
 			'cloud.createPackageFailed' => 'Failed to create settings package',
 			'cloud.uploadFailedError' => ({required Object error}) => 'Upload failed: ${error}',
 			'cloud.selectAtLeastOneFileToUpdate' => 'Please select at least one file to update',
+			'cloud.fileNameMismatch' => ({required Object expected, required Object actual}) => 'File name mismatch. Expected "${expected}", got "${actual}"',
 			'cloud.downloadTitle' => 'Download Settings',
 			'cloud.downloadConfirm' => 'Download settings from cloud? This will overwrite local data.',
 			'cloud.downloadSuccess' => 'Settings synced from cloud',
@@ -1468,9 +1470,9 @@ extension on TranslationsEn {
 			'dict.justNow' => 'Just now',
 			'dict.dateUnknown' => 'Unknown',
 			'dict.noFileSelected' => 'No file selected to update',
-			'dict.configCloudFirst' => 'Please configure cloud service first',
 			_ => null,
 		} ?? switch (path) {
+			'dict.configCloudFirst' => 'Please configure cloud service first',
 			'dict.getDictInfoFailed' => 'Cannot get dictionary info',
 			'dict.versionUpdated' => ({required Object version}) => 'Version updated to ${version}, no download needed',
 			'dict.androidChoiceTitle' => 'Dictionary Storage',

@@ -178,9 +178,14 @@ class UploadManager with ChangeNotifier {
       Logger.e('上传失败: $e', tag: 'UploadManager');
       task.state = UploadState.error;
       task.status = t.dict.statusUploadFailed;
-      task.error = e.toString();
+      // 提取更友好的错误信息
+      String errorMsg = e.toString();
+      if (errorMsg.startsWith('Exception: ')) {
+        errorMsg = errorMsg.substring(11);
+      }
+      task.error = errorMsg;
       notifyListeners();
-      task.onError?.call(e.toString());
+      task.onError?.call(errorMsg);
     } finally {
       _currentUploadId = null;
     }

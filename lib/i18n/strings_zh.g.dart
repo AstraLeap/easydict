@@ -1027,6 +1027,9 @@ class TranslationsCloudZh {
 	/// zh: '请至少选择一个要更新的文件'
 	String get selectAtLeastOneFileToUpdate => '请至少选择一个要更新的文件';
 
+	/// zh: '文件名不匹配，期望 "{expected}"，实际为 "{actual}"'
+	String fileNameMismatch({required Object expected, required Object actual}) => '文件名不匹配，期望 "${expected}"，实际为 "${actual}"';
+
 	/// zh: '下载设置'
 	String get downloadTitle => '下载设置';
 
@@ -2712,6 +2715,7 @@ extension on Translations {
 			'cloud.createPackageFailed' => '创建设置包失败',
 			'cloud.uploadFailedError' => ({required Object error}) => '上传失败: ${error}',
 			'cloud.selectAtLeastOneFileToUpdate' => '请至少选择一个要更新的文件',
+			'cloud.fileNameMismatch' => ({required Object expected, required Object actual}) => '文件名不匹配，期望 "${expected}"，实际为 "${actual}"',
 			'cloud.downloadTitle' => '下载设置',
 			'cloud.downloadConfirm' => '确定要从云端下载设置吗？这将覆盖本地的设置数据。',
 			'cloud.downloadSuccess' => '设置已从云端同步',
@@ -2867,9 +2871,9 @@ extension on Translations {
 			'dict.justNow' => '刚刚',
 			'dict.dateUnknown' => '未知',
 			'dict.noFileSelected' => '没有选择要更新的文件',
-			'dict.configCloudFirst' => '请先配置云服务地址',
 			_ => null,
 		} ?? switch (path) {
+			'dict.configCloudFirst' => '请先配置云服务地址',
 			'dict.getDictInfoFailed' => '无法获取词典信息',
 			'dict.versionUpdated' => ({required Object version}) => '版本已更新至 ${version}，无需下载文件',
 			'dict.androidChoiceTitle' => '词典存储位置',
