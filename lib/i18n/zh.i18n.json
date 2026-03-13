@@ -392,6 +392,7 @@
     "createPackageFailed": "创建设置包失败",
     "uploadFailedError": "上传失败: {error}",
     "selectAtLeastOneFileToUpdate": "请至少选择一个要更新的文件",
+    "fileNameMismatch": "文件名不匹配，期望 \"{expected}\"，实际为 \"{actual}\"",
     "downloadTitle": "下载设置",
     "downloadConfirm": "确定要从云端下载设置吗？这将覆盖本地的设置数据。",
     "downloadSuccess": "设置已从云端同步",

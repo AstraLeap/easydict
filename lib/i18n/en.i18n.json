@@ -392,6 +392,7 @@
     "createPackageFailed": "Failed to create settings package",
     "uploadFailedError": "Upload failed: {error}",
     "selectAtLeastOneFileToUpdate": "Please select at least one file to update",
+    "fileNameMismatch": "File name mismatch. Expected \"{expected}\", got \"{actual}\"",
     "downloadTitle": "Download Settings",
     "downloadConfirm": "Download settings from cloud? This will overwrite local data.",
     "downloadSuccess": "Settings synced from cloud",

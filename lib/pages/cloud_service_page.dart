@@ -1272,6 +1272,22 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
     }
   }
 
+  /// 获取期望的文件名
+  String _getExpectedFileName(String type) {
+    switch (type) {
+      case 'metadata':
+        return 'metadata.json';
+      case 'dictionary':
+        return 'dictionary.db';
+      case 'logo':
+        return 'logo.png';
+      case 'media':
+        return 'media.db';
+      default:
+        return '';
+    }
+  }
+
   Future<void> _pickFile(String type) async {
     String? extension;
     switch (type) {
@@ -1287,14 +1303,37 @@ class _UploadDictionaryDialogState extends State<UploadDictionaryDialog> {
         break;
     }
 
+    // 在移动端使用 any 类型以避免文件选择器过滤问题
+    // 某些设备上 .db 文件可能被系统隐藏或无法识别
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: extension != null ? [extension] : null,
+      type: Platform.isAndroid || Platform.isIOS
+          ? FileType.any
+          : FileType.custom,
+      allowedExtensions: (Platform.isAndroid || Platform.isIOS)
+          ? null
+          : (extension != null ? [extension] : null),
     );
 
     if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final fileName = path.basename(file.path);
+      final expectedFileName = _getExpectedFileName(type);
+
+      // 校验文件名是否正确
+      if (fileName != expectedFileName) {
+        if (mounted) {
+          showToast(
+            context,
+            context.t.cloud.fileNameMismatch(
+              expected: expectedFileName,
+              actual: fileName,
+            ),
+          );
+        }
+        return;
+      }
+
       setState(() {
-        final file = File(result.files.single.path!);
         switch (type) {
           case 'metadata':
             _metadataFile = file;
@@ -1583,6 +1622,22 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
     }
   }
 
+  /// 获取期望的文件名
+  String _getExpectedFileName(String type) {
+    switch (type) {
+      case 'metadata':
+        return 'metadata.json';
+      case 'dictionary':
+        return 'dictionary.db';
+      case 'logo':
+        return 'logo.png';
+      case 'media':
+        return 'media.db';
+      default:
+        return '';
+    }
+  }
+
   Future<void> _pickFile(String type) async {
     String? extension;
     switch (type) {
@@ -1598,14 +1653,37 @@ class _EditDictionaryDialogState extends State<EditDictionaryDialog> {
         break;
     }
 
+    // 在移动端使用 any 类型以避免文件选择器过滤问题
+    // 某些设备上 .db 文件可能被系统隐藏或无法识别
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: extension != null ? [extension] : null,
+      type: Platform.isAndroid || Platform.isIOS
+          ? FileType.any
+          : FileType.custom,
+      allowedExtensions: (Platform.isAndroid || Platform.isIOS)
+          ? null
+          : (extension != null ? [extension] : null),
     );
 
     if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final fileName = path.basename(file.path);
+      final expectedFileName = _getExpectedFileName(type);
+
+      // 校验文件名是否正确
+      if (fileName != expectedFileName) {
+        if (mounted) {
+          showToast(
+            context,
+            context.t.cloud.fileNameMismatch(
+              expected: expectedFileName,
+              actual: fileName,
+            ),
+          );
+        }
+        return;
+      }
+
       setState(() {
-        final file = File(result.files.single.path!);
         switch (type) {
           case 'metadata':
             _metadataFile = file;
