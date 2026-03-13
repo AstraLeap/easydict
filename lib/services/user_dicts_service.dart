@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import '../data/models/user_dictionary.dart';
 import '../core/logger.dart';
 import 'auth_service.dart';
@@ -101,7 +103,8 @@ class UserDictsService {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? t.dict.getDictListFailed;
+        final errorMsg =
+            errorData?['detail']?.toString() ?? t.dict.getDictListFailed;
         throw Exception(errorMsg);
       }
     } on FormatException catch (e) {
@@ -139,8 +142,10 @@ class UserDictsService {
 
       final boundary = _generateMultipartBoundary();
       httpClient = HttpClient();
-      httpClient.connectionTimeout = const Duration(minutes: 5);
-      httpClient.idleTimeout = const Duration(minutes: 5);
+      // 连接超时设置为 30 秒
+      httpClient.connectionTimeout = const Duration(seconds: 30);
+      // 空闲超时设置为 30 分钟，支持大文件上传
+      httpClient.idleTimeout = const Duration(minutes: 30);
 
       Logger.d('开始建立连接...', tag: 'UserDictsService');
       final httpRequest = await httpClient.openUrl(method, url);
@@ -245,11 +250,22 @@ class UserDictsService {
         // 发送文件内容
         final stream = file.openRead();
         var fileBytesSent = 0;
+        // 累积缓冲区大小，减少 flush 频率
+        var bufferedSize = 0;
+        // 每 64KB flush 一次，减少系统调用
+        const flushThreshold = 64 * 1024;
+
         await for (final chunk in stream) {
           httpRequest.add(chunk);
-          await httpRequest.flush();
+          bufferedSize += chunk.length;
           totalSent += chunk.length;
           fileBytesSent += chunk.length;
+
+          // 只有当缓冲区超过阈值时才 flush
+          if (bufferedSize >= flushThreshold) {
+            await httpRequest.flush();
+            bufferedSize = 0;
+          }
 
           final now = DateTime.now();
           if (now.difference(lastLogTime).inSeconds >= 5) {
@@ -271,6 +287,10 @@ class UserDictsService {
               totalContentLength,
             );
           }
+        }
+        // 确保最后的数据被 flush
+        if (bufferedSize > 0) {
+          await httpRequest.flush();
         }
         // 文件内容发送完成后，添加 \r\n 作为分隔（除了最后一个文件）
         // 注意：下一个文件的 boundary 已经包含在 header 中了
@@ -321,16 +341,32 @@ class UserDictsService {
         return UploadResult(success: false, error: t.cloud.sessionExpired);
       } else {
         final errorData = jsonDecode(responseBody) as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? t.cloud.uploadFailed;
+        final errorMsg =
+            errorData?['detail']?.toString() ?? t.cloud.uploadFailed;
         return UploadResult(success: false, error: errorMsg);
       }
     } catch (e, stackTrace) {
       Logger.e('$method 上传异常: $e', tag: 'UserDictsService');
       Logger.d('堆栈: $stackTrace', tag: 'UserDictsService');
-      return UploadResult(success: false, error: t.cloud.uploadFailedError(error: e.toString()));
+      return UploadResult(
+        success: false,
+        error: t.cloud.uploadFailedError(error: e.toString()),
+      );
     } finally {
       httpClient?.close();
     }
+  }
+
+  /// 将文件复制到临时目录以避免文件锁问题
+  Future<File> _copyToTemp(File file, String fileName) async {
+    final tempDir = await getTemporaryDirectory();
+    final tempPath = path.join(
+      tempDir.path,
+      'upload_${DateTime.now().millisecondsSinceEpoch}_$fileName',
+    );
+    final tempFile = await file.copy(tempPath);
+    Logger.d('复制文件到临时目录: $tempPath', tag: 'UserDictsService');
+    return tempFile;
   }
 
   /// 上传新词典
@@ -349,14 +385,26 @@ class UserDictsService {
     )?
     onProgress,
   }) async {
+    // 复制文件到临时目录以避免文件锁问题
+    final tempMetadataFile = await _copyToTemp(metadataFile, 'metadata.json');
+    final tempDictionaryFile = await _copyToTemp(
+      dictionaryFile,
+      'dictionary.db',
+    );
+    final tempLogoFile = await _copyToTemp(logoFile, 'logo.png');
+    File? tempMediaFile;
+    if (mediaFile != null) {
+      tempMediaFile = await _copyToTemp(mediaFile, 'media.db');
+    }
+
     final files = <(String, File, String)>[
-      ('metadata_file', metadataFile, 'metadata.json'),
-      ('dictionary_file', dictionaryFile, 'dictionary.db'),
-      ('logo_file', logoFile, 'logo.png'),
+      ('metadata_file', tempMetadataFile, 'metadata.json'),
+      ('dictionary_file', tempDictionaryFile, 'dictionary.db'),
+      ('logo_file', tempLogoFile, 'logo.png'),
     ];
 
-    if (mediaFile != null) {
-      files.add(('media_file', mediaFile, 'media.db'));
+    if (tempMediaFile != null) {
+      files.add(('media_file', tempMediaFile, 'media.db'));
     }
 
     return _uploadWithProgress(
@@ -390,7 +438,8 @@ class UserDictsService {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? t.dict.dictDeleteFailed;
+        final errorMsg =
+            errorData?['detail']?.toString() ?? t.dict.dictDeleteFailed;
         throw Exception(errorMsg);
       }
     } catch (e) {
@@ -448,12 +497,16 @@ class UserDictsService {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? t.dict.statusUpdateFailed;
+        final errorMsg =
+            errorData?['detail']?.toString() ?? t.dict.statusUpdateFailed;
         return EntryUpdateResult(success: false, error: errorMsg);
       }
     } catch (e) {
       Logger.e('更新条目异常: $e', tag: 'UserDictsService');
-      return EntryUpdateResult(success: false, error: t.dict.updateFailed(error: e.toString()));
+      return EntryUpdateResult(
+        success: false,
+        error: t.dict.updateFailed(error: e.toString()),
+      );
     }
   }
 
@@ -474,26 +527,48 @@ class UserDictsService {
     )?
     onProgress,
   }) async {
-    final files = <(String, File, String)>[];
+    // 复制文件到临时目录以避免文件锁问题
+    File? tempMetadataFile;
+    File? tempDictionaryFile;
+    File? tempLogoFile;
+    File? tempMediaFile;
 
     if (metadataFile != null) {
-      files.add(('metadata_file', metadataFile, 'metadata.json'));
+      tempMetadataFile = await _copyToTemp(metadataFile, 'metadata.json');
     }
-
     if (dictionaryFile != null) {
-      files.add(('dictionary_file', dictionaryFile, 'dictionary.db'));
+      tempDictionaryFile = await _copyToTemp(dictionaryFile, 'dictionary.db');
     }
-
     if (logoFile != null) {
-      files.add(('logo_file', logoFile, 'logo.png'));
+      tempLogoFile = await _copyToTemp(logoFile, 'logo.png');
+    }
+    if (mediaFile != null) {
+      tempMediaFile = await _copyToTemp(mediaFile, 'media.db');
     }
 
-    if (mediaFile != null) {
-      files.add(('media_file', mediaFile, 'media.db'));
+    final files = <(String, File, String)>[];
+
+    if (tempMetadataFile != null) {
+      files.add(('metadata_file', tempMetadataFile, 'metadata.json'));
+    }
+
+    if (tempDictionaryFile != null) {
+      files.add(('dictionary_file', tempDictionaryFile, 'dictionary.db'));
+    }
+
+    if (tempLogoFile != null) {
+      files.add(('logo_file', tempLogoFile, 'logo.png'));
+    }
+
+    if (tempMediaFile != null) {
+      files.add(('media_file', tempMediaFile, 'media.db'));
     }
 
     if (files.isEmpty) {
-      return UploadResult(success: false, error: t.cloud.selectAtLeastOneFileToUpdate);
+      return UploadResult(
+        success: false,
+        error: t.cloud.selectAtLeastOneFileToUpdate,
+      );
     }
 
     return _uploadWithProgress(
@@ -577,12 +652,16 @@ class UserDictsService {
         final errorData =
             jsonDecode(utf8.decode(response.bodyBytes))
                 as Map<String, dynamic>?;
-        final errorMsg = errorData?['detail']?.toString() ?? t.cloud.pushFailedGeneral;
+        final errorMsg =
+            errorData?['detail']?.toString() ?? t.cloud.pushFailedGeneral;
         return PushUpdateResult(success: false, error: errorMsg);
       }
     } catch (e, stackTrace) {
       Logger.e('推送条目更新异常: $e\n堆栈: $stackTrace', tag: 'UserDictsService');
-      return PushUpdateResult(success: false, error: t.cloud.pushFailed(error: e.toString()));
+      return PushUpdateResult(
+        success: false,
+        error: t.cloud.pushFailed(error: e.toString()),
+      );
     }
   }
 
