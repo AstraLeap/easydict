@@ -1,3 +1,6 @@
+# 给普通用户
+使用说明及反馈渠道：https://forum.freemdict.com/t/topic/43251
+
 # 快速开始
 
 ```bash
@@ -29,6 +32,7 @@ flutter run
 
 ```bash
 flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
+flutter build windows --dart-define=LOG_TO_FILE=true
 ```
 
 # json数据格式

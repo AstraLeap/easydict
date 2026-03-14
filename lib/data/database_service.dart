@@ -535,11 +535,22 @@ class DatabaseService {
   }
 
   /// 规范化搜索词：
-  /// 1. 含有中文字符时，先将繁体转换为简体（与数据库构建脚本 normalize_headword 保持一致）
-  /// 2. 小写化
-  /// 3. 去除音调符号（Unicode 组合字符）
-  /// 4. 去除两端空格（与数据库构建时的 normalize_text 保持一致，内部空格保留）
+  /// 1. RFC 3986 百分号编码解码（如 %20 → 空格，%E4%B8%AD%E6%96%87 → 中文）
+  /// 2. 含有中文字符时，先将繁体转换为简体（与数据库构建脚本 normalize_headword 保持一致）
+  /// 3. 小写化
+  /// 4. 去除音调符号（Unicode 组合字符）
+  /// 5. 去除两端空格（与数据库构建时的 normalize_text 保持一致，内部空格保留）
   String _normalizeSearchWord(String word) {
+    // RFC 3986: 解码百分号编码（URI/URL 编码）
+    // 例如：%20 → 空格，%C3%A9 → é，%E4%B8%AD%E6%96%87 → 中文
+    if (word.contains('%')) {
+      try {
+        word = Uri.decodeComponent(word);
+      } catch (e) {
+        // 解码失败（如无效的百分号编码），保持原文本
+        Logger.d('URI解码失败，保持原文本: $e', tag: 'DatabaseService');
+      }
+    }
     // 含中文字符时，繁体转简体（与 build_db_from_jsonl.py 的 opencc t2s 处理保持一致）
     if (_chineseRegExp.hasMatch(word)) {
       word = ChineseConvertService().convertToSimplified(word);
