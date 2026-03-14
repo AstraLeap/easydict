@@ -26,6 +26,7 @@ import 'services/window_state_service.dart';
 import 'services/dict_update_check_service.dart';
 import 'services/app_update_service.dart';
 import 'services/zstd_service.dart';
+import 'services/advanced_search_settings_service.dart';
 import 'core/utils/toast_utils.dart';
 import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
@@ -125,6 +126,21 @@ void main() async {
     Logger.i('词典元数据预加载完成', tag: 'Startup');
   } catch (e) {
     Logger.e('词典元数据预加载失败: $e', tag: 'Startup');
+  }
+
+  // 加载词典启用顺序和语言顺序到缓存（用于词典内容界面排序）
+  try {
+    await DictionaryManager().loadEnabledDictionariesToCache();
+    Logger.i('词典启用顺序缓存加载完成', tag: 'Startup');
+  } catch (e) {
+    Logger.w('词典启用顺序缓存加载失败: $e', tag: 'Startup');
+  }
+
+  try {
+    await AdvancedSearchSettingsService().loadLanguageOrderToCache();
+    Logger.i('语言顺序缓存加载完成', tag: 'Startup');
+  } catch (e) {
+    Logger.w('语言顺序缓存加载失败: $e', tag: 'Startup');
   }
 
   try {

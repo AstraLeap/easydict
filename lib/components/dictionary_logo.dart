@@ -6,12 +6,14 @@ class DictionaryLogo extends StatefulWidget {
   final String dictionaryId;
   final String dictionaryName;
   final double size;
+  final double opacity;
 
   const DictionaryLogo({
     super.key,
     required this.dictionaryId,
     required this.dictionaryName,
     this.size = 24,
+    this.opacity = 1.0,
   });
 
   @override
@@ -61,20 +63,26 @@ class _DictionaryLogoState extends State<DictionaryLogo> {
 
   @override
   Widget build(BuildContext context) {
+    Widget content;
     if (_loaded && _logoPath != null) {
-      return ClipRRect(
+      content = ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: Image.file(
           File(_logoPath!),
           width: widget.size,
           height: widget.size,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) =>
-              _buildFallback(context),
+          errorBuilder: (context, error, stackTrace) => _buildFallback(context),
         ),
       );
+    } else {
+      content = _buildFallback(context);
     }
-    return _buildFallback(context);
+
+    if (widget.opacity < 1.0) {
+      return Opacity(opacity: widget.opacity, child: content);
+    }
+    return content;
   }
 
   Widget _buildFallback(BuildContext context) {

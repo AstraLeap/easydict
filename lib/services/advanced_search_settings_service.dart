@@ -31,15 +31,21 @@ class AdvancedSearchSettingsService {
   AdvancedSearchSettingsService._internal();
 
   static const String _exactMatchKey = 'advanced_search_exact_match';
-  static const String _biaoyiExactMatchKey = 'advanced_search_biaoyi_exact_match';
+  static const String _biaoyiExactMatchKey =
+      'advanced_search_biaoyi_exact_match';
   static const String _lastSelectedGroupKey = 'last_selected_group';
   static const String _languageDefaultOptionsKey = 'language_default_options';
   static const String _languageOrderKey = 'language_display_order';
 
+  /// 语言顺序缓存
+  static List<String> _languageOrderCache = [];
+  static bool _languageOrderCacheLoaded = false;
+
   /// 各语言默认搜索选项
   /// 英语: 关闭通配符搜索, 关闭区分大小写 (exactMatch = false)
   /// 其他语言可以根据需要配置
-  static const Map<String, LanguageDefaultSearchOptions> _defaultOptionsByLanguage = {
+  static const Map<String, LanguageDefaultSearchOptions>
+  _defaultOptionsByLanguage = {
     'en': LanguageDefaultSearchOptions(exactMatch: false),
     'zh': LanguageDefaultSearchOptions(exactMatch: false),
     'ja': LanguageDefaultSearchOptions(exactMatch: false),
@@ -84,6 +90,25 @@ class AdvancedSearchSettingsService {
   Future<void> setLanguageOrder(List<String> order) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_languageOrderKey, order);
+    // 更新缓存
+    _languageOrderCache = order;
+    _languageOrderCacheLoaded = true;
+  }
+
+  /// 同步获取语言显示顺序（从缓存获取）
+  /// 如果缓存未加载，返回空列表
+  List<String> getLanguageOrderSync() {
+    if (_languageOrderCacheLoaded) {
+      return _languageOrderCache;
+    }
+    return [];
+  }
+
+  /// 加载语言顺序到缓存
+  Future<void> loadLanguageOrderToCache() async {
+    final order = await getLanguageOrder();
+    _languageOrderCache = order ?? [];
+    _languageOrderCacheLoaded = true;
   }
 
   /// 按照已保存的语言顺序对语言列表进行排序。
@@ -104,7 +129,6 @@ class AdvancedSearchSettingsService {
     });
   }
 
-
   /// 保存精确搜索设置
   Future<void> setExactMatch(bool value) async {
     final prefs = await SharedPreferences.getInstance();
@@ -124,23 +148,28 @@ class AdvancedSearchSettingsService {
     if (language == null || language.isEmpty || language == 'auto') {
       return const LanguageDefaultSearchOptions();
     }
-    
+
     final langCode = language.toLowerCase();
-    return _defaultOptionsByLanguage[langCode] ?? const LanguageDefaultSearchOptions();
+    return _defaultOptionsByLanguage[langCode] ??
+        const LanguageDefaultSearchOptions();
   }
 
   /// 获取指定语言的默认搜索选项（异步版本，支持从存储加载自定义配置）
-  Future<LanguageDefaultSearchOptions> getDefaultOptionsForLanguageAsync(String? language) async {
+  Future<LanguageDefaultSearchOptions> getDefaultOptionsForLanguageAsync(
+    String? language,
+  ) async {
     if (language == null || language.isEmpty || language == 'auto') {
       return const LanguageDefaultSearchOptions();
     }
 
     final langCode = language.toLowerCase();
-    
+
     // 首先检查是否有用户自定义配置
     final prefs = await SharedPreferences.getInstance();
-    final customOptionsJson = prefs.getString('${_languageDefaultOptionsKey}_$langCode');
-    
+    final customOptionsJson = prefs.getString(
+      '${_languageDefaultOptionsKey}_$langCode',
+    );
+
     if (customOptionsJson != null) {
       try {
         // 解析自定义配置
@@ -150,9 +179,10 @@ class AdvancedSearchSettingsService {
         // 解析失败，使用默认配置
       }
     }
-    
+
     // 使用内置默认配置
-    return _defaultOptionsByLanguage[langCode] ?? const LanguageDefaultSearchOptions();
+    return _defaultOptionsByLanguage[langCode] ??
+        const LanguageDefaultSearchOptions();
   }
 
   /// 保存指定语言的默认搜索选项
@@ -173,11 +203,12 @@ class AdvancedSearchSettingsService {
     // 移除花括号
     jsonStr = jsonStr.trim();
     if (jsonStr.startsWith('{')) jsonStr = jsonStr.substring(1);
-    if (jsonStr.endsWith('}')) jsonStr = jsonStr.substring(0, jsonStr.length - 1);
-    
+    if (jsonStr.endsWith('}'))
+      jsonStr = jsonStr.substring(0, jsonStr.length - 1);
+
     final result = <String, dynamic>{};
     if (jsonStr.isEmpty) return result;
-    
+
     // 简单解析 key: value 对
     final pairs = jsonStr.split(',');
     for (final pair in pairs) {

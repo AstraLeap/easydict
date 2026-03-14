@@ -1,4 +1,7 @@
 import '../database_service.dart';
+import '../../services/advanced_search_settings_service.dart';
+import '../../services/dictionary_manager.dart';
+import '../../core/utils/language_utils.dart';
 
 class DictionarySection {
   final String section;
@@ -12,7 +15,7 @@ class PageGroup {
   final List<DictionarySection> sections;
 
   PageGroup({required this.page, required List<DictionarySection> sections})
-      : sections = List.from(sections);
+    : sections = List.from(sections);
 }
 
 class DictionaryGroup {
@@ -154,24 +157,112 @@ class DictionaryEntryGroup {
 
       // 构建 pageGroups
       final pageGroups = pageMap.entries.map((pageEntry) {
-        final pageEntries = pageEntry.value..sort((a, b) => a.id.compareTo(b.id));
+        final pageEntries = pageEntry.value
+          ..sort((a, b) => a.id.compareTo(b.id));
         return PageGroup(
           page: pageEntry.key,
-          sections: pageEntries.map((e) => DictionarySection(section: e.section ?? '', entry: e)).toList(),
+          sections: pageEntries
+              .map((e) => DictionarySection(section: e.section ?? '', entry: e))
+              .toList(),
         );
       }).toList()..sort((a, b) => a.page.compareTo(b.page));
 
       if (pageGroups.isEmpty) continue;
 
-      dictionaryGroups.add(DictionaryGroup(
-        dictionaryId: dictId,
-        dictionaryName: dictId.isEmpty ? 'Unknown' : dictId[0].toUpperCase() + dictId.substring(1),
-        pageGroups: pageGroups,
-      ));
+      dictionaryGroups.add(
+        DictionaryGroup(
+          dictionaryId: dictId,
+          dictionaryName: dictId.isEmpty
+              ? 'Unknown'
+              : dictId[0].toUpperCase() + dictId.substring(1),
+          pageGroups: pageGroups,
+        ),
+      );
     }
 
-    dictionaryGroups.sort((a, b) => a.dictionaryId.compareTo(b.dictionaryId));
+    // 按照词典排序界面的顺序排序：语言顺序为主体，语言内部按词典启用顺序
+    _sortDictionaryGroups(dictionaryGroups);
 
-    return DictionaryEntryGroup(headword: headword, dictionaryGroups: dictionaryGroups);
+    return DictionaryEntryGroup(
+      headword: headword,
+      dictionaryGroups: dictionaryGroups,
+    );
+  }
+
+  /// 按照词典排序界面的顺序排序词典组
+  /// 排序规则：语言顺序为主体，各语言内部按词典启用顺序
+  static void _sortDictionaryGroups(List<DictionaryGroup> groups) {
+    if (groups.isEmpty) return;
+
+    final dictManager = DictionaryManager();
+    final advancedSettingsService = AdvancedSearchSettingsService();
+
+    // 获取语言顺序（同步从缓存获取，如果没有则使用默认顺序）
+    final languageOrder = advancedSettingsService.getLanguageOrderSync();
+
+    // 获取词典启用顺序
+    final enabledDictIds = dictManager.getEnabledDictionariesSync();
+
+    // 获取每个词典的源语言
+    final Map<String, String> dictToLang = {};
+    for (final group in groups) {
+      final metadata = dictManager.getCachedMetadata(group.dictionaryId);
+      if (metadata != null) {
+        dictToLang[group.dictionaryId] = LanguageUtils.normalizeSourceLanguage(
+          metadata.sourceLanguage,
+        );
+      } else {
+        dictToLang[group.dictionaryId] = '';
+      }
+    }
+
+    // 排序：语言顺序为主体，语言内部按词典启用顺序
+    groups.sort((a, b) {
+      final langA = dictToLang[a.dictionaryId] ?? '';
+      final langB = dictToLang[b.dictionaryId] ?? '';
+
+      // 首先按语言顺序排序
+      final langIndexA = languageOrder.indexOf(langA);
+      final langIndexB = languageOrder.indexOf(langB);
+
+      // 如果两个语言都在保存的顺序中，按语言顺序排序
+      if (langIndexA != -1 && langIndexB != -1) {
+        if (langIndexA != langIndexB) {
+          return langIndexA.compareTo(langIndexB);
+        }
+        // 同一语言内部，按词典启用顺序排序
+        final dictIndexA = enabledDictIds.indexOf(a.dictionaryId);
+        final dictIndexB = enabledDictIds.indexOf(b.dictionaryId);
+        if (dictIndexA != -1 && dictIndexB != -1) {
+          return dictIndexA.compareTo(dictIndexB);
+        } else if (dictIndexA != -1) {
+          return -1;
+        } else if (dictIndexB != -1) {
+          return 1;
+        }
+        return a.dictionaryId.compareTo(b.dictionaryId);
+      }
+
+      // 如果只有一个语言在保存的顺序中，有顺序的排前面
+      if (langIndexA != -1) return -1;
+      if (langIndexB != -1) return 1;
+
+      // 如果两个语言都不在保存的顺序中，按字母顺序排序
+      if (langA != langB) {
+        return langA.compareTo(langB);
+      }
+
+      // 同一语言内部，按词典启用顺序排序
+      final dictIndexA = enabledDictIds.indexOf(a.dictionaryId);
+      final dictIndexB = enabledDictIds.indexOf(b.dictionaryId);
+      if (dictIndexA != -1 && dictIndexB != -1) {
+        return dictIndexA.compareTo(dictIndexB);
+      } else if (dictIndexA != -1) {
+        return -1;
+      } else if (dictIndexB != -1) {
+        return 1;
+      }
+      return a.dictionaryId.compareTo(b.dictionaryId);
+    });
   }
 }
