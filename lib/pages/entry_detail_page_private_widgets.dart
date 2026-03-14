@@ -12,6 +12,7 @@ class _DraggableNavPanel extends StatefulWidget {
   onNavigateToEntry;
   final double initialDy;
   final GlobalKey<DictionaryNavigationPanelState>? navPanelKey;
+  final ValueNotifier<int>? navPanelVersionNotifier;
 
   const _DraggableNavPanel({
     required this.entryGroup,
@@ -21,6 +22,7 @@ class _DraggableNavPanel extends StatefulWidget {
     required this.onNavigateToEntry,
     required this.initialDy,
     this.navPanelKey,
+    this.navPanelVersionNotifier,
   });
 
   @override
@@ -35,6 +37,29 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
   void initState() {
     super.initState();
     _dy = widget.initialDy;
+    widget.navPanelVersionNotifier?.addListener(_onNavPanelVersionChanged);
+  }
+
+  @override
+  void didUpdateWidget(_DraggableNavPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.navPanelVersionNotifier != oldWidget.navPanelVersionNotifier) {
+      oldWidget.navPanelVersionNotifier?.removeListener(
+        _onNavPanelVersionChanged,
+      );
+      widget.navPanelVersionNotifier?.addListener(_onNavPanelVersionChanged);
+    }
+  }
+
+  void _onNavPanelVersionChanged() {
+    // 当 notifier 变化时，只重建导航面板，不重建整个页面
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.navPanelVersionNotifier?.removeListener(_onNavPanelVersionChanged);
+    super.dispose();
   }
 
   @override
@@ -168,6 +193,10 @@ class _BlinkingIconState extends State<_BlinkingIcon>
 
 // ==================== 共享 Markdown 样式表工具函数 ====================
 
+/// 缓存的 MarkdownStyleSheet 对象，避免每次调用都创建新对象
+MarkdownStyleSheet? _cachedAiMarkdownStyleSheet;
+ThemeData? _cachedAiMarkdownTheme;
+
 /// 构建 AI 聊天内容用的 MarkdownStyleSheet。
 ///
 /// AI 聊天内容统一使用系统默认字体（SourceSans3/SourceSerif4），
@@ -177,6 +206,13 @@ class _BlinkingIconState extends State<_BlinkingIcon>
 /// SourceSans3 / SourceSerif4，避免合成斜体对 CJK 字形产生极端倾斜。
 MarkdownStyleSheet _buildAiMarkdownStyleSheet(BuildContext context) {
   final theme = Theme.of(context);
+
+  // 检查缓存：如果主题相同，直接返回缓存的样式表
+  if (_cachedAiMarkdownStyleSheet != null &&
+      identical(_cachedAiMarkdownTheme, theme)) {
+    return _cachedAiMarkdownStyleSheet!;
+  }
+
   final cs = theme.colorScheme;
 
   // AI 聊天内容使用系统默认字体，不使用用户自定义字体
@@ -192,7 +228,7 @@ MarkdownStyleSheet _buildAiMarkdownStyleSheet(BuildContext context) {
     fontFamily: firstFont,
   );
 
-  return MarkdownStyleSheet.fromTheme(theme).copyWith(
+  final styleSheet = MarkdownStyleSheet.fromTheme(theme).copyWith(
     p: baseBody,
     h1: theme.textTheme.titleLarge?.copyWith(
       fontWeight: FontWeight.w700,
@@ -251,6 +287,12 @@ MarkdownStyleSheet _buildAiMarkdownStyleSheet(BuildContext context) {
     tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
     tableHeadAlign: TextAlign.left,
   );
+
+  // 更新缓存
+  _cachedAiMarkdownStyleSheet = styleSheet;
+  _cachedAiMarkdownTheme = theme;
+
+  return styleSheet;
 }
 
 // ==================== 延迟渲染 Markdown ====================

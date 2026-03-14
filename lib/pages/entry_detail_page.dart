@@ -99,13 +99,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Future<List<WordRelationRow>>? _wordRelationsFuture;
 
   DateTime? _lastScrollUpdateTime;
-  static const _scrollUpdateThrottle = Duration(milliseconds: 100);
+  static const _scrollUpdateThrottle = Duration(milliseconds: 150);
   bool _isProgrammaticScroll = false;
   DateTime? _lastDictionaryChangeTime;
-  static const _dictionaryChangeCooldown = Duration(milliseconds: 300);
+  static const _dictionaryChangeCooldown = Duration(milliseconds: 500);
 
   List<String> _toolbarActions = [];
   List<String> _overflowActions = [];
+
+  /// 导航面板状态通知器，用于在滚动时只更新导航面板而不重建整个页面
+  final ValueNotifier<int> _navPanelVersionNotifier = ValueNotifier(0);
 
   /// 流式输出状态通知器，避免在每个chunk时重建整个列表
   final Map<String, ValueNotifier<(String, String?, bool)>>
@@ -190,6 +193,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _updateCurrentSectionFromScroll();
   }
 
+  // 缓存当前entry的索引位置，避免每次滚动都遍历查找
+  int? _lastEntryIndex;
+  String? _lastEntryId;
+
   void _updateCurrentSectionFromScroll() {
     // 检查词典切换冷却时间，防止在词典交界处快速来回切换
     final now = DateTime.now();
@@ -261,35 +268,47 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
     if (entryIndex < 0 || entryIndex >= entries.length) return;
 
+    // 快速检查：如果entry索引没变，直接返回（避免重复查找）
+    if (_lastEntryIndex == entryIndex && _lastEntryId != null) {
+      return;
+    }
+
     final targetEntry = entries[entryIndex];
+
+    // 更新缓存
+    _lastEntryIndex = entryIndex;
+    _lastEntryId = targetEntry.id;
+
     final currentDictIndex = _entryGroup.currentDictionaryIndex;
 
+    // 使用索引直接定位，避免三重循环
+    // 先找到entry所属的词典
+    int entryCount = 0;
     for (int i = 0; i < _entryGroup.dictionaryGroups.length; i++) {
       final dict = _entryGroup.dictionaryGroups[i];
-      for (int j = 0; j < dict.pageGroups.length; j++) {
-        final page = dict.pageGroups[j];
-        for (int k = 0; k < page.sections.length; k++) {
-          if (page.sections[k].entry.id == targetEntry.id) {
-            if (i != currentDictIndex ||
-                j != dict.currentPageIndex ||
-                k != dict.currentSectionIndex) {
-              _entryGroup.setCurrentDictionaryIndex(i);
-              _entryGroup.dictionaryGroups[i].setCurrentPageIndex(j);
-              _entryGroup.dictionaryGroups[i].setCurrentSectionIndex(k);
-              // 记录词典切换时间，用于冷却机制
-              _lastDictionaryChangeTime = DateTime.now();
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  setState(() {});
-                  // 通知导航面板活跃section已改变
-                  _navPanelKey.currentState?.handleActiveSectionChanged();
-                }
-              });
-            }
-            return;
+      final currentPage = dict.currentPageGroup;
+      final pageEntryCount = currentPage.sections.length;
+
+      if (entryIndex < entryCount + pageEntryCount) {
+        // entry在这个词典中
+        final localIndex = entryIndex - entryCount;
+        final section = currentPage.sections[localIndex];
+
+        if (section.entry.id == targetEntry.id) {
+          if (i != currentDictIndex || localIndex != dict.currentSectionIndex) {
+            _entryGroup.setCurrentDictionaryIndex(i);
+            _entryGroup.dictionaryGroups[i].setCurrentSectionIndex(localIndex);
+            // 记录词典切换时间，用于冷却机制
+            _lastDictionaryChangeTime = DateTime.now();
+            // 只通知导航面板更新，不重建整个页面
+            _navPanelVersionNotifier.value++;
+            // 通知导航面板活跃section已改变
+            _navPanelKey.currentState?.handleActiveSectionChanged();
           }
         }
+        return;
       }
+      entryCount += pageEntryCount;
     }
   }
 
@@ -588,14 +607,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
     final allDicts = _entryGroup.dictionaryGroups;
 
-    // 按固定顺序添加所有词典的所有 page 的 entries
-    // 不再依赖于 currentDictionaryIndex，避免滚动时列表重新排列导致显示混乱
+    // 按固定顺序添加所有词典的【当前 page】的 entries
+    // 每个词典只显示其当前选中的 page
     for (int i = 0; i < allDicts.length; i++) {
       final dict = allDicts[i];
-      for (final pageGroup in dict.pageGroups) {
-        for (final section in pageGroup.sections) {
-          entries.add(section.entry);
-        }
+      final currentPage = dict.currentPageGroup;
+      for (final section in currentPage.sections) {
+        entries.add(section.entry);
       }
     }
 
@@ -886,7 +904,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     context,
                   ).copyWith(top: 16, bottom: 100),
                   itemCount: totalCount,
-                  minCacheExtent: 500,
+                  minCacheExtent: 1500,
                   itemBuilder: (context, index) {
                     // 索引 0: 单词形态关系横幅
                     if (index == 0) return _buildWordRelationsBanner();
@@ -929,6 +947,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 onNavigateToEntry: _scrollToEntry,
                 initialDy: _navPanelDy,
                 navPanelKey: _navPanelKey,
+                navPanelVersionNotifier: _navPanelVersionNotifier,
               ),
             Positioned(
               left: 16,
