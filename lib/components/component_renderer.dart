@@ -1076,6 +1076,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
 
+  // 缓存：避免重复计算样式
+  TextStyle? _cachedBaseStyle;
+  String? _cachedBaseStyleKey;
+
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
       (cu >= 65 && cu <= 90) || (cu >= 97 && cu <= 122);
@@ -3187,6 +3191,48 @@ class ComponentRendererState extends State<ComponentRenderer> {
       child: ScaleLayoutWrapper(
         scale: _tempContentScale,
         child: visibilityWidget,
+      ),
+    );
+  }
+
+  /// 构建轻量级占位符（首次可见前显示）
+  Widget _buildPlaceholder(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final entry = _localEntry;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // headword 占位符
+          Text(
+            entry.headword,
+            style: DictTypography.getBaseStyle(
+              DictElementType.headword,
+              color: colorScheme.onSurface,
+            ).copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          // 骨架屏占位
+          Container(
+            width: double.infinity,
+            height: 14,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: 200,
+            height: 14,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
       ),
     );
   }
