@@ -101,6 +101,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   DateTime? _lastScrollUpdateTime;
   static const _scrollUpdateThrottle = Duration(milliseconds: 100);
   bool _isProgrammaticScroll = false;
+  DateTime? _lastDictionaryChangeTime;
+  static const _dictionaryChangeCooldown = Duration(milliseconds: 300);
 
   List<String> _toolbarActions = [];
   List<String> _overflowActions = [];
@@ -189,15 +191,36 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   void _updateCurrentSectionFromScroll() {
+    // 检查词典切换冷却时间，防止在词典交界处快速来回切换
+    final now = DateTime.now();
+    if (_lastDictionaryChangeTime != null &&
+        now.difference(_lastDictionaryChangeTime!) <
+            _dictionaryChangeCooldown) {
+      return;
+    }
+
     final positions = _itemPositionsListener.itemPositions.value;
     if (positions.isEmpty) return;
 
     final entries = _getAllEntriesInOrder();
     if (entries.isEmpty) return;
 
+    // 计算可见区域中的最大索引
+    int maxVisibleIndex = -1;
+    for (final pos in positions) {
+      if (pos.index > maxVisibleIndex) {
+        maxVisibleIndex = pos.index;
+      }
+    }
+
+    // 检查是否滚动到底部：如果最大可见索引是列表最后一个 item，说明已滚动到底部
+    // item 0 是词形关系横幅，所以总 item 数 = 1 + entries.length
+    final totalItems = 1 + entries.length;
+    final isAtBottom = maxVisibleIndex >= totalItems - 1;
+
     int lastFullyVisibleIndex = -1;
     double maxVisibleHeight = 0;
-    int maxVisibleIndex = -1;
+    int targetVisibleIndex = -1;
 
     for (final pos in positions) {
       double visibleHeight;
@@ -219,17 +242,23 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
       if (visibleHeight > maxVisibleHeight) {
         maxVisibleHeight = visibleHeight;
-        maxVisibleIndex = pos.index;
+        targetVisibleIndex = pos.index;
       }
     }
 
     int targetIndex = lastFullyVisibleIndex >= 0
         ? lastFullyVisibleIndex
-        : maxVisibleIndex;
+        : targetVisibleIndex;
     if (targetIndex < 0) return;
 
     // 索引 0: 词形关系横幅（始终存在）
     int entryIndex = targetIndex - 1;
+
+    // 如果滚动到底部，强制使用最后一个 entry
+    if (isAtBottom && entries.isNotEmpty) {
+      entryIndex = entries.length - 1;
+    }
+
     if (entryIndex < 0 || entryIndex >= entries.length) return;
 
     final targetEntry = entries[entryIndex];
@@ -247,6 +276,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               _entryGroup.setCurrentDictionaryIndex(i);
               _entryGroup.dictionaryGroups[i].setCurrentPageIndex(j);
               _entryGroup.dictionaryGroups[i].setCurrentSectionIndex(k);
+              // 记录词典切换时间，用于冷却机制
+              _lastDictionaryChangeTime = DateTime.now();
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
                   setState(() {});
@@ -556,32 +587,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final List<DictionaryEntry> entries = [];
 
     final allDicts = _entryGroup.dictionaryGroups;
-    final currentDict = _entryGroup.currentDictionaryGroup;
-    final currentDictIndex = _entryGroup.currentDictionaryIndex;
-    final currentPageIndex = currentDict.currentPageIndex;
 
-    for (int i = 0; i < currentDictIndex; i++) {
+    // 按固定顺序添加所有词典的所有 page 的 entries
+    // 不再依赖于 currentDictionaryIndex，避免滚动时列表重新排列导致显示混乱
+    for (int i = 0; i < allDicts.length; i++) {
       final dict = allDicts[i];
-      // 添加该词典所有 page 的 entries
-      for (final pageGroup in dict.pageGroups) {
-        for (final section in pageGroup.sections) {
-          entries.add(section.entry);
-        }
-      }
-    }
-
-    // 当前词典：只添加当前 page 的 entries
-    if (currentDict.pageGroups.isNotEmpty &&
-        currentPageIndex < currentDict.pageGroups.length) {
-      final currentPage = currentDict.pageGroups[currentPageIndex];
-      for (final section in currentPage.sections) {
-        entries.add(section.entry);
-      }
-    }
-
-    for (int i = currentDictIndex + 1; i < allDicts.length; i++) {
-      final dict = allDicts[i];
-      // 添加该词典所有 page 的 entries
       for (final pageGroup in dict.pageGroups) {
         for (final section in pageGroup.sections) {
           entries.add(section.entry);
@@ -876,7 +886,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     context,
                   ).copyWith(top: 16, bottom: 100),
                   itemCount: totalCount,
-                  minCacheExtent: 100,
+                  minCacheExtent: 500,
                   itemBuilder: (context, index) {
                     // 索引 0: 单词形态关系横幅
                     if (index == 0) return _buildWordRelationsBanner();
@@ -1212,54 +1222,56 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     // 折叠状态：非第一条 entry 直接隐藏
     if (isCollapsed && !showDictHeader) return const SizedBox.shrink();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (showDictHeader)
-            _buildDictionaryHeader(
-              entry,
-              isCollapsed: isCollapsed,
-              onToggle: dictId.isEmpty
-                  ? null
-                  : () => setState(() {
-                      if (_collapsedDicts.contains(dictId)) {
-                        _collapsedDicts.remove(dictId);
-                      } else {
-                        _collapsedDicts.add(dictId);
-                      }
-                    }),
-            ),
-          if (!isCollapsed)
-            ...([
-              if (relations != null && relations.isNotEmpty)
-                _buildInlineDictRelationBanner(relations),
-              ComponentRenderer(
-                key: ValueKey(entry.id),
-                entry: entry,
-                topPadding: 12,
-                onElementTap: (path, label) {
-                  _handleTranslationTap(entry, path, label);
-                },
-                onEditElement: (path, label) {
-                  _showJsonElementEditorFromPath(entry, path);
-                },
-                onAiAsk: (path, label) {
-                  _handleAiElementTap(entry, path, label);
-                },
-                onTranslationInsert: (path, newEntry) {
-                  EntryEventBus().emitTranslationInsert(
-                    TranslationInsertEvent(
-                      entryId: entry.id,
-                      path: path,
-                      newEntry: newEntry.toJson(),
-                    ),
-                  );
-                },
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (showDictHeader)
+              _buildDictionaryHeader(
+                entry,
+                isCollapsed: isCollapsed,
+                onToggle: dictId.isEmpty
+                    ? null
+                    : () => setState(() {
+                        if (_collapsedDicts.contains(dictId)) {
+                          _collapsedDicts.remove(dictId);
+                        } else {
+                          _collapsedDicts.add(dictId);
+                        }
+                      }),
               ),
-            ]),
-        ],
+            if (!isCollapsed)
+              ...([
+                if (relations != null && relations.isNotEmpty)
+                  _buildInlineDictRelationBanner(relations),
+                ComponentRenderer(
+                  key: ValueKey(entry.id),
+                  entry: entry,
+                  topPadding: 12,
+                  onElementTap: (path, label) {
+                    _handleTranslationTap(entry, path, label);
+                  },
+                  onEditElement: (path, label) {
+                    _showJsonElementEditorFromPath(entry, path);
+                  },
+                  onAiAsk: (path, label) {
+                    _handleAiElementTap(entry, path, label);
+                  },
+                  onTranslationInsert: (path, newEntry) {
+                    EntryEventBus().emitTranslationInsert(
+                      TranslationInsertEvent(
+                        entryId: entry.id,
+                        path: path,
+                        newEntry: newEntry.toJson(),
+                      ),
+                    );
+                  },
+                ),
+              ]),
+          ],
+        ),
       ),
     );
   }

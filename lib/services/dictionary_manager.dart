@@ -123,10 +123,32 @@ class DictionaryManager {
     return enabled ?? [];
   }
 
+  /// 启用的词典ID缓存
+  static List<String> _enabledDictionariesCache = [];
+  static bool _enabledDictionariesCacheLoaded = false;
+
+  /// 同步获取启用的词典ID列表（从缓存获取）
+  List<String> getEnabledDictionariesSync() {
+    if (_enabledDictionariesCacheLoaded) {
+      return _enabledDictionariesCache;
+    }
+    return [];
+  }
+
+  /// 加载启用的词典ID到缓存
+  Future<void> loadEnabledDictionariesToCache() async {
+    final enabled = await getEnabledDictionaries();
+    _enabledDictionariesCache = enabled;
+    _enabledDictionariesCacheLoaded = true;
+  }
+
   Future<void> setEnabledDictionaries(List<String> dictionaryIds) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_enabledDictionariesKey, dictionaryIds);
     _enabledDictionariesMetadataCache = null;
+    // 更新缓存
+    _enabledDictionariesCache = dictionaryIds;
+    _enabledDictionariesCacheLoaded = true;
     EntryEventBus().emitDictionariesChanged();
   }
 
