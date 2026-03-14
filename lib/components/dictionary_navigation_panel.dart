@@ -465,6 +465,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 dictionaryId: dict.dictionaryId,
                 dictionaryName: dict.dictionaryName,
                 size: 36,
+                opacity: isCurrent ? 1.0 : 0.4,
               ),
               if (isCurrent && dict.pageGroups.length > 1)
                 Positioned(

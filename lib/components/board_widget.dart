@@ -131,7 +131,7 @@ class _BoardWidgetState extends State<BoardWidget> {
                     ),
                     const SizedBox(height: 4),
                     _DashedLine(
-                      color: colorScheme.primary.withValues(alpha: 0.4),
+                      color: colorScheme.primary.withValues(alpha: 0.2),
                       height: 1,
                     ),
                   ],

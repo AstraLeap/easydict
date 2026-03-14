@@ -155,11 +155,13 @@ flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
   ],
   "sense_group": [
     {
-      "group_name": "noun", //释义组的组名
-      "group_sub_name": "obsoleted sense", //释义组的副组名
+      "group_name": "noun", //释义组的组名（可选，无则不渲染组名行）
+      "group_sub_name": "obsoleted sense", //释义组的副组名（可选，无则不渲染副组名行）
       "sense": [{}, {}],
     },
-    {},
+    {
+      "sense": [{}, {}], // 无 group_name 和 group_sub_name 时，仅渲染 sense 列表
+    },
   ], //释义组
 }
 ```
@@ -204,11 +206,12 @@ For more information, please [see here](->wood).
 # 词典包结构
 
 ```
-dictionary_name/
-├── metadata.json      # 词典元数据
-├── dictionary.db      # 词条数据库
-├── media.db           # 媒体资源数据库（可选）
-└── logo.png           # 词典 Logo
+dict_root_folder/
+└── {dict_id}/              # 文件夹名必须与 metadata.json 中的 id 一致
+    ├── metadata.json       # 词典元数据
+    ├── dictionary.db       # 词条数据库
+    ├── media.db            # 媒体资源数据库（可选）
+    └── logo.png            # 词典 Logo（可选）
 ```
 
 ## metadata.json

@@ -521,11 +521,75 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     await _dictManager.setEnabledDictionaries(_enabledDictionaryIds);
   }
 
-  void _onReorder(int oldIndex, int newIndex) {
-    setState(() {
-      final item = _enabledDictionaryIds.removeAt(oldIndex);
-      _enabledDictionaryIds.insert(newIndex, item);
+  void _onReorder(int oldIndex, int newIndex, String language) {
+    // 获取当前语言分组内的已启用词典
+    final langDicts = _allDictionaries
+        .where(
+          (d) =>
+              LanguageUtils.normalizeSourceLanguage(d.sourceLanguage) ==
+              language,
+        )
+        .where((d) => _enabledDictionaryIds.contains(d.id))
+        .toList();
+
+    // 按照全局启用列表的顺序排序
+    langDicts.sort((a, b) {
+      final indexA = _enabledDictionaryIds.indexOf(a.id);
+      final indexB = _enabledDictionaryIds.indexOf(b.id);
+      return indexA.compareTo(indexB);
     });
+
+    if (oldIndex < 0 || oldIndex >= langDicts.length) return;
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex > langDicts.length) newIndex = langDicts.length;
+
+    // 在语言分组内移动
+    final movedDictId = langDicts[oldIndex].id;
+    final targetIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+
+    // 从全局列表中移除该词典
+    _enabledDictionaryIds.remove(movedDictId);
+
+    // 计算在全局列表中的插入位置
+    if (targetIndex == 0) {
+      // 插入到该语言分组的最前面
+      // 找到该语言分组在全局列表中的第一个词典的位置
+      final firstLangDictIndex = _enabledDictionaryIds.indexWhere(
+        (id) => langDicts.any((d) => d.id == id),
+      );
+      if (firstLangDictIndex == -1) {
+        _enabledDictionaryIds.insert(0, movedDictId);
+      } else {
+        _enabledDictionaryIds.insert(firstLangDictIndex, movedDictId);
+      }
+    } else if (targetIndex >= langDicts.length - 1) {
+      // 插入到该语言分组的最后面
+      // 找到该语言分组在全局列表中的最后一个词典的位置
+      int lastLangDictIndex = -1;
+      for (int i = _enabledDictionaryIds.length - 1; i >= 0; i--) {
+        if (langDicts.any((d) => d.id == _enabledDictionaryIds[i])) {
+          lastLangDictIndex = i;
+          break;
+        }
+      }
+      if (lastLangDictIndex == -1) {
+        _enabledDictionaryIds.add(movedDictId);
+      } else {
+        _enabledDictionaryIds.insert(lastLangDictIndex + 1, movedDictId);
+      }
+    } else {
+      // 插入到目标位置
+      // 获取目标位置的词典ID（在移动前的列表中）
+      final targetDictId = langDicts[targetIndex].id;
+      final targetGlobalIndex = _enabledDictionaryIds.indexOf(targetDictId);
+      if (targetGlobalIndex == -1) {
+        _enabledDictionaryIds.add(movedDictId);
+      } else {
+        _enabledDictionaryIds.insert(targetGlobalIndex, movedDictId);
+      }
+    }
+
+    setState(() {});
     _dictManager.reorderDictionaries(_enabledDictionaryIds);
   }
 
@@ -801,7 +865,10 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: _buildReorderableList(enabledDicts),
+            sliver: _buildReorderableList(
+              enabledDicts,
+              LanguageUtils.normalizeSourceLanguage(dicts.first.sourceLanguage),
+            ),
           ),
         ],
 
@@ -1498,9 +1565,13 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     );
   }
 
-  Widget _buildReorderableList(List<DictionaryMetadata> dictionaries) {
+  Widget _buildReorderableList(
+    List<DictionaryMetadata> dictionaries,
+    String language,
+  ) {
     return ReorderableSliverList(
-      onReorder: _onReorder,
+      onReorder: (oldIndex, newIndex) =>
+          _onReorder(oldIndex, newIndex, language),
       delegate: ReorderableSliverChildBuilderDelegate(
         (context, index) => _buildDictionaryCard(dictionaries[index]),
         childCount: dictionaries.length,

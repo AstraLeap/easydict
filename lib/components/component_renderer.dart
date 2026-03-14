@@ -4014,24 +4014,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final labelSpans = <InlineSpan>[];
     if (labels != null && labels.isNotEmpty) {
       for (int i = 0; i < labels.length; i++) {
-        if (i > 0) {
-          labelSpans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 0, right: 8),
-                child: SizedBox(
-                  height: 16,
-                  child: VerticalDivider(
-                    color: colorScheme.outlineVariant,
-                    width: 1,
-                    thickness: 2,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
         final labelPrefix = labelsIsOriginalList ? 'label.$i' : 'label';
         labelSpans.addAll(
           _buildLabelInlineSpans(context, labels[i], labelPrefix: labelPrefix),
@@ -4326,12 +4308,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: _buildSignpostWidget(
-              context,
-              signpostText,
-              labelPrefix: labelPrefix,
+          child: Transform.translate(
+            offset: const Offset(0, 1),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildSignpostWidget(
+                context,
+                signpostText,
+                labelPrefix: labelPrefix,
+              ),
             ),
           ),
         ),
@@ -4526,7 +4511,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           final formattedValue = key == 'pattern'
               ? '[$itemValue]'
               : (isGrammar
-                    ? '| $itemValue |'
+                    ? '[$itemValue]'
                     : (isComplex ? '「$itemValue」' : itemValue));
           // 纯文本标签（非pattern）直接使用TextSpan，与普通文本baseline对齐
           if (isPlain && key != 'pattern') {
@@ -4573,7 +4558,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final formattedValue = key == 'pattern'
             ? '[$displayValue]'
             : (isGrammar
-                  ? '< $displayValue >'
+                  ? '[$displayValue]'
                   : (isComplex ? '「$displayValue」' : displayValue));
         // 纯文本标签（非pattern）直接使用TextSpan，与普通文本baseline对齐
         if (isPlain && key != 'pattern') {
