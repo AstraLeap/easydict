@@ -1,35 +1,39 @@
+// ignore_for_file: duplicate_ignore
+
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import '../data/database_service.dart';
-import '../data/models/dictionary_entry_group.dart';
-import '../components/dictionary_navigation_panel.dart';
-import '../components/dictionary_logo.dart';
-import '../components/global_scale_wrapper.dart';
+
 import '../components/component_renderer.dart';
-import '../data/word_bank_service.dart';
-import '../services/search_history_service.dart';
-import '../services/ai_service.dart';
-import '../services/llm_client.dart';
-import '../data/services/ai_chat_database_service.dart';
-import '../services/dictionary_manager.dart';
-import '../services/english_search_service.dart';
-import '../widgets/path_navigator.dart';
-import '../services/entry_event_bus.dart';
+import '../components/dictionary_logo.dart';
+import '../components/dictionary_navigation_panel.dart';
+import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
-import '../services/preferences_service.dart';
-import '../services/font_loader_service.dart';
-import '../services/user_dicts_service.dart';
+import '../core/utils/language_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
-import '../core/utils/language_utils.dart';
+import '../data/database_service.dart';
 import '../data/models/ai_chat_record.dart';
-import 'json_editor_bottom_sheet.dart';
+import '../data/models/dictionary_entry_group.dart';
+import '../data/services/ai_chat_database_service.dart';
+import '../data/word_bank_service.dart';
 import '../i18n/strings.g.dart';
+import '../services/ai_service.dart';
+import '../services/dictionary_manager.dart';
+import '../services/english_search_service.dart';
+import '../services/entry_event_bus.dart';
+import '../services/font_loader_service.dart';
+import '../services/llm_client.dart';
+import '../services/preferences_service.dart';
+import '../services/search_history_service.dart';
+import '../services/user_dicts_service.dart';
+import '../widgets/path_navigator.dart';
+import 'json_editor_bottom_sheet.dart';
 
 part 'entry_detail_page_private_widgets.dart';
 
@@ -99,10 +103,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   Future<List<WordRelationRow>>? _wordRelationsFuture;
 
   DateTime? _lastScrollUpdateTime;
-  static const _scrollUpdateThrottle = Duration(milliseconds: 150);
+  static const _scrollUpdateThrottle = Duration(milliseconds: 100);
   bool _isProgrammaticScroll = false;
   DateTime? _lastDictionaryChangeTime;
-  static const _dictionaryChangeCooldown = Duration(milliseconds: 500);
+  static const _dictionaryChangeCooldown = Duration(milliseconds: 200);
+
+  /// 滚动结束检测计时器
+  Timer? _scrollEndTimer;
+  static const _scrollEndDelay = Duration(milliseconds: 150);
 
   List<String> _toolbarActions = [];
   List<String> _overflowActions = [];
@@ -120,8 +128,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   /// 请求状态版本通知，用于在流式开始/结束时精确更新单个消息卡片，避免全模态重建影响滚动
   final ValueNotifier<int> _pendingRequestsVersionNotifier = ValueNotifier(0);
 
-  /// AI聊天记录列表的滚动控制器（由 DraggableScrollableSheet 提供，保存引用供外部安全调用）
-  ScrollController? _chatScrollController;
+  /// 桌面端搜索模式
+  bool _isSearchMode = false;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -163,6 +173,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _itemPositionsListener.itemPositions.removeListener(
       _onScrollPositionChanged,
     );
+    _scrollEndTimer?.cancel();
     // 取消所有正在进行的流式AI请求
     for (final sub in _pendingAiRequests.values) {
       sub.cancel();
@@ -182,7 +193,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   }
 
   void _onScrollPositionChanged() {
-    if (_isProgrammaticScroll) return;
+    if (_isProgrammaticScroll) {
+      return;
+    }
 
     final now = DateTime.now();
     if (_lastScrollUpdateTime != null &&
@@ -191,6 +204,13 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
     _lastScrollUpdateTime = now;
     _updateCurrentSectionFromScroll();
+
+    // 重置滚动结束检测计时器
+    _scrollEndTimer?.cancel();
+    _scrollEndTimer = Timer(_scrollEndDelay, () {
+      // 滚动结束后强制更新一次（绕过冷却机制）
+      _forceUpdateCurrentSection();
+    });
   }
 
   // 缓存当前entry的索引位置，避免每次滚动都遍历查找
@@ -198,12 +218,23 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   String? _lastEntryId;
 
   void _updateCurrentSectionFromScroll() {
+    _updateCurrentSectionInternal(skipCooldown: false);
+  }
+
+  /// 强制更新当前 section（滚动结束后调用，绕过冷却机制）
+  void _forceUpdateCurrentSection() {
+    _updateCurrentSectionInternal(skipCooldown: true);
+  }
+
+  void _updateCurrentSectionInternal({required bool skipCooldown}) {
     // 检查词典切换冷却时间，防止在词典交界处快速来回切换
-    final now = DateTime.now();
-    if (_lastDictionaryChangeTime != null &&
-        now.difference(_lastDictionaryChangeTime!) <
-            _dictionaryChangeCooldown) {
-      return;
+    if (!skipCooldown) {
+      final now = DateTime.now();
+      if (_lastDictionaryChangeTime != null &&
+          now.difference(_lastDictionaryChangeTime!) <
+              _dictionaryChangeCooldown) {
+        return;
+      }
     }
 
     final positions = _itemPositionsListener.itemPositions.value;
@@ -212,24 +243,19 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final entries = _getAllEntriesInOrder();
     if (entries.isEmpty) return;
 
-    // 计算可见区域中的最大索引
-    int maxVisibleIndex = -1;
-    for (final pos in positions) {
-      if (pos.index > maxVisibleIndex) {
-        maxVisibleIndex = pos.index;
-      }
-    }
+    // 只考虑真正可见区域内的 items（排除预加载区域）
+    // itemLeadingEdge < 1 且 itemTrailingEdge > 0 表示至少部分可见
+    final visiblePositions = positions
+        .where((pos) => pos.itemLeadingEdge < 1 && pos.itemTrailingEdge > 0)
+        .toList();
 
-    // 检查是否滚动到底部：如果最大可见索引是列表最后一个 item，说明已滚动到底部
-    // item 0 是词形关系横幅，所以总 item 数 = 1 + entries.length
-    final totalItems = 1 + entries.length;
-    final isAtBottom = maxVisibleIndex >= totalItems - 1;
+    if (visiblePositions.isEmpty) return;
 
     int lastFullyVisibleIndex = -1;
     double maxVisibleHeight = 0;
     int targetVisibleIndex = -1;
 
-    for (final pos in positions) {
+    for (final pos in visiblePositions) {
       double visibleHeight;
       if (pos.itemLeadingEdge < 0 && pos.itemTrailingEdge > 1) {
         visibleHeight = 1.0;
@@ -260,11 +286,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
     // 索引 0: 词形关系横幅（始终存在）
     int entryIndex = targetIndex - 1;
-
-    // 如果滚动到底部，强制使用最后一个 entry
-    if (isAtBottom && entries.isNotEmpty) {
-      entryIndex = entries.length - 1;
-    }
 
     if (entryIndex < 0 || entryIndex >= entries.length) return;
 
@@ -886,80 +907,105 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final totalCount = wordRelationsOffset + entries.length;
 
     final content = Scaffold(
+      // 禁止键盘顶起页面，手动处理底部工具栏位置
+      resizeToAvoidBottomInset: false,
       body: AnnotatedRegion<SystemUiOverlayStyle>(
         value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            SafeArea(
-              bottom: false,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  return false;
-                },
-                child: ScrollablePositionedList.builder(
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  padding: _getDynamicPadding(
-                    context,
-                  ).copyWith(top: 16, bottom: 100),
-                  itemCount: totalCount,
-                  minCacheExtent: 1500,
-                  itemBuilder: (context, index) {
-                    // 索引 0: 单词形态关系横幅
-                    if (index == 0) return _buildWordRelationsBanner();
+        child: GestureDetector(
+          // 点击空白区域退出搜索模式
+          onTap: () {
+            if (_isSearchMode) {
+              setState(() {
+                _isSearchMode = false;
+              });
+              _searchController.clear();
+            }
+          },
+          // 允许子组件处理点击事件
+          behavior: HitTestBehavior.translucent,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 主内容区域 - 全屏，内容可以滚动到工具栏下方
+              SafeArea(
+                bottom: false,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    return false;
+                  },
+                  child: ScrollablePositionedList.builder(
+                    itemScrollController: _itemScrollController,
+                    itemPositionsListener: _itemPositionsListener,
+                    padding: _getDynamicPadding(
+                      context,
+                    ).copyWith(top: 16, bottom: 100),
+                    itemCount: totalCount,
+                    minCacheExtent: 1500,
+                    itemBuilder: (context, index) {
+                      // 索引 0: 单词形态关系横幅
+                      if (index == 0) return _buildWordRelationsBanner();
 
-                    final entryIndex = index - wordRelationsOffset;
-                    final entry = entries[entryIndex];
+                      final entryIndex = index - wordRelationsOffset;
+                      final entry = entries[entryIndex];
 
-                    // 仅在该词典第一条 entry 处显示词典 Logo+名称
-                    final showDictHeader =
-                        entryIndex == 0 ||
-                        entries[entryIndex - 1].dictId != entry.dictId;
+                      // 仅在该词典第一条 entry 处显示词典 Logo+名称
+                      final showDictHeader =
+                          entryIndex == 0 ||
+                          entries[entryIndex - 1].dictId != entry.dictId;
 
-                    // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
-                    List<SearchRelation>? entryRelations;
-                    if (showDictHeader && widget.searchRelations != null) {
-                      final headword = entry.headword.toLowerCase();
-                      for (final rel in widget.searchRelations!.entries) {
-                        if (rel.key.toLowerCase() == headword) {
-                          entryRelations = rel.value;
-                          break;
+                      // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
+                      List<SearchRelation>? entryRelations;
+                      if (showDictHeader && widget.searchRelations != null) {
+                        final headword = entry.headword.toLowerCase();
+                        for (final rel in widget.searchRelations!.entries) {
+                          if (rel.key.toLowerCase() == headword) {
+                            entryRelations = rel.value;
+                            break;
+                          }
                         }
                       }
-                    }
 
-                    return _buildEntryContent(
-                      entry,
-                      showDictHeader: showDictHeader,
-                      relations: entryRelations,
-                    );
-                  },
+                      return _buildEntryContent(
+                        entry,
+                        showDictHeader: showDictHeader,
+                        relations: entryRelations,
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-            if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
-              _DraggableNavPanel(
-                entryGroup: _entryGroup,
-                onDictionaryChanged: _onDictionaryChanged,
-                onPageChanged: _onPageChanged,
-                onSectionChanged: _onSectionChanged,
-                onNavigateToEntry: _scrollToEntry,
-                initialDy: _navPanelDy,
-                navPanelKey: _navPanelKey,
-                navPanelVersionNotifier: _navPanelVersionNotifier,
+              if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
+                _DraggableNavPanel(
+                  entryGroup: _entryGroup,
+                  onDictionaryChanged: _onDictionaryChanged,
+                  onPageChanged: _onPageChanged,
+                  onSectionChanged: _onSectionChanged,
+                  onNavigateToEntry: _scrollToEntry,
+                  initialDy: _navPanelDy,
+                  navPanelKey: _navPanelKey,
+                  navPanelVersionNotifier: _navPanelVersionNotifier,
+                ),
+              // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
+              if (_isSearchMode)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isSearchMode = false;
+                        _searchController.clear();
+                      });
+                    },
+                    // 使用 opaque 确保拦截所有点击事件，不传递到下层
+                    behavior: HitTestBehavior.opaque,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
+              _KeyboardAwareBottomBar(
+                child: _buildBottomActionBarWithBackButton(),
               ),
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                minimum: const EdgeInsets.only(bottom: 16),
-                child: _buildBottomActionBar(),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -973,11 +1019,218 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     return PageScaleWrapper(scale: scale, child: content);
   }
 
-  Widget _buildBottomActionBar() {
+  /// 桌面端左上角悬浮返回按钮
+  /// 桌面端底部工具栏（带左侧独立返回按钮）
+  Widget _buildBottomActionBarWithBackButton() {
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+    if (isDesktop) {
+      return Row(
+        children: [
+          // 左侧独立的返回按钮（搜索模式下也保持显示）
+          Expanded(child: _buildDesktopBackButton()),
+          const SizedBox(width: 16),
+          // 右侧工具栏或搜索栏
+          Expanded(
+            flex:
+                _toolbarActions.length + (_overflowActions.isNotEmpty ? 1 : 0),
+            child: _isSearchMode
+                ? _buildSearchBar()
+                : _buildBottomActionBar(isDesktop: true),
+          ),
+        ],
+      );
+    }
+
+    // 手机端：搜索模式显示搜索栏，否则显示工具栏
+    return _isSearchMode ? _buildSearchBar() : _buildBottomActionBar();
+  }
+
+  /// 桌面端返回按钮（与底部工具栏按钮样式相同）
+  Widget _buildDesktopBackButton() {
+    return GestureDetector(
+      // 阻止点击事件冒泡到外层
+      onTap: () {},
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: Theme.of(
+              context,
+            ).colorScheme.outlineVariant.withOpacity(0.5),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.arrow_back,
+                    onPressed: () {
+                      clearAllToasts();
+                      Navigator.of(context).pop();
+                    },
+                    onLongPress: () {
+                      clearAllToasts();
+                      Navigator.of(context).popUntil((route) => route.isFirst);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 桌面端搜索栏
+  Widget _buildSearchBar() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      // 阻止点击事件冒泡到外层
+      onTap: () {},
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withOpacity(0.5),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.shadow.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: Row(
+              children: [
+                // 关闭按钮（圆形）
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () {
+                      setState(() {
+                        _isSearchMode = false;
+                        _searchController.clear();
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(Icons.close, size: 24),
+                    ),
+                  ),
+                ),
+                // 搜索输入框
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    decoration: InputDecoration(
+                      hintText: context.t.search.hint,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      isDense: true,
+                    ),
+                    onSubmitted: _onSearchSubmitted,
+                  ),
+                ),
+                // 搜索按钮（圆形）
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _onSearchSubmitted(_searchController.text),
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(Icons.search, size: 24),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onSearchSubmitted(String query) async {
+    if (query.trim().isEmpty) return;
+    final word = query.trim();
+
+    // 执行搜索
+    final dbService = DatabaseService();
+    final searchResult = await dbService.getAllEntries(word);
+
+    if (searchResult.entries.isNotEmpty) {
+      // 记录搜索历史（进入首页查词页的历史记录）
+      final historyService = SearchHistoryService();
+      await historyService.addSearchRecord(word);
+
+      // 搜索成功，跳转到新的词典内容页
+      final entryGroup = DictionaryEntryGroup.groupEntries(
+        searchResult.entries,
+      );
+      if (mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) =>
+                EntryDetailPage(entryGroup: entryGroup, initialWord: word),
+          ),
+        );
+        // 返回后退出搜索模式
+        setState(() {
+          _isSearchMode = false;
+          _searchController.clear();
+        });
+      }
+    } else {
+      // 无搜索结果
+      if (mounted) {
+        showToast(context, context.t.search.noResult(word: word));
+      }
+    }
+  }
+
+  Widget _buildBottomActionBar({bool isDesktop = false}) {
     final colorScheme = Theme.of(context).colorScheme;
     final toolbarWidgets = _toolbarActions
         .map(
-          (action) => Expanded(child: _buildToolbarAction(action, colorScheme)),
+          (action) => Expanded(
+            child: _buildToolbarAction(
+              action,
+              colorScheme,
+              isDesktop: isDesktop,
+            ),
+          ),
         )
         .toList();
 
@@ -1017,7 +1270,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
   }
 
-  Widget _buildToolbarAction(String action, ColorScheme colorScheme) {
+  Widget _buildToolbarAction(
+    String action,
+    ColorScheme colorScheme, {
+    bool isDesktop = false,
+  }) {
     switch (action) {
       case PreferencesService.actionBack:
         return _buildActionButton(
@@ -1029,6 +1286,16 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           onLongPress: () {
             clearAllToasts();
             Navigator.of(context).popUntil((route) => route.isFirst);
+          },
+        );
+      case PreferencesService.actionSearch:
+        return _buildActionButton(
+          icon: Icons.search,
+          onPressed: () {
+            setState(() {
+              _isSearchMode = true;
+            });
+            _searchFocusNode.requestFocus();
           },
         );
       case PreferencesService.actionFavorite:
@@ -1067,7 +1334,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => _showOverflowMenu(context, colorScheme),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
           child: Icon(
@@ -1199,7 +1466,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       child: InkWell(
         onTap: onPressed,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
           child: Icon(
@@ -1397,7 +1664,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     }
 
     // 列名显示标签
-    final Map<String, String> _colLabels = {
+    final Map<String, String> colLabels = {
       'word1': '',
       'word2': '',
       'base': context.t.entry.morphBase,
@@ -1410,7 +1677,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       'comp': context.t.entry.morphComp,
       'superl': context.t.entry.morphSuperl,
     };
-    final Map<String, String> _tableLabels = {
+    final Map<String, String> tableLabels = {
       'spelling_variant': context.t.entry.morphSpellingVariant,
       'nominalization': context.t.entry.morphNominalization,
       'inflection': context.t.entry.morphInflection,
@@ -1457,7 +1724,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
 
               final pos = row.fields['pos'];
               final posLabel = _shortenPos(pos);
-              final baseLabel = _tableLabels[row.tableName] ?? row.tableName;
+              final baseLabel = tableLabels[row.tableName] ?? row.tableName;
               final tableLabel = posLabel.isNotEmpty
                   ? '$baseLabel $posLabel'
                   : baseLabel;
@@ -1515,7 +1782,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                         runSpacing: 6,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: nonNullFields.map((field) {
-                          final colLabel = _colLabels[field.key] ?? field.key;
+                          final colLabel = colLabels[field.key] ?? field.key;
                           final wordVal = field.value!;
                           // 合并胶囊（如"sawn, sawed"）：拆分后检查任一分量是否命中当前词
                           final isCurrentWord = wordVal
@@ -1928,6 +2195,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     ).convert(currentValue);
 
     final pageContext = context;
+    // 提前从父级 context 获取状态栏高度，底部弹出层的 context 中 viewPadding.top 为 0
+    final statusBarHeight = MediaQuery.of(context).viewPadding.top;
 
     await showModalBottomSheet(
       context: context,
@@ -1939,6 +2208,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         historyIndex: _historyIndex,
         pathHistory: _pathHistory,
         initialPath: startPath,
+        statusBarHeight: statusBarHeight,
         onSave: (newValue) async {
           await _saveElementChange(
             currentEntry,
@@ -2895,14 +3165,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
           _aiChatHistory[idx].answer =
-              context.t.entry.aiRequestFailedShort + ' $e';
+              '${context.t.entry.aiRequestFailedShort} $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               conversationId: conversationId,
               word: targetWord,
               question: question,
-              answer: context.t.entry.aiRequestFailedShort + ' $e',
+              answer: '${context.t.entry.aiRequestFailedShort} $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: path,
               elementJson: compactJson,
@@ -3146,14 +3416,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final idx = _aiChatHistory.indexWhere((r) => r.id == newId);
         if (idx != -1) {
           _aiChatHistory[idx].answer =
-              context.t.entry.aiRequestFailedShort + ' $e';
+              '${context.t.entry.aiRequestFailedShort} $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: newId,
               conversationId: conversationId,
               word: record.word,
               question: record.question,
-              answer: context.t.entry.aiRequestFailedShort + ' $e',
+              answer: '${context.t.entry.aiRequestFailedShort} $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: record.path,
               elementJson: record.elementJson,
@@ -3219,7 +3489,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 : (screenSize.height - statusBarHeight - 8) / screenSize.height,
             expand: false,
             builder: (context, scrollController) {
-              _chatScrollController = scrollController;
               final aiMdStyleSheet = _buildAiMarkdownStyleSheet(context);
               // 预计算当前会话消息和会话列表（随 setModalState 重建）
               final threadMessages =
@@ -3505,7 +3774,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                             ValueListenableBuilder<int>(
                                               valueListenable:
                                                   _pendingRequestsVersionNotifier,
-                                              builder: (ctx2, _, __) {
+                                              builder: (ctx2, _, _) {
                                                 final notifier =
                                                     _streamingNotifiers[record
                                                         .id];
@@ -3849,8 +4118,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                       final msgs = _getConversationMessages(
                                         cid,
                                       );
-                                      if (msgs.isEmpty)
+                                      if (msgs.isEmpty) {
+                                        // ignore: curly_braces_in_flow_control_structures
                                         return const SizedBox.shrink();
+                                      }
+                                      // ignore: duplicate_ignore
                                       final firstMsg = msgs.first;
                                       final lastMsg = msgs.last;
                                       final isStreaming = _pendingAiRequests
@@ -3863,7 +4135,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                                       return ValueListenableBuilder<int>(
                                         valueListenable:
                                             _pendingRequestsVersionNotifier,
-                                        builder: (ctx2, _, __) {
+                                        builder: (ctx2, _, _) {
                                           return Card(
                                             margin: const EdgeInsets.only(
                                               bottom: 8,
@@ -4342,14 +4614,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
           _aiChatHistory[idx].answer =
-              this.context.t.entry.aiRequestFailedShort + ' $e';
+              '${this.context.t.entry.aiRequestFailedShort} $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               conversationId: actualConversationId,
               word: currentWord,
               question: message,
-              answer: this.context.t.entry.aiRequestFailedShort + ' $e',
+              answer: '${this.context.t.entry.aiRequestFailedShort} $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: null,
               elementJson: null,
@@ -4412,161 +4684,6 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       history.add({'role': 'assistant', 'content': r.answer});
     }
     return history;
-  }
-
-  /// 发送继续对话消息（流式输出）
-  Future<void> _sendContinueChatMessage(
-    AiChatRecord parentRecord,
-    String message, {
-    required VoidCallback onMessageSent,
-  }) async {
-    final requestId = 'continue_${DateTime.now().millisecondsSinceEpoch}';
-    final currentWord = widget.initialWord;
-
-    // 构建上下文信息
-    String context = 'Current word: $currentWord\n';
-    context += 'Original question: ${parentRecord.question}\n';
-    context +=
-        'Original answer: ${parentRecord.answer.substring(0, parentRecord.answer.length > 500 ? 500 : parentRecord.answer.length)}...';
-    if (parentRecord.elementJson != null) {
-      context += '\nRelated dictionary content: ${parentRecord.elementJson}';
-    }
-
-    // 创建记录
-    final record = AiChatRecord(
-      id: requestId,
-      word: currentWord,
-      question: message,
-      answer: '',
-      timestamp: DateTime.now(),
-      path: parentRecord.path,
-      elementJson: parentRecord.elementJson,
-    );
-    _aiChatHistory.add(record);
-    _currentLoadingId = requestId;
-    _autoExpandIds.add(requestId);
-    _streamingNotifiers[requestId] = ValueNotifier<(String, String?, bool)>((
-      '',
-      null,
-      false,
-    ));
-
-    // 保存到持久化存储
-    _aiChatDatabaseService.addRecord(
-      AiChatRecordModel(
-        id: requestId,
-        word: currentWord,
-        question: message,
-        answer: '',
-        timestamp: record.timestamp,
-        path: parentRecord.path,
-        elementJson: parentRecord.elementJson,
-      ),
-    );
-
-    onMessageSent();
-    // 刷新列表以显示新消息
-    _safeModalSetState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _chatScrollController?.jumpTo(0);
-    });
-
-    // 准备历史对话（包含父对话）
-    final history = <Map<String, String>>[
-      {'role': 'user', 'content': parentRecord.question},
-      {'role': 'assistant', 'content': parentRecord.answer},
-    ];
-
-    // 启动流式请求
-    final appLanguage = LocaleSettings.instance.currentLocale == AppLocale.zh
-        ? 'Chinese'
-        : 'English';
-    final stream = _aiService.freeChatStream(
-      message,
-      history: history,
-      context: context,
-      appLanguage: appLanguage,
-    );
-    final sub = stream.listen(
-      (chunk) {
-        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
-        if (idx == -1) return;
-        if (chunk.text != null) _aiChatHistory[idx].answer += chunk.text!;
-        if (chunk.thinking != null) {
-          _aiChatHistory[idx].thinkingContent =
-              (_aiChatHistory[idx].thinkingContent ?? '') + chunk.thinking!;
-        }
-        // 80ms 节流批量推送 UI 更新
-        if (_streamingThrottleTimers[requestId] == null) {
-          _streamingThrottleTimers[requestId] = Timer(
-            const Duration(milliseconds: 80),
-            () {
-              _streamingThrottleTimers[requestId] = null;
-              final i = _aiChatHistory.indexWhere((r) => r.id == requestId);
-              if (i != -1) {
-                _streamingNotifiers[requestId]?.value = (
-                  _aiChatHistory[i].answer,
-                  _aiChatHistory[i].thinkingContent,
-                  false,
-                );
-              }
-            },
-          );
-        }
-      },
-      onDone: () {
-        _streamingThrottleTimers.remove(requestId)?.cancel();
-        _pendingAiRequests.remove(requestId);
-        _pendingRequestsVersionNotifier.value++;
-        if (_currentLoadingId == requestId) _currentLoadingId = null;
-        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
-        if (idx != -1) {
-          _streamingNotifiers[requestId]?.value = (
-            _aiChatHistory[idx].answer,
-            _aiChatHistory[idx].thinkingContent,
-            true,
-          );
-          _aiChatDatabaseService.updateRecord(
-            AiChatRecordModel(
-              id: requestId,
-              word: currentWord,
-              question: message,
-              answer: _aiChatHistory[idx].answer,
-              timestamp: _aiChatHistory[idx].timestamp,
-              path: parentRecord.path,
-              elementJson: parentRecord.elementJson,
-            ),
-          );
-        }
-        _streamingNotifiers.remove(requestId)?.dispose();
-      },
-      onError: (e) {
-        _streamingThrottleTimers.remove(requestId)?.cancel();
-        _pendingAiRequests.remove(requestId);
-        _pendingRequestsVersionNotifier.value++;
-        _streamingNotifiers.remove(requestId)?.dispose();
-        if (_currentLoadingId == requestId) _currentLoadingId = null;
-        final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
-        if (idx != -1) {
-          _aiChatHistory[idx].answer =
-              this.context.t.entry.aiRequestFailedShort + ' $e';
-          _aiChatDatabaseService.updateRecord(
-            AiChatRecordModel(
-              id: requestId,
-              word: currentWord,
-              question: message,
-              answer: this.context.t.entry.aiRequestFailedShort + ' $e',
-              timestamp: _aiChatHistory[idx].timestamp,
-              path: parentRecord.path,
-              elementJson: parentRecord.elementJson,
-            ),
-          );
-        }
-      },
-      cancelOnError: true,
-    );
-    _pendingAiRequests[requestId] = sub;
-    _pendingRequestsVersionNotifier.value++;
   }
 
   /// 格式化时间戳
@@ -4800,14 +4917,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         final idx = _aiChatHistory.indexWhere((r) => r.id == requestId);
         if (idx != -1) {
           _aiChatHistory[idx].answer =
-              context.t.entry.aiRequestFailedShort + ' $e';
+              '${context.t.entry.aiRequestFailedShort} $e';
           _aiChatDatabaseService.updateRecord(
             AiChatRecordModel(
               id: requestId,
               conversationId: conversationId,
               word: targetWord,
               question: context.t.entry.summaryQuestion,
-              answer: context.t.entry.aiRequestFailedShort + ' $e',
+              answer: '${context.t.entry.aiRequestFailedShort} $e',
               timestamp: _aiChatHistory[idx].timestamp,
               path: '__summary__',
               elementJson: compactJson,
