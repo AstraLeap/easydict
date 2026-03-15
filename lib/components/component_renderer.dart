@@ -1019,10 +1019,6 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
           ),
         ),
       );
-
-      // TODO: 在页面加载完成后滚动到指定路径
-      // 这需要 EntryDetailPage 支持接收初始路径参数
-      // 目前先只跳转到 entry
     }
   } else {
     if (context.mounted) {
@@ -1116,6 +1112,46 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _loadClickAction();
     _fontScales = FontLoaderService().getFontScales();
     _listenToEvents();
+  }
+
+  /// Renders the content for a 'clob' element.
+  /// Only renders clob at root level (path.length == 1) as plain text.
+  /// Nested clob elements are not displayed.
+  /// Supports both plain string value and object with 'text' field.
+  Widget _buildClobContent(
+    BuildContext context,
+    dynamic clob,
+    List<String> path,
+  ) {
+    // Only render clob at root level, skip nested clob
+    if (path.length != 1) {
+      return const SizedBox.shrink();
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    // Handle both plain string and object with 'text' field
+    final String text;
+    if (clob is String) {
+      text = clob;
+    } else if (clob is Map<String, dynamic>) {
+      text = clob['text'] as String? ?? '';
+    } else {
+      text = '';
+    }
+
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    // Display as plain text without title or container styling
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SelectableText(
+        text,
+        style: DictTypography.getBaseStyle(
+          DictElementType.boardContent,
+          color: colorScheme.onSurface,
+        ),
+      ),
+    );
   }
 
   void _initSourceLanguage() {
@@ -6292,6 +6328,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           path.join('.'),
           imageFile,
         );
+      case 'clob':
+        return _buildClobContent(context, value, path);
       default:
         return const SizedBox.shrink();
     }
