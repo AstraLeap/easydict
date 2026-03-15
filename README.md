@@ -255,7 +255,7 @@ CREATE INDEX idx_images_name ON images(name);
 
 ### 注意
 
-- data和board内部还可以继续嵌套data或board，本项目对xi
+- data和board内部还可以继续嵌套data或board
 - 强烈建议data和board里需要显示的文本键名为语言代码，比如`"zh":"这是一句话"`。
 - pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表
 

@@ -1,10 +1,8 @@
 import json
 import random
-import re
 import sqlite3
 import unicodedata
 from pathlib import Path
-from urllib.parse import unquote
 
 import zstandard as zstd
 
@@ -13,7 +11,7 @@ import zstandard as zstd
 
 def is_ideographic_lang(lang_code):
     base_lang = lang_code.split("-")[0].lower()
-    return base_lang in {"zh", "ja"} if base_lang else False
+    return base_lang in {"zh", "ja", "jp"} if base_lang else False
 
 
 def normalize_text(text, lang_code=None, remove_spaces=False):
