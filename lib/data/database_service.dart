@@ -3,15 +3,15 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+
+import '../core/logger.dart';
+import '../core/utils/language_utils.dart';
 import '../services/chinese_convert_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
 import '../services/zstd_service.dart';
-import 'services/database_initializer.dart';
 import 'models/dictionary_metadata.dart';
-
-import '../core/logger.dart';
-import '../core/utils/language_utils.dart';
+import 'services/database_initializer.dart';
 
 Map<String, dynamic> _parseJsonInIsolate(String jsonStr) {
   return Map<String, dynamic>.from(jsonDecode(jsonStr) as Map);
@@ -192,7 +192,7 @@ class DictionaryEntry {
                 .toList();
           }
           if (p is! List) return <String>[];
-          return (p as List<dynamic>)
+          return (p)
               .map((e) => e?.toString() ?? '')
               .where((e) => e.isNotEmpty)
               .toList();
@@ -742,45 +742,19 @@ class DatabaseService {
     }
 
     String? targetLang = sourceLanguage;
-    List<String>? possibleLangs;
 
     if (targetLang == 'auto') {
-      possibleLangs = _detectPossibleLanguages(word);
-      Logger.i(
-        '自动模式检测到可能语言: ${possibleLangs ?? "(表音文字，搜索所有非表意词典)"}',
-        tag: 'DatabaseService',
-      );
+      Logger.i('自动模式: 搜索所有已启用的词典，不按语言过滤', tag: 'DatabaseService');
     } else {
       Logger.i('指定语言: $targetLang', tag: 'DatabaseService');
     }
 
+    // auto 模式：搜索所有已启用的词典，不按语言过滤
+    // 指定语言模式：只搜索匹配该语言的词典
     final filteredDicts = enabledDicts.where((metadata) {
       if (targetLang == 'auto') {
-        final lang = LanguageUtils.normalizeSourceLanguage(
-          metadata.sourceLanguage,
-        );
-        if (possibleLangs != null) {
-          // 检测到表意文字：只搜索匹配的语言
-          final match = possibleLangs.contains(lang);
-          if (!match) {
-            Logger.i(
-              '  过滤掉词典 ${metadata.name}: 语言 $lang 不在候选列表 $possibleLangs',
-              tag: 'DatabaseService',
-            );
-          }
-          return match;
-        } else {
-          // 表音文字：搜索所有非表意文字词典
-          const logographic = {'zh', 'ja', 'ko'};
-          final match = !logographic.contains(lang);
-          if (!match) {
-            Logger.i(
-              '  过滤掉词典 ${metadata.name}: 表音文字模式下跳过表意词典 $lang',
-              tag: 'DatabaseService',
-            );
-          }
-          return match;
-        }
+        // auto 模式：搜索所有已启用的词典（表音 + 表意），不按语言过滤
+        return true;
       } else if (targetLang != null &&
           LanguageUtils.normalizeSourceLanguage(targetLang) !=
               LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage)) {
@@ -1102,17 +1076,11 @@ class DatabaseService {
     );
 
     for (final m in filteredDicts) {
-      Logger.d(
-        '  - 将搜索词典: ${m.id} (${m.sourceLanguage})',
-        tag: 'PrefixSearch',
-      );
+      Logger.d('  - 将搜索词典: ${m.id} (${m.sourceLanguage})', tag: 'PrefixSearch');
     }
 
     if (filteredDicts.isEmpty) {
-      Logger.w(
-        'getPreSearchCandidates: 过滤后无词典可搜索，返回空列表',
-        tag: 'PrefixSearch',
-      );
+      Logger.w('getPreSearchCandidates: 过滤后无词典可搜索，返回空列表', tag: 'PrefixSearch');
       return [];
     }
 
