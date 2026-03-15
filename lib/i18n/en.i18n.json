@@ -348,7 +348,7 @@
     "providerMoonshot": "Moonshot",
     "providerZhipu": "Zhipu AI",
     "providerAli": "Alibaba Cloud (DashScope)",
-    "providerCustom": "Custom"
+    "providerCustom": "Custom (OpenAI Compatible)"
   },
   "cloud": {
     "title": "Cloud Service",
@@ -514,6 +514,7 @@
     "mediaDb": "Media database",
     "mediaDbWithSize": "Media database ({size})",
     "mediaDbNotFound": "Media database not found for dictionary: {id}",
+    "mediaDbNotExists": "Local file not exists, skip update",
     "dictDbNotFound": "Dictionary database not found for: {id}",
     "getDictListFailed": "Failed to get dictionary list",
     "invalidResponseFormat": "Invalid response format from server",
@@ -594,7 +595,7 @@
     "batchUpdateTitle": "Batch Update",
     "recheck": "Re-check Updates",
     "batchUpdateCount": "Update ({count})",
-    "batchHasUpdates": "{count} dictionaries have updates",
+    "batchHasUpdates": "{count} dictionaries can be updated",
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
     "versionRange": "v{from} → v{to} | {files} files",

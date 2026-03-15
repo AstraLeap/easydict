@@ -348,7 +348,7 @@
     "providerMoonshot": "Moonshot（月之暗面）",
     "providerZhipu": "智谱AI",
     "providerAli": "阿里云（DashScope）",
-    "providerCustom": "自定义"
+    "providerCustom": "自定义（OpenAI兼容）"
   },
   "cloud": {
     "title": "云服务",
@@ -514,6 +514,7 @@
     "mediaDb": "媒体数据库",
     "mediaDbWithSize": "媒体数据库（{size}）",
     "mediaDbNotFound": "找不到词典 {id} 的媒体数据库",
+    "mediaDbNotExists": "本地无此文件，无需更新",
     "dictDbNotFound": "找不到词典 {id} 的数据库",
     "getDictListFailed": "获取词典列表失败",
     "invalidResponseFormat": "服务器返回格式无效",
@@ -594,7 +595,7 @@
     "batchUpdateTitle": "批量更新词典",
     "recheck": "重新检查更新",
     "batchUpdateCount": "更新 ({count})",
-    "batchHasUpdates": "发现 {count} 个词典有更新",
+    "batchHasUpdates": "{count} 个词典可更新",
     "selectAll": "全选",
     "deselectAll": "取消全选",
     "versionRange": "v{from} → v{to} | {files} 个文件",

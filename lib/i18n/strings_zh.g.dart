@@ -892,8 +892,8 @@ class TranslationsAiZh {
 	/// zh: '阿里云（DashScope）'
 	String get providerAli => '阿里云（DashScope）';
 
-	/// zh: '自定义'
-	String get providerCustom => '自定义';
+	/// zh: '自定义（OpenAI兼容）'
+	String get providerCustom => '自定义（OpenAI兼容）';
 }
 
 // Path: cloud
@@ -1396,6 +1396,9 @@ class TranslationsDictZh {
 	/// zh: '找不到词典 {id} 的媒体数据库'
 	String mediaDbNotFound({required Object id}) => '找不到词典 ${id} 的媒体数据库';
 
+	/// zh: '本地无此文件，无需更新'
+	String get mediaDbNotExists => '本地无此文件，无需更新';
+
 	/// zh: '找不到词典 {id} 的数据库'
 	String dictDbNotFound({required Object id}) => '找不到词典 ${id} 的数据库';
 
@@ -1636,8 +1639,8 @@ class TranslationsDictZh {
 	/// zh: '更新 ({count})'
 	String batchUpdateCount({required Object count}) => '更新 (${count})';
 
-	/// zh: '发现 {count} 个词典有更新'
-	String batchHasUpdates({required Object count}) => '发现 ${count} 个词典有更新';
+	/// zh: '{count} 个词典可更新'
+	String batchHasUpdates({required Object count}) => '${count} 个词典可更新';
 
 	/// zh: '全选'
 	String get selectAll => '全选';
@@ -2673,7 +2676,7 @@ extension on Translations {
 			'ai.providerMoonshot' => 'Moonshot（月之暗面）',
 			'ai.providerZhipu' => '智谱AI',
 			'ai.providerAli' => '阿里云（DashScope）',
-			'ai.providerCustom' => '自定义',
+			'ai.providerCustom' => '自定义（OpenAI兼容）',
 			'cloud.title' => '云服务',
 			'cloud.subscriptionLabel' => '在线订阅地址',
 			'cloud.subscriptionHint' => '请输入词典订阅网址',
@@ -2835,6 +2838,7 @@ extension on Translations {
 			'dict.mediaDb' => '媒体数据库',
 			'dict.mediaDbWithSize' => ({required Object size}) => '媒体数据库（${size}）',
 			'dict.mediaDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的媒体数据库',
+			'dict.mediaDbNotExists' => '本地无此文件，无需更新',
 			'dict.dictDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的数据库',
 			'dict.getDictListFailed' => '获取词典列表失败',
 			'dict.invalidResponseFormat' => '服务器返回格式无效',
@@ -2870,9 +2874,9 @@ extension on Translations {
 			'dict.minutesAgo' => ({required Object n}) => '${n}分钟前',
 			'dict.justNow' => '刚刚',
 			'dict.dateUnknown' => '未知',
-			'dict.noFileSelected' => '没有选择要更新的文件',
 			_ => null,
 		} ?? switch (path) {
+			'dict.noFileSelected' => '没有选择要更新的文件',
 			'dict.configCloudFirst' => '请先配置云服务地址',
 			'dict.getDictInfoFailed' => '无法获取词典信息',
 			'dict.versionUpdated' => ({required Object version}) => '版本已更新至 ${version}，无需下载文件',
@@ -2917,7 +2921,7 @@ extension on Translations {
 			'dict.batchUpdateTitle' => '批量更新词典',
 			'dict.recheck' => '重新检查更新',
 			'dict.batchUpdateCount' => ({required Object count}) => '更新 (${count})',
-			'dict.batchHasUpdates' => ({required Object count}) => '发现 ${count} 个词典有更新',
+			'dict.batchHasUpdates' => ({required Object count}) => '${count} 个词典可更新',
 			'dict.selectAll' => '全选',
 			'dict.deselectAll' => '取消全选',
 			'dict.versionRange' => ({required Object from, required Object to, required Object files}) => 'v${from} → v${to} | ${files} 个文件',

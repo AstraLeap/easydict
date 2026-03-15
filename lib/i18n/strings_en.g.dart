@@ -402,7 +402,7 @@ class _TranslationsAiEn extends TranslationsAiZh {
 	@override String get providerMoonshot => 'Moonshot';
 	@override String get providerZhipu => 'Zhipu AI';
 	@override String get providerAli => 'Alibaba Cloud (DashScope)';
-	@override String get providerCustom => 'Custom';
+	@override String get providerCustom => 'Custom (OpenAI Compatible)';
 }
 
 // Path: cloud
@@ -582,6 +582,7 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get mediaDb => 'Media database';
 	@override String mediaDbWithSize({required Object size}) => 'Media database (${size})';
 	@override String mediaDbNotFound({required Object id}) => 'Media database not found for dictionary: ${id}';
+	@override String get mediaDbNotExists => 'Local file not exists, skip update';
 	@override String dictDbNotFound({required Object id}) => 'Dictionary database not found for: ${id}';
 	@override String get getDictListFailed => 'Failed to get dictionary list';
 	@override String get invalidResponseFormat => 'Invalid response format from server';
@@ -662,7 +663,7 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get batchUpdateTitle => 'Batch Update';
 	@override String get recheck => 'Re-check Updates';
 	@override String batchUpdateCount({required Object count}) => 'Update (${count})';
-	@override String batchHasUpdates({required Object count}) => '${count} dictionaries have updates';
+	@override String batchHasUpdates({required Object count}) => '${count} dictionaries can be updated';
 	@override String get selectAll => 'Select All';
 	@override String get deselectAll => 'Deselect All';
 	@override String versionRange({required Object from, required Object to, required Object files}) => 'v${from} → v${to} | ${files} files';
@@ -1272,7 +1273,7 @@ extension on TranslationsEn {
 			'ai.providerMoonshot' => 'Moonshot',
 			'ai.providerZhipu' => 'Zhipu AI',
 			'ai.providerAli' => 'Alibaba Cloud (DashScope)',
-			'ai.providerCustom' => 'Custom',
+			'ai.providerCustom' => 'Custom (OpenAI Compatible)',
 			'cloud.title' => 'Cloud Service',
 			'cloud.subscriptionLabel' => 'Online Subscription URL',
 			'cloud.subscriptionHint' => 'Enter dictionary subscription URL',
@@ -1434,6 +1435,7 @@ extension on TranslationsEn {
 			'dict.mediaDb' => 'Media database',
 			'dict.mediaDbWithSize' => ({required Object size}) => 'Media database (${size})',
 			'dict.mediaDbNotFound' => ({required Object id}) => 'Media database not found for dictionary: ${id}',
+			'dict.mediaDbNotExists' => 'Local file not exists, skip update',
 			'dict.dictDbNotFound' => ({required Object id}) => 'Dictionary database not found for: ${id}',
 			'dict.getDictListFailed' => 'Failed to get dictionary list',
 			'dict.invalidResponseFormat' => 'Invalid response format from server',
@@ -1469,9 +1471,9 @@ extension on TranslationsEn {
 			'dict.minutesAgo' => ({required Object n}) => '${n}m ago',
 			'dict.justNow' => 'Just now',
 			'dict.dateUnknown' => 'Unknown',
-			'dict.noFileSelected' => 'No file selected to update',
 			_ => null,
 		} ?? switch (path) {
+			'dict.noFileSelected' => 'No file selected to update',
 			'dict.configCloudFirst' => 'Please configure cloud service first',
 			'dict.getDictInfoFailed' => 'Cannot get dictionary info',
 			'dict.versionUpdated' => ({required Object version}) => 'Version updated to ${version}, no download needed',
@@ -1516,7 +1518,7 @@ extension on TranslationsEn {
 			'dict.batchUpdateTitle' => 'Batch Update',
 			'dict.recheck' => 'Re-check Updates',
 			'dict.batchUpdateCount' => ({required Object count}) => 'Update (${count})',
-			'dict.batchHasUpdates' => ({required Object count}) => '${count} dictionaries have updates',
+			'dict.batchHasUpdates' => ({required Object count}) => '${count} dictionaries can be updated',
 			'dict.selectAll' => 'Select All',
 			'dict.deselectAll' => 'Deselect All',
 			'dict.versionRange' => ({required Object from, required Object to, required Object files}) => 'v${from} → v${to} | ${files} files',
