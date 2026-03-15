@@ -133,11 +133,10 @@ CREATE INDEX idx_images_name ON images(name);
     "dict_id": "my_dict", // 必填，词典id
     "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
     "headword": "fog", // 必填，词头，可重复
-    "headword_normalized": "fog", // 表音文字必填，小写且去音调符号的词头
     "entry_type": "word", // 必填，word或phrase
-    "auxi_search": "pinyin", // 可选，辅助搜索词，主要用于表意文字
-    "page": "medical", // 可选，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry
-    "section": "noun", // 可选，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性
+    "phonetic": "pinyin", // 可选，辅助搜索词，主要用于表意文字
+    "page": "medical", // 必填，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry，如果没有则留空:""
+    "section": "noun", // 必填，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性，如果没有则留空:""
     "certifications": ["IELTS", "TOEFL", "CET-4"], // 可选，还没想好怎么实现
     "frequency": {
         "level": "B1",
