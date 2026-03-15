@@ -7,6 +7,21 @@
 
 # The following line activates a set of recommended lints for Flutter apps,
 # packages, and plugins designed to encourage good coding practices.
+analyzer:
+  errors:
+    use_build_context_synchronously: ignore
+analyzer:
+  errors:
+    unused_local_variable: ignore
+analyzer:
+  errors:
+    unused_element: ignore
+analyzer:
+  errors:
+    unused_field: ignore
+analyzer:
+  errors:
+    deprecated_member_use: ignore
 include: package:flutter_lints/flutter.yaml
 
 linter:

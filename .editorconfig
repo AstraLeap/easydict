@@ -1,0 +1,82 @@
+# EditorConfig - 跨编辑器统一代码风格配置
+# https://editorconfig.org
+
+root = true
+
+# 默认设置 - 适用于所有文件
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Dart/Flutter 文件
+[*.dart]
+indent_size = 2
+max_line_length = 80
+
+# Python 文件
+[*.py]
+indent_size = 4
+max_line_length = 88
+
+# JavaScript/TypeScript 文件
+[*.{js,jsx,ts,tsx}]
+indent_size = 2
+
+# HTML 相关
+[*.html]
+indent_size = 2
+
+# CSS/SCSS/LESS 样式文件
+[*.{css,scss,less,sass}]
+indent_size = 2
+
+# JSON 文件
+[*.json]
+indent_size = 2
+
+# YAML 文件
+[*.{yaml,yml}]
+indent_size = 2
+
+# Markdown 文件
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# XML 文件
+[*.xml]
+indent_size = 2
+
+# Gradle 文件
+[*.gradle]
+indent_size = 2
+[*.gradle.kts]
+indent_size = 2
+
+# Kotlin 文件
+[*.kt]
+indent_size = 4
+
+# Swift 文件
+[*.swift]
+indent_size = 4
+
+# Shell 脚本
+[*.sh]
+indent_size = 2
+
+# Git 配置文件
+[.git*]
+indent_size = 2
+
+# 配置文件
+[*.config]
+indent_size = 2
+
+# Makefile 必须使用 tab
+[Makefile]
+indent_style = tab

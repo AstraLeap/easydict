@@ -1,3 +1,175 @@
 {
+    // ========== 编辑器基础设置 ==========
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": false,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit"
+    },
+    "editor.defaultFormatter": null,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": true,
+    // ========== Dart/Flutter 设置 ==========
+    "[dart]": {
+        "editor.defaultFormatter": "Dart-Code.dart-code",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit",
+            "quickfix": "explicit"
+        },
+        "editor.rulers": [
+            80
+        ],
+        "editor.selectionHighlight": true,
+        "editor.suggestSelection": "first",
+        "editor.tabCompletion": "onlySnippets",
+        "editor.wordBasedSuggestions": "off",
+        "editor.wordWrap": "off"
+    },
+    "dart.previewFlutterUiGuides": true,
+    "dart.previewFlutterUiGuidesCustomTracking": true,
+    "dart.showTodos": true,
+    "dart.debugExternalPackageLibraries": false,
+    "dart.debugSdkLibraries": false,
+    "dart.lineLength": 80,
+    "dart.completeFunctionCalls": true,
+    "dart.warnWhenEditingFilesOutsideWorkspace": false,
+    // ========== Python 设置 ==========
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+        },
+        "editor.tabSize": 4
+    },
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.diagnosticMode": "workspace",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.formatting.provider": "none",
+    "black-formatter.args": [
+        "--line-length=88"
+    ],
+    "isort.args": [
+        "--profile",
+        "black"
+    ],
+    // ========== JavaScript/TypeScript 设置 ==========
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[javascriptreact]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[typescriptreact]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "javascript.updateImportsOnFileMove.enabled": "always",
+    "typescript.updateImportsOnFileMove.enabled": "always",
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "eslint.validate": [
+        "javascript",
+        "javascriptreact",
+        "typescript",
+        "typescriptreact"
+    ],
+    // ========== HTML/CSS 设置 ==========
+    "[html]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[css]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[scss]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[less]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "css.validate": true,
+    "css.lint.compatibleVendorPrefixes": "warning",
+    "css.lint.vendorPrefix": "warning",
+    // ========== JSON/YAML 设置 ==========
+    "[json]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[jsonc]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[yaml]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "json.validate": true,
+    "yaml.validate": true,
+    // ========== Markdown 设置 ==========
+    "[markdown]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.wordWrap": "on",
+        "editor.quickSuggestions": {
+            "other": true,
+            "comments": false,
+            "strings": false
+        }
+    },
+    // ========== XML/Gradle 设置 ==========
+    "[xml]": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[gradle]": {
+        "editor.formatOnSave": true
+    },
+    // ========== Shell 脚本设置 ==========
+    "[shellscript]": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    // ========== Prettier 全局设置 ==========
+    "prettier.requireConfig": false,
+    "prettier.useEditorConfig": true,
+    "prettier.semi": true,
+    "prettier.singleQuote": false,
+    "prettier.tabWidth": 2,
+    "prettier.trailingComma": "es5",
+    "prettier.printWidth": 80,
+    // ========== 文件相关设置 ==========
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true,
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+    // ========== 原有配置 ==========
     "python-envs.defaultEnvManager": "ms-python.python:system"
 }
