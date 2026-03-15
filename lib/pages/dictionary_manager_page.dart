@@ -1773,7 +1773,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         tag: 'DictionaryManagerPage',
       );
 
-      final updateInfo = await _userDictsService.getDictUpdateInfo(
+      var updateInfo = await _userDictsService.getDictUpdateInfo(
         dict.id,
         currentVersion,
       );
@@ -1784,6 +1784,43 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           'from: ${updateInfo.from}, to: ${updateInfo.to}, files: ${updateInfo.required.files}, entries: ${updateInfo.required.entries}',
           tag: 'DictionaryManagerPage',
         );
+
+        // 检查本地是否存在 media.db
+        final hasMediaDb = await _dictManager.hasMediaDb(dict.id);
+        if (!hasMediaDb) {
+          // 过滤掉 media.db 相关的更新
+          final filteredFiles = updateInfo.required.files
+              .where((file) => file != 'media.db')
+              .toList();
+
+          // 如果过滤后没有文件需要更新且没有条目更新，则视为无需更新
+          if (filteredFiles.isEmpty && updateInfo.required.entries.isEmpty) {
+            Logger.i(
+              '词典 ${dict.id} 只有 media.db 需要更新，但本地没有 media.db，视为无需更新',
+              tag: 'DictionaryManagerPage',
+            );
+            if (mounted) {
+              showToast(context, context.t.dict.upToDate);
+            }
+            return;
+          }
+
+          // 创建过滤后的更新信息
+          updateInfo = user_dict.DictUpdateInfo(
+            dictId: updateInfo.dictId,
+            from: updateInfo.from,
+            to: updateInfo.to,
+            history: updateInfo.history,
+            required: user_dict.DictUpdateRequired(
+              files: filteredFiles,
+              entries: updateInfo.required.entries,
+            ),
+          );
+          Logger.d(
+            '过滤后的更新信息: files: ${updateInfo.required.files}',
+            tag: 'DictionaryManagerPage',
+          );
+        }
       }
 
       if (!mounted) return;
@@ -2247,11 +2284,22 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
   bool _includeLogo = false;
   bool _includeDb = false;
   bool _includeMedia = false;
+  bool _hasMediaDb = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _checkMediaDb();
+  }
+
+  Future<void> _checkMediaDb() async {
+    final hasMediaDb = await DictionaryManager().hasMediaDb(widget.dictId);
+    if (mounted) {
+      setState(() {
+        _hasMediaDb = hasMediaDb;
+      });
+    }
   }
 
   @override
@@ -2567,17 +2615,24 @@ class _DictUpdateDialogState extends State<_DictUpdateDialog>
               CheckboxListTile(
                 dense: true,
                 title: const Text('media.db'),
-                subtitle: Text(context.t.dict.mediaDb),
+                subtitle: _hasMediaDb
+                    ? Text(context.t.dict.mediaDb)
+                    : Text(
+                        context.t.dict.mediaDbNotExists,
+                        style: TextStyle(color: colorScheme.outline),
+                      ),
                 secondary: const Icon(
                   Icons.library_music,
                   color: Colors.purple,
                 ),
                 value: _includeMedia,
-                onChanged: (value) {
-                  setState(() {
-                    _includeMedia = value ?? false;
-                  });
-                },
+                onChanged: _hasMediaDb
+                    ? (value) {
+                        setState(() {
+                          _includeMedia = value ?? false;
+                        });
+                      }
+                    : null,
               ),
             ],
           ),
@@ -3569,10 +3624,6 @@ class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
                     to: info.to,
                     files: info.required.files.length,
                   ),
-                ),
-                secondary: Text(
-                  context.t.dict.updateRecordCount(count: info.history.length),
-                  style: TextStyle(fontSize: 12, color: colorScheme.outline),
                 ),
               );
             },

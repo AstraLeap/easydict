@@ -48,7 +48,7 @@ class DictUpdateCheckService extends ChangeNotifier {
 
     // 标记为已检查过本次启动
     _hasCheckedOnStartup = true;
-    
+
     // 不提前 await，让检查在后台运行不阻塞 UI
     checkForUpdates();
   }
@@ -101,15 +101,50 @@ class DictUpdateCheckService extends ChangeNotifier {
       );
 
       final updatable = <String, user_dict.DictUpdateInfo>{};
-      updateInfos.forEach((dictId, info) {
+      for (final entry in updateInfos.entries) {
+        final dictId = entry.key;
+        final info = entry.value;
+
         if (info.from < info.to) {
-          updatable[dictId] = info;
+          // 检查本地是否存在 media.db
+          final hasMediaDb = await _dictManager.hasMediaDb(dictId);
+
+          // 如果本地没有 media.db，需要过滤掉 media.db 相关的更新
+          user_dict.DictUpdateInfo filteredInfo = info;
+          if (!hasMediaDb) {
+            final filteredFiles = info.required.files
+                .where((file) => file != 'media.db')
+                .toList();
+
+            // 如果过滤后没有文件需要更新且没有条目更新，则视为无需更新
+            if (filteredFiles.isEmpty && info.required.entries.isEmpty) {
+              Logger.i(
+                '词典 $dictId 只有 media.db 需要更新，但本地没有 media.db，视为无需更新',
+                tag: 'DictUpdateCheckService',
+              );
+              continue;
+            }
+
+            // 创建过滤后的更新信息
+            filteredInfo = user_dict.DictUpdateInfo(
+              dictId: info.dictId,
+              from: info.from,
+              to: info.to,
+              history: info.history,
+              required: user_dict.DictUpdateRequired(
+                files: filteredFiles,
+                entries: info.required.entries,
+              ),
+            );
+          }
+
+          updatable[dictId] = filteredInfo;
           Logger.i(
             '词典 $dictId 有更新: v${info.from} -> v${info.to}',
             tag: 'DictUpdateCheckService',
           );
         }
-      });
+      }
 
       _updatableDicts = updatable;
       _lastCheckTime = DateTime.now();

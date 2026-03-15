@@ -104,20 +104,36 @@ class LanguageUtils {
     final lc = langCode.toLowerCase();
     final ln = t.langNames;
     switch (lc) {
-      case 'auto': return ln.auto;
-      case 'en':   return ln.en;
-      case 'zh':   return ln.zh;
-      case 'ja':   return ln.ja;
-      case 'ko':   return ln.ko;
-      case 'fr':   return ln.fr;
-      case 'de':   return ln.de;
-      case 'es':   return ln.es;
-      case 'it':   return ln.it;
-      case 'ru':   return ln.ru;
-      case 'pt':   return ln.pt;
-      case 'ar':   return ln.ar;
-      case 'text': return ln.text;
-      default:     return langCode.toUpperCase();
+      case 'auto':
+        return ln.auto;
+      case 'en':
+        return ln.en;
+      case 'zh':
+        return ln.zh;
+      case 'ja':
+        return ln.ja;
+      case 'jp':
+        return ln.ja; // ISO 639-1 是 'ja'，但有些词典使用 'jp'
+      case 'ko':
+        return ln.ko;
+      case 'fr':
+        return ln.fr;
+      case 'de':
+        return ln.de;
+      case 'es':
+        return ln.es;
+      case 'it':
+        return ln.it;
+      case 'ru':
+        return ln.ru;
+      case 'pt':
+        return ln.pt;
+      case 'ar':
+        return ln.ar;
+      case 'text':
+        return ln.text;
+      default:
+        return langCode.toUpperCase();
     }
   }
 
@@ -125,12 +141,15 @@ class LanguageUtils {
   static String getDisplayNameExtended(String langCode, Translations t) {
     final lower = langCode.toLowerCase();
     switch (lower) {
-      case 'zh-hans': return t.langNames.zhHans;
+      case 'zh-hans':
+        return t.langNames.zhHans;
       case 'zh-hant':
       case 'zh-hk':
       case 'zh-tw':
-      case 'zh-mo': return t.langNames.zhHant;
-      default: return getDisplayName(normalizeSourceLanguage(lower), t);
+      case 'zh-mo':
+        return t.langNames.zhHant;
+      default:
+        return getDisplayName(normalizeSourceLanguage(lower), t);
     }
   }
 }
