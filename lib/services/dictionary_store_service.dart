@@ -598,18 +598,6 @@ class DictionaryStoreService {
     }
   }
 
-  Future<int> _getExistingFileSize(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (await file.exists()) {
-        return await file.length();
-      }
-    } catch (e) {
-      Logger.w('检查已存在文件大小时出错: $filePath, $e', tag: 'DictionaryStore');
-    }
-    return 0;
-  }
-
   String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
