@@ -46,7 +46,7 @@
         },
         "editor.tabSize": 4
     },
-    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.typeCheckingMode": "off",
     "python.analysis.autoImportCompletions": true,
     "python.analysis.diagnosticMode": "workspace",
     "python.linting.enabled": true,
@@ -171,5 +171,11 @@
     "files.autoSave": "afterDelay",
     "files.autoSaveDelay": 1000,
     // ========== 原有配置 ==========
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    // ========== cSpell 词典 ==========
+    "cSpell.words": [
+        "buildnote",
+        "clob",
+        "senselabel"
+    ]
 }
