@@ -16,6 +16,7 @@ analyzer:
     unused_element: ignore
     unused_field: ignore
     deprecated_member_use: ignore
+    library_private_types_in_public_api: ignore
 
 linter:
   # The lint rules applied to this project can be customized in the
