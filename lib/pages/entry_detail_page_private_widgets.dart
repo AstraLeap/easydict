@@ -1101,3 +1101,34 @@ class _AiChatDetailPageState extends State<_AiChatDetailPage> {
     );
   }
 }
+
+/// 键盘感知的底部工具栏容器
+/// 使用 AnimatedPositioned 实现平滑的键盘跟随动画
+class _KeyboardAwareBottomBar extends StatefulWidget {
+  final Widget child;
+
+  const _KeyboardAwareBottomBar({required this.child});
+
+  @override
+  State<_KeyboardAwareBottomBar> createState() =>
+      _KeyboardAwareBottomBarState();
+}
+
+class _KeyboardAwareBottomBarState extends State<_KeyboardAwareBottomBar> {
+  static const double _minBottomPadding = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = keyboardHeight + _minBottomPadding;
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
+      left: 16,
+      right: 16,
+      bottom: bottomPadding,
+      child: widget.child,
+    );
+  }
+}

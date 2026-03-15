@@ -406,10 +406,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     );
 
     if (needsMinTwo && trimmedText.length < 2) {
-      Logger.d(
-        '_onSearchTextChanged: 字母文字需要至少2个字符，跳过',
-        tag: 'PrefixSearch',
-      );
+      Logger.d('_onSearchTextChanged: 字母文字需要至少2个字符，跳过', tag: 'PrefixSearch');
       _prefixSearchToken++;
       setState(() {
         _searchResults = [];
@@ -639,22 +636,29 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
           ),
         );
 
-        // 如果返回结果要求选中文本
-        if (navResult != null &&
-            navResult is Map &&
-            navResult['selectText'] == true) {
-          // 延迟执行，确保页面已完全返回
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (mounted) {
-              // 先请求焦点
-              _searchFocusNode.requestFocus();
-              // 然后选中文本
-              _searchController.selection = TextSelection(
-                baseOffset: 0,
-                extentOffset: _searchController.text.length,
-              );
-            }
-          });
+        // 处理返回结果
+        if (navResult != null) {
+          // 如果返回的是字符串，表示新的搜索词
+          if (navResult is String) {
+            // 设置搜索词并执行搜索
+            _searchController.text = navResult;
+            await _searchWord();
+          }
+          // 如果返回结果要求选中文本
+          else if (navResult is Map && navResult['selectText'] == true) {
+            // 延迟执行，确保页面已完全返回
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (mounted) {
+                // 先请求焦点
+                _searchFocusNode.requestFocus();
+                // 然后选中文本
+                _searchController.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: _searchController.text.length,
+                );
+              }
+            });
+          }
         }
       }
     } else {

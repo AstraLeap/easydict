@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
-import '../data/models/remote_dictionary.dart';
-import 'dictionary_manager.dart';
+
 import '../core/logger.dart';
+import '../data/models/remote_dictionary.dart';
 import '../i18n/strings.g.dart';
+import 'dictionary_manager.dart';
 
 /// 词典商店服务
 /// 用于从服务器获取词典列表、下载词典等
@@ -681,10 +683,20 @@ class DictionaryStoreService {
       final url = Uri.parse(_buildUrl('download/$dictId/file/$fileName'));
       Logger.i('下载词典文件(流式): $url', tag: 'DictionaryStore');
 
-      // 无断点续传：先删除可能存在的残余文件，从头重新下载
+      // 无断点续传：先关闭可能打开的数据库连接，再删除可能存在的残余文件，从头重新下载
       final file = File(savePath);
       await file.parent.create(recursive: true);
-      if (await file.exists()) await file.delete();
+      if (await file.exists()) {
+        // 如果是数据库文件，需要先关闭数据库连接
+        if (fileName == 'dictionary.db') {
+          Logger.d('关闭词典数据库连接以便更新: $dictId', tag: 'DictionaryStore');
+          await DictionaryManager().closeDatabase(dictId);
+        } else if (fileName == 'media.db') {
+          Logger.d('关闭媒体数据库连接以便更新: $dictId', tag: 'DictionaryStore');
+          await DictionaryManager().closeMediaDatabase(dictId);
+        }
+        await file.delete();
+      }
 
       final request = http.Request('GET', url);
       final response = await _client
@@ -709,7 +721,7 @@ class DictionaryStoreService {
 
           final now = DateTime.now();
           if (lastSpeedUpdate != null) {
-            final elapsedMs = now.difference(lastSpeedUpdate!).inMilliseconds;
+            final elapsedMs = now.difference(lastSpeedUpdate).inMilliseconds;
             if (elapsedMs > 0) {
               speedBytesPerSecond = (chunk.length * 1000 / elapsedMs).round();
             }
@@ -746,4 +758,15 @@ class DictionaryStoreService {
   void dispose() {
     _client.close();
   }
+}
+
+/// 下载选项
+class DownloadOptions {
+  final bool includeDatabase;
+  final bool includeMedia;
+
+  const DownloadOptions({
+    required this.includeDatabase,
+    this.includeMedia = false,
+  });
 }

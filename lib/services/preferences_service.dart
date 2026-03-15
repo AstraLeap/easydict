@@ -92,6 +92,7 @@ class PreferencesService {
   static const String actionSpeak = 'speak';
 
   static const String actionBack = 'back';
+  static const String actionSearch = 'search';
   static const String actionFavorite = 'favorite';
   static const String actionToggleTranslate = 'toggle_translate';
   static const String actionAiHistory = 'ai_history';
@@ -143,6 +144,8 @@ class PreferencesService {
         return '朗读';
       case actionBack:
         return '返回';
+      case actionSearch:
+        return '搜索';
       case actionFavorite:
         return '收藏';
       case actionToggleTranslate:
@@ -170,6 +173,8 @@ class PreferencesService {
         return Icons.volume_up;
       case actionBack:
         return Icons.arrow_back;
+      case actionSearch:
+        return Icons.search;
       case actionFavorite:
         return Icons.bookmark_outline;
       case actionToggleTranslate:
@@ -188,7 +193,7 @@ class PreferencesService {
   static const int maxToolbarItems = 5;
 
   static const List<String> defaultToolbarActions = [
-    actionBack,
+    actionSearch,
     actionFavorite,
     actionToggleTranslate,
     actionAiHistory,
@@ -198,7 +203,7 @@ class PreferencesService {
   static const List<String> defaultOverflowActions = [];
 
   static const List<String> validToolbarActions = [
-    actionBack,
+    actionSearch,
     actionFavorite,
     actionToggleTranslate,
     actionAiHistory,

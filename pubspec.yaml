@@ -68,6 +68,7 @@ dependencies:
     git:
       url: https://github.com/twn39/edgetts-dart.git
   slang_flutter: ^4.0.0
+  meta: ^1.17.0
 
 dev_dependencies:
   flutter_test:

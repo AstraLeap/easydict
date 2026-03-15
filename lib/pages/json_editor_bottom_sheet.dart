@@ -63,6 +63,9 @@ class JsonEditorBottomSheet extends StatefulWidget {
   final Function(dynamic) onSave;
   final Function(List<String>, dynamic) onNavigate;
 
+  /// 状态栏高度，需要从父级 context 获取，因为底部弹出层的 context 中 viewPadding.top 为 0
+  final double statusBarHeight;
+
   const JsonEditorBottomSheet({
     super.key,
     required this.entry,
@@ -73,6 +76,7 @@ class JsonEditorBottomSheet extends StatefulWidget {
     this.initialPath,
     required this.onSave,
     required this.onNavigate,
+    required this.statusBarHeight,
   });
 
   @override
@@ -194,7 +198,8 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final statusBarHeight = MediaQuery.of(context).viewPadding.top;
+    // 使用从父级传入的状态栏高度，因为底部弹出层的 context 中 viewPadding.top 为 0
+    final statusBarHeight = widget.statusBarHeight;
     final screenSize = MediaQuery.of(context).size;
 
     return DraggableScrollableSheet(
