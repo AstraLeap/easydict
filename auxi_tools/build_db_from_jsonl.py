@@ -17,7 +17,6 @@ def is_ideographic_lang(lang_code):
 def normalize_text(text, lang_code=None, remove_spaces=False):
     """
     基础文本规范化：转小写、去除重音、去除空格
-    支持 RFC 3986 URL 编码解码
     """
     if not text:
         return ""
