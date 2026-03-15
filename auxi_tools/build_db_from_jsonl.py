@@ -23,35 +23,6 @@ def normalize_text(text, lang_code=None, remove_spaces=False):
     if not text:
         return ""
 
-    # RFC 3986: 解码 URL 编码（支持嵌套编码）
-    # 检测是否包含百分号编码，避免不必要的解码
-    if "%" in text:
-        try:
-            # 尝试解码，处理可能的嵌套编码
-            decoded = unquote(text)
-            # 如果解码后不同，说明有编码，继续尝试解码直到稳定
-            while decoded != text:
-                text = decoded
-                decoded = unquote(text)
-        except Exception:
-            pass  # 如果解码失败，保持原文本
-
-    # 移除 HTML 实体编码（常见于网页数据）
-    if "&" in text and ";" in text:
-        # 常见 HTML 实体
-        html_entities = {
-            "&": "&",
-            "<": "<",
-            ">": ">",
-            """: '"',
-            "'": "'",
-            "&nbsp;": " ",
-        }
-        for entity, char in html_entities.items():
-            text = text.replace(entity, char)
-        # 处理数字实体 &#xxx; 和 &#xHHHH;
-        text = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), text)
-        text = re.sub(r"&#x([0-9a-fA-F]+);", lambda m: chr(int(m.group(1), 16)), text)
 
     # Unicode 标准化：NFD 分解后去除变音符号（Mn 类别）
     text = (
