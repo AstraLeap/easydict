@@ -45,6 +45,37 @@ def normalize_text(text, lang_code=None, remove_spaces=False):
     return text
 
 
+def validate_entry(data, line_num, seen_entry_ids):
+    """
+    验证 JSON 条目是否包含必填属性
+    """
+    required_fields = [
+        "dict_id",
+        "entry_id",
+        "headword",
+        "entry_type",
+        "page",
+        "section",
+    ]
+
+    # 检查必填字段是否存在
+    for field in required_fields:
+        if field not in data:
+            raise ValueError(f"Line {line_num}: Missing required field '{field}'")
+
+    # 验证 entry_id 是整型
+    if not isinstance(data["entry_id"], int):
+        raise ValueError(
+            f"Line {line_num}: 'entry_id' must be an integer, got {type(data['entry_id']).__name__}"
+        )
+
+    # 验证 entry_id 不重复
+    entry_id = data["entry_id"]
+    if entry_id in seen_entry_ids:
+        raise ValueError(f"Line {line_num}: Duplicate 'entry_id' {entry_id}")
+    seen_entry_ids.add(entry_id)
+
+
 def reservoir_sampling(jsonl_path, sample_size=10000):
     """
     水库采样算法：在不加载整个文件到内存的情况下，随机抽取样本。
@@ -73,6 +104,9 @@ def build_database_from_jsonl(
 
     dict_size = dict_size_kb * 1024
     is_biaoyi = is_ideographic_lang(lang_code)
+
+    # 用于检测 entry_id 重复
+    seen_entry_ids = set()
 
     # 1. 采样与字典训练
     samples = reservoir_sampling(jsonl_path, 10000)
@@ -146,14 +180,20 @@ def build_database_from_jsonl(
 
     batch = []
     total_count = 0
+    line_num = 0
 
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line in f:
+            line_num += 1
             line = line.strip()
             if not line:
                 continue
 
             data = json.loads(line)
+
+            # 验证必填字段
+            validate_entry(data, line_num, seen_entry_ids)
+
             # 序列化并压缩
             json_bytes = json.dumps(
                 data, ensure_ascii=False, separators=(",", ":")
@@ -161,11 +201,11 @@ def build_database_from_jsonl(
             compressed_data = cctx.compress(json_bytes)
 
             # 准备元数据
-            eid = int(data["entry_id"])
-            hw = data.get("headword", "")
-            etype = data.get("entry_type", "word")
-            pg = data.get("page", "")
-            sec = data.get("section", "")
+            eid = data["entry_id"]
+            hw = data["headword"]
+            etype = data["entry_type"]
+            pg = data["page"]
+            sec = data["section"]
 
             hw_norm = normalize_text(hw, lang_code=lang_code)
 
@@ -247,7 +287,7 @@ if __name__ == "__main__":
         nargs="?",
         type=int,
         default=4096,
-        help="SQLite page size in KB(default: 4096)",
+        help="SQLite page size in bytes (default: 4096)",
     )
 
     args = parser.parse_args()
