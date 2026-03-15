@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -13,7 +15,11 @@ class FormattedTextResult {
   const FormattedTextResult(this.spans, this.plainTexts, {this.hidden = false});
 
   /// Creates an empty hidden result.
-  static const FormattedTextResult hiddenResult = FormattedTextResult([], [], hidden: true);
+  static const FormattedTextResult hiddenResult = FormattedTextResult(
+    [],
+    [],
+    hidden: true,
+  );
 
   /// Creates an empty result.
   static const FormattedTextResult empty = FormattedTextResult([], []);
@@ -87,7 +93,17 @@ const int kAiTextMarkBackgroundAlpha = 115;
 
 /// Known language codes for validation.
 const Set<String> kKnownLanguageCodes = {
-  'en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'ru', 'pt', 'ar',
+  'en',
+  'zh',
+  'ja',
+  'ko',
+  'fr',
+  'de',
+  'es',
+  'it',
+  'ru',
+  'pt',
+  'ar',
 };
 
 /// Language code prefixes that indicate valid language codes.
@@ -163,7 +179,8 @@ class _FormattedSegment extends _ParsedSegment {
   bool get hasChildren => children != null && children!.isNotEmpty;
 
   /// Returns true if the content contains nested formatting.
-  bool get hasNestedFormatting => content.contains('[') && content.contains('](');
+  bool get hasNestedFormatting =>
+      content.contains('[') && content.contains('](');
 
   @override
   R accept<R>(_SegmentVisitor<R> visitor) => visitor.visitFormatted(this);
@@ -224,7 +241,11 @@ class TypeParser {
   const TypeParser._();
 
   /// Parses type annotations and returns style information.
-  static StyleInfo parse(String typesStr, TextStyle baseStyle, BuildContext? context) {
+  static StyleInfo parse(
+    String typesStr,
+    TextStyle baseStyle,
+    BuildContext? context,
+  ) {
     final types = _parseTypeList(typesStr);
 
     TextStyle style = baseStyle;
@@ -370,7 +391,9 @@ class TypeParser {
         break;
       case 'bold':
         newStyle = style.copyWith(
-          fontWeight: types.contains('label') ? FontWeight.w600 : FontWeight.bold,
+          fontWeight: types.contains('label')
+              ? FontWeight.w600
+              : FontWeight.bold,
         );
         break;
       case 'italic':
@@ -440,6 +463,7 @@ class SegmentParser {
   const SegmentParser._();
 
   /// Parses the given text into a list of segments.
+  // ignore: library_private_types_in_public_api
   static List<_ParsedSegment> parse(_ParseContext ctx) {
     final segments = <_ParsedSegment>[];
     final buffer = StringBuffer();
@@ -744,7 +768,10 @@ class _FormattedTextParser {
     );
   }
 
-  static TextStyle _resolveEffectiveStyle(TextStyle baseStyle, FormattedTextConfig config) {
+  static TextStyle _resolveEffectiveStyle(
+    TextStyle baseStyle,
+    FormattedTextConfig config,
+  ) {
     TextStyle style = baseStyle;
 
     final effectiveLanguage = determineEffectiveLanguage(
@@ -796,7 +823,7 @@ class _FormattedTextParser {
       language,
       isSerif: config.effectiveIsSerif,
     );
-    
+
     if (resolvedScale != null) {
       return resolvedScale;
     }
@@ -817,10 +844,7 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
   final TextStyle baseStyle;
   final FormattedTextConfig config;
 
-  _SegmentProcessor({
-    required this.baseStyle,
-    required this.config,
-  });
+  _SegmentProcessor({required this.baseStyle, required this.config});
 
   @override
   void visitPlain(_PlainTextSegment segment) {
@@ -872,9 +896,13 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     final text = segment.content;
 
     // Priority order for special rendering
-    if (styleInfo.hasLink && config.context != null && config.onLinkTap != null) {
+    if (styleInfo.hasLink &&
+        config.context != null &&
+        config.onLinkTap != null) {
       _addLinkSpan(text, styleInfo);
-    } else if (styleInfo.hasExactJump && config.context != null && config.onExactJump != null) {
+    } else if (styleInfo.hasExactJump &&
+        config.context != null &&
+        config.onExactJump != null) {
       _addExactJumpSpan(text, styleInfo);
     } else if (styleInfo.isLabelType && config.context != null) {
       _addLabelSpan(text, styleInfo);
@@ -899,7 +927,8 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
         text: text,
         style: style,
         recognizer: TapGestureRecognizer()
-          ..onTap = () => config.onLinkTap!(styleInfo.linkTarget!, config.context!),
+          ..onTap = () =>
+              config.onLinkTap!(styleInfo.linkTarget!, config.context!),
       ),
     );
   }
@@ -915,14 +944,17 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
         text: text,
         style: style,
         recognizer: TapGestureRecognizer()
-          ..onTap = () => config.onExactJump!(styleInfo.exactJumpTarget!, config.context!),
+          ..onTap = () =>
+              config.onExactJump!(styleInfo.exactJumpTarget!, config.context!),
       ),
     );
   }
 
   void _addLabelSpan(String text, StyleInfo styleInfo) {
     final fontSize = baseStyle.fontSize ?? kDefaultFontSize;
-    var labelStyle = styleInfo.style.copyWith(fontSize: fontSize * kLabelFontScale);
+    var labelStyle = styleInfo.style.copyWith(
+      fontSize: fontSize * kLabelFontScale,
+    );
 
     if (styleInfo.isWordLabel) {
       final serifFontInfo = FontLoaderService().getFontInfo(
@@ -936,13 +968,17 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
 
     final theme = Theme.of(config.context!);
     final borderColor = theme.colorScheme.outline.withAlpha(kLabelBorderAlpha);
-    final bgColor = theme.colorScheme.onSurface.withAlpha(kLabelBackgroundAlpha);
+    final bgColor = theme.colorScheme.onSurface.withAlpha(
+      kLabelBackgroundAlpha,
+    );
 
     spans.add(
       WidgetSpan(
         alignment: PlaceholderAlignment.middle,
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: kLabelHorizontalMargin),
+          margin: const EdgeInsets.symmetric(
+            horizontal: kLabelHorizontalMargin,
+          ),
           padding: const EdgeInsets.symmetric(
             horizontal: kLabelHorizontalPadding,
             vertical: kLabelVerticalPadding,
@@ -967,7 +1003,9 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
           offset: Offset(0, fontSize * kSuperscriptOffsetFactor),
           child: Text(
             text,
-            style: styleInfo.style.copyWith(fontSize: fontSize * kScriptFontScale),
+            style: styleInfo.style.copyWith(
+              fontSize: fontSize * kScriptFontScale,
+            ),
           ),
         ),
       ),
@@ -983,7 +1021,9 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
           offset: Offset(0, fontSize * kSubscriptOffsetFactor),
           child: Text(
             text,
-            style: styleInfo.style.copyWith(fontSize: fontSize * kScriptFontScale),
+            style: styleInfo.style.copyWith(
+              fontSize: fontSize * kScriptFontScale,
+            ),
           ),
         ),
       ),
@@ -994,7 +1034,9 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     var style = styleInfo.style;
     if (styleInfo.aiTextMark && config.context != null) {
       final bgColor = Theme.of(config.context!).colorScheme.primaryContainer;
-      style = style.copyWith(backgroundColor: bgColor.withAlpha(kAiTextMarkBackgroundAlpha));
+      style = style.copyWith(
+        backgroundColor: bgColor.withAlpha(kAiTextMarkBackgroundAlpha),
+      );
     }
     spans.add(
       TextSpan(
