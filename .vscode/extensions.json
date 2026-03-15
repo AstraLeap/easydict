@@ -31,7 +31,6 @@
         "redhat.vscode-yaml",
 
         // ========== Git 工具 ==========
-        "eamodio.gitlens",
         "mhutchie.git-graph"
     ]
 }

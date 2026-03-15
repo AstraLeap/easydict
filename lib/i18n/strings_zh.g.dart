@@ -2287,6 +2287,9 @@ class TranslationsSettingsActionLabelZh {
 	/// zh: '返回'
 	String get back => '返回';
 
+	/// zh: '搜索'
+	String get search => '搜索';
+
 	/// zh: '收藏'
 	String get favorite => '收藏';
 
@@ -2478,6 +2481,7 @@ extension on Translations {
 			'settings.actionLabel.edit' => '编辑',
 			'settings.actionLabel.speak' => '朗读',
 			'settings.actionLabel.back' => '返回',
+			'settings.actionLabel.search' => '搜索',
 			'settings.actionLabel.favorite' => '收藏',
 			'settings.actionLabel.toggleTranslate' => '显示/隐藏翻译',
 			'settings.actionLabel.aiHistory' => 'AI 历史记录',
@@ -2873,9 +2877,9 @@ extension on Translations {
 			'dict.hoursAgo' => ({required Object n}) => '${n}小时前',
 			'dict.minutesAgo' => ({required Object n}) => '${n}分钟前',
 			'dict.justNow' => '刚刚',
-			'dict.dateUnknown' => '未知',
 			_ => null,
 		} ?? switch (path) {
+			'dict.dateUnknown' => '未知',
 			'dict.noFileSelected' => '没有选择要更新的文件',
 			'dict.configCloudFirst' => '请先配置云服务地址',
 			'dict.getDictInfoFailed' => '无法获取词典信息',

@@ -39,6 +39,8 @@ String _getLocalizedActionLabel(BuildContext context, String action) {
       return t.speak;
     case PreferencesService.actionBack:
       return t.back;
+    case PreferencesService.actionSearch:
+      return t.search;
     case PreferencesService.actionFavorite:
       return t.favorite;
     case PreferencesService.actionToggleTranslate:

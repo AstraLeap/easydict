@@ -17,6 +17,9 @@ analyzer:
     unused_field: ignore
     deprecated_member_use: ignore
     library_private_types_in_public_api: ignore
+    depend_on_referenced_packages: ignore
+    curly_braces_in_flow_control_structures: ignore
+    duplicate_ignore: ignore
 
 linter:
   # The lint rules applied to this project can be customized in the

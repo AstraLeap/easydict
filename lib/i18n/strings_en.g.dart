@@ -921,6 +921,7 @@ class _TranslationsSettingsActionLabelEn extends TranslationsSettingsActionLabel
 	@override String get edit => 'Edit';
 	@override String get speak => 'Speak';
 	@override String get back => 'Back';
+	@override String get search => 'Search';
 	@override String get favorite => 'Favorite';
 	@override String get toggleTranslate => 'Show/Hide Translation';
 	@override String get aiHistory => 'AI History';
@@ -1075,6 +1076,7 @@ extension on TranslationsEn {
 			'settings.actionLabel.edit' => 'Edit',
 			'settings.actionLabel.speak' => 'Speak',
 			'settings.actionLabel.back' => 'Back',
+			'settings.actionLabel.search' => 'Search',
 			'settings.actionLabel.favorite' => 'Favorite',
 			'settings.actionLabel.toggleTranslate' => 'Show/Hide Translation',
 			'settings.actionLabel.aiHistory' => 'AI History',
@@ -1470,9 +1472,9 @@ extension on TranslationsEn {
 			'dict.hoursAgo' => ({required Object n}) => '${n}h ago',
 			'dict.minutesAgo' => ({required Object n}) => '${n}m ago',
 			'dict.justNow' => 'Just now',
-			'dict.dateUnknown' => 'Unknown',
 			_ => null,
 		} ?? switch (path) {
+			'dict.dateUnknown' => 'Unknown',
 			'dict.noFileSelected' => 'No file selected to update',
 			'dict.configCloudFirst' => 'Please configure cloud service first',
 			'dict.getDictInfoFailed' => 'Cannot get dictionary info',
