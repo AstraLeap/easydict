@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:path/path.dart' as path;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -9,28 +8,30 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as path;
 import 'package:visibility_detector/visibility_detector.dart';
+
+import '../core/logger.dart';
+import '../core/utils/dict_typography.dart';
+import '../core/utils/language_utils.dart';
+import '../core/utils/toast_utils.dart';
 import '../data/database_service.dart';
+import '../data/models/dictionary_entry_group.dart';
+import '../i18n/strings.g.dart';
+import '../pages/entry_detail_page.dart';
+import '../services/advanced_search_settings_service.dart';
+import '../services/ai_service.dart';
+import '../services/dictionary_manager.dart';
+import '../services/entry_event_bus.dart';
+import '../services/font_loader_service.dart';
+import '../services/media_kit_manager.dart';
+import '../services/preferences_service.dart';
+import '../services/search_history_service.dart';
 import 'board_widget.dart';
 import 'dictionary_interaction_scope.dart';
-import '../core/logger.dart';
-import '../services/dictionary_manager.dart';
-import '../services/preferences_service.dart';
-import '../services/font_loader_service.dart';
-import '../services/ai_service.dart';
-import '../services/advanced_search_settings_service.dart';
-import '../services/media_kit_manager.dart';
-import '../services/entry_event_bus.dart';
-import '../data/models/dictionary_entry_group.dart';
-import '../pages/entry_detail_page.dart';
-import '../services/search_history_service.dart';
-import '../core/utils/toast_utils.dart';
-import '../core/utils/language_utils.dart';
 import 'global_scale_wrapper.dart';
 import 'hidden_languages_scope.dart';
 import 'path_scope.dart';
-import '../core/utils/dict_typography.dart';
-import '../i18n/strings.g.dart';
 
 class FormattedTextResult {
   final List<InlineSpan> spans;
@@ -1075,10 +1076,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
   DateTime? _lastTtsTime; // TTS防抖时间戳
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
-
-  // 缓存：避免重复计算样式
-  TextStyle? _cachedBaseStyle;
-  String? _cachedBaseStyleKey;
 
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
@@ -3195,48 +3192,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  /// 构建轻量级占位符（首次可见前显示）
-  Widget _buildPlaceholder(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final entry = _localEntry;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // headword 占位符
-          Text(
-            entry.headword,
-            style: DictTypography.getBaseStyle(
-              DictElementType.headword,
-              color: colorScheme.onSurface,
-            ).copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          // 骨架屏占位
-          Container(
-            width: double.infinity,
-            height: 14,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: 200,
-            height: 14,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildWord(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final entry = _localEntry;
@@ -4284,7 +4239,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<String> words,
     Color color,
   ) {
-    final colorScheme = Theme.of(context).colorScheme;
     final textStyle = DictTypography.getBaseStyle(
       DictElementType.label,
       color: color,
@@ -4922,7 +4876,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
         child = Container(
           padding: const EdgeInsets.symmetric(horizontal: 2),
           decoration: BoxDecoration(
-            color: (overrideColor ?? colorScheme.primary).withOpacity(0.12),
+            color: (overrideColor ?? colorScheme.primary).withValues(
+              alpha: 0.12,
+            ),
             borderRadius: BorderRadius.circular(2),
           ),
           child: Builder(key: textKey, builder: (context) => richText),
@@ -5469,6 +5425,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'sense_group',
     'phrases', // 唯一正确字段名，由 _buildPhrases 处理
     'data', // data 单独渲染
+    'clob', // clob 单独渲染
   ];
 
   /// 渲染 data（如果存在），在 sense 之前显示
@@ -6102,6 +6059,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'data': 'data',
     'note': 'note',
     'image': 'image',
+    'clob': 'clob',
   };
 
   Widget _buildStringListAsRow(

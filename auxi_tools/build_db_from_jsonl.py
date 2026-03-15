@@ -1,11 +1,12 @@
 import json
-import sqlite3
-import zstandard as zstd
 import random
-import unicodedata
 import re
-from urllib.parse import unquote
+import sqlite3
+import unicodedata
 from pathlib import Path
+from urllib.parse import unquote
+
+import zstandard as zstd
 
 # --- 全局配置与工具函数 ---
 
@@ -22,7 +23,6 @@ def normalize_text(text, lang_code=None, remove_spaces=False):
     """
     if not text:
         return ""
-
 
     # Unicode 标准化：NFD 分解后去除变音符号（Mn 类别）
     text = (

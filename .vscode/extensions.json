@@ -1,0 +1,37 @@
+{
+    "recommendations": [
+        // ========== Flutter/Dart 开发 ==========
+        "Dart-Code.flutter",
+        "Dart-Code.dart-code",
+        "nash.awesome-flutter-snippets",
+        "alexisvt.flutter-snippets",
+
+        // ========== Python 开发 ==========
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "ms-python.vscode-pylance",
+
+        // ========== 前端开发 ==========
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "formulahendry.auto-rename-tag",
+        "bradlc.vscode-tailwindcss",
+
+        // ========== 通用工具 ==========
+        "editorconfig.editorconfig",
+        "streetsidesoftware.code-spell-checker",
+        "wayou.vscode-todo-highlight",
+        "aaron-bond.better-comments",
+        "naumovs.color-highlight",
+        "oderwat.indent-rainbow",
+        "shardulm94.trailing-spaces",
+
+        // ========== JSON/YAML 工具 ==========
+        "redhat.vscode-yaml",
+
+        // ========== Git 工具 ==========
+        "eamodio.gitlens",
+        "mhutchie.git-graph"
+    ]
+}

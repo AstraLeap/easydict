@@ -1061,10 +1061,28 @@ class DatabaseService {
   }) async {
     // query 保留原始输入（含大小写、尾部空格），用于 Dart 层 startsWith 比较。
     // SQL 使用 normalizedQuery（小写 + 去音调 + 去空格）进行索引查找。
-    if (query.isEmpty) return [];
+    Logger.i(
+      'getPreSearchCandidates 开始: query=|$query| lang=$sourceLanguage exactMatch=$exactMatch '
+      'usePhoneticSearch=$usePhoneticSearch biaoyiExactMatch=$biaoyiExactMatch limit=$limit',
+      tag: 'PrefixSearch',
+    );
+
+    if (query.isEmpty) {
+      Logger.d('getPreSearchCandidates: 查询为空，返回空列表', tag: 'PrefixSearch');
+      return [];
+    }
 
     final normalizedQuery = _normalizeSearchWord(query);
+    Logger.d(
+      'getPreSearchCandidates: normalizedQuery=|$normalizedQuery|',
+      tag: 'PrefixSearch',
+    );
+
     final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
+    Logger.i(
+      'getPreSearchCandidates: 启用的词典数量=${enabledDicts.length}',
+      tag: 'PrefixSearch',
+    );
 
     // ── 过滤要搜索的词典 ────────────────────────────────────────────
     // auto 模式：搜索所有启用词典（表音 + 表意），不按语言过滤
@@ -1078,14 +1096,25 @@ class DatabaseService {
               )
               .toList();
 
-    Logger.d(
-      'getPreSearchCandidates: query=|$query| lang=$sourceLanguage exactMatch=$exactMatch '
-      'enabledDicts=${enabledDicts.map((m) => "${m.id}(${m.sourceLanguage})").toList()} '
-      'filteredDicts=${filteredDicts.map((m) => "${m.id}(${m.sourceLanguage})").toList()}',
+    Logger.i(
+      'getPreSearchCandidates: sourceLanguage=$sourceLanguage 过滤后词典数量=${filteredDicts.length}',
       tag: 'PrefixSearch',
     );
 
-    if (filteredDicts.isEmpty) return [];
+    for (final m in filteredDicts) {
+      Logger.d(
+        '  - 将搜索词典: ${m.id} (${m.sourceLanguage})',
+        tag: 'PrefixSearch',
+      );
+    }
+
+    if (filteredDicts.isEmpty) {
+      Logger.w(
+        'getPreSearchCandidates: 过滤后无词典可搜索，返回空列表',
+        tag: 'PrefixSearch',
+      );
+      return [];
+    }
 
     // ── 并行搜索各词典 ──────────────────────────────────────────────
     final futures = filteredDicts.map((metadata) async {

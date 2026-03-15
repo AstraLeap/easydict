@@ -1,6 +1,62 @@
 import 'dart:ui';
 import '../../i18n/strings.g.dart';
 
+/// 语言代码别名映射表。
+///
+/// 将非标准语言代码映射到 ISO 639-1 标准代码。
+/// 例如：'cn' → 'zh'，'jp' → 'ja'。
+const Map<String, String> _languageCodeAliases = {
+  // 中文别名
+  'cn': 'zh',
+  'chinese': 'zh',
+  'zho': 'zh', // ISO 639-2/T
+  'chi': 'zh', // ISO 639-2/B
+
+  // 日语别名
+  'jp': 'ja',
+  'japanese': 'ja',
+  'jpn': 'ja', // ISO 639-2
+
+  // 韩语别名
+  'kr': 'ko',
+  'korean': 'ko',
+  'kor': 'ko', // ISO 639-2
+
+  // 英语别名
+  'english': 'en',
+  'eng': 'en', // ISO 639-2
+
+  // 法语别名
+  'french': 'fr',
+  'fra': 'fr', // ISO 639-2/T
+  'fre': 'fr', // ISO 639-2/B
+
+  // 德语别名
+  'german': 'de',
+  'deu': 'de', // ISO 639-2/T
+  'ger': 'de', // ISO 639-2/B
+
+  // 西班牙语别名
+  'spanish': 'es',
+  'spa': 'es', // ISO 639-2
+
+  // 意大利语别名
+  'italian': 'it',
+  'ita': 'it', // ISO 639-2
+
+  // 俄语别名
+  'russian': 'ru',
+  'rus': 'ru', // ISO 639-2
+
+  // 葡萄牙语别名
+  'portuguese': 'pt',
+  'por': 'pt', // ISO 639-2
+
+  // 阿拉伯语别名
+  'arabic': 'ar',
+  'ara': 'ar', // ISO 639-2
+};
+
 Locale? getFontLocale() {
   final currentLocale = LocaleSettings.currentLocale;
   if (currentLocale == AppLocale.zh) {
@@ -28,13 +84,36 @@ class LanguageUtils {
     'ar',
   };
 
+  /// 将语言代码标准化为 ISO 639-1 代码。
+  ///
+  /// 处理步骤：
+  /// 1. 小写化
+  /// 2. 去除地区子标签（横杠及其后面部分）
+  /// 3. 映射别名到标准代码
+  ///
+  /// 例如：
+  /// - "cn" → "zh"
+  /// - "jp" → "ja"
+  /// - "zh-Hans" → "zh"
+  /// - "Zh-HK" → "zh"
+  /// - "EN" → "en"
+  static String standardizeLanguageCode(String langCode) {
+    final lower = langCode.toLowerCase();
+    final hyphenIdx = lower.indexOf('-');
+    final baseCode = hyphenIdx == -1 ? lower : lower.substring(0, hyphenIdx);
+
+    // 查找别名映射，找不到则返回原代码
+    return _languageCodeAliases[baseCode] ?? baseCode;
+  }
+
   /// 将语言代码规范化用于词典分组（前四处分组场合）：
   /// 先小写化，再去除地区子标签（横杠及其后面部分），
   /// 例如 "zh-Hans" → "zh"，"Zh-HK" → "zh"，"EN" → "en"。
+  ///
+  /// 注意：此方法已升级，会自动处理语言代码别名（如 "cn" → "zh"）。
+  /// 如需保留原始行为（仅去除地区子标签），请使用 [standardizeLanguageCode]。
   static String normalizeSourceLanguage(String langCode) {
-    final lower = langCode.toLowerCase();
-    final hyphenIdx = lower.indexOf('-');
-    return hyphenIdx == -1 ? lower : lower.substring(0, hyphenIdx);
+    return standardizeLanguageCode(langCode);
   }
 
   /// 未设置字体缩放倍率时的默认值。
@@ -46,7 +125,10 @@ class LanguageUtils {
   }
 
   static String getLanguageDisplayName(String langCode) {
-    if (langCode == 'auto') return '自动';
+    if (langCode.toLowerCase() == 'auto') return '自动';
+
+    // 标准化语言代码（处理别名如 cn→zh, jp→ja）
+    final standardized = standardizeLanguageCode(langCode);
 
     final languageNames = {
       'en': '英语',
@@ -62,7 +144,7 @@ class LanguageUtils {
       'ar': '阿拉伯语',
       'text': '文本',
     };
-    return languageNames[langCode.toLowerCase()] ?? langCode.toUpperCase();
+    return languageNames[standardized] ?? standardized.toUpperCase();
   }
 
   /// 获取语言代码的显示名称，支持带地区子标签的完整代码。
@@ -100,20 +182,26 @@ class LanguageUtils {
 
   /// I18n-aware display name for a basic language code.
   /// Falls back to [getLanguageDisplayName] for unknown codes.
+  ///
+  /// 自动处理语言代码别名（如 "cn" → "zh"，"jp" → "ja"）。
   static String getDisplayName(String langCode, Translations t) {
     final lc = langCode.toLowerCase();
     final ln = t.langNames;
-    switch (lc) {
-      case 'auto':
-        return ln.auto;
+
+    // 特殊处理 auto 和 text
+    if (lc == 'auto') return ln.auto;
+    if (lc == 'text') return ln.text;
+
+    // 标准化语言代码（处理别名如 cn→zh, jp→ja）
+    final standardized = standardizeLanguageCode(langCode);
+
+    switch (standardized) {
       case 'en':
         return ln.en;
       case 'zh':
         return ln.zh;
       case 'ja':
         return ln.ja;
-      case 'jp':
-        return ln.ja; // ISO 639-1 是 'ja'，但有些词典使用 'jp'
       case 'ko':
         return ln.ko;
       case 'fr':
@@ -130,10 +218,8 @@ class LanguageUtils {
         return ln.pt;
       case 'ar':
         return ln.ar;
-      case 'text':
-        return ln.text;
       default:
-        return langCode.toUpperCase();
+        return standardized.toUpperCase();
     }
   }
 
