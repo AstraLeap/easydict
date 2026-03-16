@@ -1399,6 +1399,9 @@ class TranslationsDictZh {
 	/// zh: '本地无此文件，无需更新'
 	String get mediaDbNotExists => '本地无此文件，无需更新';
 
+	/// zh: '本地无此文件，可下载'
+	String get mediaDbNotExistsCanDownload => '本地无此文件，可下载';
+
 	/// zh: '找不到词典 {id} 的数据库'
 	String dictDbNotFound({required Object id}) => '找不到词典 ${id} 的数据库';
 
@@ -1413,6 +1416,9 @@ class TranslationsDictZh {
 
 	/// zh: '开始下载'
 	String get startDownload => '开始下载';
+
+	/// zh: '正在恢复下载...'
+	String get statusResuming => '正在恢复下载...';
 
 	/// zh: '[{step}/{total}] 下载 {name}'
 	String downloading({required Object step, required Object total, required Object name}) => '[${step}/${total}] 下载 ${name}';
@@ -1687,6 +1693,18 @@ class TranslationsDictZh {
 	/// zh: '已取消'
 	String get cancelled => '已取消';
 
+	/// zh: '已暂停'
+	String get paused => '已暂停';
+
+	/// zh: '暂停'
+	String get pause => '暂停';
+
+	/// zh: '继续'
+	String get resume => '继续';
+
+	/// zh: '终止'
+	String get terminate => '终止';
+
 	/// zh: '失败'
 	String get statusFailed => '失败';
 
@@ -1785,6 +1803,12 @@ class TranslationsDictZh {
 
 	/// zh: '英语词典数据库不存在，请先下载'
 	String get dbNotExists => '英语词典数据库不存在，请先下载';
+
+	/// zh: '文件 {file} CRC32 校验失败: 期望 {expected}, 实际 {actual}'
+	String crc32Mismatch({required Object file, required Object expected, required Object actual}) => '文件 ${file} CRC32 校验失败: 期望 ${expected}, 实际 ${actual}';
+
+	/// zh: 'CRC32 校验异常: {error}'
+	String crc32VerifyFailed({required Object error}) => 'CRC32 校验异常: ${error}';
 }
 
 // Path: entry
@@ -2843,11 +2867,13 @@ extension on Translations {
 			'dict.mediaDbWithSize' => ({required Object size}) => '媒体数据库（${size}）',
 			'dict.mediaDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的媒体数据库',
 			'dict.mediaDbNotExists' => '本地无此文件，无需更新',
+			'dict.mediaDbNotExistsCanDownload' => '本地无此文件，可下载',
 			'dict.dictDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的数据库',
 			'dict.getDictListFailed' => '获取词典列表失败',
 			'dict.invalidResponseFormat' => '服务器返回格式无效',
 			'dict.getDictListFailedError' => ({required Object error}) => '获取词典列表失败: ${error}',
 			'dict.startDownload' => '开始下载',
+			'dict.statusResuming' => '正在恢复下载...',
 			'dict.downloading' => ({required Object step, required Object total, required Object name}) => '[${step}/${total}] 下载 ${name}',
 			'dict.downloadingEntries' => ({required Object step, required Object total}) => '[${step}/${total}] 下载条目更新',
 			'dict.updateSuccess' => '更新成功',
@@ -2875,10 +2901,10 @@ extension on Translations {
 			'dict.monthsAgo' => ({required Object n}) => '${n}个月前',
 			'dict.yearsAgo' => ({required Object n}) => '${n}年前',
 			'dict.hoursAgo' => ({required Object n}) => '${n}小时前',
-			'dict.minutesAgo' => ({required Object n}) => '${n}分钟前',
-			'dict.justNow' => '刚刚',
 			_ => null,
 		} ?? switch (path) {
+			'dict.minutesAgo' => ({required Object n}) => '${n}分钟前',
+			'dict.justNow' => '刚刚',
 			'dict.dateUnknown' => '未知',
 			'dict.noFileSelected' => '没有选择要更新的文件',
 			'dict.configCloudFirst' => '请先配置云服务地址',
@@ -2941,6 +2967,10 @@ extension on Translations {
 			'dict.statusUploadCompleted' => '上传完成',
 			'dict.statusUploadFailed' => '上传失败',
 			'dict.cancelled' => '已取消',
+			'dict.paused' => '已暂停',
+			'dict.pause' => '暂停',
+			'dict.resume' => '继续',
+			'dict.terminate' => '终止',
 			'dict.statusFailed' => '失败',
 			'dict.statusUpdateCompleted' => '更新完成',
 			'dict.downloadingFile' => ({required Object name}) => '下载 ${name}',
@@ -2974,6 +3004,8 @@ extension on Translations {
 			'dict.searchEntries' => '搜索词条...',
 			'dict.noEntries' => '暂无词条',
 			'dict.dbNotExists' => '英语词典数据库不存在，请先下载',
+			'dict.crc32Mismatch' => ({required Object file, required Object expected, required Object actual}) => '文件 ${file} CRC32 校验失败: 期望 ${expected}, 实际 ${actual}',
+			'dict.crc32VerifyFailed' => ({required Object error}) => 'CRC32 校验异常: ${error}',
 			'entry.wordRemoved' => ({required Object word}) => '已将 "${word}" 从单词本移除',
 			'entry.wordListUpdated' => ({required Object word}) => '已更新 "${word}" 的词表归属',
 			'entry.selectAtLeastOne' => '请至少选择一个词表',

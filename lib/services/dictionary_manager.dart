@@ -157,6 +157,15 @@ class DictionaryManager {
     if (!enabled.contains(dictionaryId)) {
       enabled.add(dictionaryId);
       await setEnabledDictionaries(enabled);
+    } else {
+      // 即使词典已在启用列表中，也要清除缓存并通知更新
+      _enabledDictionariesMetadataCache = null;
+      Logger.d(
+        'enableDictionary: 词典 $dictionaryId 已在启用列表中，清除缓存并发送事件',
+        tag: 'DictionaryManager',
+      );
+      // 发送词典变化事件，通知搜索页面刷新
+      EntryEventBus().emitDictionariesChanged();
     }
   }
 
@@ -470,7 +479,9 @@ class DictionaryManager {
   Future<void> saveDictionaryMetadata(DictionaryMetadata metadata) async {
     try {
       final file = await getMetadataFile(metadata.id);
-      final jsonStr = jsonEncode(metadata.toJson());
+      // 使用格式化输出，保证 JSON 规整
+      const encoder = JsonEncoder.withIndent('  ');
+      final jsonStr = encoder.convert(metadata.toJson());
       await file.writeAsString(jsonStr);
 
       _metadataCache[metadata.id] = metadata;
@@ -532,10 +543,22 @@ class DictionaryManager {
 
   Future<List<DictionaryMetadata>> getEnabledDictionariesMetadata() async {
     if (_enabledDictionariesMetadataCache != null) {
+      Logger.d(
+        'getEnabledDictionariesMetadata: 返回缓存 (${_enabledDictionariesMetadataCache!.length} 个词典)',
+        tag: 'DictionaryManager',
+      );
       return _enabledDictionariesMetadataCache!;
     }
 
+    Logger.d(
+      'getEnabledDictionariesMetadata: 重新加载词典列表',
+      tag: 'DictionaryManager',
+    );
     final enabledIds = await getEnabledDictionaries();
+    Logger.d(
+      'getEnabledDictionariesMetadata: 启用的词典ID: $enabledIds',
+      tag: 'DictionaryManager',
+    );
     final metadata = <DictionaryMetadata>[];
 
     for (final id in enabledIds) {
@@ -543,12 +566,30 @@ class DictionaryManager {
       if (item != null) {
         final dbPath = await getDictionaryDbPath(id);
         if (await File(dbPath).exists()) {
+          Logger.d(
+            'getEnabledDictionariesMetadata: 词典 $id 数据库存在，添加到列表',
+            tag: 'DictionaryManager',
+          );
           metadata.add(item);
+        } else {
+          Logger.w(
+            'getEnabledDictionariesMetadata: 词典 $id 数据库不存在: $dbPath',
+            tag: 'DictionaryManager',
+          );
         }
+      } else {
+        Logger.w(
+          'getEnabledDictionariesMetadata: 词典 $id 元数据为空',
+          tag: 'DictionaryManager',
+        );
       }
     }
 
     _enabledDictionariesMetadataCache = metadata;
+    Logger.d(
+      'getEnabledDictionariesMetadata: 最终返回 ${metadata.length} 个词典',
+      tag: 'DictionaryManager',
+    );
     return metadata;
   }
 

@@ -811,15 +811,15 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       }
                       if (_selectedResultIndex >= 0 &&
                           _selectedResultIndex < _searchResults.length) {
+                        // 用户用方向键选择了候选词，使用选中的词
                         _onSearchResultTap(
                           _searchResults[_selectedResultIndex],
                         );
-                      } else if (_searchResults.isNotEmpty) {
-                        _onSearchResultTap(_searchResults.first);
                       } else if (!_isWildcardMode(
                         _searchController.text.trim(),
                       )) {
-                        // 通配符模式下无候选词时不允许直接查词
+                        // 用户直接按回车，使用输入框中的原始词进行搜索
+                        // 而不是自动选择第一个候选词，避免大小写变化问题
                         _searchWord();
                       }
                     },

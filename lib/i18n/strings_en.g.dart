@@ -583,11 +583,13 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String mediaDbWithSize({required Object size}) => 'Media database (${size})';
 	@override String mediaDbNotFound({required Object id}) => 'Media database not found for dictionary: ${id}';
 	@override String get mediaDbNotExists => 'Local file not exists, skip update';
+	@override String get mediaDbNotExistsCanDownload => 'Local file not exists, can download';
 	@override String dictDbNotFound({required Object id}) => 'Dictionary database not found for: ${id}';
 	@override String get getDictListFailed => 'Failed to get dictionary list';
 	@override String get invalidResponseFormat => 'Invalid response format from server';
 	@override String getDictListFailedError({required Object error}) => 'Failed to get dictionary list: ${error}';
 	@override String get startDownload => 'Start Download';
+	@override String get statusResuming => 'Resuming download...';
 	@override String downloading({required Object step, required Object total, required Object name}) => '[${step}/${total}] Downloading ${name}';
 	@override String downloadingEntries({required Object step, required Object total}) => '[${step}/${total}] Downloading entry updates';
 	@override String get updateSuccess => 'Updated successfully';
@@ -679,6 +681,10 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get statusUploadCompleted => 'Upload completed';
 	@override String get statusUploadFailed => 'Upload failed';
 	@override String get cancelled => 'Cancelled';
+	@override String get paused => 'Paused';
+	@override String get pause => 'Pause';
+	@override String get resume => 'Resume';
+	@override String get terminate => 'Terminate';
 	@override String get statusFailed => 'Failed';
 	@override String get statusUpdateCompleted => 'Update completed';
 	@override String downloadingFile({required Object name}) => 'Downloading ${name}';
@@ -712,6 +718,8 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get searchEntries => 'Search entries...';
 	@override String get noEntries => 'No entries';
 	@override String get dbNotExists => 'English dictionary database not found, please download first';
+	@override String crc32Mismatch({required Object file, required Object expected, required Object actual}) => 'CRC32 verification failed for ${file}: expected ${expected}, got ${actual}';
+	@override String crc32VerifyFailed({required Object error}) => 'CRC32 verification error: ${error}';
 }
 
 // Path: entry
@@ -1438,11 +1446,13 @@ extension on TranslationsEn {
 			'dict.mediaDbWithSize' => ({required Object size}) => 'Media database (${size})',
 			'dict.mediaDbNotFound' => ({required Object id}) => 'Media database not found for dictionary: ${id}',
 			'dict.mediaDbNotExists' => 'Local file not exists, skip update',
+			'dict.mediaDbNotExistsCanDownload' => 'Local file not exists, can download',
 			'dict.dictDbNotFound' => ({required Object id}) => 'Dictionary database not found for: ${id}',
 			'dict.getDictListFailed' => 'Failed to get dictionary list',
 			'dict.invalidResponseFormat' => 'Invalid response format from server',
 			'dict.getDictListFailedError' => ({required Object error}) => 'Failed to get dictionary list: ${error}',
 			'dict.startDownload' => 'Start Download',
+			'dict.statusResuming' => 'Resuming download...',
 			'dict.downloading' => ({required Object step, required Object total, required Object name}) => '[${step}/${total}] Downloading ${name}',
 			'dict.downloadingEntries' => ({required Object step, required Object total}) => '[${step}/${total}] Downloading entry updates',
 			'dict.updateSuccess' => 'Updated successfully',
@@ -1470,10 +1480,10 @@ extension on TranslationsEn {
 			'dict.monthsAgo' => ({required Object n}) => '${n} months ago',
 			'dict.yearsAgo' => ({required Object n}) => '${n} years ago',
 			'dict.hoursAgo' => ({required Object n}) => '${n}h ago',
-			'dict.minutesAgo' => ({required Object n}) => '${n}m ago',
-			'dict.justNow' => 'Just now',
 			_ => null,
 		} ?? switch (path) {
+			'dict.minutesAgo' => ({required Object n}) => '${n}m ago',
+			'dict.justNow' => 'Just now',
 			'dict.dateUnknown' => 'Unknown',
 			'dict.noFileSelected' => 'No file selected to update',
 			'dict.configCloudFirst' => 'Please configure cloud service first',
@@ -1536,6 +1546,10 @@ extension on TranslationsEn {
 			'dict.statusUploadCompleted' => 'Upload completed',
 			'dict.statusUploadFailed' => 'Upload failed',
 			'dict.cancelled' => 'Cancelled',
+			'dict.paused' => 'Paused',
+			'dict.pause' => 'Pause',
+			'dict.resume' => 'Resume',
+			'dict.terminate' => 'Terminate',
 			'dict.statusFailed' => 'Failed',
 			'dict.statusUpdateCompleted' => 'Update completed',
 			'dict.downloadingFile' => ({required Object name}) => 'Downloading ${name}',
@@ -1569,6 +1583,8 @@ extension on TranslationsEn {
 			'dict.searchEntries' => 'Search entries...',
 			'dict.noEntries' => 'No entries',
 			'dict.dbNotExists' => 'English dictionary database not found, please download first',
+			'dict.crc32Mismatch' => ({required Object file, required Object expected, required Object actual}) => 'CRC32 verification failed for ${file}: expected ${expected}, got ${actual}',
+			'dict.crc32VerifyFailed' => ({required Object error}) => 'CRC32 verification error: ${error}',
 			'entry.wordRemoved' => ({required Object word}) => 'Removed "${word}" from word bank',
 			'entry.wordListUpdated' => ({required Object word}) => 'Updated word list for "${word}"',
 			'entry.selectAtLeastOne' => 'Please select at least one list',

@@ -27,10 +27,7 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
 
   // Throttle (not debounce): immediately show the first value, then at most
   // once per _throttleDuration so rapid fluctuations don't block display.
-  void _updateSpeedThrottled(
-    int speedBytesPerSecond,
-    DownloadManager manager,
-  ) {
+  void _updateSpeedThrottled(int speedBytesPerSecond, DownloadManager manager) {
     _lastSpeedValue = speedBytesPerSecond;
     if (_throttleTimer == null) {
       // No pending timer: show immediately and start a cooldown.
@@ -69,19 +66,25 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
     final colorScheme = Theme.of(context).colorScheme;
     final isError = currentTask.state == DownloadState.error;
     final isCancelled = currentTask.state == DownloadState.cancelled;
+    final isPaused = currentTask.state == DownloadState.paused;
+    final isDownloading = currentTask.state == DownloadState.downloading;
 
-    if (!isError && !isCancelled && currentTask.speedBytesPerSecond > 0) {
-      _updateSpeedThrottled(
-        currentTask.speedBytesPerSecond,
-        downloadManager,
-      );
+    if (!isError &&
+        !isCancelled &&
+        !isPaused &&
+        currentTask.speedBytesPerSecond > 0) {
+      _updateSpeedThrottled(currentTask.speedBytesPerSecond, downloadManager);
     }
 
     String statusText;
     if (isError) {
-      statusText = context.t.dict.downloadError(error: currentTask.error ?? context.t.common.unknown);
+      statusText = context.t.dict.downloadError(
+        error: currentTask.error ?? context.t.common.unknown,
+      );
     } else if (isCancelled) {
       statusText = context.t.dict.cancelled;
+    } else if (isPaused) {
+      statusText = context.t.dict.paused;
     } else {
       statusText = currentTask.status;
     }
@@ -111,7 +114,11 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
             Row(
               children: [
                 Icon(
-                  isError ? Icons.error_outline : Icons.download,
+                  isError
+                      ? Icons.error_outline
+                      : isPaused
+                      ? Icons.pause_circle_outline
+                      : Icons.download,
                   color: isError ? colorScheme.error : colorScheme.primary,
                   size: 20,
                 ),
@@ -127,12 +134,73 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // 下载中：显示暂停和终止按钮
+                if (isDownloading) ...[
+                  IconButton(
+                    onPressed: () {
+                      downloadManager.pauseDownload(currentTask.dictId);
+                    },
+                    icon: const Icon(Icons.pause),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    tooltip: context.t.dict.pause,
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      downloadManager.terminateDownload(currentTask.dictId);
+                    },
+                    icon: const Icon(Icons.stop),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    tooltip: context.t.dict.terminate,
+                  ),
+                ],
+                // 暂停中：显示继续和终止按钮
+                if (isPaused) ...[
+                  IconButton(
+                    onPressed: () {
+                      downloadManager.resumePausedDownload(currentTask.dictId);
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    tooltip: context.t.dict.resume,
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      downloadManager.terminateDownload(currentTask.dictId);
+                    },
+                    icon: const Icon(Icons.stop),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    tooltip: context.t.dict.terminate,
+                  ),
+                ],
+                // 错误或取消：显示清除按钮
                 if (isError || isCancelled)
                   TextButton(
                     onPressed: () {
                       downloadManager.clearDownload(currentTask.dictId);
                     },
-                    child: Text(isError ? context.t.common.clear : context.t.common.close),
+                    child: Text(
+                      isError ? context.t.common.clear : context.t.common.close,
+                    ),
                   ),
               ],
             ),
@@ -150,7 +218,10 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (!isError && !isCancelled && _displayedSpeed.isNotEmpty)
+                if (!isError &&
+                    !isCancelled &&
+                    !isPaused &&
+                    _displayedSpeed.isNotEmpty)
                   Text(
                     _displayedSpeed,
                     style: TextStyle(
@@ -160,7 +231,7 @@ class _DownloadProgressPanelState extends State<DownloadProgressPanel> {
                   ),
               ],
             ),
-            if (!isError && !isCancelled) ...[
+            if (!isError && !isCancelled && !isPaused) ...[
               const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
@@ -203,10 +274,7 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
     super.dispose();
   }
 
-  void _updateSpeedThrottled(
-    int speedBytesPerSecond,
-    UploadManager manager,
-  ) {
+  void _updateSpeedThrottled(int speedBytesPerSecond, UploadManager manager) {
     _lastSpeedValue = speedBytesPerSecond;
     if (_throttleTimer == null) {
       setState(() {
@@ -250,7 +318,9 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
 
     String statusText;
     if (isError) {
-      statusText = context.t.dict.uploadError(error: currentTask.error ?? context.t.common.unknown);
+      statusText = context.t.dict.uploadError(
+        error: currentTask.error ?? context.t.common.unknown,
+      );
     } else if (isCancelled) {
       statusText = context.t.dict.cancelled;
     } else if (isCompleted) {
@@ -313,7 +383,9 @@ class _UploadProgressPanelState extends State<UploadProgressPanel> {
                     onPressed: () {
                       uploadManager.clearUpload(currentTask.dictId);
                     },
-                    child: Text(isError ? context.t.common.clear : context.t.common.close),
+                    child: Text(
+                      isError ? context.t.common.clear : context.t.common.close,
+                    ),
                   ),
               ],
             ),

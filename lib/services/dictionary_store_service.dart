@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 import '../core/logger.dart';
+import '../core/utils/crc32_utils.dart';
 import '../data/models/remote_dictionary.dart';
 import '../i18n/strings.g.dart';
 import 'dictionary_manager.dart';
@@ -328,278 +329,6 @@ class DictionaryStoreService {
     }
   }
 
-  /// 分别下载词典的各个文件（Stream 版本）
-  ///
-  /// [dict] - 要下载的词典
-  /// [options] - 下载选项（包含metadata、logo、db、audios、images的选择）
-  Stream<Map<String, dynamic>> downloadDictionaryFilesStream({
-    required RemoteDictionary dict,
-    required dynamic options, // DownloadOptionsResult
-  }) async* {
-    try {
-      final dictManager = DictionaryManager();
-      final dictDir = await dictManager.getDictionaryDirectory(dict.id);
-
-      // 确保目录存在
-      final dir = Directory(dictDir);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-
-      int totalSteps = 0;
-      int currentStep = 0;
-
-      // 计算总步骤数
-      if (options.includeMetadata) totalSteps++;
-      if (options.includeLogo && dict.hasLogo) totalSteps++;
-      if (options.includeDb && dict.hasDatabase) totalSteps++;
-      if (options.includeMedia && (dict.hasAudios || dict.hasImages)) {
-        totalSteps++;
-      }
-
-      if (totalSteps == 0) {
-        yield {'type': 'error', 'error': t.dict.noContentSelected};
-        return;
-      }
-
-      Logger.i(
-        '开始下载词典文件: ${dict.name}, 共 $totalSteps 个文件',
-        tag: 'DictionaryStore',
-      );
-
-      // 1. 下载 metadata.json
-      if (options.includeMetadata) {
-        currentStep++;
-        yield {
-          'type': 'progress',
-          'progress': (currentStep - 1) / totalSteps,
-          'status': t.dict.downloadingMeta(
-            step: currentStep.toString(),
-            total: totalSteps.toString(),
-          ),
-        };
-
-        final url = Uri.parse(
-          _buildUrl('download/${dict.id}/file/metadata.json'),
-        );
-        Logger.i('正在下载元数据: $url', tag: 'DictionaryStore');
-        final response = await _client
-            .get(url)
-            .timeout(const Duration(seconds: 30));
-
-        if (response.statusCode == 200) {
-          final metadataFile = File(path.join(dictDir, 'metadata.json'));
-          // 更新元数据中的 ID
-          // 处理 UTF-8 编码
-          final body = utf8.decode(response.bodyBytes);
-          final metadata = jsonDecode(body) as Map<String, dynamic>;
-          metadata['id'] = dict.id;
-          await metadataFile.writeAsString(jsonEncode(metadata));
-          Logger.i('元数据下载完成', tag: 'DictionaryStore');
-        } else {
-          Logger.e(
-            '下载元数据失败: $url, HTTP ${response.statusCode}',
-            tag: 'DictionaryStore',
-          );
-          throw Exception(
-            t.dict.downloadMetaFailed(
-              url: url.toString(),
-              code: response.statusCode.toString(),
-            ),
-          );
-        }
-      }
-
-      // 2. 下载 logo.png
-      if (options.includeLogo && dict.hasLogo) {
-        currentStep++;
-        yield {
-          'type': 'progress',
-          'progress': (currentStep - 1) / totalSteps,
-          'status': t.dict.downloadingIcon(
-            step: currentStep.toString(),
-            total: totalSteps.toString(),
-          ),
-        };
-
-        final url = Uri.parse(_buildUrl('download/${dict.id}/file/logo.png'));
-        Logger.i('正在下载图标: $url', tag: 'DictionaryStore');
-        final response = await _client
-            .get(url)
-            .timeout(const Duration(seconds: 30));
-
-        if (response.statusCode == 200) {
-          final bodyBytes = response.bodyBytes;
-          if (bodyBytes.isEmpty) {
-            Logger.w('图标下载失败: 响应内容为空', tag: 'DictionaryStore');
-          } else if (!_isValidPng(bodyBytes)) {
-            Logger.w('图标下载失败: 文件不是有效的 PNG 格式', tag: 'DictionaryStore');
-          } else {
-            final logoFile = File(path.join(dictDir, 'logo.png'));
-            await logoFile.writeAsBytes(bodyBytes);
-            Logger.i(
-              '图标下载完成: ${formatBytes(bodyBytes.length)}',
-              tag: 'DictionaryStore',
-            );
-          }
-        } else {
-          Logger.w(
-            '图标下载失败: HTTP ${response.statusCode}',
-            tag: 'DictionaryStore',
-          );
-        }
-      }
-
-      // 3. 下载 database.db
-      if (options.includeDb && dict.hasDatabase) {
-        currentStep++;
-        yield {
-          'type': 'progress',
-          'fileName': 'dictionary.db',
-          'fileIndex': currentStep,
-          'totalFiles': totalSteps,
-          'progress': 0.0,
-          'receivedBytes': 0,
-          'totalBytes': 0,
-          'status': t.dict.downloadingDatabase(
-            step: currentStep.toString(),
-            total: totalSteps.toString(),
-          ),
-        };
-
-        final dbPath = path.join(dictDir, 'dictionary.db');
-        // 无断点续传：先删除可能存在的残余文件，从头重新下载
-        final dbFile = File(dbPath);
-        if (await dbFile.exists()) await dbFile.delete();
-        final url = _buildUrl('download/${dict.id}/file/dictionary.db');
-
-        final request = http.Request('GET', Uri.parse(url));
-        final response = await _client.send(request);
-
-        if (response.statusCode == 200) {
-          final sink = dbFile.openWrite();
-          var receivedBytes = 0;
-          final totalBytes = response.contentLength ?? 0;
-
-          await for (final chunk in response.stream) {
-            sink.add(chunk);
-            receivedBytes += chunk.length;
-
-            yield {
-              'type': 'progress',
-              'fileName': 'dictionary.db',
-              'fileIndex': currentStep,
-              'totalFiles': totalSteps,
-              'progress': totalBytes > 0 ? receivedBytes / totalBytes : 0.0,
-              'receivedBytes': receivedBytes,
-              'totalBytes': totalBytes,
-              'status': totalBytes > 0
-                  ? t.dict.downloadingDatabaseProgress(
-                      step: currentStep.toString(),
-                      total: totalSteps.toString(),
-                      progress: (receivedBytes / totalBytes * 100)
-                          .toInt()
-                          .toString(),
-                    )
-                  : t.dict.downloadingDatabase(
-                      step: currentStep.toString(),
-                      total: totalSteps.toString(),
-                    ),
-            };
-          }
-          await sink.close();
-
-          Logger.i(
-            '数据库下载完成: ${formatBytes(receivedBytes)}',
-            tag: 'DictionaryStore',
-          );
-        } else {
-          throw Exception(
-            t.dict.downloadDbFailedHttp(code: response.statusCode.toString()),
-          );
-        }
-      }
-
-      // 4. 下载媒体数据库
-      if (options.includeMedia && (dict.hasAudios || dict.hasImages)) {
-        currentStep++;
-        yield {
-          'type': 'progress',
-          'fileName': 'media.db',
-          'fileIndex': currentStep,
-          'totalFiles': totalSteps,
-          'progress': 0.0,
-          'receivedBytes': 0,
-          'totalBytes': 0,
-          'status': t.dict.downloadingMedia(
-            step: currentStep.toString(),
-            total: totalSteps.toString(),
-          ),
-        };
-
-        final mediaDbPath = path.join(dictDir, 'media.db');
-        // 无断点续传：先删除可能存在的残余文件，从头重新下载
-        final mediaDbFile = File(mediaDbPath);
-        if (await mediaDbFile.exists()) await mediaDbFile.delete();
-        final url = _buildUrl('download/${dict.id}/file/media.db');
-
-        final request = http.Request('GET', Uri.parse(url));
-        final response = await _client.send(request);
-
-        if (response.statusCode == 200) {
-          final sink = mediaDbFile.openWrite();
-          var receivedBytes = 0;
-          final totalBytes = response.contentLength ?? 0;
-
-          await for (final chunk in response.stream) {
-            sink.add(chunk);
-            receivedBytes += chunk.length;
-
-            yield {
-              'type': 'progress',
-              'fileName': 'media.db',
-              'fileIndex': currentStep,
-              'totalFiles': totalSteps,
-              'progress': totalBytes > 0 ? receivedBytes / totalBytes : 0.0,
-              'receivedBytes': receivedBytes,
-              'totalBytes': totalBytes,
-              'status': totalBytes > 0
-                  ? t.dict.downloadingMediaProgress(
-                      step: currentStep.toString(),
-                      total: totalSteps.toString(),
-                      progress: (receivedBytes / totalBytes * 100)
-                          .toInt()
-                          .toString(),
-                    )
-                  : t.dict.downloadingMedia(
-                      step: currentStep.toString(),
-                      total: totalSteps.toString(),
-                    ),
-            };
-          }
-          await sink.close();
-
-          Logger.i(
-            '媒体数据库下载完成: ${formatBytes(receivedBytes)}',
-            tag: 'DictionaryStore',
-          );
-        } else {
-          throw Exception(
-            t.dict.downloadMediaFailedHttp(
-              code: response.statusCode.toString(),
-            ),
-          );
-        }
-      }
-
-      Logger.i('词典安装完成: ${dict.name}', tag: 'DictionaryStore');
-      yield {'type': 'complete'};
-    } catch (e) {
-      Logger.e('下载词典失败: $e', tag: 'DictionaryStore');
-      yield {'type': 'error', 'error': e.toString()};
-    }
-  }
-
   String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -672,45 +401,103 @@ class DictionaryStoreService {
   /// 下载词典文件（流式版本，实时报告字节进度）
   ///
   /// 事件类型：
-  ///   {'type':'progress','receivedBytes':int,'totalBytes':int,'progress':double,'speedBytesPerSecond':int}
+  ///   {'type':'progress','receivedBytes':int,'totalBytes':int,'progress':double,'speedBytesPerSecond':int,'fileName':String,'fileIndex':int,'totalFiles':int,'status':String}
   ///   {'type':'complete'}
+  ///   {'type':'file_complete','fileName':String}
+  /// [startBytes] 用于断点续传，指定从哪个字节开始下载
+  /// [fileIndex] 当前文件索引（用于多文件下载进度显示）
+  /// [totalFiles] 总文件数（用于多文件下载进度显示）
+  /// [status] 状态文本（可选，用于UI显示）
   Stream<Map<String, dynamic>> downloadDictFileStream(
     String dictId,
     String fileName,
-    String savePath,
-  ) async* {
+    String savePath, {
+    int startBytes = 0,
+    int fileIndex = 1,
+    int totalFiles = 1,
+    String? status,
+  }) async* {
     try {
       final url = Uri.parse(_buildUrl('download/$dictId/file/$fileName'));
-      Logger.i('下载词典文件(流式): $url', tag: 'DictionaryStore');
+      Logger.i(
+        '下载词典文件(流式): $url, startBytes: $startBytes',
+        tag: 'DictionaryStore',
+      );
 
-      // 无断点续传：先关闭可能打开的数据库连接，再删除可能存在的残余文件，从头重新下载
-      final file = File(savePath);
-      await file.parent.create(recursive: true);
-      if (await file.exists()) {
-        // 如果是数据库文件，需要先关闭数据库连接
-        if (fileName == 'dictionary.db') {
-          Logger.d('关闭词典数据库连接以便更新: $dictId', tag: 'DictionaryStore');
-          await DictionaryManager().closeDatabase(dictId);
-        } else if (fileName == 'media.db') {
-          Logger.d('关闭媒体数据库连接以便更新: $dictId', tag: 'DictionaryStore');
-          await DictionaryManager().closeMediaDatabase(dictId);
-        }
-        await file.delete();
+      // 使用 .downloading 临时文件
+      final tempPath = '$savePath.downloading';
+      final tempFile = File(tempPath);
+      final finalFile = File(savePath);
+
+      await tempFile.parent.create(recursive: true);
+
+      // 如果是数据库文件，需要先关闭数据库连接
+      if (fileName == 'dictionary.db') {
+        Logger.d('关闭词典数据库连接以便更新: $dictId', tag: 'DictionaryStore');
+        await DictionaryManager().closeDatabase(dictId);
+      } else if (fileName == 'media.db') {
+        Logger.d('关闭媒体数据库连接以便更新: $dictId', tag: 'DictionaryStore');
+        await DictionaryManager().closeMediaDatabase(dictId);
       }
 
       final request = http.Request('GET', url);
+
+      // 断点续传：添加 Range 头
+      if (startBytes > 0) {
+        // 检查临时文件是否存在且大小匹配
+        if (await tempFile.exists()) {
+          final tempSize = await tempFile.length();
+          if (tempSize != startBytes) {
+            Logger.w(
+              '临时文件大小($tempSize)与请求的起始字节($startBytes)不匹配，从头开始下载',
+              tag: 'DictionaryStore',
+            );
+            startBytes = 0;
+          }
+        } else {
+          Logger.w('临时文件不存在，从头开始下载', tag: 'DictionaryStore');
+          startBytes = 0;
+        }
+      }
+
+      if (startBytes > 0) {
+        request.headers['Range'] = 'bytes=$startBytes-';
+        Logger.i('断点续传: 从 $startBytes 字节开始', tag: 'DictionaryStore');
+      }
+
       final response = await _client
           .send(request)
           .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode != 200) {
+      // 206 Partial Content 表示断点续传成功
+      // 200 OK 表示服务器不支持 Range 或从头开始
+      if (response.statusCode != 200 && response.statusCode != 206) {
         throw Exception('HTTP ${response.statusCode}');
       }
 
-      final totalBytes = response.contentLength ?? 0;
-      final sink = file.openWrite();
+      final isResuming = response.statusCode == 206;
+      final totalBytesFromHeader = response.contentLength ?? 0;
 
-      var downloadedBytes = 0;
+      // 计算实际总字节数
+      // 对于 206 响应，contentLength 是剩余部分的大小
+      final totalBytes = isResuming
+          ? startBytes + totalBytesFromHeader
+          : totalBytesFromHeader;
+
+      // 获取服务器返回的 CRC32 值（仅 dictionary.db 和 media.db 有）
+      final serverCrc32 = response.headers['x-crc32'];
+      final shouldVerifyCrc32 = _shouldVerifyCrc32(fileName);
+
+      if (serverCrc32 != null && shouldVerifyCrc32) {
+        Logger.d('服务器 CRC32: $serverCrc32', tag: 'DictionaryStore');
+      }
+
+      // 以追加模式打开文件（断点续传）或创建新文件
+      final sink = tempFile.openWrite(
+        mode: isResuming ? FileMode.append : FileMode.write,
+      );
+
+      var downloadedBytes = isResuming ? startBytes : 0;
       DateTime? lastSpeedUpdate;
       int speedBytesPerSecond = 0;
 
@@ -734,6 +521,10 @@ class DictionaryStoreService {
             'totalBytes': totalBytes,
             'progress': totalBytes > 0 ? downloadedBytes / totalBytes : 0.0,
             'speedBytesPerSecond': speedBytesPerSecond,
+            'fileName': fileName,
+            'fileIndex': fileIndex,
+            'totalFiles': totalFiles,
+            'status': status,
           };
         }
       } finally {
@@ -744,15 +535,70 @@ class DictionaryStoreService {
         throw Exception(t.dict.responseEmpty);
       }
 
+      // CRC32 校验（仅对 dictionary.db 和 media.db，且服务器返回了 CRC32）
+      if (shouldVerifyCrc32 && serverCrc32 != null && !isResuming) {
+        // 只有完整下载时才校验 CRC32（断点续传时临时文件不完整）
+        Logger.i('开始 CRC32 校验: $fileName', tag: 'DictionaryStore');
+        try {
+          final localCrc32 = await Crc32Utils.calculateFileCrc32(tempFile);
+          Logger.i(
+            'CRC32 校验信息 [$fileName]:\n  - 本地计算: $localCrc32\n  - 服务器返回: $serverCrc32',
+            tag: 'DictionaryStore',
+          );
+
+          if (!Crc32Utils.compareCrc32(localCrc32, serverCrc32)) {
+            // CRC32 校验失败，删除临时文件
+            await tempFile.delete();
+            Logger.e(
+              'CRC32 校验失败 [$fileName]: 本地($localCrc32) != 服务器($serverCrc32)',
+              tag: 'DictionaryStore',
+            );
+            throw Exception(
+              t.dict.crc32Mismatch(
+                file: fileName,
+                expected: serverCrc32,
+                actual: localCrc32,
+              ),
+            );
+          }
+          Logger.i(
+            'CRC32 校验通过 [$fileName]: $localCrc32',
+            tag: 'DictionaryStore',
+          );
+        } catch (e) {
+          // 如果是 CRC32 不匹配异常，直接抛出
+          if (e.toString().contains('CRC32')) {
+            rethrow;
+          }
+          // 其他错误（如文件读取失败）记录日志但不阻止下载
+          Logger.w('CRC32 校验异常: $e', tag: 'DictionaryStore');
+        }
+      } else if (shouldVerifyCrc32 && serverCrc32 == null) {
+        Logger.w('服务器未返回 CRC32 值，跳过校验: $fileName', tag: 'DictionaryStore');
+      } else if (shouldVerifyCrc32 && isResuming) {
+        Logger.i('断点续传模式，跳过 CRC32 校验: $fileName', tag: 'DictionaryStore');
+      }
+
+      // 下载完成，重命名临时文件为正式文件
+      await tempFile.rename(savePath);
+
       Logger.i(
         '文件下载完成: $fileName (${formatBytes(downloadedBytes)})',
         tag: 'DictionaryStore',
       );
+      yield {'type': 'file_complete', 'fileName': fileName};
       yield {'type': 'complete'};
     } catch (e) {
       Logger.e('文件下载异常(流式): $e', tag: 'DictionaryStore');
       yield {'type': 'error', 'error': e.toString()};
     }
+  }
+
+  /// 判断文件是否需要进行 CRC32 校验
+  ///
+  /// 仅 dictionary.db 和 media.db 需要校验
+  bool _shouldVerifyCrc32(String fileName) {
+    return fileName == 'dictionary.db' || fileName == 'media.db';
   }
 
   void dispose() {

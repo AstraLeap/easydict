@@ -59,7 +59,9 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              isError ? context.t.dict.dbDialogTitleError : context.t.dict.dbDialogTitle,
+              isError
+                  ? context.t.dict.dbDialogTitleError
+                  : context.t.dict.dbDialogTitle,
               style: TextStyle(
                 fontSize: 18,
                 color: isError ? Colors.orange : null,
@@ -73,14 +75,20 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '',  // replaced by i18n below
+            '', // replaced by i18n below
           ),
 
           const SizedBox(height: 12),
           _buildFeatureItem(Icons.search, context.t.dict.dbFeatureVariant),
           _buildFeatureItem(Icons.swap_horiz, context.t.dict.dbFeatureAbbr),
-          _buildFeatureItem(Icons.change_history, context.t.dict.dbFeatureNominal),
-          _buildFeatureItem(Icons.format_list_numbered, context.t.dict.dbFeatureInflection),
+          _buildFeatureItem(
+            Icons.change_history,
+            context.t.dict.dbFeatureNominal,
+          ),
+          _buildFeatureItem(
+            Icons.format_list_numbered,
+            context.t.dict.dbFeatureInflection,
+          ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
@@ -247,7 +255,7 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
       'en.db',
       url,
       dbPath,
-      onComplete: () {
+      onComplete: () async {
         Logger.i('EnglishDbDownloadDialog: 下载完成!', tag: 'EnglishDB');
         if (mounted) {
           Navigator.of(context).pop(EnglishDbDownloadResult.downloaded);
