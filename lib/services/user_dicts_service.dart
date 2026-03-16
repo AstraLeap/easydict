@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import '../data/models/user_dictionary.dart';
 import '../core/logger.dart';
+import '../core/utils/crc32_utils.dart';
 import 'auth_service.dart';
 import '../i18n/strings.g.dart';
 
@@ -407,10 +408,29 @@ class UserDictsService {
       files.add(('media_file', tempMediaFile, 'media.db'));
     }
 
+    // 计算 CRC32 值（直接使用原文件）
+    final fields = <String, String>{};
+    Logger.i('开始计算上传文件的 CRC32...', tag: 'UserDictsService');
+    fields['dictionary_crc32'] = await Crc32Utils.calculateFileCrc32(
+      dictionaryFile,
+    );
+    Logger.i(
+      'CRC32 计算完成 [dictionary.db]: ${fields['dictionary_crc32']}',
+      tag: 'UserDictsService',
+    );
+
+    if (mediaFile != null) {
+      fields['media_crc32'] = await Crc32Utils.calculateFileCrc32(mediaFile);
+      Logger.i(
+        'CRC32 计算完成 [media.db]: ${fields['media_crc32']}',
+        tag: 'UserDictsService',
+      );
+    }
+
     return _uploadWithProgress(
       endpoint: '',
       method: 'POST',
-      fields: {},
+      fields: fields,
       files: files,
       onProgress: onProgress,
     );
@@ -571,10 +591,35 @@ class UserDictsService {
       );
     }
 
+    // 计算 CRC32 值（只计算上传的数据库文件，直接使用原文件）
+    final fields = <String, String>{'message': message};
+
+    if (dictionaryFile != null || mediaFile != null) {
+      Logger.i('开始计算更新文件的 CRC32...', tag: 'UserDictsService');
+    }
+
+    if (dictionaryFile != null) {
+      fields['dictionary_crc32'] = await Crc32Utils.calculateFileCrc32(
+        dictionaryFile,
+      );
+      Logger.i(
+        'CRC32 计算完成 [dictionary.db]: ${fields['dictionary_crc32']}',
+        tag: 'UserDictsService',
+      );
+    }
+
+    if (mediaFile != null) {
+      fields['media_crc32'] = await Crc32Utils.calculateFileCrc32(mediaFile);
+      Logger.i(
+        'CRC32 计算完成 [media.db]: ${fields['media_crc32']}',
+        tag: 'UserDictsService',
+      );
+    }
+
     return _uploadWithProgress(
       endpoint: dictId,
       method: 'POST',
-      fields: {'message': message},
+      fields: fields,
       files: files,
       onProgress: onProgress,
     );
