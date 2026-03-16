@@ -4326,6 +4326,242 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
+  /// 创建统一的手势识别器，支持点击、右键和长按
+  _MultiGestureRecognizer _createGestureRecognizer({
+    required String pathKey,
+    required String label,
+    required List<String> path,
+    required BuildContext context,
+  }) {
+    final tapRecognizer = TapGestureRecognizer()
+      ..onTapDown = (details) {
+        _lastTapPosition = details.globalPosition;
+      }
+      ..onTap = () {
+        _handleElementTap(pathKey, label);
+      };
+
+    final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+      ..onSecondaryTapUp = (details) {
+        _lastTapPosition = details.globalPosition;
+        _handleElementSecondaryTap(
+          _convertPathToString(path),
+          label,
+          context,
+          details.globalPosition,
+        );
+      };
+
+    final longPressRecognizer = LongPressGestureRecognizer()
+      ..onLongPressStart = (details) {
+        _lastTapPosition = details.globalPosition;
+        _handleElementSecondaryTap(
+          _convertPathToString(path),
+          label,
+          context,
+          details.globalPosition,
+        );
+      };
+
+    _recognizers.addAll([
+      tapRecognizer,
+      secondaryTapRecognizer,
+      longPressRecognizer,
+    ]);
+
+    return _MultiGestureRecognizer(
+      tapRecognizer: tapRecognizer,
+      secondaryTapRecognizer: secondaryTapRecognizer,
+      longPressRecognizer: longPressRecognizer,
+      doubleTapRecognizer: null,
+    );
+  }
+
+  /// label 子元素的样式配置
+  static const _labelStyleConfig = {
+    'word': (
+      isPlain: true,
+      fontSize: 16.5,
+      fontWeight: FontWeight.bold,
+      isSerif: true,
+      format: 'none',
+    ),
+    'pos': (
+      isPlain: true,
+      fontSize: null,
+      fontWeight: FontWeight.w500,
+      isSerif: false,
+      format: 'none',
+    ),
+    'grammar': (
+      isPlain: true,
+      fontSize: 15.0,
+      fontWeight: FontWeight.w500,
+      isSerif: false,
+      format: 'bracket',
+    ),
+    'pronunciation': (
+      isPlain: true,
+      fontSize: 15.0,
+      fontWeight: null,
+      isSerif: false,
+      format: 'none',
+    ),
+    'variant': (
+      isPlain: true,
+      fontSize: 15.0,
+      fontWeight: FontWeight.w500,
+      isSerif: true,
+      format: 'none',
+    ),
+    'region': (
+      isPlain: true,
+      fontSize: 15.0,
+      fontWeight: FontWeight.w500,
+      isSerif: false,
+      format: 'none',
+    ),
+    'pattern': (
+      isPlain: false,
+      fontSize: 15.0,
+      fontWeight: FontWeight.w500,
+      isSerif: false,
+      format: 'bracket',
+    ),
+    'complex': (
+      isPlain: true,
+      fontSize: 15.0,
+      fontWeight: null,
+      isSerif: false,
+      format: 'corner',
+    ),
+  };
+
+  /// 获取 label 子元素的样式
+  TextStyle _getLabelElementStyle(
+    BuildContext context,
+    String key, {
+    Color? overrideColor,
+    double? fontSize,
+    FontWeight? fontWeight,
+    bool isSerif = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = overrideColor ?? colorScheme.primary;
+
+    if (key == 'pos') {
+      return DictTypography.getScaledStyle(
+        DictElementType.pos,
+        language: _sourceLanguage,
+        fontScales: _fontScales,
+        color: color,
+      ).copyWith(fontWeight: fontWeight ?? FontWeight.w500);
+    }
+
+    final baseStyle = DictTypography.getBaseStyle(
+      DictElementType.labelPattern,
+      color: key == 'word' ? colorScheme.onSurface : color,
+    );
+
+    TextStyle style = baseStyle;
+    if (fontSize != null) {
+      style = style.copyWith(fontSize: fontSize);
+    }
+    if (fontWeight != null) {
+      style = style.copyWith(fontWeight: fontWeight);
+    }
+    if (isSerif) {
+      final serifFont = FontLoaderService().getFontInfo(
+        _sourceLanguage ?? '',
+        isSerif: true,
+      );
+      if (serifFont != null) {
+        style = style.copyWith(fontFamily: serifFont.fontFamily);
+      }
+    }
+
+    return style;
+  }
+
+  /// 格式化 label 子元素的文本
+  String _formatLabelText(String key, String value) {
+    final format = _labelStyleConfig[key]?.format ?? 'none';
+    switch (format) {
+      case 'bracket':
+        return '[$value]';
+      case 'corner':
+        return '「$value」';
+      default:
+        return value;
+    }
+  }
+
+  /// 构建单个 label 子元素的 InlineSpan（统一处理所有子元素）
+  InlineSpan _buildLabelElementSpan(
+    BuildContext context,
+    String key,
+    String text, {
+    int? index,
+    String labelPrefix = 'label',
+    Color? overrideColor,
+    double? fontSize,
+    FontWeight? fontWeight,
+    bool isSerif = false,
+    bool isPlain = true,
+    bool hasBackground = false,
+    bool isPattern = false,
+  }) {
+    final pathKey = index != null
+        ? '$labelPrefix.$key.$index'
+        : '$labelPrefix.$key';
+    final path = [...PathScope.of(context), pathKey];
+    final label = _capitalizeFirst(key);
+
+    // 获取样式
+    final style = _getLabelElementStyle(
+      context,
+      key,
+      overrideColor: overrideColor,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      isSerif: isSerif,
+    );
+
+    // 纯文本标签使用 TextSpan
+    if (isPlain) {
+      final recognizer = _createGestureRecognizer(
+        pathKey: pathKey,
+        label: label,
+        path: path,
+        context: context,
+      );
+
+      return TextSpan(text: text, style: style, recognizer: recognizer);
+    }
+
+    // 带背景的标签使用 WidgetSpan
+    final labelWidget = _buildLabelWidget(
+      context,
+      text,
+      key,
+      hasBackground,
+      index: index,
+      labelPrefix: labelPrefix,
+      isPattern: isPattern,
+      overrideColor: overrideColor,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+    );
+
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.middle,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: labelWidget,
+      ),
+    );
+  }
+
   List<InlineSpan> _buildLabelInlineSpans(
     BuildContext context,
     Map<String, dynamic>? label, {
@@ -4335,162 +4571,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final spans = <InlineSpan>[];
 
-    // signpost 显示在所有 label 元素之前
-    final signpostValue = label['signpost'];
-    if (signpostValue != null) {
-      final signpostText = signpostValue is String
-          ? signpostValue
-          : '$signpostValue';
-      spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Transform.translate(
-            offset: const Offset(0, 1),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _buildSignpostWidget(
-                context,
-                signpostText,
-                labelPrefix: labelPrefix,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // word field
-    final wordValue = label['word'];
-    if (wordValue != null) {
-      final wordText = wordValue is String ? wordValue : '$wordValue';
-      final wordColor = Theme.of(context).colorScheme.onSurface;
-      final serifFont = FontLoaderService().getFontInfo(
-        _sourceLanguage ?? '',
-        isSerif: true,
-      );
-      final wordPath = [...PathScope.of(context), '$labelPrefix.word'];
-      final wordStyle =
-          DictTypography.getBaseStyle(
-            DictElementType.labelPattern,
-            color: wordColor,
-          ).copyWith(
-            fontWeight: FontWeight.bold,
-            fontSize: 16.5,
-            fontFamily: serifFont?.fontFamily,
-          );
-
-      final wordTapRecognizer = TapGestureRecognizer()
-        ..onTapDown = (details) {
-          _lastTapPosition = details.globalPosition;
-        }
-        ..onTap = () {
-          _handleElementTap('$labelPrefix.word', 'word');
-        };
-
-      final wordSecondaryTapRecognizer = _SecondaryTapGestureRecognizer()
-        ..onSecondaryTapUp = (details) {
-          _lastTapPosition = details.globalPosition;
-          _handleElementSecondaryTap(
-            _convertPathToString(wordPath),
-            'word',
-            context,
-            details.globalPosition,
-          );
-        };
-
-      final wordLongPressRecognizer = LongPressGestureRecognizer()
-        ..onLongPressStart = (details) {
-          _lastTapPosition = details.globalPosition;
-          _handleElementSecondaryTap(
-            _convertPathToString(wordPath),
-            'word',
-            context,
-            details.globalPosition,
-          );
-        };
-
-      _recognizers.addAll([
-        wordTapRecognizer,
-        wordSecondaryTapRecognizer,
-        wordLongPressRecognizer,
-      ]);
-
-      final wordRecognizer = _MultiGestureRecognizer(
-        tapRecognizer: wordTapRecognizer,
-        secondaryTapRecognizer: wordSecondaryTapRecognizer,
-        longPressRecognizer: wordLongPressRecognizer,
-        doubleTapRecognizer: null,
-      );
-
-      spans.add(
-        TextSpan(text: wordText, style: wordStyle, recognizer: wordRecognizer),
-      );
-      spans.add(const TextSpan(text: '  '));
-    }
-
-    // pos 字段 - 使用专用 DictElementType.pos 样式
-    final posValue = label['pos'];
-    if (posValue != null) {
-      final posText = posValue is String ? posValue : '$posValue';
-      final posColor = Theme.of(context).colorScheme.primary;
-      final posPath = [...PathScope.of(context), '$labelPrefix.pos'];
-      final posStyle = DictTypography.getScaledStyle(
-        DictElementType.pos,
-        language: _sourceLanguage,
-        fontScales: _fontScales,
-        color: posColor,
-      ).copyWith(fontWeight: FontWeight.w500);
-
-      final posTapRecognizer = TapGestureRecognizer()
-        ..onTapDown = (details) {
-          _lastTapPosition = details.globalPosition;
-        }
-        ..onTap = () {
-          _handleElementTap('$labelPrefix.pos', 'pos');
-        };
-
-      final posSecondaryTapRecognizer = _SecondaryTapGestureRecognizer()
-        ..onSecondaryTapUp = (details) {
-          _lastTapPosition = details.globalPosition;
-          _handleElementSecondaryTap(
-            _convertPathToString(posPath),
-            'pos',
-            context,
-            details.globalPosition,
-          );
-        };
-
-      final posLongPressRecognizer = LongPressGestureRecognizer()
-        ..onLongPressStart = (details) {
-          _lastTapPosition = details.globalPosition;
-          _handleElementSecondaryTap(
-            _convertPathToString(posPath),
-            'pos',
-            context,
-            details.globalPosition,
-          );
-        };
-
-      _recognizers.addAll([
-        posTapRecognizer,
-        posSecondaryTapRecognizer,
-        posLongPressRecognizer,
-      ]);
-
-      final posRecognizer = _MultiGestureRecognizer(
-        tapRecognizer: posTapRecognizer,
-        secondaryTapRecognizer: posSecondaryTapRecognizer,
-        longPressRecognizer: posLongPressRecognizer,
-        doubleTapRecognizer: null,
-      );
-
-      spans.add(
-        TextSpan(text: posText, style: posStyle, recognizer: posRecognizer),
-      );
-      spans.add(const TextSpan(text: '  '));
-    }
-
-    final order = [
+    // 定义渲染顺序（signpost 最先，word 和 pos 其次，然后是其他）
+    final renderOrder = [
+      'signpost',
+      'word',
+      'pos',
       'grammar',
       'pronunciation',
       'variant',
@@ -4503,185 +4588,161 @@ class ComponentRendererState extends State<ComponentRenderer> {
       'topic',
     ];
 
-    for (final key in order) {
+    // 已处理的 key
+    final processedKeys = <String>{};
+
+    for (final key in renderOrder) {
       final value = label[key];
-      if (value == null || key == 'pos') continue;
+      if (value == null) continue;
+      processedKeys.add(key);
 
-      final isPronunciation = key == 'pronunciation';
-      final isComplex = key == 'complex';
-      final isVariant = key == 'variant';
-      final isGrammar = key == 'grammar';
-      final isRegion = key == 'region';
-      final isPlain =
-          key == 'pattern' ||
-          isRegion ||
-          isGrammar ||
-          isVariant ||
-          isPronunciation ||
-          isComplex;
-      final hasBackground = !isPlain && key != 'pos';
-      final pronunciationOverride = isPronunciation
-          ? Theme.of(context).colorScheme.onSurface
-          : null;
-      final displayValue = isPronunciation
-          ? (value is String ? value : '$value')
-          : (value is String ? value : '$value');
+      // signpost 特殊处理（使用 Widget）
+      if (key == 'signpost') {
+        final signpostText = value is String ? value : '$value';
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.translate(
+              offset: const Offset(0, 1),
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _buildSignpostWidget(
+                  context,
+                  signpostText,
+                  labelPrefix: labelPrefix,
+                ),
+              ),
+            ),
+          ),
+        );
+        continue;
+      }
 
-      // region、variant 字体更大
-      final largerFontSize = (isRegion) ? 15.0 : null;
-      // grammar、pronunciation、pattern 字体稍大
-      final mediumFontSize =
-          (isGrammar || isPronunciation || isVariant || key == 'pattern')
-          ? 15.0
-          : null;
-      // variant、grammar、region、pattern 使用 500 字重
-      final fontWeight =
-          (isVariant || isGrammar || isRegion || key == 'pattern')
-          ? FontWeight.w500
-          : null;
+      // 获取样式配置
+      final config = _labelStyleConfig[key];
+      final isPlain = config?.isPlain ?? false;
+      final hasBackground = !isPlain;
+      final isPattern = key == 'pattern';
 
+      // 获取颜色覆盖
+      Color? overrideColor;
+      if (key == 'pronunciation') {
+        overrideColor = Theme.of(context).colorScheme.onSurface;
+      } else if (key == 'word') {
+        overrideColor = Theme.of(context).colorScheme.onSurface;
+      }
+
+      // 处理值（可能是字符串或列表）
       if (value is List<dynamic>) {
         for (int i = 0; i < value.length; i++) {
           final item = value[i];
           final itemValue = item is String ? item : '$item';
-          final formattedValue = key == 'pattern'
-              ? '[$itemValue]'
-              : (isGrammar
-                    ? '[$itemValue]'
-                    : (isComplex ? '「$itemValue」' : itemValue));
-          // 纯文本标签（非pattern）直接使用TextSpan，与普通文本baseline对齐
-          if (isPlain && key != 'pattern') {
+          final formattedValue = _formatLabelText(key, itemValue);
+
+          if (isPlain) {
             spans.add(
-              _buildPlainLabelInlineSpan(
+              _buildLabelElementSpan(
                 context,
-                formattedValue,
                 key,
+                formattedValue,
                 index: i,
                 labelPrefix: labelPrefix,
-                overrideColor: pronunciationOverride,
-                fontSize: isComplex ? 15.0 : (largerFontSize ?? mediumFontSize),
-                fontWeight: fontWeight,
-                isVariant: isVariant,
+                overrideColor: overrideColor,
+                fontSize: config?.fontSize,
+                fontWeight: config?.fontWeight,
+                isSerif: config?.isSerif ?? false,
+                isPlain: isPlain,
               ),
             );
-            // 添加间距
             spans.add(const TextSpan(text: '  '));
           } else {
-            final labelWidget = _buildLabelWidget(
-              context,
-              formattedValue,
-              key,
-              hasBackground,
-              index: i,
-              labelPrefix: labelPrefix,
-              isPattern: key == 'pattern',
-              overrideColor: pronunciationOverride,
-              fontSize: isComplex ? 15.0 : (largerFontSize ?? mediumFontSize),
-              fontWeight: fontWeight,
-            );
             spans.add(
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: labelWidget,
-                ),
+              _buildLabelElementSpan(
+                context,
+                key,
+                formattedValue,
+                index: i,
+                labelPrefix: labelPrefix,
+                overrideColor: overrideColor,
+                fontSize: config?.fontSize,
+                fontWeight: config?.fontWeight,
+                isPlain: isPlain,
+                hasBackground: hasBackground,
+                isPattern: isPattern,
               ),
             );
           }
         }
       } else {
-        final formattedValue = key == 'pattern'
-            ? '[$displayValue]'
-            : (isGrammar
-                  ? '[$displayValue]'
-                  : (isComplex ? '「$displayValue」' : displayValue));
-        // 纯文本标签（非pattern）直接使用TextSpan，与普通文本baseline对齐
-        if (isPlain && key != 'pattern') {
+        final displayValue = value is String ? value : '$value';
+        final formattedValue = _formatLabelText(key, displayValue);
+
+        if (isPlain) {
           spans.add(
-            _buildPlainLabelInlineSpan(
+            _buildLabelElementSpan(
               context,
-              formattedValue,
               key,
+              formattedValue,
               labelPrefix: labelPrefix,
-              overrideColor: pronunciationOverride,
-              fontSize: isComplex ? 15.0 : (largerFontSize ?? mediumFontSize),
-              fontWeight: fontWeight,
-              isVariant: isVariant,
+              overrideColor: overrideColor,
+              fontSize: config?.fontSize,
+              fontWeight: config?.fontWeight,
+              isSerif: config?.isSerif ?? false,
+              isPlain: isPlain,
             ),
           );
-          // 添加间距
           spans.add(const TextSpan(text: '  '));
         } else {
-          final labelWidget = _buildLabelWidget(
-            context,
-            formattedValue,
-            key,
-            hasBackground,
-            labelPrefix: labelPrefix,
-            isPattern: key == 'pattern',
-            overrideColor: pronunciationOverride,
-            fontSize: isComplex ? 15.0 : (largerFontSize ?? mediumFontSize),
-            fontWeight: fontWeight,
-          );
           spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: labelWidget,
-              ),
+            _buildLabelElementSpan(
+              context,
+              key,
+              formattedValue,
+              labelPrefix: labelPrefix,
+              overrideColor: overrideColor,
+              fontSize: config?.fontSize,
+              fontWeight: config?.fontWeight,
+              isPlain: isPlain,
+              hasBackground: hasBackground,
+              isPattern: isPattern,
             ),
           );
         }
       }
     }
 
-    // 渲染 order 中未包含的额外 label key（pos、signpost、word 除外）
+    // 渲染未在 renderOrder 中定义的其他 label key
     for (final key in label.keys) {
-      if (key == 'pos') continue;
-      if (key == 'signpost') continue; // signpost 已在最前单独处理
-      if (key == 'word') continue; // word 已单独处理
-      if (order.contains(key)) continue;
+      if (processedKeys.contains(key)) continue;
       final value = label[key];
       if (value == null) continue;
-      const hasBackground = true;
+
       if (value is List<dynamic>) {
         for (int i = 0; i < value.length; i++) {
           final item = value[i];
           final itemValue = item is String ? item : '$item';
           spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _buildLabelWidget(
-                  context,
-                  itemValue,
-                  key,
-                  hasBackground,
-                  index: i,
-                  labelPrefix: labelPrefix,
-                ),
-              ),
+            _buildLabelElementSpan(
+              context,
+              key,
+              itemValue,
+              index: i,
+              labelPrefix: labelPrefix,
+              isPlain: false,
+              hasBackground: true,
             ),
           );
         }
       } else {
         final displayValue = value is String ? value : '$value';
         spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _buildLabelWidget(
-                context,
-                displayValue,
-                key,
-                hasBackground,
-                labelPrefix: labelPrefix,
-              ),
-            ),
+          _buildLabelElementSpan(
+            context,
+            key,
+            displayValue,
+            labelPrefix: labelPrefix,
+            isPlain: false,
+            hasBackground: true,
           ),
         );
       }
@@ -4740,104 +4801,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
         },
       ),
     );
-  }
-
-  InlineSpan _buildPlainLabelInlineSpan(
-    BuildContext context,
-    String text,
-    String key, {
-    int? index,
-    Color? overrideColor,
-    String labelPrefix = 'label',
-    bool isBold = false,
-    double? fontSize,
-    FontWeight? fontWeight,
-    bool isVariant = false,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final pathKey = index != null
-        ? '$labelPrefix.$key.$index'
-        : '$labelPrefix.$key';
-    final path = [...PathScope.of(context), pathKey];
-
-    final serifFont = isVariant
-        ? FontLoaderService().getFontInfo(_sourceLanguage ?? '', isSerif: true)
-        : null;
-
-    final textStyle =
-        DictTypography.getBaseStyle(
-          DictElementType.labelPattern,
-          color: isVariant
-              ? colorScheme.onSurface
-              : (overrideColor ?? colorScheme.primary),
-        ).copyWith(
-          fontWeight:
-              fontWeight ?? (isBold ? FontWeight.bold : FontWeight.normal),
-          fontSize: fontSize,
-          fontFamily: serifFont?.fontFamily,
-        );
-
-    final tapRecognizer = TapGestureRecognizer()
-      ..onTapDown = (details) {
-        _lastTapPosition = details.globalPosition;
-      }
-      ..onTap = () {
-        _handleElementTap(pathKey, key);
-      };
-
-    final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
-      ..onSecondaryTapUp = (details) {
-        _lastTapPosition = details.globalPosition;
-        _handleElementSecondaryTap(
-          _convertPathToString(path),
-          key,
-          context,
-          details.globalPosition,
-        );
-      };
-
-    final longPressRecognizer = LongPressGestureRecognizer()
-      ..onLongPressStart = (details) {
-        _lastTapPosition = details.globalPosition;
-        _handleElementSecondaryTap(
-          _convertPathToString(path),
-          key,
-          context,
-          details.globalPosition,
-        );
-      };
-
-    _recognizers.addAll([
-      tapRecognizer,
-      secondaryTapRecognizer,
-      longPressRecognizer,
-    ]);
-
-    final recognizer = _MultiGestureRecognizer(
-      tapRecognizer: tapRecognizer,
-      secondaryTapRecognizer: secondaryTapRecognizer,
-      longPressRecognizer: longPressRecognizer,
-      doubleTapRecognizer: null,
-    );
-
-    // 使用 _parseFormattedText 渲染格式化文本
-    final result = _parseFormattedText(
-      text,
-      textStyle,
-      context: context,
-      path: path,
-      label: key,
-      recognizer: recognizer,
-      elementType: DictElementType.labelPattern,
-    );
-
-    // 如果只有一个 span，直接返回
-    if (result.spans.length == 1) {
-      return result.spans.first;
-    }
-
-    // 否则返回包含所有 spans 的 TextSpan
-    return TextSpan(children: result.spans);
   }
 
   Widget _buildLabelWidget(
