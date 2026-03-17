@@ -996,12 +996,22 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         : const Icon(Icons.refresh, size: 16),
                     visualDensity: VisualDensity.compact,
                     tooltip: context.t.search.dailyWordsRefresh,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                   IconButton(
                     onPressed: () => _showDailyWordsSettingsDialog(),
                     icon: const Icon(Icons.settings_outlined, size: 16),
                     visualDensity: VisualDensity.compact,
                     tooltip: context.t.search.dailyWordsSettings,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                 ],
               ],

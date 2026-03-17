@@ -79,30 +79,45 @@ flutter build windows --dart-define=LOG_TO_FILE=true
 CREATE TABLE config (
     key TEXT PRIMARY KEY,--唯一键值为'zstd_dict'
     value BLOB --这里储存zstd的字典，用于压缩和解压
-);--必要的表，只有一行
+);--只有一行
 
 CREATE TABLE entries (
-    entry_id INTEGER PRIMARY KEY,--必要字段
-    headword TEXT,--必要字段，不需要建立索引
-    headword_normalized TEXT,--必要字段。建立索引
-    phonetic TEXT,--非必要字段，仅表意文字使用此字段。建立索引
-    entry_type TEXT,--必要字段
-    page TEXT,--必要字段
-    section TEXT,--必要字段
-    json_data BLOB--必要字段，储存使用zstd压缩后的json数据
-);--必要的表
+    entry_id INTEGER PRIMARY KEY,
+    json_data BLOB--储存使用zstd压缩后的json数据
+);--数据表
 
-CREATE INDEX idx_entry_id ON entries(entry_id);
-if "表意文字":
-    CREATE INDEX idx_phonetic ON entries(phonetic, headword_normalized, headword)
-    CREATE INDEX idx_headword ON entries(headword_normalized, phonetic, headword)
-else:
-    CREATE INDEX idx_headword ON entries(headword_normalized, headword)
+CREATE TABLE indices (
+    id INTEGER PRIMARY KEY,
+    headword TEXT NOT NULL,--原始headword
+    headword_normalized TEXT NOT NULL,--标准化后的headword。建立索引
+    phonetic TEXT,--标准化后的phonetic。建立索引
+    entry_type TEXT,--entry类型
+    entry_id INTEGER NOT NULL,--关联entries表
+    anchor TEXT,--JSON路径，用于定位词条内的具体位置
+    FOREIGN KEY (entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
+);--索引表，每个entry可能有多条索引记录
+
+CREATE INDEX idx_headword_norm ON indices(headword_normalized);
+CREATE INDEX idx_phonetic ON indices(phonetic);
+CREATE INDEX idx_indices_entry_id ON indices(entry_id);
 ```
+
+### indices 表说明
+
+indices 表用于存储词条的索引信息，支持一个词条对应多个索引记录：
+
+- **headword 来源**（按优先级）：
+    1. JSON 中的 `headword` 字段
+    2. `headline` 字段中的 `[text](headword)` 格式标签
+    3. 递归搜索 JSON 中所有 `[text](anchor)` 格式标签
+
+- **anchor 字段**：
+    - 当 headword 来自 `headword` 或 `headline` 时，anchor 为空字符串
+    - 当 headword 来自 `[text](anchor)` 时，anchor 为 JSON 路径，格式如 `sense_group.0.sense.0.label.pattern.0`
 
 ## media.db
 
-制作词典时可使用本项目的`auxi_tools/build_media_db.py`脚本，将多媒体文件转换为sqlite数据库。
+制作词典时可使用本项目的`auxi_tools/build_media_db.py`脚本，将多媒体文件转换为sqlite数据库，该脚本可递归处理子文件夹。
 
 ```sql
 CREATE TABLE audios (

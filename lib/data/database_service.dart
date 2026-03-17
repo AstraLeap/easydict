@@ -65,7 +65,11 @@ class JsonParseParams {
 /// 精确匹配就是直接比较 headword 和 originalWord，不做任何转换
 /// - 表音文字（如英语）：大小写敏感，headword 必须与 originalWord 完全相同
 /// - 表意文字（如中文）：简繁敏感，headword 必须与 originalWord 完全相同
-bool _headwordMatchesExact(String headword, String originalWord, bool isBiaoyi) {
+bool _headwordMatchesExact(
+  String headword,
+  String originalWord,
+  bool isBiaoyi,
+) {
   // 精确匹配：直接比较，不做任何转换
   return headword == originalWord;
 }
@@ -551,7 +555,8 @@ class DatabaseService {
   /// 3. 小写化
   /// 4. 去除音调符号（Unicode 组合字符）
   /// 5. 去除两端空格（与数据库构建时的 normalize_text 保持一致，内部空格保留）
-  String _normalizeSearchWord(String word) {
+  /// 6. [removeSpaces] 为 true 时去除所有空格（用于 phonetic 字段）
+  String _normalizeSearchWord(String word, {bool removeSpaces = false}) {
     // RFC 3986: 解码百分号编码（URI/URL 编码）
     // 例如：%20 → 空格，%C3%A9 → é，%E4%B8%AD%E6%96%87 → 中文
     if (word.contains('%')) {
@@ -572,24 +577,9 @@ class DatabaseService {
     normalized = normalized.replaceAll(_diacriticsRegExp, '');
     // 去除两端空格（与数据库构建时的 normalize_text 保持一致，内部空格保留）
     normalized = normalized.trim();
-    return normalized;
-  }
-
-  /// 用于写入数据库时规范化文本，与 build_db_from_jsonl.py 的 normalize_text() 保持一致。
-  /// - [removeSpaces] 为 true 时去除空格（用于 phonetic 字段）；headword_normalized 不去空格。
-  /// - 含有中文字符时转化为简体（与搜索端保持一致）。
-  static String _normalizeForInsert(String text, {bool removeSpaces = false}) {
-    // 小写化 + 去除音调符号 + strip
-    String normalized = text
-        .toLowerCase()
-        .replaceAll(_diacriticsRegExp, '')
-        .trim();
+    // 去除所有空格（用于 phonetic 字段）
     if (removeSpaces) {
       normalized = normalized.replaceAll(' ', '');
-    }
-    // 含中文字符时繁转简
-    if (_chineseRegExp.hasMatch(normalized)) {
-      normalized = ChineseConvertService().convertToSimplified(normalized);
     }
     return normalized;
   }
@@ -1743,7 +1733,7 @@ class DatabaseService {
 
       // 同时更新 indices 表
       if (result > 0) {
-        final headwordNormalized = _normalizeForInsert(entry.headword);
+        final headwordNormalized = _normalizeSearchWord(entry.headword);
 
         // 表意词典：从 JSON 根节点读取 phonetic 字段并规范化
         String? phoneticNormalized;
@@ -1751,7 +1741,7 @@ class DatabaseService {
           final rawJson = entry.toJson();
           final phoneticRaw = rawJson['phonetic']?.toString() ?? '';
           if (phoneticRaw.isNotEmpty) {
-            phoneticNormalized = _normalizeForInsert(
+            phoneticNormalized = _normalizeSearchWord(
               phoneticRaw,
               removeSpaces: true,
             );
