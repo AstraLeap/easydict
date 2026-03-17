@@ -4409,14 +4409,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     ),
     'variant': (
       isPlain: true,
-      fontSize: 16.0,
+      fontSize: 15.5,
       fontWeight: FontWeight.w600,
       isSerif: true,
       format: 'none',
     ),
     'region': (
       isPlain: true,
-      fontSize: 16.0,
+      fontSize: 15.5,
       fontWeight: FontWeight.w500,
       isSerif: false,
       format: 'none',
@@ -4507,18 +4507,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final path = [...PathScope.of(context), pathKey];
     final label = _capitalizeFirst(key);
 
-    // 获取样式
-    final style = _getLabelElementStyle(
-      context,
-      key,
-      overrideColor: overrideColor,
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      isSerif: isSerif,
-    );
-
-    // 纯文本标签也需要支持格式化文本
+    // 纯文本标签：获取样式并支持格式化文本
     if (isPlain) {
+      final style = _getLabelElementStyle(
+        context,
+        key,
+        overrideColor: overrideColor,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        isSerif: isSerif,
+      );
       final result = _parseFormattedText(
         text,
         style,
@@ -4535,7 +4533,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return TextSpan(children: result.spans, recognizer: recognizer);
     }
 
-    // 带背景的标签使用 WidgetSpan
+    // 带背景的标签使用 WidgetSpan（样式在 _buildLabelWidget 内部处理）
     final labelWidget = _buildLabelWidget(
       context,
       text,
@@ -4554,7 +4552,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return WidgetSpan(
       alignment: PlaceholderAlignment.middle,
       child: Padding(
-        padding: EdgeInsets.only(right: 8, top: needsVerticalOffset ? 3 : 0),
+        padding: EdgeInsets.only(right: 8, top: needsVerticalOffset ? 1 : 0),
         child: labelWidget,
       ),
     );
@@ -4760,13 +4758,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Color? overrideColor,
     String labelPrefix = 'label',
     bool isPattern = false,
-    bool isBold = false,
-    bool isSerif = false,
     double? fontSize,
     FontWeight? fontWeight,
   }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final pathKey = index != null
         ? '$labelPrefix.$key.$index'
         : '$labelPrefix.$key';
@@ -4780,8 +4775,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             DictElementType.labelPattern,
             color: overrideColor ?? colorScheme.primary,
           ).copyWith(
-            fontWeight:
-                fontWeight ?? (isBold ? FontWeight.bold : FontWeight.normal),
+            fontWeight: fontWeight ?? FontWeight.normal,
             fontSize: fontSize,
           );
     } else {
@@ -4798,15 +4792,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
             fontSize: defaultFontSize,
             height: defaultLineHeight,
           );
-    }
-    if (isSerif) {
-      final serifFont = FontLoaderService().getFontInfo(
-        _sourceLanguage ?? '',
-        isSerif: true,
-      );
-      if (serifFont != null) {
-        textStyle = textStyle.copyWith(fontFamily: serifFont.fontFamily);
-      }
     }
 
     final elementType = hasBackground
