@@ -1225,11 +1225,11 @@ class TranslationsCloudZh {
 	/// zh: '导入'
 	String get importTab => '导入';
 
-	/// zh: '删除/搜索'
-	String get deleteSearchTab => '删除/搜索';
+	/// zh: '删除'
+	String get deleteSearchTab => '删除';
 
-	/// zh: '输入JSONL内容，每行一个词条...'
-	String get importJsonPlaceholder => '输入JSONL内容，每行一个词条...';
+	/// zh: '粘贴 JSON 或 JSONL 格式数据...'
+	String get importJsonPlaceholder => '粘贴 JSON 或 JSONL 格式数据...';
 
 	/// zh: '清空'
 	String get clearLabel => '清空';
@@ -2812,8 +2812,8 @@ extension on Translations {
 			'cloud.deleteFailedError' => ({required Object error}) => '删除失败: ${error}',
 			'cloud.updateJsonTitle' => '更新词条数据',
 			'cloud.importTab' => '导入',
-			'cloud.deleteSearchTab' => '删除/搜索',
-			'cloud.importJsonPlaceholder' => '输入JSONL内容，每行一个词条...',
+			'cloud.deleteSearchTab' => '删除',
+			'cloud.importJsonPlaceholder' => '粘贴 JSON 或 JSONL 格式数据...',
 			'cloud.clearLabel' => '清空',
 			'cloud.importing' => '导入中...',
 			'cloud.writingToDb' => '写入数据库',
