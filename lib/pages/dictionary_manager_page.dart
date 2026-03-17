@@ -5,7 +5,6 @@ import 'package:reorderables/reorderables.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'entries_list_sheet.dart';
 import 'cloud_service_page.dart'
     show
         PushUpdatesDialog,
@@ -24,7 +23,6 @@ import '../data/models/dictionary_metadata.dart';
 import '../data/models/remote_dictionary.dart';
 import '../data/models/user_dictionary.dart' hide DictionaryEntry;
 import '../data/models/user_dictionary.dart' as user_dict;
-import '../data/database_service.dart' hide DictionaryEntry;
 import '../data/database_service.dart' as db_service;
 import '../core/logger.dart';
 import '../core/utils/language_utils.dart';
@@ -2931,9 +2929,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                     label: context.t.dict.entryCount,
                     value: '${_stats!.entryCount}',
                     color: colorScheme.primary,
-                    onTap: _stats!.entryCount > 0
-                        ? () => _showEntriesList(widget.metadata.id)
-                        : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -3025,17 +3020,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
     }
 
     return child;
-  }
-
-  Future<void> _showEntriesList(String dictId) async {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      builder: (context) {
-        return EntriesListSheet(dictId: dictId);
-      },
-    );
   }
 
   Widget _buildInfoSection(DictionaryMetadata metadata) {

@@ -2368,7 +2368,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.upload_outlined, size: 18),
+                        Icon(Icons.download_outlined, size: 18),
                         const SizedBox(width: 6),
                         Text(context.t.cloud.importTab),
                       ],
@@ -2379,7 +2379,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.manage_search_outlined, size: 18),
+                        Icon(Icons.delete_outline, size: 18),
                         const SizedBox(width: 6),
                         Text(context.t.cloud.deleteSearchTab),
                       ],
@@ -2413,75 +2413,35 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 提示信息
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 16, color: colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  context.t.cloud.importJsonPlaceholder,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
         // JSON输入框
         Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: colorScheme.shadow.withValues(alpha: 0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: TextField(
-              controller: _jsonController,
-              maxLines: null,
-              expands: true,
-              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                hintText: context.t.cloud.importJsonPlaceholder,
-                hintStyle: TextStyle(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                  fontSize: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: colorScheme.outlineVariant),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
-                ),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
-                ),
-                contentPadding: const EdgeInsets.all(14),
+          child: TextField(
+            controller: _jsonController,
+            maxLines: null,
+            expands: true,
+            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+            decoration: InputDecoration(
+              hintText: context.t.cloud.importJsonPlaceholder,
+              hintStyle: TextStyle(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                fontSize: 12,
               ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+              ),
+              filled: true,
+              fillColor: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.3,
+              ),
+              contentPadding: const EdgeInsets.all(14),
             ),
           ),
         ),
@@ -2489,17 +2449,12 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
         if (_importResult != null) ...[
           const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: _importHasError
-                  ? colorScheme.errorContainer.withValues(alpha: 0.8)
-                  : colorScheme.tertiaryContainer.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _importHasError
-                    ? colorScheme.error.withValues(alpha: 0.3)
-                    : colorScheme.tertiary.withValues(alpha: 0.3),
-              ),
+                  ? colorScheme.errorContainer.withValues(alpha: 0.5)
+                  : colorScheme.primaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2508,12 +2463,12 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                   _importHasError
                       ? Icons.error_outline
                       : Icons.check_circle_outline,
-                  size: 18,
+                  size: 16,
                   color: _importHasError
-                      ? colorScheme.onErrorContainer
-                      : colorScheme.onTertiaryContainer,
+                      ? colorScheme.error
+                      : colorScheme.primary,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _importResult!,
@@ -2522,7 +2477,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                       height: 1.4,
                       color: _importHasError
                           ? colorScheme.onErrorContainer
-                          : colorScheme.onTertiaryContainer,
+                          : colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -2537,7 +2492,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
             if (_jsonController.text.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: OutlinedButton.icon(
+                child: TextButton(
                   onPressed: _isImporting
                       ? null
                       : () {
@@ -2547,42 +2502,26 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
                             _importHasError = false;
                           });
                         },
-                  icon: const Icon(Icons.clear_all, size: 16),
-                  label: Text(context.t.cloud.clearLabel),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
+                  child: Text(context.t.cloud.clearLabel),
                 ),
               ),
             Expanded(
-              child: FilledButton.icon(
+              child: FilledButton(
                 onPressed: _isImporting ? null : _importJson,
-                icon: _isImporting
+                child: _isImporting
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : const Icon(Icons.upload_outlined, size: 18),
-                label: Text(
-                  _isImporting
-                      ? context.t.cloud.importing
-                      : context.t.cloud.writingToDb,
-                ),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
+                    : Text(context.t.cloud.writingToDb),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
       ],
     );
   }
@@ -2593,400 +2532,179 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 搜索模式切换 - 美化样式
-        Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: SegmentedButton<String>(
-            segments: [
-              ButtonSegment(
-                value: 'id',
-                label: Text(context.t.cloud.idSearch),
-                icon: const Icon(Icons.tag, size: 16),
-              ),
-              ButtonSegment(
-                value: 'headword',
-                label: Text(context.t.cloud.prefixSearch),
-                icon: const Icon(Icons.spellcheck, size: 16),
-              ),
-            ],
-            selected: {_searchMode},
-            onSelectionChanged: (sel) {
-              setState(() {
-                _searchMode = sel.first;
-                _foundEntry = null;
-                _foundEntryId = null;
-                _foundEntries = [];
-                _searchError = null;
-              });
-            },
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStateProperty.all(
-                const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return colorScheme.primaryContainer;
-                }
-                return Colors.transparent;
-              }),
-              foregroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return colorScheme.onPrimaryContainer;
-                }
-                return colorScheme.onSurfaceVariant;
-              }),
+        // 搜索模式切换
+        SegmentedButton<String>(
+          segments: [
+            ButtonSegment(value: 'id', label: Text(context.t.cloud.idSearch)),
+            ButtonSegment(
+              value: 'headword',
+              label: Text(context.t.cloud.prefixSearch),
             ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        // 搜索栏 - 美化样式
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: colorScheme.shadow.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  keyboardType: _searchMode == 'id'
-                      ? TextInputType.number
-                      : TextInputType.text,
-                  decoration: InputDecoration(
-                    labelText: _searchMode == 'id'
-                        ? 'entry_id'
-                        : context.t.cloud.searchHeadwordLabel,
-                    hintText: _searchMode == 'id'
-                        ? context.t.cloud.searchIdHint
-                        : context.t.cloud.searchHeadwordHint,
-                    prefixIcon: Icon(
-                      _searchMode == 'id' ? Icons.key : Icons.search,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: colorScheme.outlineVariant),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    filled: true,
-                    fillColor: colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    isDense: true,
-                  ),
-                  onSubmitted: (_) => _searchEntry(),
-                ),
-              ),
-              const SizedBox(width: 10),
-              FilledButton.icon(
-                onPressed: _isSearching ? null : _searchEntry,
-                icon: _isSearching
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.search, size: 18),
-                label: Text(context.t.search.searchBtn),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          ],
+          selected: {_searchMode},
+          onSelectionChanged: (sel) {
+            setState(() {
+              _searchMode = sel.first;
+              _foundEntry = null;
+              _foundEntryId = null;
+              _foundEntries = [];
+              _searchError = null;
+            });
+          },
         ),
         const SizedBox(height: 12),
-        // 错误提示 - 美化样式
-        if (_searchError != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: colorScheme.errorContainer.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: colorScheme.error.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 18,
-                  color: colorScheme.onErrorContainer,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _searchError!,
-                    style: TextStyle(
-                      color: colorScheme.onErrorContainer,
-                      fontSize: 13,
+        // 搜索栏
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                keyboardType: _searchMode == 'id'
+                    ? TextInputType.number
+                    : TextInputType.text,
+                decoration: InputDecoration(
+                  hintText: _searchMode == 'id'
+                      ? context.t.cloud.searchIdHint
+                      : context.t.cloud.searchHeadwordHint,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
+                      width: 1.5,
                     ),
                   ),
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  isDense: true,
                 ),
-              ],
+                onSubmitted: (_) => _searchEntry(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: _isSearching ? null : _searchEntry,
+              child: _isSearching
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(context.t.search.searchBtn),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // 错误提示
+        if (_searchError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _searchError!,
+              style: TextStyle(color: colorScheme.error, fontSize: 13),
             ),
           ),
-        // 多条匹配结果列表 - 美化样式
+        // 多条匹配结果列表
         if (_foundEntries.isNotEmpty) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.list_alt,
-                  size: 14,
-                  color: colorScheme.onSecondaryContainer,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  context.t.cloud.matchedEntries(count: _foundEntries.length),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSecondaryContainer,
-                  ),
-                ),
-              ],
-            ),
+          Text(
+            context.t.cloud.matchedEntries(count: _foundEntries.length),
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLowest,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                ),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withValues(alpha: 0.03),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+            child: ListView.separated(
+              itemCount: _foundEntries.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final e = _foundEntries[index];
+                final hw = e['headword']?.toString() ?? '';
+                final eid = (e['entry_id'] ?? e['id'])?.toString() ?? '';
+                return ListTile(
+                  dense: true,
+                  title: Text(hw),
+                  subtitle: Text(
+                    'ID: $eid',
+                    style: const TextStyle(fontSize: 12),
                   ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(6),
-                  itemCount: _foundEntries.length,
-                  separatorBuilder: (_, __) => Divider(
-                    height: 1,
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                  ),
-                  itemBuilder: (context, index) {
-                    final e = _foundEntries[index];
-                    final hw = e['headword']?.toString() ?? '';
-                    final eid = (e['entry_id'] ?? e['id'])?.toString() ?? '';
-                    return Container(
-                      margin: const EdgeInsets.symmetric(vertical: 2),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        title: Text(
-                          hw,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'entry_id: $eid',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        trailing: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withValues(
-                              alpha: 0.5,
-                            ),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Icon(
-                            Icons.chevron_right,
-                            size: 18,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _foundEntry = e;
-                            _foundEntryId = eid;
-                            _foundEntries = [];
-                          });
-                        },
-                      ),
-                    );
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () {
+                    setState(() {
+                      _foundEntry = e;
+                      _foundEntryId = eid;
+                      _foundEntries = [];
+                    });
                   },
-                ),
-              ),
+                );
+              },
             ),
           ),
-          const SizedBox(height: 12),
         ],
-        // 单条结果预览 - 美化样式
+        // 单条结果预览
         if (_foundEntry != null) ...[
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLowest,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.3,
                 ),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withValues(alpha: 0.03),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.data_object,
-                        size: 14,
-                        color: colorScheme.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'JSON ${context.t.theme.preview}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest.withValues(
-                            alpha: 0.3,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          const JsonEncoder.withIndent(
-                            '  ',
-                          ).convert(_foundEntry),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              child: SingleChildScrollView(
+                child: Text(
+                  const JsonEncoder.withIndent('  ').convert(_foundEntry),
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                ),
               ),
             ),
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              OutlinedButton.icon(
+              TextButton(
                 onPressed: () {
                   setState(() {
                     _foundEntry = null;
                     _foundEntryId = null;
                   });
                 },
-                icon: const Icon(Icons.arrow_back, size: 16),
-                label: Text(context.t.common.back),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                ),
+                child: Text(context.t.common.back),
               ),
               const Spacer(),
-              FilledButton.icon(
+              FilledButton(
                 onPressed: _isDeleting ? null : _deleteEntry,
-                icon: _isDeleting
+                style: FilledButton.styleFrom(
+                  backgroundColor: colorScheme.error,
+                ),
+                child: _isDeleting
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : const Icon(Icons.delete_outline, size: 18),
-                label: Text(
-                  _isDeleting
-                      ? context.t.cloud.deleting
-                      : context.t.cloud.deleteEntry,
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colorScheme.error,
-                  foregroundColor: colorScheme.onError,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
+                    : Text(context.t.cloud.deleteEntry),
               ),
             ],
           ),
-          const SizedBox(height: 8),
         ],
       ],
     );
