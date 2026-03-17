@@ -1071,6 +1071,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
 
+  // 当前选择的文本（用于选择完成后触发查词）
+  SelectedContent? _currentSelection;
+
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
       (cu >= 65 && cu <= 90) || (cu >= 97 && cu <= 122);
@@ -3083,42 +3086,28 @@ class ComponentRendererState extends State<ComponentRenderer> {
             path: const ['entry'],
             child: SelectionArea(
               onSelectionChanged: (selection) {
-                // 调试信息：选择变化
-                Logger.d(
-                  'SelectionArea onSelectionChanged 触发: selection=$selection, plainText=${selection?.plainText}',
-                  tag: 'SelectionArea',
-                );
-                // 双击选择单词后自动查词
-                if (selection != null) {
-                  final selectedText = selection.plainText;
-                  // 只有当选中的是单个单词时才自动查词
-                  if (selectedText.isNotEmpty && !selectedText.contains(' ')) {
-                    Logger.d(
-                      'SelectionArea 选择单词: $selectedText',
-                      tag: 'SelectionArea',
-                    );
-                    _performDoubleTapSearch(selectedText, context);
-                  }
-                }
+                // 只记录选择状态，不立即触发查词
+                _currentSelection = selection;
               },
               child: Listener(
                 onPointerDown: (event) {
-                  Logger.d(
-                    'SelectionArea Listener onPointerDown: ${event.position}',
-                    tag: 'SelectionArea',
-                  );
-                },
-                onPointerMove: (event) {
-                  Logger.d(
-                    'SelectionArea Listener onPointerMove: ${event.position}',
-                    tag: 'SelectionArea',
-                  );
+                  // 清除之前的选择
+                  _currentSelection = null;
                 },
                 onPointerUp: (event) {
-                  Logger.d(
-                    'SelectionArea Listener onPointerUp: ${event.position}',
-                    tag: 'SelectionArea',
-                  );
+                  // 只在松手时才检查选择并触发查词
+                  if (_currentSelection != null) {
+                    final selectedText = _currentSelection!.plainText;
+                    // 只有当选中的是单个单词时才自动查词
+                    if (selectedText.isNotEmpty &&
+                        !selectedText.contains(' ')) {
+                      Logger.d(
+                        'SelectionArea 选择单词完成: $selectedText',
+                        tag: 'SelectionArea',
+                      );
+                      _performDoubleTapSearch(selectedText, context);
+                    }
+                  }
                 },
                 child: SingleChildScrollView(
                   padding: EdgeInsets.only(
