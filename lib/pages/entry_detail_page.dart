@@ -931,6 +931,15 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 bottom: false,
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
+                    // 手机端：滚动时退出搜索模式
+                    if (_isSearchMode &&
+                        notification is ScrollStartNotification &&
+                        notification.dragDetails != null) {
+                      setState(() {
+                        _isSearchMode = false;
+                        _searchController.clear();
+                      });
+                    }
                     return false;
                   },
                   child: ScrollablePositionedList.builder(

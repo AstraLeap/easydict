@@ -1,20 +1,268 @@
-import json
-import random
-import sqlite3
-import unicodedata
+import json, random, sqlite3, unicodedata, argparse, re
 from pathlib import Path
 
 import zstandard as zstd
 
-# --- 全局配置与工具函数 ---
+
+def normalize_japanese(text: str) -> str:
+    text = text.lower()
+
+    # -----------------------------------------------------
+    # 1. 罗马音转平假名 (修正版)
+    # -----------------------------------------------------
+    # 修复 tch 逻辑: 让 ch 保留给后续匹配
+    text = text.replace("tch", "っch")
+    # 修复 Hepburn 传统 m 处理 (如 shimbun -> しんぶん)
+    text = re.sub(r"m(?=[bpm])", "ん", text)
+    # 修复双辅音促音
+    text = re.sub(r"([bcdfghjklmpqrstvwxyz])\1", r"っ\1", text)
+    # 修复词尾或辅音前的 n
+    text = re.sub(r"n(?=[^aeiouy]|$)", "ん", text)
+
+    romaji_map = {
+        "kya": "きゃ",
+        "kyu": "きゅ",
+        "kyo": "きょ",
+        "sha": "しゃ",
+        "shi": "し",
+        "shu": "しゅ",
+        "she": "しぇ",
+        "sho": "しょ",
+        "cha": "ちゃ",
+        "chi": "ち",
+        "chu": "ちゅ",
+        "che": "ちぇ",
+        "cho": "ちょ",
+        "nya": "にゃ",
+        "nyu": "にゅ",
+        "nyo": "にょ",
+        "hya": "ひゃ",
+        "hyu": "ひゅ",
+        "hyo": "ひょ",
+        "mya": "みゃ",
+        "myu": "みゅ",
+        "myo": "みょ",
+        "rya": "りゃ",
+        "ryu": "りゅ",
+        "ryo": "りょ",
+        "gya": "ぎゃ",
+        "gyu": "ぎゅ",
+        "gyo": "ぎょ",
+        "ja": "じゃ",
+        "ji": "じ",
+        "ju": "じゅ",
+        "je": "じぇ",
+        "jo": "じょ",
+        "bya": "びゃ",
+        "byu": "びゅ",
+        "byo": "びょ",
+        "pya": "ぴゃ",
+        "pyu": "ぴゅ",
+        "pyo": "ぴょ",
+        "ka": "か",
+        "ki": "き",
+        "ku": "く",
+        "ke": "け",
+        "ko": "こ",
+        "sa": "さ",
+        "su": "す",
+        "se": "せ",
+        "so": "そ",
+        "ta": "た",
+        "te": "て",
+        "to": "と",
+        "tsu": "つ",
+        "na": "な",
+        "ni": "に",
+        "nu": "ぬ",
+        "ne": "ね",
+        "no": "の",
+        "ha": "は",
+        "hi": "ひ",
+        "fu": "ふ",
+        "hu": "ふ",
+        "he": "へ",
+        "ho": "ほ",
+        "ma": "ま",
+        "mi": "み",
+        "mu": "む",
+        "me": "め",
+        "mo": "も",
+        "ya": "や",
+        "yu": "ゆ",
+        "yo": "よ",
+        "ra": "ら",
+        "ri": "り",
+        "ru": "る",
+        "re": "れ",
+        "ro": "ろ",
+        "wa": "わ",
+        "wi": "ゐ",
+        "we": "ゑ",
+        "wo": "を",
+        "ga": "が",
+        "gi": "ぎ",
+        "gu": "ぐ",
+        "ge": "げ",
+        "go": "ご",
+        "za": "ざ",
+        "zu": "ず",
+        "ze": "ぜ",
+        "zo": "ぞ",
+        "da": "だ",
+        "di": "ぢ",
+        "du": "づ",
+        "de": "で",
+        "do": "ど",
+        "ba": "ば",
+        "bi": "び",
+        "bu": "ぶ",
+        "be": "べ",
+        "bo": "ぼ",
+        "pa": "ぱ",
+        "pi": "ぴ",
+        "pu": "ぷ",
+        "pe": "ぺ",
+        "po": "ぽ",
+        "a": "あ",
+        "i": "い",
+        "u": "う",
+        "e": "え",
+        "o": "お",
+        "ā": "ああ",
+        "ī": "いい",
+        "ū": "うう",
+        "ē": "ええ",
+        "ō": "おお",
+    }
+    for romaji in sorted(romaji_map.keys(), key=len, reverse=True):
+        text = text.replace(romaji, romaji_map[romaji])
+
+    # -----------------------------------------------------
+    # 2 & 3 & 4: 清洗与片转平、去浊音逻辑（保持不变）
+    # -----------------------------------------------------
+    text = re.sub(r"[\s　]+", "", text)
+    text = re.sub(r"[’・－\-]", "", text)
+
+    text = "".join(
+        [chr(ord(c) - 0x60) if 0x30A1 <= ord(c) <= 0x30F6 else c for c in text]
+    )
+
+    text = unicodedata.normalize("NFD", text)
+    text = text.replace("\u3099", "").replace("\u309a", "")
+    text = unicodedata.normalize("NFC", text)
+
+    # -----------------------------------------------------
+    # 5. 长音 "ー" 转换 (修复连续长音和汉字中断 Bug)
+    # -----------------------------------------------------
+    vowel_map = {
+        "あ": "あ",
+        "か": "あ",
+        "さ": "あ",
+        "た": "あ",
+        "な": "あ",
+        "は": "あ",
+        "ま": "あ",
+        "や": "あ",
+        "ら": "あ",
+        "わ": "あ",
+        "ぁ": "あ",
+        "ゃ": "あ",
+        "ゎ": "あ",
+        "い": "い",
+        "き": "い",
+        "し": "い",
+        "ち": "い",
+        "に": "い",
+        "ひ": "い",
+        "み": "い",
+        "り": "い",
+        "ゐ": "い",
+        "ぃ": "い",
+        "う": "う",
+        "く": "う",
+        "す": "う",
+        "つ": "う",
+        "ぬ": "う",
+        "ふ": "う",
+        "む": "う",
+        "ゆ": "う",
+        "る": "う",
+        "ぅ": "う",
+        "ゅ": "う",
+        "え": "え",
+        "け": "え",
+        "せ": "え",
+        "て": "え",
+        "ね": "え",
+        "へ": "え",
+        "め": "え",
+        "れ": "え",
+        "ゑ": "え",
+        "ぇ": "え",
+        "お": "お",
+        "こ": "お",
+        "そ": "お",
+        "と": "お",
+        "の": "お",
+        "ほ": "お",
+        "も": "お",
+        "よ": "お",
+        "ろ": "お",
+        "を": "お",
+        "ぉ": "お",
+        "ょ": "お",
+    }
+
+    res_choonpu = []
+    current_vowel = None
+
+    for c in text:
+        if c == "ー":
+            # 如果前面存在有效母音，则转换为该母音，否则保留(比如句首的异常长音)
+            if current_vowel:
+                res_choonpu.append(current_vowel)
+            else:
+                res_choonpu.append(c)
+        else:
+            res_choonpu.append(c)
+            # 动态更新当前母音环境（如果遇到汉字或无母音符号，则清除上下文）
+            if c in vowel_map:
+                current_vowel = vowel_map[c]
+            else:
+                current_vowel = None
+
+    text = "".join(res_choonpu)
+
+    # -----------------------------------------------------
+    # 6. 小文字转大文字
+    # -----------------------------------------------------
+    small_to_large = str.maketrans("ぁぃぅぇぉゃゅょゎっ", "あいうえおやゆよわつ")
+    text = text.translate(small_to_large)
+
+    return text
 
 
-def normalize_text(text, lang_code=None, remove_spaces=False):
+def normalize_text(text, lang_code, is_phonetic):
     """
     基础文本规范化：转小写、去除重音、去除空格
     """
     if not text:
         return ""
+
+    if is_phonetic:
+        text = text.replace(" ", "")
+
+    # 汉语繁体转简体
+    if lang_code in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"} and not is_phonetic:
+        import opencc
+
+        converter = opencc.OpenCC("t2s.json")
+        text = converter.convert(text)
+
+    # 日语发音标准化
+    if lang_code in {"ja", "jp"} and is_phonetic:
+        text = normalize_japanese(text)
 
     # Unicode 标准化：NFD 分解后去除变音符号（Mn 类别）
     text = (
@@ -27,55 +275,56 @@ def normalize_text(text, lang_code=None, remove_spaces=False):
         .lower()
     )
 
-    if remove_spaces:
-        text = text.replace(" ", "")
-
-    # 繁体转简体
-    if lang_code in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"}:
-        import opencc
-
-        converter = opencc.OpenCC("t2s.json")
-        text = converter.convert(text)
-
     return text
 
 
-def validate_entry(data, line_num, seen_entry_ids):
+def extract_headwords_from_headline(headline):
     """
-    验证 JSON 条目是否包含必填属性
+    从headline中提取headword标签。
+    格式示例: つける【[付ける](headword)・[附ける](headword)】
+    提取 [text](headword) 格式中的text作为headword。
+
+    返回: dict，key为headword，value为anchor（此处anchor为空字符串）
     """
-    required_fields = [
-        "dict_id",
-        "entry_id",
-        "headword",
-        "entry_type",
-        "page",
-        "section",
-    ]
+    import re
 
-    # 检查必填字段是否存在
-    for field in required_fields:
-        if field not in data:
-            raise ValueError(f"Line {line_num}: Missing required field '{field}'")
+    # 匹配 [text](headword) 格式
+    pattern = r"\[([^\]]+)\]\(headword\)"
+    matches = re.findall(pattern, headline)
+    # 返回字典，anchor默认为空字符串
+    return {hw: "" for hw in matches}
 
-    # 验证并转换 entry_id 为整型
-    if isinstance(data["entry_id"], str):
-        try:
-            data["entry_id"] = int(data["entry_id"])
-        except ValueError:
-            raise ValueError(
-                f"Line {line_num}: 'entry_id' must be convertible to integer, got '{data['entry_id']}'"
-            )
-    elif not isinstance(data["entry_id"], int):
-        raise ValueError(
-            f"Line {line_num}: 'entry_id' must be an integer, got {type(data['entry_id']).__name__}"
-        )
 
-    # 验证 entry_id 不重复
-    entry_id = data["entry_id"]
-    if entry_id in seen_entry_ids:
-        raise ValueError(f"Line {line_num}: Duplicate 'entry_id' {entry_id}")
-    seen_entry_ids.add(entry_id)
+def extract_anchors_from_json(data, current_path=""):
+    """
+    递归搜索JSON对象，提取所有 [text](anchor) 格式的标签。
+
+    参数:
+        data: JSON数据（dict、list、str或其他类型）
+        current_path: 当前JSON路径
+
+    返回: dict，key为headword（提取的text），value为anchor（JSON路径）
+    """
+    import re
+
+    result = {}
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            new_path = f"{current_path}.{key}" if current_path else key
+            result.update(extract_anchors_from_json(value, new_path))
+    elif isinstance(data, list):
+        for i, item in enumerate(data):
+            new_path = f"{current_path}.{i}" if current_path else str(i)
+            result.update(extract_anchors_from_json(item, new_path))
+    elif isinstance(data, str):
+        # 匹配 [text](anchor) 格式
+        pattern = r"\[([^\]]+)\]\(anchor\)"
+        matches = re.findall(pattern, data)
+        for text in matches:
+            result[text] = current_path
+
+    return result
 
 
 def reservoir_sampling(jsonl_path, sample_size=10000):
@@ -104,13 +353,6 @@ def build_database_from_jsonl(
 ):
     lang_code = lang_code.lower()
 
-    dict_size = dict_size_kb * 1024
-    is_biaoyi = (
-        lang_code.split("-")[0] in {"zh", "ja", "jp", "cn"} if lang_code else False
-    )
-    # 用于检测 entry_id 重复
-    seen_entry_ids = set()
-
     # 1. 采样与字典训练
     samples = reservoir_sampling(jsonl_path, 10000)
     if not samples:
@@ -118,7 +360,7 @@ def build_database_from_jsonl(
         return
 
     print("Training Zstd dictionary...")
-    dict_data = zstd.train_dictionary(dict_size, samples)
+    dict_data = zstd.train_dictionary(dict_size_kb * 1024, samples)
     dict_bytes = dict_data.as_bytes()
     del samples  # 释放内存
 
@@ -137,6 +379,11 @@ def build_database_from_jsonl(
     cursor.execute("PRAGMA foreign_keys = ON")  # 启用外键约束
 
     cursor.execute("CREATE TABLE config (key TEXT PRIMARY KEY, value BLOB)")
+
+    # 存储zstd字典
+    cursor.execute(
+        "INSERT INTO config (key, value) VALUES (?, ?)", ("zstd_dict", dict_bytes)
+    )
 
     # 创建 entries 表（只包含 entry_id 和 json_data）
     cursor.execute(
@@ -157,18 +404,11 @@ def build_database_from_jsonl(
             headword_normalized TEXT NOT NULL,
             phonetic TEXT,
             entry_type TEXT,
-            page TEXT,
-            section TEXT,
             entry_id INTEGER NOT NULL,
             anchor TEXT,
             FOREIGN KEY (entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
         )
     """
-    )
-
-    # 存储字典
-    cursor.execute(
-        "INSERT INTO config (key, value) VALUES (?, ?)", ("zstd_dict", dict_bytes)
     )
 
     # 3. 压缩并批量写入数据
@@ -177,7 +417,7 @@ def build_database_from_jsonl(
 
     # 批量插入语句
     entries_sql = "INSERT INTO entries (entry_id, json_data) VALUES (?, ?)"
-    indices_sql = "INSERT INTO indices (headword, headword_normalized, phonetic, entry_type, page, section, entry_id, anchor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    indices_sql = "INSERT INTO indices (headword, headword_normalized, phonetic, entry_type, entry_id, anchor) VALUES (?, ?, ?, ?, ?, ?)"
 
     entries_batch = []
     indices_batch = []
@@ -193,9 +433,6 @@ def build_database_from_jsonl(
 
             data = json.loads(line)
 
-            # 验证必填字段
-            validate_entry(data, line_num, seen_entry_ids)
-
             # 序列化并压缩
             json_bytes = json.dumps(
                 data, ensure_ascii=False, separators=(",", ":")
@@ -206,24 +443,38 @@ def build_database_from_jsonl(
             eid = data["entry_id"]
             entries_batch.append((eid, compressed_data))
 
+            # 处理 phonetic 字段
+            phonetic_raw = data.get("phonetic", "")
+            phonetic_norm = normalize_text(phonetic_raw, lang_code, True)
+
             # 准备 indices 表数据
-            hw = data["headword"]
-            hw_norm = normalize_text(hw, lang_code=lang_code)
+            # 使用字典维护 headword -> anchor 的映射
+            headword_anchor_map = {}
+
+            # 1. 优先从 headword 字段提取
+            if "headword" in data:
+                headword_anchor_map[data["headword"]] = ""
+
+            # 2. 从 headline 字段提取 [text](headword) 格式
+            headline = data.get("headline", "")
+            if headline:
+                headword_anchor_map.update(extract_headwords_from_headline(headline))
+
+            # 3. 递归搜索整个JSON，提取 [text](anchor) 格式
+            headword_anchor_map.update(extract_anchors_from_json(data))
+
+            # 如果没有任何headword，打印警告
+            if not headword_anchor_map:
+                print(
+                    f"Warning: No headword found for entry_id {eid} at line {line_num}"
+                )
+
             etype = data["entry_type"]
-            pg = data["page"]
-            sec = data["section"]
-            anchor = data.get("anchor", "")  # 可选字段
 
-            if is_biaoyi:
-                # 表意文字词典：处理 phonetic 字段
-                phonetic_raw = data.get("phonetic", "")
-                phonetic_norm = normalize_text(phonetic_raw, remove_spaces=True)
-            else:
-                phonetic_norm = None
-
-            indices_batch.append(
-                (hw, hw_norm, phonetic_norm, etype, pg, sec, eid, anchor)
-            )
+            # 为每个headword分别创建索引行
+            for hw, anchor in headword_anchor_map.items():
+                hw_norm = normalize_text(hw, lang_code, False)
+                indices_batch.append((hw, hw_norm, phonetic_norm, etype, eid, anchor))
 
             if len(entries_batch) >= 1000:
                 cursor.executemany(entries_sql, entries_batch)
@@ -264,7 +515,22 @@ def build_database_from_jsonl(
 # --- 命令行入口 ---
 
 if __name__ == "__main__":
-    import argparse
+    ## for test
+    # print(
+    #     extract_headwords_from_headline(
+    #         "つける【[付ける](headword)・[附ける](headword)】"
+    #     )
+    # )
+    # test_cases = [
+    #     "コンピューター",  # 片假名+长音+半浊音 -> こんひゆうたあ
+    #     "ローマ字",  # 罗马音(片假名)+汉字 -> ろおま字 (保留非匹配字符)
+    #     "chotto matteta",  # 罗马音+促音 -> ちよつとまつてた
+    #     "ぎゅうにゅう",  # 浊音+拗音 -> きゆうにゆう
+    #     "パーティー",  # 半浊音+小文字+长音 -> はあていい
+    #     "A・B－C’",  # 特殊符号 -> abc (全角减号等被移除)
+    # ]
+    # for case in test_cases:
+    #     print(f"{case}  =>  {normalize_japanese(case)}")
 
     parser = argparse.ArgumentParser(
         description="JSONL to Optimized SQLite Dictionary Builder"

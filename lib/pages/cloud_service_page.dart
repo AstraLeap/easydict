@@ -2315,6 +2315,10 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isNarrowScreen = screenWidth < 600;
+    final dialogWidth = isNarrowScreen ? screenWidth - 32 : 600.0;
+
     return AlertDialog(
       title: Row(
         children: [
@@ -2323,9 +2327,11 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           Text(context.t.cloud.updateJsonTitle),
         ],
       ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      contentPadding: isNarrowScreen
+          ? const EdgeInsets.fromLTRB(16, 12, 16, 0)
+          : const EdgeInsets.fromLTRB(24, 12, 24, 0),
       content: SizedBox(
-        width: 600,
+        width: dialogWidth,
         height: 560,
         child: Column(
           children: [
