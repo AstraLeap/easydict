@@ -182,7 +182,7 @@ CREATE INDEX idx_images_name ON images(name);
                 "tone": "neutral",
                 "complex": "雜",
                 "topic": ["psychology"],
-                "others": "other label", //这里可以使用自定义的键名
+                "others": "other label", //可以使用自定义的键名
             }, //里面全部是可选，里面所有的值都既可以是string，也可以是string list。label的值既可以是一个map，也可以是map list。
             "definition": {
                 "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",

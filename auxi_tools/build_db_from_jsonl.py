@@ -9,11 +9,6 @@ import zstandard as zstd
 # --- 全局配置与工具函数 ---
 
 
-def is_ideographic_lang(lang_code):
-    base_lang = lang_code.split("-")[0].lower()
-    return base_lang in {"zh", "ja", "jp"} if base_lang else False
-
-
 def normalize_text(text, lang_code=None, remove_spaces=False):
     """
     基础文本规范化：转小写、去除重音、去除空格
@@ -63,8 +58,15 @@ def validate_entry(data, line_num, seen_entry_ids):
         if field not in data:
             raise ValueError(f"Line {line_num}: Missing required field '{field}'")
 
-    # 验证 entry_id 是整型
-    if not isinstance(data["entry_id"], int):
+    # 验证并转换 entry_id 为整型
+    if isinstance(data["entry_id"], str):
+        try:
+            data["entry_id"] = int(data["entry_id"])
+        except ValueError:
+            raise ValueError(
+                f"Line {line_num}: 'entry_id' must be convertible to integer, got '{data['entry_id']}'"
+            )
+    elif not isinstance(data["entry_id"], int):
         raise ValueError(
             f"Line {line_num}: 'entry_id' must be an integer, got {type(data['entry_id']).__name__}"
         )
@@ -103,8 +105,9 @@ def build_database_from_jsonl(
     lang_code = lang_code.lower()
 
     dict_size = dict_size_kb * 1024
-    is_biaoyi = is_ideographic_lang(lang_code)
-
+    is_biaoyi = (
+        lang_code.split("-")[0] in {"zh", "ja", "jp", "cn"} if lang_code else False
+    )
     # 用于检测 entry_id 重复
     seen_entry_ids = set()
 
@@ -131,38 +134,37 @@ def build_database_from_jsonl(
     cursor.execute("PRAGMA synchronous = OFF")
     cursor.execute("PRAGMA journal_mode = WAL")
     cursor.execute("PRAGMA cache_size = -64000")  # 64MB 缓存
+    cursor.execute("PRAGMA foreign_keys = ON")  # 启用外键约束
 
     cursor.execute("CREATE TABLE config (key TEXT PRIMARY KEY, value BLOB)")
 
-    if is_biaoyi:
-        cursor.execute(
-            """
-            CREATE TABLE entries (
-                entry_id INTEGER PRIMARY KEY,
-                headword TEXT,
-                headword_normalized TEXT,
-                phonetic TEXT,
-                entry_type TEXT,
-                page TEXT,
-                section TEXT,
-                json_data BLOB
-            )
+    # 创建 entries 表（只包含 entry_id 和 json_data）
+    cursor.execute(
         """
+        CREATE TABLE entries (
+            entry_id INTEGER PRIMARY KEY,
+            json_data BLOB
         )
-    else:
-        cursor.execute(
-            """
-            CREATE TABLE entries (
-                entry_id INTEGER PRIMARY KEY,
-                headword TEXT,
-                headword_normalized TEXT,
-                entry_type TEXT,
-                page TEXT,
-                section TEXT,
-                json_data BLOB
-            )
+    """
+    )
+
+    # 创建 indices 表（索引字段）
+    cursor.execute(
         """
+        CREATE TABLE indices (
+            id INTEGER PRIMARY KEY,
+            headword TEXT NOT NULL,
+            headword_normalized TEXT NOT NULL,
+            phonetic TEXT,
+            entry_type TEXT,
+            page TEXT,
+            section TEXT,
+            entry_id INTEGER NOT NULL,
+            anchor TEXT,
+            FOREIGN KEY (entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
         )
+    """
+    )
 
     # 存储字典
     cursor.execute(
@@ -173,12 +175,12 @@ def build_database_from_jsonl(
     print("Compressing and inserting data...")
     cctx = zstd.ZstdCompressor(dict_data=dict_data, level=compress_level)
 
-    if is_biaoyi:
-        sql = "INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    else:
-        sql = "INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?)"
+    # 批量插入语句
+    entries_sql = "INSERT INTO entries (entry_id, json_data) VALUES (?, ?)"
+    indices_sql = "INSERT INTO indices (headword, headword_normalized, phonetic, entry_type, page, section, entry_id, anchor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 
-    batch = []
+    entries_batch = []
+    indices_batch = []
     total_count = 0
     line_num = 0
 
@@ -200,49 +202,48 @@ def build_database_from_jsonl(
             ).encode("utf-8")
             compressed_data = cctx.compress(json_bytes)
 
-            # 准备元数据
+            # 准备 entries 表数据
             eid = data["entry_id"]
+            entries_batch.append((eid, compressed_data))
+
+            # 准备 indices 表数据
             hw = data["headword"]
+            hw_norm = normalize_text(hw, lang_code=lang_code)
             etype = data["entry_type"]
             pg = data["page"]
             sec = data["section"]
-
-            hw_norm = normalize_text(hw, lang_code=lang_code)
+            anchor = data.get("anchor", "")  # 可选字段
 
             if is_biaoyi:
+                # 表意文字词典：处理 phonetic 字段
                 phonetic_raw = data.get("phonetic", "")
                 phonetic_norm = normalize_text(phonetic_raw, remove_spaces=True)
-                batch.append(
-                    (eid, hw, hw_norm, phonetic_norm, etype, pg, sec, compressed_data)
-                )
             else:
-                batch.append((eid, hw, hw_norm, etype, pg, sec, compressed_data))
+                phonetic_norm = None
 
-            if len(batch) >= 1000:
-                cursor.executemany(sql, batch)
-                total_count += len(batch)
-                batch = []
+            indices_batch.append(
+                (hw, hw_norm, phonetic_norm, etype, pg, sec, eid, anchor)
+            )
+
+            if len(entries_batch) >= 1000:
+                cursor.executemany(entries_sql, entries_batch)
+                cursor.executemany(indices_sql, indices_batch)
+                total_count += len(entries_batch)
+                entries_batch = []
+                indices_batch = []
                 if total_count % 5000 == 0:
                     print(f"Processed {total_count} entries...")
 
-        if batch:
-            cursor.executemany(sql, batch)
-            total_count += len(batch)
+        if entries_batch:
+            cursor.executemany(entries_sql, entries_batch)
+            cursor.executemany(indices_sql, indices_batch)
+            total_count += len(entries_batch)
 
     # 后置创建索引（速度比插入时带索引快得多）
     print("Creating indexes...")
-    cursor.execute("CREATE INDEX idx_entry_id ON entries(entry_id)")
-    if is_biaoyi:
-        cursor.execute(
-            "CREATE INDEX idx_phonetic ON entries(phonetic, headword_normalized, headword)"
-        )
-        cursor.execute(
-            "CREATE INDEX idx_headword ON entries(headword_normalized, phonetic, headword)"
-        )
-    else:
-        cursor.execute(
-            "CREATE INDEX idx_headword ON entries(headword_normalized, headword)"
-        )
+    cursor.execute("CREATE INDEX idx_headword_norm ON indices(headword_normalized)")
+    cursor.execute("CREATE INDEX idx_phonetic ON indices(phonetic)")
+    cursor.execute("CREATE INDEX idx_indices_entry_id ON indices(entry_id)")
 
     conn.commit()
 
@@ -256,6 +257,8 @@ def build_database_from_jsonl(
     print(f"\nBuild Complete!")
     print(f"DB Path: {db_path}")
     print(f"Total Entries: {total_count}")
+    print(f"Size before VACUUM: {size_before / 1024 / 1024:.2f} MB")
+    print(f"Size after VACUUM: {size_after / 1024 / 1024:.2f} MB")
 
 
 # --- 命令行入口 ---
