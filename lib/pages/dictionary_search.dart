@@ -965,7 +965,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+            padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
             child: Row(
               children: [
                 Icon(
@@ -1021,7 +1021,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             _buildDailyWordsEmptyState()
           else if (_dailyWords.isEmpty && !_isLoadingDailyWords)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
               child: Text(
                 context.t.search.dailyWordsNoWords,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1031,7 +1031,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             )
           else
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
               child: Wrap(
                 spacing: 10,
                 runSpacing: 8,
@@ -1047,6 +1047,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       child: Text(
                         word,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 14.5,
                           color: Theme.of(
                             context,
                           ).colorScheme.onSurfaceVariant.withOpacity(0.85),

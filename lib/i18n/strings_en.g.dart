@@ -519,8 +519,8 @@ class _TranslationsCloudEn extends TranslationsCloudZh {
 	@override String deleteFailedError({required Object error}) => 'Delete failed: ${error}';
 	@override String get updateJsonTitle => 'Update Entry Data';
 	@override String get importTab => 'Import';
-	@override String get deleteSearchTab => 'Delete/Search';
-	@override String get importJsonPlaceholder => 'Enter JSONL content, one entry per line...';
+	@override String get deleteSearchTab => 'Delete';
+	@override String get importJsonPlaceholder => 'Paste JSON or JSONL format data...';
 	@override String get clearLabel => 'Clear';
 	@override String get importing => 'Importing...';
 	@override String get writingToDb => 'Write to DB';
@@ -1391,8 +1391,8 @@ extension on TranslationsEn {
 			'cloud.deleteFailedError' => ({required Object error}) => 'Delete failed: ${error}',
 			'cloud.updateJsonTitle' => 'Update Entry Data',
 			'cloud.importTab' => 'Import',
-			'cloud.deleteSearchTab' => 'Delete/Search',
-			'cloud.importJsonPlaceholder' => 'Enter JSONL content, one entry per line...',
+			'cloud.deleteSearchTab' => 'Delete',
+			'cloud.importJsonPlaceholder' => 'Paste JSON or JSONL format data...',
 			'cloud.clearLabel' => 'Clear',
 			'cloud.importing' => 'Importing...',
 			'cloud.writingToDb' => 'Write to DB',
