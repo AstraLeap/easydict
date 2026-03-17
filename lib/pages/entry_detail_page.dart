@@ -911,110 +911,97 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       resizeToAvoidBottomInset: false,
       body: AnnotatedRegion<SystemUiOverlayStyle>(
         value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        child: GestureDetector(
-          // 点击空白区域退出搜索模式
-          onTap: () {
-            if (_isSearchMode) {
-              setState(() {
-                _isSearchMode = false;
-              });
-              _searchController.clear();
-            }
-          },
-          // 允许子组件处理点击事件
-          behavior: HitTestBehavior.translucent,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 主内容区域 - 全屏，内容可以滚动到工具栏下方
-              SafeArea(
-                bottom: false,
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    // 手机端：滚动时退出搜索模式
-                    if (_isSearchMode &&
-                        notification is ScrollStartNotification &&
-                        notification.dragDetails != null) {
-                      setState(() {
-                        _isSearchMode = false;
-                        _searchController.clear();
-                      });
-                    }
-                    return false;
-                  },
-                  child: ScrollablePositionedList.builder(
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    padding: _getDynamicPadding(
-                      context,
-                    ).copyWith(top: 16, bottom: 100),
-                    itemCount: totalCount,
-                    minCacheExtent: 1500,
-                    itemBuilder: (context, index) {
-                      // 索引 0: 单词形态关系横幅
-                      if (index == 0) return _buildWordRelationsBanner();
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 主内容区域 - 全屏，内容可以滚动到工具栏下方
+            SafeArea(
+              bottom: false,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  // 手机端：滚动时退出搜索模式
+                  if (_isSearchMode &&
+                      notification is ScrollStartNotification &&
+                      notification.dragDetails != null) {
+                    setState(() {
+                      _isSearchMode = false;
+                      _searchController.clear();
+                    });
+                  }
+                  return false;
+                },
+                child: ScrollablePositionedList.builder(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  padding: _getDynamicPadding(
+                    context,
+                  ).copyWith(top: 16, bottom: 100),
+                  itemCount: totalCount,
+                  minCacheExtent: 1500,
+                  itemBuilder: (context, index) {
+                    // 索引 0: 单词形态关系横幅
+                    if (index == 0) return _buildWordRelationsBanner();
 
-                      final entryIndex = index - wordRelationsOffset;
-                      final entry = entries[entryIndex];
+                    final entryIndex = index - wordRelationsOffset;
+                    final entry = entries[entryIndex];
 
-                      // 仅在该词典第一条 entry 处显示词典 Logo+名称
-                      final showDictHeader =
-                          entryIndex == 0 ||
-                          entries[entryIndex - 1].dictId != entry.dictId;
+                    // 仅在该词典第一条 entry 处显示词典 Logo+名称
+                    final showDictHeader =
+                        entryIndex == 0 ||
+                        entries[entryIndex - 1].dictId != entry.dictId;
 
-                      // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
-                      List<SearchRelation>? entryRelations;
-                      if (showDictHeader && widget.searchRelations != null) {
-                        final headword = entry.headword.toLowerCase();
-                        for (final rel in widget.searchRelations!.entries) {
-                          if (rel.key.toLowerCase() == headword) {
-                            entryRelations = rel.value;
-                            break;
-                          }
+                    // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
+                    List<SearchRelation>? entryRelations;
+                    if (showDictHeader && widget.searchRelations != null) {
+                      final headword = entry.headword.toLowerCase();
+                      for (final rel in widget.searchRelations!.entries) {
+                        if (rel.key.toLowerCase() == headword) {
+                          entryRelations = rel.value;
+                          break;
                         }
                       }
+                    }
 
-                      return _buildEntryContent(
-                        entry,
-                        showDictHeader: showDictHeader,
-                        relations: entryRelations,
-                      );
-                    },
-                  ),
+                    return _buildEntryContent(
+                      entry,
+                      showDictHeader: showDictHeader,
+                      relations: entryRelations,
+                    );
+                  },
                 ),
               ),
-              if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
-                _DraggableNavPanel(
-                  entryGroup: _entryGroup,
-                  onDictionaryChanged: _onDictionaryChanged,
-                  onPageChanged: _onPageChanged,
-                  onSectionChanged: _onSectionChanged,
-                  onNavigateToEntry: _scrollToEntry,
-                  initialDy: _navPanelDy,
-                  navPanelKey: _navPanelKey,
-                  navPanelVersionNotifier: _navPanelVersionNotifier,
-                ),
-              // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
-              if (_isSearchMode)
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isSearchMode = false;
-                        _searchController.clear();
-                      });
-                    },
-                    // 使用 opaque 确保拦截所有点击事件，不传递到下层
-                    behavior: HitTestBehavior.opaque,
-                    child: const SizedBox.expand(),
-                  ),
-                ),
-              // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
-              _KeyboardAwareBottomBar(
-                child: _buildBottomActionBarWithBackButton(),
+            ),
+            if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
+              _DraggableNavPanel(
+                entryGroup: _entryGroup,
+                onDictionaryChanged: _onDictionaryChanged,
+                onPageChanged: _onPageChanged,
+                onSectionChanged: _onSectionChanged,
+                onNavigateToEntry: _scrollToEntry,
+                initialDy: _navPanelDy,
+                navPanelKey: _navPanelKey,
+                navPanelVersionNotifier: _navPanelVersionNotifier,
               ),
-            ],
-          ),
+            // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
+            if (_isSearchMode)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isSearchMode = false;
+                      _searchController.clear();
+                    });
+                  },
+                  // 使用 opaque 确保拦截所有点击事件，不传递到下层
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
+            _KeyboardAwareBottomBar(
+              child: _buildBottomActionBarWithBackButton(),
+            ),
+          ],
         ),
       ),
     );
