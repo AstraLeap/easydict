@@ -18,6 +18,7 @@ import 'dictionary_manager_page.dart';
 import 'font_config_page.dart';
 import 'help_page.dart';
 import 'llm_config_page.dart';
+import 'text_selection_test_page.dart';
 import 'theme_color_page.dart';
 
 // ─────────────────────────────────────────────
@@ -468,6 +469,23 @@ class _SettingsPageState extends State<SettingsPage> {
                               context,
                               MaterialPageRoute(
                                 builder: (context) => const HelpPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        // 文本选择测试入口（开发调试用）
+                        _buildSettingsTile(
+                          context,
+                          title: '文本选择测试',
+                          icon: Icons.text_fields,
+                          iconColor: colorScheme.tertiary,
+                          showArrow: true,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const TextSelectionTestPage(),
                               ),
                             );
                           },
