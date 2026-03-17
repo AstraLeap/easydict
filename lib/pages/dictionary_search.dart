@@ -48,10 +48,29 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   List<String> _availableGroups = ['auto'];
 
   // 高级搜索选项
-  bool _showAdvancedOptions = false;
-  bool _exactMatch = false;
-  bool _biaoyiExactMatch = false;
   bool _usePhoneticSearch = false;
+
+  // 按语言独立存储的精确匹配设置
+  Map<String, bool> _exactMatchByLanguage = {};
+
+  // 获取当前语言的精确匹配设置
+  bool get _exactMatch {
+    if (_selectedGroup == 'auto') return false;
+    return _exactMatchByLanguage[_selectedGroup] ?? false;
+  }
+
+  // 设置当前语言的精确匹配设置
+  set _exactMatch(bool value) {
+    if (_selectedGroup != 'auto') {
+      _exactMatchByLanguage[_selectedGroup] = value;
+    }
+  }
+
+  // 表意文字的精确匹配（简繁区分）也使用同一套逻辑
+  bool get _biaoyiExactMatch => _exactMatch;
+  set _biaoyiExactMatch(bool value) {
+    _exactMatch = value;
+  }
 
   // 每日单词
   List<String> _dailyWords = [];
@@ -294,7 +313,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       word,
       exactMatch: false,
       usePhoneticSearch: false,
-      biaoyiExactMatch: false,
       sourceLanguage: language,
     );
 
@@ -342,10 +360,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 加载高级搜索设置
   Future<void> _loadAdvancedSettings() async {
-    final settings = await _advancedSettingsService.loadSettings();
+    // 加载所有语言的精确匹配设置
+    final settings = await _advancedSettingsService.getAllExactMatchSettings();
     setState(() {
-      _exactMatch = settings['exactMatch'] ?? false;
-      _biaoyiExactMatch = settings['biaoyiExactMatch'] ?? false;
+      _exactMatchByLanguage = settings;
     });
   }
 
@@ -599,7 +617,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       word,
       exactMatch: _exactMatch,
       usePhoneticSearch: _usePhoneticSearch,
-      biaoyiExactMatch: _biaoyiExactMatch,
       sourceLanguage: _selectedGroup,
     );
 
@@ -749,27 +766,40 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       _wasFocused = true;
                     },
                     extraSuffixIcons: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.tune,
-                          size: 20,
-                          color: _showAdvancedOptions
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                      // 精确匹配状态图标按钮，在 auto 模式下隐藏
+                      if (_selectedGroup != 'auto')
+                        IconButton(
+                          icon: Icon(
+                            _exactMatch
+                                ? Icons.filter_alt
+                                : Icons.filter_alt_off,
+                            size: 20,
+                            color: _exactMatch
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _exactMatch = !_exactMatch;
+                              _advancedSettingsService.setExactMatchForLanguage(
+                                _selectedGroup,
+                                _exactMatch,
+                              );
+                            });
+                            _onSearchTextChanged(_searchController.text);
+                          },
+                          tooltip: _isLogographicLang(_selectedGroup)
+                              ? context.t.search.toneExact
+                              : context.t.search.exactMatch,
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _showAdvancedOptions = !_showAdvancedOptions;
-                          });
-                        },
-                        tooltip: context.t.search.advancedOptions,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 40,
-                          minHeight: 40,
-                        ),
-                      ),
                       IconButton(
                         icon: Icon(
                           Icons.arrow_forward,
@@ -824,116 +854,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       }
                     },
                   ),
-                ),
-                // 高级搜索选项
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  child: _showAdvancedOptions
-                      ? Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                context.t.search.searchOptionsTitle,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 12),
-                              if (_selectedGroup == 'auto')
-                                _buildAutoModeAdvancedOptions(context)
-                              // 表意文字（zh/ja/ko）：显示简繁区分选项
-                              else if (_isLogographicLang(_selectedGroup))
-                                Wrap(
-                                  spacing: 16,
-                                  runSpacing: 8,
-                                  children: [
-                                    FilterChip(
-                                      label: Text(context.t.search.toneExact),
-                                      selected: _biaoyiExactMatch,
-                                      onSelected: (selected) {
-                                        setState(() {
-                                          _biaoyiExactMatch = selected;
-                                        });
-                                        _advancedSettingsService
-                                            .setBiaoyiExactMatch(selected);
-                                        _onSearchTextChanged(
-                                          _searchController.text,
-                                        );
-                                      },
-                                      avatar: Icon(
-                                        Icons.filter_alt_outlined,
-                                        size: 16,
-                                        color: _biaoyiExactMatch
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.onPrimaryContainer
-                                            : Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              // 表音文字：显示精确搜索选项
-                              else
-                                Wrap(
-                                  spacing: 16,
-                                  runSpacing: 8,
-                                  children: [
-                                    // 精确搜索 - 仅表音文字语言显示
-                                    FilterChip(
-                                      label: Text(context.t.search.exactMatch),
-                                      selected: _exactMatch,
-                                      onSelected: (selected) {
-                                        setState(() {
-                                          _exactMatch = selected;
-                                        });
-                                        _advancedSettingsService.setExactMatch(
-                                          selected,
-                                        );
-                                        _onSearchTextChanged(
-                                          _searchController.text,
-                                        );
-                                      },
-                                      avatar: Icon(
-                                        Icons.text_fields,
-                                        size: 16,
-                                        color: _exactMatch
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.onPrimaryContainer
-                                            : Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              const SizedBox(height: 12),
-                              // 提示文本
-                              Text(
-                                _getAdvancedSearchHint(),
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.outline,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : const SizedBox.shrink(),
                 ),
                 // 搜索结果列表
                 if (_showSearchResults && _searchResults.isNotEmpty)
@@ -999,8 +919,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       ],
                     ),
                   ),
-                // 每日单词（仅在高级选项未展开时显示）
-                if (!_showAdvancedOptions) _buildDailyWordsSection(),
+                // 每日单词
+                _buildDailyWordsSection(),
                 // 历史记录始终显示
                 Expanded(
                   child: _searchRecords.isNotEmpty
@@ -1439,110 +1359,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   bool _isLogographicLang(String lang) =>
       lang == 'zh' || lang == 'ja' || lang == 'ko';
-
-  /// 自动模式下的高级搜索选项（inline 布局，语言标签附着在选项左上方）
-  Widget _buildAutoModeAdvancedOptions(BuildContext context) {
-    final languages = _availableGroups.where((g) => g != 'auto').toList();
-    if (languages.isEmpty) {
-      return Text(
-        context.t.search.noEnabledDicts,
-        style: Theme.of(context).textTheme.bodySmall,
-      );
-    }
-
-    Widget buildChipWithLangLabel({
-      required String lang,
-      required String optionLabel,
-      required IconData icon,
-      required bool selected,
-      required VoidCallback onTap,
-    }) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            FilterChip(
-              label: Text(optionLabel),
-              selected: selected,
-              onSelected: (_) => onTap(),
-              avatar: Icon(
-                icon,
-                size: 16,
-                color: selected
-                    ? Theme.of(context).colorScheme.onPrimaryContainer
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            Positioned(
-              top: -8,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  _langDisplayName(lang),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 9,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final chips = <Widget>[];
-    for (final lang in languages) {
-      if (!_isLogographicLang(lang)) {
-        chips.add(
-          buildChipWithLangLabel(
-            lang: lang,
-            optionLabel: context.t.search.exactMatch,
-            icon: Icons.text_fields,
-            selected: _selectedGroup == lang && _exactMatch,
-            onTap: () {
-              setState(() {
-                _selectedGroup = lang;
-                _exactMatch = true;
-                _usePhoneticSearch = false;
-              });
-              _advancedSettingsService.setLastSelectedGroup(lang);
-              _onSearchTextChanged(_searchController.text);
-            },
-          ),
-        );
-      } else {
-        chips.add(
-          buildChipWithLangLabel(
-            lang: lang,
-            optionLabel: context.t.search.toneExact,
-            icon: Icons.filter_alt_outlined,
-            selected: _biaoyiExactMatch,
-            onTap: () {
-              setState(() {
-                _biaoyiExactMatch = !_biaoyiExactMatch;
-              });
-              _onSearchTextChanged(_searchController.text);
-            },
-          ),
-        );
-      }
-    }
-
-    return Wrap(spacing: 12, runSpacing: 4, children: chips);
-  }
-
-  /// 获取高级搜索提示文本
-  String _getAdvancedSearchHint() {
-    return context.t.search.wildcardHint;
-  }
 
   Widget _buildHistoryView() {
     return GestureDetector(

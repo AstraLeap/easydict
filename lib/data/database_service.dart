@@ -48,7 +48,7 @@ class JsonParseParams {
   final String dictId;
   final Map<String, dynamic> row;
   final bool exactMatch;
-  final bool biaoyiExactMatch;
+  final bool isBiaoyi;
   final String originalWord;
 
   JsonParseParams({
@@ -56,22 +56,33 @@ class JsonParseParams {
     required this.dictId,
     required this.row,
     required this.exactMatch,
-    this.biaoyiExactMatch = false,
+    this.isBiaoyi = false,
     required this.originalWord,
   });
+}
+
+/// 检查 headword 是否匹配原始搜索词（精确匹配）
+/// 精确匹配就是直接比较 headword 和 originalWord，不做任何转换
+/// - 表音文字（如英语）：大小写敏感，headword 必须与 originalWord 完全相同
+/// - 表意文字（如中文）：简繁敏感，headword 必须与 originalWord 完全相同
+bool _headwordMatchesExact(String headword, String originalWord, bool isBiaoyi) {
+  // 精确匹配：直接比较，不做任何转换
+  return headword == originalWord;
 }
 
 DictionaryEntry? _parseEntryInIsolate(JsonParseParams params) {
   final jsonData = jsonDecode(params.jsonStr) as Map<String, dynamic>;
 
+  // 精确匹配检查：统一处理表音文字（大小写敏感）和表意文字（简繁不敏感）
   if (params.exactMatch) {
     final headword = jsonData['headword'] as String? ?? '';
-    if (headword != params.originalWord) return null;
-  }
-
-  if (params.biaoyiExactMatch) {
-    final headword = jsonData['headword'] as String? ?? '';
-    if (headword != params.originalWord) return null;
+    if (!_headwordMatchesExact(
+      headword,
+      params.originalWord,
+      params.isBiaoyi,
+    )) {
+      return null;
+    }
   }
 
   String entryId = jsonData['id']?.toString() ?? '';
@@ -600,7 +611,6 @@ class DatabaseService {
     String word, {
     bool exactMatch = false,
     bool usePhoneticSearch = false,
-    bool biaoyiExactMatch = false,
     String? sourceLanguage,
     String? dictId,
   }) async {
@@ -611,7 +621,6 @@ class DatabaseService {
       word,
       exactMatch: exactMatch,
       usePhoneticSearch: usePhoneticSearch,
-      biaoyiExactMatch: biaoyiExactMatch,
       sourceLanguage: sourceLanguage,
       dictId: dictId,
     );
@@ -699,7 +708,6 @@ class DatabaseService {
     String word, {
     required bool exactMatch,
     bool usePhoneticSearch = false,
-    bool biaoyiExactMatch = false,
     String? sourceLanguage,
     String? dictId,
   }) async {
@@ -725,7 +733,6 @@ class DatabaseService {
         word,
         exactMatch: exactMatch,
         usePhoneticSearch: usePhoneticSearch,
-        biaoyiExactMatch: biaoyiExactMatch,
       );
       return result;
     }
@@ -778,7 +785,6 @@ class DatabaseService {
         word,
         exactMatch: exactMatch,
         usePhoneticSearch: usePhoneticSearch,
-        biaoyiExactMatch: biaoyiExactMatch,
       );
     }).toList();
 
@@ -815,12 +821,14 @@ class DatabaseService {
     String word, {
     required bool exactMatch,
     bool usePhoneticSearch = false,
-    bool biaoyiExactMatch = false,
   }) async {
     final entries = <DictionaryEntry>[];
 
     try {
-      Logger.i('正在搜索词典: $dictId', tag: 'DatabaseService');
+      Logger.i(
+        '正在搜索词典: $dictId, exactMatch=$exactMatch',
+        tag: 'DatabaseService',
+      );
       final db = await _dictManager.openDictionaryDatabase(dictId);
       Logger.i('成功打开词典数据库: $dictId', tag: 'DatabaseService');
 
@@ -835,6 +843,8 @@ class DatabaseService {
       final qMode = _detectQueryMode(word);
       final normWord = _normalizeSearchWord(word);
 
+      // ── 新结构：在 indices 表查询 ────────────────────────────────────────
+      // 第一步：在 indices 表中查询符合条件的 entry_id 和 headword
       if (isbiaoyi) {
         // 表意文字词典：同时检索 headword 和 phonetic 字段
         if (usePhoneticSearch) {
@@ -849,9 +859,7 @@ class DatabaseService {
             whereArgs = [normWord];
           }
         } else {
-          // 默认：同时匹配 headword_normalized（索引字段）和 phonetic（拼音/假名输入）
-          // 覆盖索引 idx_headword(headword_normalized, phonetic, headword) 和
-          // idx_phonetic(phonetic, headword_normalized, headword) 均可命中
+          // 默认：同时匹配 headword_normalized 和 phonetic
           if (qMode == _QueryMode.like) {
             whereClause = '(headword_normalized LIKE ? OR phonetic LIKE ?)';
             whereArgs = [normWord, normWord];
@@ -859,7 +867,6 @@ class DatabaseService {
             whereClause = '(headword_normalized GLOB ? OR phonetic GLOB ?)';
             whereArgs = [normWord, normWord];
           } else {
-            // 普通/简繁区分模式：覆盖索引返回 headword，Dart 侧再比较
             whereClause = '(headword_normalized = ? OR phonetic = ?)';
             whereArgs = [normWord, normWord];
           }
@@ -872,46 +879,76 @@ class DatabaseService {
           whereClause = 'headword_normalized GLOB ?';
           whereArgs = [normWord];
         } else {
-          // 覆盖索引 idx_headword(headword_normalized, headword)：
-          // 查询时 headword 列从索引返回，无需回表，Dart 侧再比较 headword 与原始输入
           whereClause = 'headword_normalized = ?';
           whereArgs = [normWord];
         }
       }
 
-      final results = await db.query(
-        'entries',
+      // 从 indices 表获取 entry_id 列表
+      final indexResults = await db.query(
+        'indices',
+        columns: ['entry_id', 'headword'],
         where: whereClause,
         whereArgs: whereArgs,
-        // 表意词典：按拼音/假名序返回，受益于覆盖索引 idx_phonetic(phonetic, headword_normalized, headword)
-        // 表音词典：按 entry_id 顺序即词典编排顺序返回
         orderBy: isbiaoyi ? 'phonetic ASC, headword ASC' : 'entry_id ASC',
       );
 
-      for (final row in results) {
-        // 使用字典解压
-        final jsonStr = extractJsonFromFieldWithDict(
-          row['json_data'],
-          zstdDict,
-        );
+      if (indexResults.isEmpty) {
+        return entries;
+      }
+
+      // 提取 entry_id 列表
+      final entryIds = indexResults.map((r) => r['entry_id'] as int).toList();
+      final headwordMap = <int, String>{};
+      for (final r in indexResults) {
+        headwordMap[r['entry_id'] as int] = r['headword'] as String? ?? '';
+      }
+
+      // 第二步：从 entries 表批量获取 json_data
+      final placeholders = List.filled(entryIds.length, '?').join(',');
+      final jsonResults = await db.rawQuery(
+        'SELECT entry_id, json_data FROM entries WHERE entry_id IN ($placeholders)',
+        entryIds,
+      );
+
+      // 构建 entry_id -> json_data 映射
+      final jsonDataMap = <int, Uint8List>{};
+      for (final r in jsonResults) {
+        final entryId = r['entry_id'] as int;
+        final jsonData = r['json_data'];
+        if (jsonData is Uint8List) {
+          jsonDataMap[entryId] = jsonData;
+        }
+      }
+
+      Logger.d(
+        '_searchInDictionary: indices查询返回 ${indexResults.length} 条, entries查询返回 ${jsonDataMap.length} 条',
+        tag: 'DatabaseService',
+      );
+
+      // 按照 entryIds 顺序处理结果
+      int filteredCount = 0;
+      for (final entryId in entryIds) {
+        final jsonData = jsonDataMap[entryId];
+        if (jsonData == null) continue;
+
+        final jsonStr = extractJsonFromFieldWithDict(jsonData, zstdDict);
         if (jsonStr == null) {
           Logger.w('无法解析行数据的json_data字段', tag: 'DatabaseService');
           continue;
         }
 
         DictionaryEntry? entry;
+        final row = {'entry_id': entryId, 'headword': headwordMap[entryId]};
+
         if (kIsWeb) {
-          final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
+          final jsonMap = jsonDecode(jsonStr) as Map<String, dynamic>;
           if (exactMatch) {
-            final headword = jsonData['headword'] as String? ?? '';
-            if (headword != word) continue;
+            final headword = jsonMap['headword'] as String? ?? '';
+            if (!_headwordMatchesExact(headword, word, isbiaoyi)) continue;
           }
-          if (biaoyiExactMatch) {
-            final headword = jsonData['headword'] as String? ?? '';
-            if (headword != word) continue;
-          }
-          _ensureEntryId(jsonData, row, dictId);
-          entry = DictionaryEntry.fromJson(jsonData);
+          _ensureEntryId(jsonMap, row, dictId);
+          entry = DictionaryEntry.fromJson(jsonMap);
         } else {
           try {
             entry = await compute(
@@ -921,24 +958,20 @@ class DatabaseService {
                 dictId: dictId,
                 row: row,
                 exactMatch: exactMatch,
-                biaoyiExactMatch: biaoyiExactMatch,
+                isBiaoyi: isbiaoyi,
                 originalWord: word,
               ),
             );
           } catch (e) {
             Logger.w('compute 解析失败，回退到主线程解析: $e', tag: 'DatabaseService');
             try {
-              final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
+              final jsonMap = jsonDecode(jsonStr) as Map<String, dynamic>;
               if (exactMatch) {
-                final headword = jsonData['headword'] as String? ?? '';
-                if (headword != word) continue;
+                final headword = jsonMap['headword'] as String? ?? '';
+                if (!_headwordMatchesExact(headword, word, isbiaoyi)) continue;
               }
-              if (biaoyiExactMatch) {
-                final headword = jsonData['headword'] as String? ?? '';
-                if (headword != word) continue;
-              }
-              _ensureEntryId(jsonData, row, dictId);
-              entry = DictionaryEntry.fromJson(jsonData);
+              _ensureEntryId(jsonMap, row, dictId);
+              entry = DictionaryEntry.fromJson(jsonMap);
             } catch (e2) {
               Logger.e('回退解析也失败，跳过此条目: $e2', tag: 'DatabaseService');
               continue;
@@ -948,8 +981,18 @@ class DatabaseService {
 
         if (entry != null) {
           entries.add(entry);
+        } else {
+          filteredCount++;
+          Logger.d(
+            '_searchInDictionary: entry_id=$entryId 被过滤掉 (headword=${headwordMap[entryId]})',
+            tag: 'DatabaseService',
+          );
         }
       }
+      Logger.d(
+        '_searchInDictionary: 处理完成, 成功=${entries.length}, 被过滤=$filteredCount',
+        tag: 'DatabaseService',
+      );
     } catch (e) {
       Logger.e('_searchInDictionary 整体失败: $e', tag: 'DatabaseService');
     }
@@ -985,13 +1028,27 @@ class DatabaseService {
       // 获取当前词典的 zstd 字典用于解压
       final zstdDict = await _dictManager.getZstdDictionary(dictId);
 
-      // 默认使用headword_normalized进行搜索（规范化匹配）
-      final String whereClause = 'headword_normalized = ?';
-
-      final List<Map<String, dynamic>> results = await db.query(
-        'entries',
-        where: whereClause,
+      // 第一步：在 indices 表中查询 entry_id
+      final indexResults = await db.query(
+        'indices',
+        columns: ['entry_id'],
+        where: 'headword_normalized = ?',
         whereArgs: [_normalizeSearchWord(word)],
+        limit: 1,
+      );
+
+      if (indexResults.isEmpty) {
+        return null;
+      }
+
+      final entryId = indexResults.first['entry_id'] as int;
+
+      // 第二步：从 entries 表获取 json_data
+      final results = await db.query(
+        'entries',
+        columns: ['json_data'],
+        where: 'entry_id = ?',
+        whereArgs: [entryId],
         limit: 1,
       );
 
@@ -1219,7 +1276,7 @@ class DatabaseService {
         phoneticArgs = ['$normalizedQuery%'];
       }
       final rows = await db.rawQuery(
-        'SELECT headword, MIN(phonetic) AS phonetic FROM entries'
+        'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
         ' WHERE $phoneticWhere'
         ' GROUP BY headword'
         ' ORDER BY MIN(phonetic) ASC, headword ASC'
@@ -1263,7 +1320,7 @@ class DatabaseService {
 
       // headword_normalized 臂：简繁区分时对结果应用 startsWith 过滤
       final hwRows = await db.rawQuery(
-        'SELECT headword, MIN(phonetic) AS phonetic FROM entries'
+        'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
         ' WHERE $hwWhere'
         ' GROUP BY headword'
         ' ORDER BY MIN(phonetic) ASC, headword ASC'
@@ -1289,7 +1346,7 @@ class DatabaseService {
 
       // phonetic 臂：不参与简繁区分筛选
       final phRows = await db.rawQuery(
-        'SELECT headword, MIN(phonetic) AS phonetic FROM entries'
+        'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
         ' WHERE $phWhere'
         ' GROUP BY headword'
         ' ORDER BY MIN(phonetic) ASC, headword ASC'
@@ -1349,7 +1406,7 @@ class DatabaseService {
     final bool isNormalMode = qMode == _QueryMode.normal;
     final int fetchLimit = (exactMatch && isNormalMode) ? limit * 2 : limit;
     final rows = await db.rawQuery(
-      'SELECT headword FROM entries'
+      'SELECT headword FROM indices'
       ' WHERE $whereStr'
       ' GROUP BY headword'
       ' ORDER BY LOWER(headword) ASC'
@@ -1418,7 +1475,7 @@ class DatabaseService {
     }
 
     final hwRows = await db.rawQuery(
-      'SELECT headword, MIN(phonetic) AS phonetic FROM entries'
+      'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
       ' WHERE $hwWhere'
       ' GROUP BY headword'
       ' ORDER BY MIN(phonetic) ASC, headword ASC'
@@ -1458,7 +1515,7 @@ class DatabaseService {
     }
 
     final phRows = await db.rawQuery(
-      'SELECT headword, MIN(phonetic) AS phonetic FROM entries'
+      'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
       ' WHERE $phWhere'
       ' GROUP BY headword'
       ' ORDER BY MIN(phonetic) ASC, headword ASC'
@@ -1522,7 +1579,7 @@ class DatabaseService {
     final int fetchLimit = (exactMatch && isNormalMode) ? limit * 2 : limit;
 
     final rows = await db.rawQuery(
-      'SELECT headword FROM entries'
+      'SELECT headword FROM indices'
       ' WHERE $whereStr'
       ' GROUP BY headword'
       ' ORDER BY LOWER(headword) ASC'
@@ -1673,12 +1730,49 @@ class DatabaseService {
         return false;
       }
 
+      // 判断是否为表意词典（中/日/韩），决定是否更新 phonetic 列
+      final isbiaoyi = await _isBiaoyiDict(dictId, db);
+
+      // 更新 entries 表
       final result = await db.update(
         'entries',
         {'json_data': compressedBlob},
         where: 'entry_id = ?',
         whereArgs: [entryId],
       );
+
+      // 同时更新 indices 表
+      if (result > 0) {
+        final headwordNormalized = _normalizeForInsert(entry.headword);
+
+        // 表意词典：从 JSON 根节点读取 phonetic 字段并规范化
+        String? phoneticNormalized;
+        if (isbiaoyi) {
+          final rawJson = entry.toJson();
+          final phoneticRaw = rawJson['phonetic']?.toString() ?? '';
+          if (phoneticRaw.isNotEmpty) {
+            phoneticNormalized = _normalizeForInsert(
+              phoneticRaw,
+              removeSpaces: true,
+            );
+          }
+        }
+
+        await db.update(
+          'indices',
+          {
+            'headword': entry.headword,
+            'headword_normalized': headwordNormalized,
+            if (isbiaoyi && phoneticNormalized != null)
+              'phonetic': phoneticNormalized,
+            'entry_type': entry.entryType,
+            'page': entry.page,
+            'section': entry.section,
+          },
+          where: 'entry_id = ?',
+          whereArgs: [entryId],
+        );
+      }
 
       // 如果更新成功，记录到 commits 表
       if (result > 0 && !skipCommit) {
@@ -1701,6 +1795,7 @@ class DatabaseService {
   }
 
   /// 插入或更新词典条目
+  /// 只更新 entries 表的 json_data，不修改 indices 表
   Future<bool> insertOrUpdateEntry(
     DictionaryEntry entry, {
     bool skipCommit = false,
@@ -1717,43 +1812,15 @@ class DatabaseService {
       final json = entry.toJson();
       json.remove('id');
 
-      final zstdDict = await dictManager.getZstdDictionary(dictId);
-      final compressedBlob = compressJsonToBlobWithDict(json, zstdDict);
-
-      final String idStr = entry.id;
-      int? entryId;
-
-      entryId = int.tryParse(idStr);
-
-      if (entryId == null && idStr.contains('_')) {
-        final parts = idStr.split('_');
-        if (parts.length >= 2) {
-          entryId = int.tryParse(parts.last);
-        }
-      }
-
+      // 直接从 JSON 根节点获取 entry_id
+      final entryId = json['entry_id'];
       if (entryId == null) {
+        Logger.e('entry_id 字段不存在', tag: 'DatabaseService');
         return false;
       }
 
-      // 判断是否为表意词典（中/日/韩），决定是否写入 phonetic 列
-      final isbiaoyi = await _isBiaoyiDict(dictId, db);
-
-      // headword_normalized: 不去空格（与 build_db_from_jsonl.py normalize_text 一致）
-      final headwordNormalized = _normalizeForInsert(entry.headword);
-
-      // 表意词典：从 JSON 根节点读取 phonetic 字段并规范化（仅去空格）
-      String? phoneticNormalized;
-      if (isbiaoyi) {
-        final rawJson = entry.toJson();
-        final phoneticRaw = rawJson['phonetic']?.toString() ?? '';
-        if (phoneticRaw.isNotEmpty) {
-          phoneticNormalized = _normalizeForInsert(
-            phoneticRaw,
-            removeSpaces: true,
-          );
-        }
-      }
+      final zstdDict = await dictManager.getZstdDictionary(dictId);
+      final compressedBlob = compressJsonToBlobWithDict(json, zstdDict);
 
       // 在 INSERT 之前检查条目是否已存在，用于区分 insert 和 update
       final existingRows = await db.query(
@@ -1765,15 +1832,9 @@ class DatabaseService {
       );
       final isNewEntry = existingRows.isEmpty;
 
+      // 只更新 entries 表的 json_data
       await db.insert('entries', {
         'entry_id': entryId,
-        'headword': entry.headword,
-        'headword_normalized': headwordNormalized,
-        if (isbiaoyi && phoneticNormalized != null)
-          'phonetic': phoneticNormalized,
-        'entry_type': entry.entryType,
-        'page': entry.page,
-        'section': entry.section,
         'json_data': compressedBlob,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -1827,7 +1888,7 @@ class DatabaseService {
 
   /// 根据 entry_id 获取完整的 entry JSON 数据
   /// 按词头规范化搜索指定词典，返回最多 [limit] 条原始 JSON。
-  /// 使用与建库时相同的 _normalizeSearchWord 规范化，查询 headword_normalized 字段。
+  /// 使用与建库时相同的 _normalizeSearchWord 规范化，查询 indices 表的 headword_normalized 字段。
   Future<List<Map<String, dynamic>>> searchEntriesByHeadword(
     String dictId,
     String headword, {
@@ -1838,13 +1899,28 @@ class DatabaseService {
       final db = await dictManager.openDictionaryDatabase(dictId);
       final zstdDict = await dictManager.getZstdDictionary(dictId);
       final normalized = _normalizeSearchWord(headword);
-      final rows = await db.query(
-        'entries',
-        columns: ['json_data'],
+
+      // 第一步：从 indices 表获取 entry_id 列表
+      final indexRows = await db.query(
+        'indices',
+        columns: ['entry_id'],
         where: 'headword_normalized = ?',
         whereArgs: [normalized],
         limit: limit,
       );
+
+      if (indexRows.isEmpty) {
+        return [];
+      }
+
+      // 第二步：从 entries 表获取 json_data
+      final entryIds = indexRows.map((r) => r['entry_id'] as int).toList();
+      final placeholders = List.filled(entryIds.length, '?').join(',');
+      final rows = await db.rawQuery(
+        'SELECT json_data FROM entries WHERE entry_id IN ($placeholders)',
+        entryIds,
+      );
+
       final entries = <Map<String, dynamic>>[];
       for (final row in rows) {
         final data = row['json_data'];
@@ -1933,6 +2009,7 @@ class DatabaseService {
   }
 
   /// 删除词典条目（同时在 commits 表中记录删除操作）
+  /// 注意：由于外键约束 ON DELETE CASCADE，删除 entries 表记录时会自动删除 indices 表对应记录
   Future<bool> deleteEntryById(String dictId, String entryId) async {
     try {
       final dictManager = DictionaryManager();
@@ -1951,22 +2028,23 @@ class DatabaseService {
         return false;
       }
 
-      // 先获取 headword，用于 commit 记录
-      final rows = await db.query(
-        'entries',
+      // 先从 indices 表获取 headword，用于 commit 记录
+      final indexRows = await db.query(
+        'indices',
         columns: ['headword'],
         where: 'entry_id = ?',
         whereArgs: [entryIdInt],
+        limit: 1,
       );
 
-      if (rows.isEmpty) {
+      if (indexRows.isEmpty) {
         Logger.e('未找到 entry_id=$entryId 的条目', tag: 'DatabaseService');
         return false;
       }
 
-      final headword = rows.first['headword'] as String? ?? '';
+      final headword = indexRows.first['headword'] as String? ?? '';
 
-      // 删除条目
+      // 删除 entries 表条目（外键约束会自动删除 indices 表对应记录）
       await db.delete(
         'entries',
         where: 'entry_id = ?',

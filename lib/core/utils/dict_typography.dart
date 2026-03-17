@@ -169,9 +169,10 @@ class DictTypography {
       letterSpacing: 0.5,
     ),
     DictElementType.label: _ElementMeta(
-      baseFontSize: 12.0,
+      baseFontSize: 13.5,
       isSerifOrMonospace: false,
       fontWeight: FontWeight.w500,
+      lineHeight: 1.3,
     ),
     DictElementType.labelPattern: _ElementMeta(
       baseFontSize: 13.5,

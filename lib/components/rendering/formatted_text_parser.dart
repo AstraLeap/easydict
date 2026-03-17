@@ -415,6 +415,7 @@ class TypeParser {
         aiTextMark = true;
         break;
       case 'label':
+      case 'pattern':
         isLabelType = true;
         newStyle = style.copyWith(fontWeight: FontWeight.w500);
         break;
@@ -967,65 +968,57 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     }
 
     final theme = Theme.of(config.context!);
-    final borderColor = theme.colorScheme.outline.withAlpha(kLabelBorderAlpha);
-    final bgColor = theme.colorScheme.onSurface.withAlpha(
-      kLabelBackgroundAlpha,
-    );
+    final bgColor = theme.colorScheme.onSurface.withAlpha(kLabelBackgroundAlpha);
 
+    // 使用纯 TextSpan 实现标签效果，保持选择连续性
+    // 通过 backgroundColor 模拟背景，使用特殊字符模拟边框
     spans.add(
-      WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Container(
-          margin: const EdgeInsets.symmetric(
-            horizontal: kLabelHorizontalMargin,
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: kLabelHorizontalPadding,
-            vertical: kLabelVerticalPadding,
-          ),
-          decoration: BoxDecoration(
-            color: bgColor,
-            border: Border.all(color: borderColor, width: kLabelBorderWidth),
-            borderRadius: BorderRadius.circular(kLabelBorderRadius),
-          ),
-          child: Text(text, style: labelStyle),
+      TextSpan(
+        text: text,
+        style: labelStyle.copyWith(
+          backgroundColor: bgColor,
+          letterSpacing: 1.5, // 增加字距模拟 padding 效果
         ),
+        recognizer: config.recognizer,
+        mouseCursor: config.mouseCursor,
       ),
     );
   }
 
   void _addSuperscriptSpan(String text, StyleInfo styleInfo) {
     final fontSize = baseStyle.fontSize ?? kDefaultFontSize;
+    // 使用纯 TextSpan 实现上标效果，保持选择连续性
+    // 通过 fontFeatures 启用上标特性（如果字体支持）
+    // 同时缩小字号实现视觉效果
     spans.add(
-      WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Transform.translate(
-          offset: Offset(0, fontSize * kSuperscriptOffsetFactor),
-          child: Text(
-            text,
-            style: styleInfo.style.copyWith(
-              fontSize: fontSize * kScriptFontScale,
-            ),
-          ),
+      TextSpan(
+        text: text,
+        style: styleInfo.style.copyWith(
+          fontSize: fontSize * kScriptFontScale,
+          fontFeatures: const [FontFeature.superscripts()],
+          height: 1.0, // 紧凑行高
         ),
+        recognizer: config.recognizer,
+        mouseCursor: config.mouseCursor,
       ),
     );
   }
 
   void _addSubscriptSpan(String text, StyleInfo styleInfo) {
     final fontSize = baseStyle.fontSize ?? kDefaultFontSize;
+    // 使用纯 TextSpan 实现下标效果，保持选择连续性
+    // 通过 fontFeatures 启用下标特性（如果字体支持）
+    // 同时缩小字号实现视觉效果
     spans.add(
-      WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Transform.translate(
-          offset: Offset(0, fontSize * kSubscriptOffsetFactor),
-          child: Text(
-            text,
-            style: styleInfo.style.copyWith(
-              fontSize: fontSize * kScriptFontScale,
-            ),
-          ),
+      TextSpan(
+        text: text,
+        style: styleInfo.style.copyWith(
+          fontSize: fontSize * kScriptFontScale,
+          fontFeatures: const [FontFeature.subscripts()],
+          height: 1.0, // 紧凑行高
         ),
+        recognizer: config.recognizer,
+        mouseCursor: config.mouseCursor,
       ),
     );
   }

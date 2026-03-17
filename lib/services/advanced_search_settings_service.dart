@@ -3,22 +3,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 语言默认搜索选项配置
 class LanguageDefaultSearchOptions {
   final bool exactMatch;
-  final bool biaoyiExactMatch;
 
   const LanguageDefaultSearchOptions({
     this.exactMatch = false,
-    this.biaoyiExactMatch = false,
   });
 
   Map<String, dynamic> toJson() => {
     'exactMatch': exactMatch,
-    'biaoyiExactMatch': biaoyiExactMatch,
   };
 
   factory LanguageDefaultSearchOptions.fromJson(Map<String, dynamic> json) {
     return LanguageDefaultSearchOptions(
       exactMatch: json['exactMatch'] ?? false,
-      biaoyiExactMatch: json['biaoyiExactMatch'] ?? false,
     );
   }
 }
@@ -129,16 +125,53 @@ class AdvancedSearchSettingsService {
     });
   }
 
-  /// 保存精确搜索设置
+  /// 保存精确搜索设置（已废弃，请使用 setExactMatchForLanguage）
+  @deprecated
   Future<void> setExactMatch(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_exactMatchKey, value);
   }
 
-  /// 保存简繁区分设置
+  /// 保存简繁区分设置（已废弃，请使用 setExactMatchForLanguage）
+  @deprecated
   Future<void> setBiaoyiExactMatch(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_biaoyiExactMatchKey, value);
+  }
+
+  /// 获取指定语言的精确搜索设置
+  /// [language] 语言代码，如 'en', 'zh', 'ja' 等
+  Future<bool> getExactMatchForLanguage(String language) async {
+    final prefs = await SharedPreferences.getInstance();
+    final langCode = language.toLowerCase();
+    final key = 'exact_match_$langCode';
+    return prefs.getBool(key) ?? false;
+  }
+
+  /// 保存指定语言的精确搜索设置
+  Future<void> setExactMatchForLanguage(String language, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final langCode = language.toLowerCase();
+    final key = 'exact_match_$langCode';
+    await prefs.setBool(key, value);
+  }
+
+  /// 批量获取所有语言的精确搜索设置
+  /// 返回 Map<语言代码, 精确搜索设置>
+  Future<Map<String, bool>> getAllExactMatchSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final result = <String, bool>{};
+    final keys = prefs.getKeys();
+    for (final key in keys) {
+      if (key.startsWith('exact_match_')) {
+        final langCode = key.substring('exact_match_'.length);
+        final value = prefs.getBool(key);
+        if (value != null) {
+          result[langCode] = value;
+        }
+      }
+    }
+    return result;
   }
 
   /// 获取指定语言的默认搜索选项

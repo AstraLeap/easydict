@@ -4381,48 +4381,48 @@ class ComponentRendererState extends State<ComponentRenderer> {
   static const _labelStyleConfig = {
     'word': (
       isPlain: true,
-      fontSize: 16.5,
+      fontSize: 16.0,
       fontWeight: FontWeight.bold,
       isSerif: true,
       format: 'none',
     ),
     'pos': (
       isPlain: true,
-      fontSize: null,
-      fontWeight: FontWeight.w500,
+      fontSize: 15.5,
+      fontWeight: FontWeight.w600,
       isSerif: false,
       format: 'none',
     ),
     'grammar': (
       isPlain: true,
       fontSize: 15.0,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w600,
       isSerif: false,
       format: 'bracket',
     ),
     'pronunciation': (
       isPlain: true,
       fontSize: 15.0,
-      fontWeight: null,
+      fontWeight: FontWeight.w500,
       isSerif: false,
       format: 'none',
     ),
     'variant': (
       isPlain: true,
-      fontSize: 15.0,
-      fontWeight: FontWeight.w500,
+      fontSize: 16.0,
+      fontWeight: FontWeight.w600,
       isSerif: true,
       format: 'none',
     ),
     'region': (
       isPlain: true,
-      fontSize: 15.0,
+      fontSize: 16.0,
       fontWeight: FontWeight.w500,
       isSerif: false,
       format: 'none',
     ),
     'pattern': (
-      isPlain: false,
+      isPlain: true,
       fontSize: 15.0,
       fontWeight: FontWeight.w500,
       isSerif: false,
@@ -4431,7 +4431,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'complex': (
       isPlain: true,
       fontSize: 15.0,
-      fontWeight: null,
+      fontWeight: FontWeight.w400,
       isSerif: false,
       format: 'corner',
     ),
@@ -4448,16 +4448,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final color = overrideColor ?? colorScheme.primary;
-
-    if (key == 'pos') {
-      return DictTypography.getScaledStyle(
-        DictElementType.pos,
-        language: _sourceLanguage,
-        fontScales: _fontScales,
-        color: color,
-      ).copyWith(fontWeight: fontWeight ?? FontWeight.w500);
-    }
-
     final baseStyle = DictTypography.getBaseStyle(
       DictElementType.labelPattern,
       color: key == 'word' ? colorScheme.onSurface : color,
@@ -4527,8 +4517,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
       isSerif: isSerif,
     );
 
-    // 纯文本标签使用 TextSpan
+    // 纯文本标签也需要支持格式化文本
     if (isPlain) {
+      final result = _parseFormattedText(
+        text,
+        style,
+        context: context,
+        elementType: DictElementType.labelPattern,
+      );
       final recognizer = _createGestureRecognizer(
         pathKey: pathKey,
         label: label,
@@ -4536,7 +4532,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         context: context,
       );
 
-      return TextSpan(text: text, style: style, recognizer: recognizer);
+      return TextSpan(children: result.spans, recognizer: recognizer);
     }
 
     // 带背景的标签使用 WidgetSpan
@@ -4553,10 +4549,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontWeight: fontWeight,
     );
 
+    // 没有特殊指定样式的label，垂直位置降低一点
+    final needsVerticalOffset = fontSize == null;
     return WidgetSpan(
       alignment: PlaceholderAlignment.middle,
       child: Padding(
-        padding: const EdgeInsets.only(right: 8),
+        padding: EdgeInsets.only(right: 8, top: needsVerticalOffset ? 3 : 0),
         child: labelWidget,
       ),
     );
@@ -4591,6 +4589,47 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 已处理的 key
     final processedKeys = <String>{};
 
+    // 辅助函数：添加 label 元素 spans
+    void addLabelElementSpans(
+      String key,
+      dynamic value, {
+      double? fontSize,
+      FontWeight? fontWeight,
+      bool isSerif = false,
+      bool isPlain = false,
+      bool hasBackground = false,
+      bool isPattern = false,
+      Color? overrideColor,
+    }) {
+      final values = value is List<dynamic> ? value : [value];
+      for (int i = 0; i < values.length; i++) {
+        final item = values[i];
+        final itemValue = item is String ? item : '$item';
+        final formattedValue = _formatLabelText(key, itemValue);
+        final index = value is List<dynamic> ? i : null;
+
+        spans.add(
+          _buildLabelElementSpan(
+            context,
+            key,
+            formattedValue,
+            index: index,
+            labelPrefix: labelPrefix,
+            overrideColor: overrideColor,
+            fontSize: fontSize,
+            fontWeight: fontWeight,
+            isSerif: isSerif,
+            isPlain: isPlain,
+            hasBackground: hasBackground,
+            isPattern: isPattern,
+          ),
+        );
+        if (isPlain) {
+          spans.add(const TextSpan(text: '  '));
+        }
+      }
+    }
+
     for (final key in renderOrder) {
       final value = label[key];
       if (value == null) continue;
@@ -4620,132 +4659,41 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       // 获取样式配置
       final config = _labelStyleConfig[key];
-      final isPlain = config?.isPlain ?? false;
-      final hasBackground = !isPlain;
       final isPattern = key == 'pattern';
+      final isPlain = isPattern ? false : (config?.isPlain ?? false);
+      final hasBackground = isPattern ? false : !isPlain;
 
       // 获取颜色覆盖
-      Color? overrideColor;
-      if (key == 'pronunciation') {
-        overrideColor = Theme.of(context).colorScheme.onSurface;
-      } else if (key == 'word') {
-        overrideColor = Theme.of(context).colorScheme.onSurface;
-      }
+      final colorScheme = Theme.of(context).colorScheme;
+      final overrideColor = switch (key) {
+        'pronunciation' ||
+        'word' ||
+        'variant' ||
+        'pattern' => colorScheme.onSurface,
+        _ => null,
+      };
 
-      // 处理值（可能是字符串或列表）
-      if (value is List<dynamic>) {
-        for (int i = 0; i < value.length; i++) {
-          final item = value[i];
-          final itemValue = item is String ? item : '$item';
-          final formattedValue = _formatLabelText(key, itemValue);
-
-          if (isPlain) {
-            spans.add(
-              _buildLabelElementSpan(
-                context,
-                key,
-                formattedValue,
-                index: i,
-                labelPrefix: labelPrefix,
-                overrideColor: overrideColor,
-                fontSize: config?.fontSize,
-                fontWeight: config?.fontWeight,
-                isSerif: config?.isSerif ?? false,
-                isPlain: isPlain,
-              ),
-            );
-            spans.add(const TextSpan(text: '  '));
-          } else {
-            spans.add(
-              _buildLabelElementSpan(
-                context,
-                key,
-                formattedValue,
-                index: i,
-                labelPrefix: labelPrefix,
-                overrideColor: overrideColor,
-                fontSize: config?.fontSize,
-                fontWeight: config?.fontWeight,
-                isPlain: isPlain,
-                hasBackground: hasBackground,
-                isPattern: isPattern,
-              ),
-            );
-          }
-        }
-      } else {
-        final displayValue = value is String ? value : '$value';
-        final formattedValue = _formatLabelText(key, displayValue);
-
-        if (isPlain) {
-          spans.add(
-            _buildLabelElementSpan(
-              context,
-              key,
-              formattedValue,
-              labelPrefix: labelPrefix,
-              overrideColor: overrideColor,
-              fontSize: config?.fontSize,
-              fontWeight: config?.fontWeight,
-              isSerif: config?.isSerif ?? false,
-              isPlain: isPlain,
-            ),
-          );
-          spans.add(const TextSpan(text: '  '));
-        } else {
-          spans.add(
-            _buildLabelElementSpan(
-              context,
-              key,
-              formattedValue,
-              labelPrefix: labelPrefix,
-              overrideColor: overrideColor,
-              fontSize: config?.fontSize,
-              fontWeight: config?.fontWeight,
-              isPlain: isPlain,
-              hasBackground: hasBackground,
-              isPattern: isPattern,
-            ),
-          );
-        }
-      }
+      addLabelElementSpans(
+        key,
+        value,
+        fontSize: config?.fontSize,
+        fontWeight: config?.fontWeight,
+        isSerif: config?.isSerif ?? false,
+        isPlain: isPlain,
+        hasBackground: hasBackground,
+        isPattern: isPattern,
+        overrideColor: overrideColor,
+      );
     }
 
     // 渲染未在 renderOrder 中定义的其他 label key
+    // 这些没有特殊样式配置的label，字体小0.5号，垂直位置降低一点（在 _buildLabelWidget 和 _buildLabelElementSpan 中处理）
     for (final key in label.keys) {
       if (processedKeys.contains(key)) continue;
       final value = label[key];
       if (value == null) continue;
 
-      if (value is List<dynamic>) {
-        for (int i = 0; i < value.length; i++) {
-          final item = value[i];
-          final itemValue = item is String ? item : '$item';
-          spans.add(
-            _buildLabelElementSpan(
-              context,
-              key,
-              itemValue,
-              index: i,
-              labelPrefix: labelPrefix,
-              isPlain: false,
-              hasBackground: true,
-            ),
-          );
-        }
-      } else {
-        final displayValue = value is String ? value : '$value';
-        spans.add(
-          _buildLabelElementSpan(
-            context,
-            key,
-            displayValue,
-            labelPrefix: labelPrefix,
-            isPlain: false,
-            hasBackground: true,
-          ),
-        );
-      }
+      addLabelElementSpans(key, value, isPlain: false, hasBackground: true);
     }
 
     return spans;
@@ -4765,7 +4713,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final textStyle = DictTypography.getBaseStyle(
       DictElementType.label,
       color: fgColor,
-    );
+    ).copyWith(fontWeight: FontWeight.w600);
 
     final result = _parseFormattedText(
       text,
@@ -4777,7 +4725,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final richText = RichText(text: TextSpan(children: result.spans));
 
     final child = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(5),
@@ -4838,14 +4786,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
           );
     } else {
       // 带背景的语法/地区/用法标签
+      // 没有特殊指定样式的label，字体小0.5号，行高更紧凑
+      final defaultFontSize = fontSize ?? 13.5; // 比基础13.5小约0.5号
+      final defaultLineHeight = fontSize == null ? 1.5 : null; // 默认标签使用更紧凑的行高
       textStyle =
           DictTypography.getBaseStyle(
             DictElementType.label,
             color: overrideColor ?? colorScheme.onSurface,
           ).copyWith(
-            fontWeight:
-                fontWeight ?? (isBold ? FontWeight.bold : FontWeight.normal),
-            fontSize: fontSize,
+            fontWeight: FontWeight.w500,
+            fontSize: defaultFontSize,
+            height: defaultLineHeight,
           );
     }
     if (isSerif) {
@@ -4872,13 +4823,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Widget child;
     if (!hasBackground) {
       if (isPattern) {
+        // pattern 标签：使用默认色纯文本，两边有 []，背景为主题色
         child = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
           decoration: BoxDecoration(
-            color: (overrideColor ?? colorScheme.primary).withValues(
-              alpha: 0.12,
-            ),
-            borderRadius: BorderRadius.circular(2),
+            color: colorScheme.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(3),
           ),
           child: Builder(key: textKey, builder: (context) => richText),
         );
@@ -4889,7 +4839,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final onSurface = colorScheme.onSurface;
 
       child = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
         decoration: BoxDecoration(
           color: onSurface.withValues(alpha: 0.07),
           border: Border.all(
@@ -6696,6 +6646,37 @@ class _DataTabWidget extends StatefulWidget {
   State<_DataTabWidget> createState() => _DataTabWidgetState();
 }
 
+/// 右上角切角裁剪器
+class _ChamferCornerClipper extends CustomClipper<Path> {
+  final double cutWidth; // 上面切的宽度
+  final double cutHeight; // 右边切的高度
+
+  _ChamferCornerClipper({required this.cutWidth, required this.cutHeight});
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    // 从左上角开始
+    path.moveTo(0, 0);
+    // 左边
+    path.lineTo(0, size.height);
+    // 底边
+    path.lineTo(size.width, size.height);
+    // 右边（到底部）
+    path.lineTo(size.width, cutHeight);
+    // 右上角切角
+    path.lineTo(size.width - cutWidth, 0);
+    // 顶部
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_ChamferCornerClipper oldClipper) {
+    return cutWidth != oldClipper.cutWidth || cutHeight != oldClipper.cutHeight;
+  }
+}
+
 class _DataTabWidgetState extends State<_DataTabWidget> {
   int? _selectedIndex;
 
@@ -6722,67 +6703,104 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
             final key = entry.value;
             final isSelected = _selectedIndex == index;
 
-            return InkWell(
-              onTap: () => _selectTab(index, key),
-              borderRadius: BorderRadius.circular(4),
-              mouseCursor: SystemMouseCursors.click,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? widget.colorScheme.primaryContainer
-                      : widget.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isSelected
-                        ? widget.colorScheme.primary
-                        : widget.colorScheme.outlineVariant.withValues(
-                            alpha: 0.3,
-                          ),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    RichText(
-                      text: TextSpan(
-                        children: parseFormattedText(
-                          key,
-                          DictTypography.getBaseStyle(
-                            DictElementType.dataTabLabel,
-                            color: isSelected
-                                ? widget.colorScheme.onPrimaryContainer
-                                : widget.colorScheme.onSurface,
-                            fontWeightOverride: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                          ),
-                          context: context,
-                          sourceLanguage: widget.sourceLanguage,
-                          fontScales: widget.fontScales,
-                          elementType: DictElementType.dataTabLabel,
-                        ).spans,
+            // 展开状态：圆角矩形，内边框较窄
+            // 未展开状态：右上角切角效果 + 外边框
+            final borderRadius = isSelected
+                ? BorderRadius.circular(4)
+                : const BorderRadius.only(
+                    topLeft: Radius.circular(4),
+                    bottomLeft: Radius.circular(4),
+                    bottomRight: Radius.circular(4),
+                    topRight: Radius.circular(0),
+                  );
+
+            Widget tabContent = Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: isSelected
+                  ? BoxDecoration(
+                      color: widget.colorScheme.primaryContainer,
+                      borderRadius: borderRadius,
+                    )
+                  : BoxDecoration(
+                      color: widget.colorScheme.surfaceContainerHighest,
+                      borderRadius: borderRadius,
+                      border: Border.all(
+                        color: widget.colorScheme.outlineVariant.withValues(
+                          alpha: 0.3,
+                        ),
+                        width: 1,
                       ),
                     ),
-                    if (isSelected) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_up,
-                        size: 14,
-                        color: widget.colorScheme.onPrimaryContainer,
+              // 展开状态使用前景装饰绘制内边框，不改变尺寸，边框宽度较窄
+              foregroundDecoration: isSelected
+                  ? BoxDecoration(
+                      borderRadius: borderRadius,
+                      border: Border.all(
+                        color: widget.colorScheme.primary.withValues(
+                          alpha: 0.6,
+                        ),
+                        width: 0.7,
                       ),
-                    ] else ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down,
-                        size: 14,
-                        color: widget.colorScheme.onSurfaceVariant,
-                      ),
-                    ],
+                    )
+                  : null,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      children: parseFormattedText(
+                        key,
+                        DictTypography.getBaseStyle(
+                          DictElementType.dataTabLabel,
+                          color: isSelected
+                              ? widget.colorScheme.onPrimaryContainer
+                              : widget.colorScheme.onSurface,
+                          fontWeightOverride: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                        ),
+                        context: context,
+                        sourceLanguage: widget.sourceLanguage,
+                        fontScales: widget.fontScales,
+                        elementType: DictElementType.dataTabLabel,
+                      ).spans,
+                    ),
+                  ),
+                  if (isSelected) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.keyboard_arrow_up,
+                      size: 14,
+                      color: widget.colorScheme.onPrimaryContainer,
+                    ),
+                  ] else ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 14,
+                      color: widget.colorScheme.onSurfaceVariant,
+                    ),
                   ],
-                ),
+                ],
               ),
+            );
+
+            // 未展开状态使用 ClipPath 实现右上角切角效果
+            Widget finalTabContent = isSelected
+                ? tabContent
+                : ClipPath(
+                    clipper: _ChamferCornerClipper(cutWidth: 11, cutHeight: 8),
+                    child: tabContent,
+                  );
+
+            return InkWell(
+              onTap: () => _selectTab(index, key),
+              borderRadius: borderRadius,
+              mouseCursor: SystemMouseCursors.click,
+              hoverColor: Colors.transparent,
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              child: finalTabContent,
             );
           }).toList(),
         ),
