@@ -1971,6 +1971,14 @@ class UpdateJsonDialog extends StatefulWidget {
   State<UpdateJsonDialog> createState() => _UpdateJsonDialogState();
 }
 
+/// JSON 提取结果类
+class _JsonExtractResult {
+  final List<Map<String, dynamic>> objects;
+  final List<String> errors;
+
+  _JsonExtractResult({required this.objects, required this.errors});
+}
+
 class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     with SingleTickerProviderStateMixin {
   final DatabaseService _databaseService = DatabaseService();
@@ -2008,6 +2016,100 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     super.dispose();
   }
 
+  // ── 智能提取 JSON 对象 ─────────────────────────────────────────────────────
+  /// 从文本中智能提取多个 JSON 对象
+  /// 支持跨行 JSONL 格式，通过匹配大括号来识别每个独立的 JSON 对象
+  _JsonExtractResult _extractJsonObjects(String text) {
+    final objects = <Map<String, dynamic>>[];
+    final errors = <String>[];
+    int i = 0;
+    int objectIndex = 0;
+
+    while (i < text.length) {
+      // 跳过空白字符
+      while (i < text.length && _isWhitespace(text[i])) {
+        i++;
+      }
+
+      if (i >= text.length) break;
+
+      // 找到下一个 JSON 对象的起始位置
+      if (text[i] == '{') {
+        int start = i;
+        int depth = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        while (i < text.length) {
+          final char = text[i];
+
+          if (escaped) {
+            escaped = false;
+            i++;
+            continue;
+          }
+
+          if (char == '\\' && inString) {
+            escaped = true;
+            i++;
+            continue;
+          }
+
+          if (char == '"') {
+            inString = !inString;
+          } else if (!inString) {
+            if (char == '{') {
+              depth++;
+            } else if (char == '}') {
+              depth--;
+              if (depth == 0) {
+                // 找到完整的 JSON 对象
+                final jsonStr = text.substring(start, i + 1);
+                try {
+                  final decoded = jsonDecode(jsonStr);
+                  if (decoded is Map<String, dynamic>) {
+                    objects.add(decoded);
+                    objectIndex++;
+                  } else {
+                    errors.add('对象 #${objectIndex + 1}: 不是有效的 JSON 对象');
+                    objectIndex++;
+                  }
+                } catch (e) {
+                  final preview = jsonStr.length > 80
+                      ? '${jsonStr.substring(0, 80)}…'
+                      : jsonStr;
+                  errors.add('对象 #${objectIndex + 1} 解析失败: $e\n预览: $preview');
+                  objectIndex++;
+                }
+                i++;
+                break;
+              }
+            }
+          }
+          i++;
+        }
+
+        // 如果到达文本末尾但大括号未闭合
+        if (i >= text.length && depth > 0) {
+          final jsonStr = text.substring(start);
+          final preview = jsonStr.length > 80
+              ? '${jsonStr.substring(0, 80)}…'
+              : jsonStr;
+          errors.add('对象 #${objectIndex + 1}: 大括号未闭合\n预览: $preview');
+        }
+      } else {
+        i++;
+      }
+    }
+
+    return _JsonExtractResult(objects: objects, errors: errors);
+  }
+
+  /// 判断字符是否为空白字符
+  bool _isWhitespace(String char) {
+    return char == ' ' || char == '\t' || char == '\n' || char == '\r';
+  }
+
   // ── 导入逻辑 ───────────────────────────────────────────────────────────────
 
   Future<void> _importJson() async {
@@ -2027,8 +2129,9 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
     });
 
     try {
+      // 解析策略：
       // ① 先尝试整段解析为 JSON（处理格式化 JSON 对象或数组）
-      // ② 若失败再按 JSONL（每行一个 JSON 对象）处理
+      // ② 若失败，尝试智能提取多个 JSON 对象（支持跨行 JSONL）
       List<Map<String, dynamic>> objectsToParse = [];
       bool usedJsonMode = false;
 
@@ -2042,57 +2145,44 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           usedJsonMode = true;
         }
       } catch (_) {
-        // 整段解析失败 → JSONL 模式
+        // 整段解析失败 → 尝试智能提取多个 JSON 对象
       }
 
       if (!usedJsonMode) {
-        final lines = text
-            .split('\n')
-            .map((l) => l.trim())
-            .where((l) => l.isNotEmpty)
-            .toList();
-        for (int i = 0; i < lines.length; i++) {
-          try {
-            final decoded = jsonDecode(lines[i]);
-            if (decoded is Map<String, dynamic>) {
-              objectsToParse.add(decoded);
-            }
-          } catch (_) {
-            // 单行解析失败时忽略（下面的循环会统计错误）
-          }
-        }
-        // 若 JSONL 也完全无法解析，报错
+        // 智能提取：找到所有完整的 JSON 对象
+        // 通过匹配大括号来识别每个独立的 JSON 对象
+        final extractResult = _extractJsonObjects(text);
+        objectsToParse = extractResult.objects;
+
+        // 若无法提取任何 JSON 对象，显示错误信息
         if (objectsToParse.isEmpty) {
-          // 重新逐行以收集错误信息
-          final lines2 = text
-              .split('\n')
-              .map((l) => l.trim())
-              .where((l) => l.isNotEmpty)
-              .toList();
-          final errorMessages2 = <String>[];
-          for (int i = 0; i < lines2.length; i++) {
-            try {
-              jsonDecode(lines2[i]);
-            } catch (e) {
-              final preview = lines2[i].length > 50
-                  ? '${lines2[i].substring(0, 50)}…'
-                  : lines2[i];
-              errorMessages2.add(
-                context.t.cloud.importLineError(
-                  line: (i + 1).toString(),
-                  preview: preview,
-                ),
+          final errorMsg = StringBuffer(context.t.cloud.jsonParseError);
+          if (extractResult.errors.isNotEmpty) {
+            errorMsg.writeln();
+            errorMsg.writeln();
+            errorMsg.writeln('解析错误详情:');
+            for (final err in extractResult.errors.take(5)) {
+              errorMsg.writeln('\n• $err');
+            }
+            if (extractResult.errors.length > 5) {
+              errorMsg.writeln(
+                '\n... 还有 ${extractResult.errors.length - 5} 个错误',
               );
-              if (errorMessages2.length >= 3) break;
             }
           }
           setState(() {
-            _importResult =
-                '${context.t.cloud.jsonParseError}\n'
-                '${errorMessages2.join("\n")}';
+            _importResult = errorMsg.toString();
             _importHasError = true;
           });
           return;
+        }
+
+        // 如果有部分解析失败，记录警告
+        if (extractResult.errors.isNotEmpty) {
+          Logger.w(
+            'JSON解析有 ${extractResult.errors.length} 个错误',
+            tag: 'ImportJson',
+          );
         }
       }
 
@@ -2337,22 +2427,20 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           children: [
             Container(
               padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.6,
-                ),
-                borderRadius: BorderRadius.circular(14),
-              ),
               child: TabBar(
                 controller: _tabController,
                 dividerColor: Colors.transparent,
                 indicator: BoxDecoration(
-                  color: colorScheme.primary,
+                  color: colorScheme.primaryContainer.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 indicatorPadding: EdgeInsets.zero,
-                labelColor: colorScheme.onPrimary,
+                labelColor: colorScheme.primary,
                 unselectedLabelColor: colorScheme.onSurfaceVariant,
                 labelStyle: const TextStyle(
                   fontSize: 13,
@@ -2535,11 +2623,11 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
         // 搜索模式切换
         SegmentedButton<String>(
           segments: [
-            ButtonSegment(value: 'id', label: Text(context.t.cloud.idSearch)),
             ButtonSegment(
               value: 'headword',
               label: Text(context.t.cloud.prefixSearch),
             ),
+            ButtonSegment(value: 'id', label: Text(context.t.cloud.idSearch)),
           ],
           selected: {_searchMode},
           onSelectionChanged: (sel) {

@@ -250,8 +250,13 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                             currentValue = currentValue[part];
                           } else if (currentValue is List) {
                             final index = int.tryParse(part);
-                            if (index != null) {
+                            if (index != null &&
+                                index >= 0 &&
+                                index < currentValue.length) {
                               currentValue = currentValue[index];
+                            } else {
+                              // 索引无效，停止遍历
+                              break;
                             }
                           }
                         }

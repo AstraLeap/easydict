@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as path;
 import 'package:visibility_detector/visibility_detector.dart';
@@ -77,6 +78,9 @@ class _MultiGestureRecognizer extends TapGestureRecognizer {
   final LongPressGestureRecognizer? longPressRecognizer;
   final DoubleTapGestureRecognizer? doubleTapRecognizer;
 
+  // 跟踪是否是右键操作
+  bool _isSecondaryButton = false;
+
   _MultiGestureRecognizer({
     required this.tapRecognizer,
     required this.secondaryTapRecognizer,
@@ -87,8 +91,10 @@ class _MultiGestureRecognizer extends TapGestureRecognizer {
   @override
   void addPointer(PointerDownEvent event) {
     if (event.buttons == kSecondaryMouseButton) {
+      _isSecondaryButton = true;
       secondaryTapRecognizer.addPointer(event);
     } else {
+      _isSecondaryButton = false;
       tapRecognizer.addPointer(event);
       longPressRecognizer?.addPointer(event);
       doubleTapRecognizer?.addPointer(event);
@@ -100,7 +106,9 @@ class _MultiGestureRecognizer extends TapGestureRecognizer {
 
   @override
   void handleEvent(PointerEvent event) {
-    if (event.buttons == kSecondaryMouseButton) {
+    // 使用 _isSecondaryButton 标志来判断是否是右键操作
+    // 因为 PointerUpEvent 时 buttons 已经是 0
+    if (_isSecondaryButton) {
       secondaryTapRecognizer.handleEvent(event);
     } else {
       tapRecognizer.handleEvent(event);
@@ -117,6 +125,10 @@ class _SecondaryTapGestureRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void addPointer(PointerDownEvent event) {
+    Logger.d(
+      '_SecondaryTapGestureRecognizer.addPointer: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
+      tag: 'DoubleTapWord',
+    );
     if (event.buttons == kSecondaryMouseButton) {
       startTrackingPointer(event.pointer);
       _kind = event.kind;
@@ -127,7 +139,15 @@ class _SecondaryTapGestureRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void handleEvent(PointerEvent event) {
+    Logger.d(
+      '_SecondaryTapGestureRecognizer.handleEvent: ${event.runtimeType}, buttons=${event.buttons}',
+      tag: 'DoubleTapWord',
+    );
     if (event is PointerUpEvent && event.buttons == 0) {
+      Logger.d(
+        '_SecondaryTapGestureRecognizer: calling onSecondaryTapUp',
+        tag: 'DoubleTapWord',
+      );
       if (onSecondaryTapUp != null) {
         onSecondaryTapUp!(
           TapUpDetails(
@@ -263,6 +283,81 @@ class _RenderTappable extends RenderProxyBox {
   _PathData pathData;
 
   _RenderTappable(this.pathData);
+}
+
+/// 自动缩放字体文本组件
+/// 当文本超出可用宽度时，自动缩小字体以适应一行显示
+class _AutoScalingText extends StatelessWidget {
+  final String text;
+  final TextStyle baseStyle;
+  final DictElementType elementType;
+  final Map<String, Map<String, double>> fontScales;
+  final String? sourceLanguage;
+  final double maxWidth;
+  final bool isBold;
+  final List<InlineSpan>? spans;
+
+  const _AutoScalingText({
+    required this.text,
+    required this.baseStyle,
+    required this.elementType,
+    required this.fontScales,
+    this.sourceLanguage,
+    required this.maxWidth,
+    this.isBold = false,
+    this.spans,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 获取缩放后的样式
+    final scaledStyle = DictTypography.getScaledStyle(
+      elementType,
+      language: sourceLanguage,
+      fontScales: fontScales,
+      color: baseStyle.color,
+    );
+
+    // 合并基础样式和缩放样式
+    final effectiveStyle = scaledStyle.merge(
+      TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal),
+    );
+
+    // 使用传入的spans或创建纯文本span
+    final textSpans = spans ?? [TextSpan(text: text, style: effectiveStyle)];
+
+    // 计算文本宽度
+    final textPainter = TextPainter(
+      text: TextSpan(children: textSpans, style: effectiveStyle),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+
+    final textWidth = textPainter.width;
+    final availableWidth = maxWidth;
+
+    // 如果文本宽度超过可用宽度，使用FittedBox进行缩放
+    if (textWidth > availableWidth && textWidth > 0) {
+      // 使用FittedBox确保文本在一行内完整显示
+      return SizedBox(
+        width: availableWidth,
+        child: FittedBox(
+          fit: BoxFit.fitWidth,
+          alignment: Alignment.centerLeft,
+          child: Text.rich(
+            TextSpan(children: textSpans, style: effectiveStyle),
+            maxLines: 1,
+          ),
+        ),
+      );
+    }
+
+    // 文本宽度足够，正常显示
+    return Text.rich(
+      TextSpan(children: textSpans, style: effectiveStyle),
+      maxLines: 1,
+    );
+  }
 }
 
 // 预编译的正则表达式常量，避免每次调用时重新创建对象
@@ -1043,6 +1138,11 @@ class ComponentRenderer extends StatefulWidget {
   /// 自定义底部内边距。如果为 -1（默认），则使用 16px。
   final double bottomPadding;
 
+  /// 是否启用文本选择功能。默认为 true。
+  /// 当 ComponentRenderer 被嵌入到另一个可滚动组件中时，
+  /// 应设置为 false 以避免 SelectionArea 和 SingleChildScrollView 的嵌套冲突。
+  final bool enableSelection;
+
   const ComponentRenderer({
     super.key,
     required this.entry,
@@ -1053,6 +1153,7 @@ class ComponentRenderer extends StatefulWidget {
     this.enableElementActions = true,
     this.topPadding = -1,
     this.bottomPadding = -1,
+    this.enableSelection = true,
   });
 
   @override
@@ -1073,6 +1174,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   // 当前选择的文本（用于选择完成后触发查词）
   SelectedContent? _currentSelection;
+
+  // 长按/选择开始时的触摸位置（用于定位菜单）
+  Offset? _selectionStartPosition;
 
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
@@ -1143,9 +1247,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (text.isEmpty) return const SizedBox.shrink();
 
     // Display as plain text without title or container styling
+    // 使用普通 Text 而不是 SelectableText，因为外层已经有 SelectionArea 提供选择功能
+    // SelectableText 在 SelectionArea 内部会导致选择系统冲突
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: SelectableText(
+      child: Text(
         text,
         style: DictTypography.getBaseStyle(
           DictElementType.boardContent,
@@ -1380,21 +1486,34 @@ class ComponentRendererState extends State<ComponentRenderer> {
     BuildContext context, {
     int startOffset = 0,
   }) {
-    Logger.d('双击触发，全局坐标: $globalPosition', tag: 'DoubleTapWord');
-    Logger.d('文本内容: $text', tag: 'DoubleTapWord');
-    Logger.d('起始偏移量: $startOffset', tag: 'DoubleTapWord');
-
     final renderObject = textKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderParagraph) {
-      Logger.d('renderObject 不是 RenderParagraph', tag: 'DoubleTapWord');
+
+    // 查找 RenderParagraph（可能被 MouseRegion 等包装）
+    RenderParagraph? renderParagraph;
+    if (renderObject is RenderParagraph) {
+      renderParagraph = renderObject;
+    } else if (renderObject != null) {
+      // 遍历子节点查找 RenderParagraph
+      void visitChild(RenderObject child) {
+        if (child is RenderParagraph) {
+          renderParagraph = child;
+        } else {
+          child.visitChildren(visitChild);
+        }
+      }
+
+      renderObject.visitChildren(visitChild);
+    }
+
+    if (renderParagraph == null) {
+      Logger.d('未找到 RenderParagraph', tag: 'DoubleTapWord');
       return;
     }
 
-    final localPosition = renderObject.globalToLocal(globalPosition);
-    Logger.d('本地坐标: $localPosition', tag: 'DoubleTapWord');
+    final localPosition = renderParagraph!.globalToLocal(globalPosition);
 
     // 直接使用 RenderParagraph 获取点击位置的全局字符偏移量
-    final textPosition = renderObject.getPositionForOffset(localPosition);
+    final textPosition = renderParagraph!.getPositionForOffset(localPosition);
     final globalOffset = textPosition.offset;
     Logger.d('全局字符偏移量: $globalOffset', tag: 'DoubleTapWord');
 
@@ -1622,23 +1741,34 @@ class ComponentRendererState extends State<ComponentRenderer> {
               alignment: PlaceholderAlignment.middle,
               child: Transform.translate(
                 offset: const Offset(0, 1),
-                child: InkWell(
-                  onTap: () {
-                    _playAudio(dictId, audioFile);
-                  },
-                  onLongPress: () {
+                child: GestureDetector(
+                  onSecondaryTapUp: (details) {
                     if (onElementSecondaryTapWithPosition != null) {
                       onElementSecondaryTapWithPosition(
                         audioPath.join('.'),
                         audioPathData.label,
-                        Offset.zero,
+                        details.globalPosition,
                       );
                     }
                   },
-                  mouseCursor: SystemMouseCursors.click,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Icon(Icons.volume_up, size: 14, color: iconColor),
+                  child: InkWell(
+                    onTap: () {
+                      _playAudio(dictId, audioFile);
+                    },
+                    onLongPress: () {
+                      if (onElementSecondaryTapWithPosition != null) {
+                        onElementSecondaryTapWithPosition(
+                          audioPath.join('.'),
+                          audioPathData.label,
+                          Offset.zero,
+                        );
+                      }
+                    },
+                    mouseCursor: SystemMouseCursors.click,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Icon(Icons.volume_up, size: 14, color: iconColor),
+                    ),
                   ),
                 ),
               ),
@@ -1656,28 +1786,39 @@ class ComponentRendererState extends State<ComponentRenderer> {
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
-          child: InkWell(
-            onTap: () {
-              onElementTap(usagePath.join('.'), usagePathData.label);
-            },
-            onLongPress: () {
+          child: GestureDetector(
+            onSecondaryTapUp: (details) {
               if (onElementSecondaryTapWithPosition != null) {
                 onElementSecondaryTapWithPosition(
                   usagePath.join('.'),
                   usagePathData.label,
-                  Offset.zero,
+                  details.globalPosition,
                 );
               }
             },
-            mouseCursor: SystemMouseCursors.click,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: () {
+                onElementTap(usagePath.join('.'), usagePathData.label);
+              },
+              onLongPress: () {
+                if (onElementSecondaryTapWithPosition != null) {
+                  onElementSecondaryTapWithPosition(
+                    usagePath.join('.'),
+                    usagePathData.label,
+                    Offset.zero,
+                  );
+                }
+              },
+              mouseCursor: SystemMouseCursors.click,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(usage, style: usageStyle),
               ),
-              child: Text(usage, style: usageStyle),
             ),
           ),
         ),
@@ -1730,6 +1871,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final tapRecognizer = TapGestureRecognizer()
         ..onTapDown = (details) {
           _lastTapPosition = details.globalPosition;
+          // 记录当前路径数据，用于手机端文本选择菜单
+          _currentSelectionPathData = pathData;
         }
         ..onTap = () {
           // 单击立即生效
@@ -1762,6 +1905,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           }
         };
 
+      // 恢复 SecondaryTapGestureRecognizer 用于电脑端右键菜单
+      // 长按选择由 SelectionArea 处理
       final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
         ..onSecondaryTapUp = (details) {
           _lastTapPosition = details.globalPosition;
@@ -1774,32 +1919,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
           }
         };
 
-      final longPressRecognizer =
-          LongPressGestureRecognizer(
-              duration: const Duration(milliseconds: 200),
-            )
-            ..onLongPressStart = (details) {
-              _lastTapPosition = details.globalPosition;
-              if (onElementSecondaryTapWithPosition != null) {
-                onElementSecondaryTapWithPosition(
-                  _convertPathToString(path),
-                  pathData.label,
-                  details.globalPosition,
-                );
-              }
-            };
+      _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
 
-      _recognizers.addAll([
-        tapRecognizer,
-        secondaryTapRecognizer,
-        longPressRecognizer,
-      ]);
-
-      // 使用 MultiGestureRecognizer 同时支持点击、双击和长按
+      // 使用 MultiGestureRecognizer 支持点击和右键
       final recognizer = _MultiGestureRecognizer(
         tapRecognizer: tapRecognizer,
         secondaryTapRecognizer: secondaryTapRecognizer,
-        longPressRecognizer: longPressRecognizer,
+        longPressRecognizer: null,
         doubleTapRecognizer: null,
       );
 
@@ -1839,27 +1965,38 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final sourcePath = [...basePath, 'source'];
         final sourcePathData = _PathData(sourcePath, 'Example Source');
 
-        sourceWidget = InkWell(
-          onTap: () {
-            onElementTap(sourcePath.join('.'), sourcePathData.label);
-          },
-          onLongPress: () {
+        sourceWidget = GestureDetector(
+          onSecondaryTapUp: (details) {
             if (onElementSecondaryTapWithPosition != null) {
               onElementSecondaryTapWithPosition(
                 sourcePath.join('.'),
                 sourcePathData.label,
-                Offset.zero,
+                details.globalPosition,
               );
             }
           },
-          mouseCursor: SystemMouseCursors.click,
-          child: Text(
-            sourceText,
-            style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-              fontStyle: FontStyle.italic,
-              fontFamily: 'SourceSans3',
+          child: InkWell(
+            onTap: () {
+              onElementTap(sourcePath.join('.'), sourcePathData.label);
+            },
+            onLongPress: () {
+              if (onElementSecondaryTapWithPosition != null) {
+                onElementSecondaryTapWithPosition(
+                  sourcePath.join('.'),
+                  sourcePathData.label,
+                  Offset.zero,
+                );
+              }
+            },
+            mouseCursor: SystemMouseCursors.click,
+            child: Text(
+              sourceText,
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                fontStyle: FontStyle.italic,
+                fontFamily: 'SourceSans3',
+              ),
             ),
           ),
         );
@@ -1873,10 +2010,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Builder(
-              key: exampleTextKey,
-              builder: (context) => Text.rich(TextSpan(children: spans)),
-            ),
+            Text.rich(TextSpan(children: spans), key: exampleTextKey),
             const SizedBox(height: 2),
             Align(alignment: Alignment.centerRight, child: sourceWidget),
           ],
@@ -1886,10 +2020,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     return Container(
       margin: EdgeInsets.only(bottom: 6, left: leftMargin),
-      child: Builder(
-        key: exampleTextKey,
-        builder: (context) => Text.rich(TextSpan(children: spans)),
-      ),
+      child: Text.rich(TextSpan(children: spans), key: exampleTextKey),
     );
   }
 
@@ -1903,6 +2034,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
   OverlayEntry? _currentBarrierEntry;
   OverlayEntry? _phraseOverlayEntry;
   OverlayEntry? _phraseBarrierEntry;
+
+  // 标志：是否正在显示上下文菜单（用于防止重复显示）
+  bool _isShowingContextMenu = false;
+
+  // 标志：是否正在关闭菜单（用于防止菜单重建）
+  bool _isClosingContextMenu = false;
+
+  // 当前选择的路径数据（用于手机端文本选择菜单）
+  _PathData? _currentSelectionPathData;
 
   Future<void> _loadClickAction() async {
     final action = await PreferencesService().getClickAction();
@@ -2035,6 +2175,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   /// 执行 AI 翻译/切换翻译显示
   /// 这是原来的单击功能，现在提取为可复用方法
   void _performAiTranslate(String path, String label) {
+    Logger.d(
+      '_performAiTranslate: path=$path, label=$label',
+      tag: 'ContextMenu',
+    );
     // 检查是否是语言切换操作（路径以语言代码结尾）
     final pathParts = path.split('.');
     if (pathParts.isNotEmpty) {
@@ -2344,8 +2488,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     Logger.d(
-      'Right-click on element: path=$path, label=$label',
-      tag: 'ComponentRenderer',
+      'Right-click on element: path=$path, label=$label, _currentOverlayEntry=$_currentOverlayEntry',
+      tag: 'ComponentRenderer._handleElementSecondaryTap',
     );
 
     final pathParts = path.split('.');
@@ -2359,8 +2503,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Offset? position,
     _PathData? pathData,
   ) async {
+    Logger.d(
+      '_showContextMenu called: position=$position, pathData=$pathData',
+      tag: 'ComponentRenderer._showContextMenu',
+    );
+
     // 关闭之前的菜单
     _removeCurrentOverlay();
+
+    // 立即设置一个标志，表示正在显示菜单
+    // 这样可以防止 _buildSelectionContextMenu 在 await 期间创建另一个菜单
+    _isShowingContextMenu = true;
 
     final colorScheme = Theme.of(context).colorScheme;
     final overlay = Overlay.of(context);
@@ -2391,9 +2544,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final order = await PreferencesService().getClickActionOrder();
 
+    // 检查是否有选中文本
+    final selectedText = _currentSelection?.plainText ?? '';
+    final hasSelection = selectedText.isNotEmpty;
+
     // 根据菜单项数量动态计算菜单高度，确保菜单完全在屏幕内
+    // 如果有选中文本，需要额外添加"查词"菜单项
+    final itemCount = order.length + (hasSelection ? 1 : 0);
     const menuWidth = 200.0;
-    final menuHeight = order.length * 48.0 + 15.0;
+    final menuHeight = itemCount * 48.0 + 15.0;
     dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
     dy = dy.clamp(topPadding + 8.0, screenSize.height - menuHeight - 8.0);
 
@@ -2420,6 +2579,29 @@ class ComponentRendererState extends State<ComponentRenderer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // 如果有选中文本，在最前面显示"查词"菜单项
+                  if (hasSelection) ...[
+                    ListTile(
+                      leading: const Icon(Icons.search, size: 20),
+                      title: Text(
+                        '${context.t.settings.actionLabel.search}："${selectedText.length > 10 ? '${selectedText.substring(0, 10)}...' : selectedText}"',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      dense: true,
+                      onTap: () {
+                        _removeCurrentOverlay();
+                        _handleTextSelectionSearch(selectedText);
+                      },
+                    ),
+                    if (order.isNotEmpty)
+                      Divider(
+                        height: 1,
+                        thickness: 0.5,
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
+                  ],
                   for (int i = 0; i < order.length; i++) ...[
                     Builder(
                       builder: (context) {
@@ -2473,13 +2655,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               },
                             );
                           case PreferencesService.actionCopy:
+                            // 如果有选中文本，复制选中的文本
                             return ListTile(
                               leading: const Icon(Icons.copy, size: 20),
                               title: Text(context.t.settings.actionLabel.copy),
                               dense: true,
                               onTap: () {
                                 _removeCurrentOverlay();
-                                if (pathData != null) {
+                                if (hasSelection) {
+                                  // 复制选中的文本
+                                  Clipboard.setData(
+                                    ClipboardData(text: selectedText),
+                                  );
+                                } else if (pathData != null) {
+                                  // 没有选中文本时，复制元素内容
                                   _performCopy(
                                     pathData.path.join('.'),
                                     pathData.label,
@@ -2528,18 +2717,691 @@ class ComponentRendererState extends State<ComponentRenderer> {
     overlay.insert(overlayEntry);
     _currentOverlayEntry = overlayEntry;
     _currentBarrierEntry = barrierEntry;
+
+    // 菜单已显示，重置标志
+    _isShowingContextMenu = false;
+  }
+
+  /// 构建文本选择的上下文菜单
+  /// 手机端：显示和电脑端一样的软件菜单，同时保留光标选择功能
+  /// 桌面端：不显示菜单，右键菜单由 SecondaryTapGestureRecognizer 处理
+  /// 选择手柄（光标）由 SelectionArea 自动管理
+  Widget _buildSelectionContextMenu(
+    BuildContext context,
+    SelectableRegionState state,
+  ) {
+    Logger.d('_buildSelectionContextMenu called', tag: 'ContextMenu');
+    // 桌面端：返回空，右键菜单由 SecondaryTapGestureRecognizer 处理
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    if (isDesktop) {
+      Logger.d(
+        '_buildSelectionContextMenu: desktop, returning empty',
+        tag: 'ContextMenu',
+      );
+      return const SizedBox.shrink();
+    }
+
+    // 防止菜单重复显示
+    if (_isShowingContextMenu || _isClosingContextMenu) {
+      Logger.d(
+        '_buildSelectionContextMenu: already showing or closing, returning empty',
+        tag: 'ContextMenu',
+      );
+      return const SizedBox.shrink();
+    }
+
+    // 手机端：显示软件菜单，同时保留光标选择功能
+    // 光标选择功能由 SelectionArea 自动管理
+    final selectedText = _currentSelection?.plainText ?? '';
+    Logger.d(
+      '_buildSelectionContextMenu: selectedText="$selectedText"',
+      tag: 'ContextMenu',
+    );
+
+    if (selectedText.isEmpty) {
+      Logger.d(
+        '_buildSelectionContextMenu: no selection, returning empty',
+        tag: 'ContextMenu',
+      );
+      return const SizedBox.shrink();
+    }
+
+    // 使用记录的路径数据，如果没有则使用默认值
+    final pathData =
+        _currentSelectionPathData ?? _PathData(['selection'], selectedText);
+    Logger.d(
+      '_buildSelectionContextMenu: using pathData=${pathData.path.join('.')}, label=${pathData.label}',
+      tag: 'ContextMenu',
+    );
+
+    // 构建菜单项列表
+    final colorScheme = Theme.of(context).colorScheme;
+    final menuItems = _buildSelectionMenuItems(
+      context: context,
+      selectedText: selectedText,
+      pathData: pathData,
+      colorScheme: colorScheme,
+      state: state,
+    );
+
+    // 获取屏幕尺寸和安全区域
+    final screenSize = MediaQuery.of(context).size;
+    final topPadding = MediaQuery.of(context).padding.top;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    // 计算菜单尺寸
+    const menuWidth = 200.0;
+    final menuHeight = menuItems.length * 48.0 + 16.0;
+
+    double dx;
+    double dy;
+
+    // 均衡的间距：菜单与选区的距离
+    const gap = 12.0;
+
+    Logger.d(
+      '_buildSelectionContextMenu: _selectionStartPosition=$_selectionStartPosition, menuHeight=$menuHeight, gap=$gap',
+      tag: 'ContextMenu',
+    );
+
+    if (_selectionStartPosition != null) {
+      // 无法获取选择区域，回退到触摸位置
+      dx = _selectionStartPosition!.dx - menuWidth / 2;
+
+      final touchY = _selectionStartPosition!.dy;
+      final spaceBelow = screenSize.height - touchY - bottomPadding;
+      final spaceAbove = touchY - topPadding;
+
+      Logger.d(
+        '_buildSelectionContextMenu: touchY=$touchY, spaceBelow=$spaceBelow, spaceAbove=$spaceAbove, menuHeight+gap=${menuHeight + gap}',
+        tag: 'ContextMenu',
+      );
+
+      if (spaceBelow >= menuHeight + gap) {
+        dy = touchY + gap;
+        Logger.d(
+          '_buildSelectionContextMenu: showing BELOW, dy=$dy (touchY + gap)',
+          tag: 'ContextMenu',
+        );
+      } else if (spaceAbove >= menuHeight + gap) {
+        dy = touchY - menuHeight - gap;
+        Logger.d(
+          '_buildSelectionContextMenu: showing ABOVE, dy=$dy (touchY - menuHeight - gap)',
+          tag: 'ContextMenu',
+        );
+      } else {
+        if (spaceBelow >= spaceAbove) {
+          dy = touchY + gap;
+          if (dy + menuHeight > screenSize.height - bottomPadding) {
+            dy = screenSize.height - bottomPadding - menuHeight - 8;
+          }
+          Logger.d(
+            '_buildSelectionContextMenu: showing BELOW (fallback), dy=$dy',
+            tag: 'ContextMenu',
+          );
+        } else {
+          dy = touchY - menuHeight - gap;
+          if (dy < topPadding + 8) {
+            dy = topPadding + 8;
+          }
+          Logger.d(
+            '_buildSelectionContextMenu: showing ABOVE (fallback), dy=$dy',
+            tag: 'ContextMenu',
+          );
+        }
+      }
+
+      Logger.d(
+        '_buildSelectionContextMenu: final position - touchY=$touchY, dy=$dy, distance from touch=${(dy - touchY).abs()}',
+        tag: 'ContextMenu',
+      );
+    } else {
+      // 没有任何位置信息，使用屏幕底部居中
+      dy = screenSize.height - bottomPadding - menuHeight - 16.0;
+      dx = (screenSize.width - menuWidth) / 2;
+      Logger.d(
+        '_buildSelectionContextMenu: no position info, using screen bottom',
+        tag: 'ContextMenu',
+      );
+    }
+
+    // 确保菜单在屏幕水平范围内
+    dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
+    // 确保菜单在垂直安全区域内
+    dy = dy.clamp(
+      topPadding + 8.0,
+      screenSize.height - bottomPadding - menuHeight - 8.0,
+    );
+
+    Logger.d(
+      '_buildSelectionContextMenu: menu position dx=$dx, dy=$dy',
+      tag: 'ContextMenu',
+    );
+
+    // 计算菜单区域矩形，用于判断点击是否在菜单内
+    final menuRect = Rect.fromLTWH(dx, dy, menuWidth, menuHeight);
+
+    // 返回自定义菜单，使用 Stack 包装，添加全屏透明遮罩层
+    // 点击遮罩层（菜单外）会清除选择并关闭菜单
+    return Stack(
+      children: [
+        // 全屏透明遮罩层，点击时关闭菜单
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (event) {
+              // 检查点击是否在菜单区域外
+              if (!menuRect.contains(event.position)) {
+                Logger.d(
+                  '_buildSelectionContextMenu: tap outside menu, clearing selection',
+                  tag: 'ContextMenu',
+                );
+                // 清除选择，这会关闭菜单
+                state.clearSelection();
+              }
+            },
+            child: Container(color: Colors.transparent),
+          ),
+        ),
+        // 菜单本体
+        Positioned(
+          left: dx,
+          top: dy,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            color: colorScheme.surface,
+            child: SizedBox(
+              width: menuWidth,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: menuItems,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建选择菜单项列表
+  List<Widget> _buildSelectionMenuItems({
+    required BuildContext context,
+    required String selectedText,
+    required _PathData pathData,
+    required ColorScheme colorScheme,
+    required SelectableRegionState state,
+  }) {
+    final menuItems = <Widget>[];
+
+    // 在最前面显示"查词"菜单项
+    menuItems.add(
+      InkWell(
+        onTap: () {
+          state.clearSelection();
+          _handleTextSelectionSearch(selectedText);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.search, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '${context.t.settings.actionLabel.search}："${selectedText.length > 10 ? '${selectedText.substring(0, 10)}...' : selectedText}"',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 获取菜单项顺序（使用默认值，因为 contextMenuBuilder 是同步的）
+    final order = PreferencesService.defaultActionOrder;
+
+    // 添加分隔线（如果有其他菜单项）
+    if (order.isNotEmpty) {
+      menuItems.add(
+        Divider(
+          height: 1,
+          thickness: 0.5,
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      );
+    }
+
+    // 添加其他菜单项
+    for (final action in order) {
+      Widget? menuItem;
+
+      switch (action) {
+        case PreferencesService.actionAiTranslate:
+          menuItem = _buildMenuItem(
+            icon: Icons.translate,
+            label: context.t.settings.actionLabel.aiTranslate,
+            onTap: () {
+              state.clearSelection();
+              _performAiTranslate(pathData.path.join('.'), pathData.label);
+            },
+          );
+          break;
+        case PreferencesService.actionEdit:
+          menuItem = _buildMenuItem(
+            icon: Icons.edit,
+            label: context.t.settings.actionLabel.edit,
+            onTap: () {
+              state.clearSelection();
+              widget.onEditElement?.call(
+                pathData.path.join('.'),
+                pathData.label,
+              );
+            },
+          );
+          break;
+        case PreferencesService.actionCopy:
+          menuItem = _buildMenuItem(
+            icon: Icons.copy,
+            label: context.t.settings.actionLabel.copy,
+            onTap: () {
+              state.clearSelection();
+              Clipboard.setData(ClipboardData(text: selectedText));
+            },
+          );
+          break;
+        case PreferencesService.actionAskAi:
+          menuItem = _buildMenuItem(
+            icon: Icons.auto_awesome,
+            label: context.t.settings.actionLabel.askAi,
+            onTap: () {
+              state.clearSelection();
+              widget.onAiAsk?.call(pathData.path.join('.'), pathData.label);
+            },
+          );
+          break;
+        case PreferencesService.actionSearch:
+          // 已经在最前面显示了查词项，这里跳过
+          menuItem = null;
+          break;
+        case PreferencesService.actionFavorite:
+          menuItem = _buildMenuItem(
+            icon: Icons.bookmark_outline,
+            label: context.t.settings.actionLabel.favorite,
+            onTap: () {
+              state.clearSelection();
+              // 收藏功能暂不支持文本选择
+            },
+          );
+          break;
+        case PreferencesService.actionSpeak:
+          menuItem = _buildMenuItem(
+            icon: Icons.volume_up,
+            label: context.t.settings.actionLabel.speak,
+            onTap: () {
+              state.clearSelection();
+              _performSpeak(pathData.path.join('.'), pathData.label);
+            },
+          );
+          break;
+        default:
+          menuItem = null;
+          break;
+      }
+
+      if (menuItem != null) {
+        menuItems.add(menuItem);
+      }
+    }
+
+    return menuItems;
+  }
+
+  /// 显示文本选择的软件菜单（和电脑端右键菜单一样）
+  /// 菜单显示在选择区域下方，不与光标区域重合
+  void _showContextMenuForSelection(
+    BuildContext context,
+    Offset position,
+    String selectedText,
+  ) async {
+    Logger.d(
+      '_showContextMenuForSelection: position=$position, selectedText="$selectedText"',
+      tag: 'ContextMenu',
+    );
+    // 关闭之前的菜单
+    _removeCurrentOverlay();
+
+    _isShowingContextMenu = true;
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final overlay = Overlay.of(context);
+    late OverlayEntry overlayEntry;
+
+    // 获取屏幕尺寸和安全区域
+    final screenSize = MediaQuery.of(context).size;
+    final topPadding = MediaQuery.of(context).padding.top;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    // 菜单宽度
+    const menuWidth = 200.0;
+
+    // 水平居中显示菜单
+    double dx = (screenSize.width - menuWidth) / 2;
+
+    // 菜单显示在屏幕底部，留出安全区域
+    // 这样不会与光标选择区域重合
+    final order = await PreferencesService().getClickActionOrder();
+
+    // 手机端菜单需要额外添加"查词"菜单项
+    final itemCount = order.length + 1; // +1 for search item
+    final menuHeight = itemCount * 48.0 + 16.0;
+    double dy = screenSize.height - bottomPadding - menuHeight - 16.0;
+
+    // 确保菜单在安全区域内
+    dy = dy.clamp(
+      topPadding + 8.0,
+      screenSize.height - bottomPadding - menuHeight - 8.0,
+    );
+    dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
+
+    // 使用记录的路径数据，如果没有则使用默认值
+    final pathData =
+        _currentSelectionPathData ?? _PathData(['selection'], selectedText);
+    Logger.d(
+      '_showContextMenuForSelection: using pathData=${pathData.path.join('.')}, label=${pathData.label}',
+      tag: 'ContextMenu',
+    );
+
+    // 使用单个 OverlayEntry，包含遮罩层和菜单
+    // 使用 Listener 而不是 GestureDetector，避免吞掉事件
+    overlayEntry = OverlayEntry(
+      builder: (context) {
+        // 构建菜单项列表
+        final menuItems = <Widget>[];
+
+        // 在最前面显示"查词"菜单项
+        menuItems.add(
+          InkWell(
+            onTap: () {
+              _removeCurrentOverlay();
+              _handleTextSelectionSearch(selectedText);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.search, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '${context.t.settings.actionLabel.search}："${selectedText.length > 10 ? '${selectedText.substring(0, 10)}...' : selectedText}"',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        // 添加分隔线（如果有其他菜单项）
+        if (order.isNotEmpty) {
+          menuItems.add(
+            Divider(
+              height: 1,
+              thickness: 0.5,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          );
+        }
+
+        // 添加其他菜单项
+        for (int i = 0; i < order.length; i++) {
+          final action = order[i];
+          Widget? menuItem;
+
+          switch (action) {
+            case PreferencesService.actionAiTranslate:
+              menuItem = _buildMenuItem(
+                icon: Icons.translate,
+                label: context.t.settings.actionLabel.aiTranslate,
+                onTap: () {
+                  _removeCurrentOverlay();
+                  _performAiTranslate(pathData.path.join('.'), pathData.label);
+                },
+              );
+              break;
+            case PreferencesService.actionEdit:
+              menuItem = _buildMenuItem(
+                icon: Icons.edit,
+                label: context.t.settings.actionLabel.edit,
+                onTap: () {
+                  _removeCurrentOverlay();
+                  widget.onEditElement?.call(
+                    pathData.path.join('.'),
+                    pathData.label,
+                  );
+                },
+              );
+              break;
+            case PreferencesService.actionCopy:
+              menuItem = _buildMenuItem(
+                icon: Icons.copy,
+                label: context.t.settings.actionLabel.copy,
+                onTap: () {
+                  _removeCurrentOverlay();
+                  Clipboard.setData(ClipboardData(text: selectedText));
+                },
+              );
+              break;
+            case PreferencesService.actionAskAi:
+              menuItem = _buildMenuItem(
+                icon: Icons.auto_awesome,
+                label: context.t.settings.actionLabel.askAi,
+                onTap: () {
+                  _removeCurrentOverlay();
+                  widget.onAiAsk?.call(pathData.path.join('.'), pathData.label);
+                },
+              );
+              break;
+            case PreferencesService.actionSearch:
+              // 已经在最前面显示了查词项，这里跳过
+              menuItem = null;
+              break;
+            case PreferencesService.actionFavorite:
+              menuItem = _buildMenuItem(
+                icon: Icons.bookmark_outline,
+                label: context.t.settings.actionLabel.favorite,
+                onTap: () {
+                  _removeCurrentOverlay();
+                  // 收藏功能暂不支持文本选择
+                },
+              );
+              break;
+            case PreferencesService.actionSpeak:
+              menuItem = _buildMenuItem(
+                icon: Icons.volume_up,
+                label: context.t.settings.actionLabel.speak,
+                onTap: () {
+                  _removeCurrentOverlay();
+                  _performSpeak(pathData.path.join('.'), pathData.label);
+                },
+              );
+              break;
+            default:
+              menuItem = null;
+              break;
+          }
+
+          if (menuItem != null) {
+            menuItems.add(menuItem);
+          }
+        }
+
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) {
+            Logger.d(
+              'ContextMenu Overlay onPointerDown: position=${event.position}',
+              tag: 'ContextMenu',
+            );
+            // 检查点击是否在菜单区域内
+            final menuRect = Rect.fromLTWH(dx, dy, 200, menuHeight);
+            Logger.d(
+              'ContextMenu menuRect=$menuRect, contains=${menuRect.contains(event.position)}',
+              tag: 'ContextMenu',
+            );
+            if (!menuRect.contains(event.position)) {
+              // 点击在菜单外部，关闭菜单
+              Logger.d(
+                'ContextMenu: tap outside menu, closing',
+                tag: 'ContextMenu',
+              );
+              _removeCurrentOverlay();
+            }
+          },
+          onPointerUp: (event) {
+            Logger.d(
+              'ContextMenu Overlay onPointerUp: position=${event.position}',
+              tag: 'ContextMenu',
+            );
+          },
+          child: Stack(
+            children: [
+              // 菜单
+              Positioned(
+                left: dx,
+                top: dy,
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (event) {
+                    Logger.d(
+                      'ContextMenu Menu onPointerDown: position=${event.position}',
+                      tag: 'ContextMenu',
+                    );
+                  },
+                  onPointerUp: (event) {
+                    Logger.d(
+                      'ContextMenu Menu onPointerUp: position=${event.position}',
+                      tag: 'ContextMenu',
+                    );
+                  },
+                  child: Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(8),
+                    color: colorScheme.surface,
+                    child: SizedBox(
+                      width: 200,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: menuItems,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    overlay.insert(overlayEntry);
+    _currentOverlayEntry = overlayEntry;
+    // 不再需要单独的 barrierEntry，因为遮罩层已经包含在 overlayEntry 中
+
+    _isShowingContextMenu = false;
+  }
+
+  /// 构建菜单项
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    Logger.d('Building menu item: $label', tag: 'ContextMenu');
+    return InkWell(
+      onTap: () {
+        Logger.d('InkWell onTap: $label', tag: 'ContextMenu');
+        onTap();
+      },
+      onTapDown: (details) {
+        Logger.d(
+          'InkWell onTapDown: $label at ${details.globalPosition}',
+          tag: 'ContextMenu',
+        );
+      },
+      onTapUp: (details) {
+        Logger.d(
+          'InkWell onTapUp: $label at ${details.globalPosition}',
+          tag: 'ContextMenu',
+        );
+      },
+      onTapCancel: () {
+        Logger.d('InkWell onTapCancel: $label', tag: 'ContextMenu');
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label, overflow: TextOverflow.ellipsis)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 处理文本选择后的查词操作
+  void _handleTextSelectionSearch(String selectedText) {
+    if (selectedText.isEmpty) return;
+
+    // 移除格式化标记
+    final plainText = _removeFormatting(selectedText);
+
+    // 使用 lookup: 前缀触发查词导航
+    // _handleTranslationTap 会识别这个前缀并导航到查词页面
+    widget.onElementTap?.call('lookup:$plainText', plainText);
   }
 
   void _removeCurrentOverlay() {
+    Logger.d(
+      '_removeCurrentOverlay called, _currentOverlayEntry=$_currentOverlayEntry',
+      tag: 'ContextMenu',
+    );
+    // 设置关闭标志，防止菜单重建
+    _isClosingContextMenu = true;
+
     try {
       _currentOverlayEntry?.remove();
       _currentBarrierEntry?.remove();
+      Logger.d(
+        '_removeCurrentOverlay: overlay removed successfully',
+        tag: 'ContextMenu',
+      );
     } catch (e) {
       // 忽略已经移除的entry
+      Logger.d(
+        '_removeCurrentOverlay: error removing overlay: $e',
+        tag: 'ContextMenu',
+      );
     } finally {
       _currentOverlayEntry = null;
       _currentBarrierEntry = null;
+      _isShowingContextMenu = false;
+      // 注意：不清除 _currentSelectionPathData，保留路径数据供下次选择使用
+      // 路径数据会在用户点击其他位置时更新
     }
+
+    // 延迟重置关闭标志，给 SelectionArea 足够时间完成重建
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _isClosingContextMenu = false;
+      }
+    });
   }
 
   void _removePhraseOverlay() {
@@ -2738,6 +3600,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                         topPadding: 8,
                                         bottomPadding: 8,
                                         enableElementActions: false,
+                                        // 禁用选择功能，避免 SelectionArea 和 SingleChildScrollView 嵌套冲突
+                                        enableSelection: false,
                                         // 切换翻译：导航到短语词条的全屏详情页（在那里可正常操作）
                                         onElementTap: (path, label) {
                                           navigateToPhraseDetail();
@@ -3084,91 +3948,39 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onElementSecondaryTap: _handleElementSecondaryTap,
           child: PathScope(
             path: const ['entry'],
-            child: SelectionArea(
-              onSelectionChanged: (selection) {
-                // 只记录选择状态，不立即触发查词
-                _currentSelection = selection;
-              },
-              child: Listener(
-                onPointerDown: (event) {
-                  // 清除之前的选择
-                  _currentSelection = null;
-                },
-                onPointerUp: (event) {
-                  // 只在松手时才检查选择并触发查词
-                  if (_currentSelection != null) {
-                    final selectedText = _currentSelection!.plainText;
-                    // 只有当选中的是单个单词时才自动查词
-                    if (selectedText.isNotEmpty &&
-                        !selectedText.contains(' ')) {
-                      Logger.d(
-                        'SelectionArea 选择单词完成: $selectedText',
-                        tag: 'SelectionArea',
-                      );
-                      _performDoubleTapSearch(selectedText, context);
-                    }
-                  }
-                },
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    top: widget.topPadding >= 0
-                        ? widget.topPadding
-                        : MediaQuery.of(context).padding.top + 16,
-                    bottom: widget.bottomPadding >= 0
-                        ? widget.bottomPadding
-                        : 16,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (page.isNotEmpty) ...[
-                        _buildPageDisplay(context, page),
-                        const SizedBox(height: 16),
-                      ],
-                      if (sections.isNotEmpty) ...[
-                        _buildSectionNavigation(context, sections),
-                        const SizedBox(height: 12),
-                      ],
-                      _buildWord(context),
-                      if (entry.frequency.isNotEmpty ||
-                          entry.pronunciations.isNotEmpty ||
-                          entry.certifications.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: [
-                            if (entry.frequency.isNotEmpty)
-                              _buildFrequencyStars(context),
-                            if (entry.pronunciations.isNotEmpty)
-                              _buildPronunciations(context),
-                            if (entry.certifications.isNotEmpty) ...[
-                              ..._buildCertificationsInline(context),
-                            ],
-                          ],
-                        ),
-                      ],
-                      // 渲染 data（在 sense 之前）
-                      _buildDataIfExist(context),
-                      if (entry.sense.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _buildSenses(context),
-                      ],
-                      if (entry.senseGroup.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _buildSenseGroups(context),
-                      ],
-                      // 渲染 phrase
-                      _buildPhrases(context),
-                      // 渲染所有未渲染的 key 为 board
-                      _buildRemainingBoards(context),
-                    ],
-                  ),
-                ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: widget.topPadding >= 0
+                    ? widget.topPadding
+                    : MediaQuery.of(context).padding.top + 16,
+                bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
               ),
+              child: widget.enableSelection
+                  ? Listener(
+                      // 捕获所有触摸事件，记录长按开始时的位置
+                      onPointerDown: (event) {
+                        _selectionStartPosition = event.position;
+                      },
+                      child: SelectionArea(
+                        // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
+                        contextMenuBuilder: (context, state) {
+                          return _buildSelectionContextMenu(context, state);
+                        },
+                        onSelectionChanged: (selection) {
+                          // 只记录选择状态，不触发任何操作
+                          _currentSelection = selection;
+                        },
+                        child: _buildContentColumn(
+                          context,
+                          page,
+                          sections,
+                          entry,
+                        ),
+                      ),
+                    )
+                  : _buildContentColumn(context, page, sections, entry),
             ),
           ),
         ),
@@ -3190,11 +4002,74 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
+  /// 构建内容列，提取为单独方法以便在 enableSelection 为 true/false 时复用
+  Widget _buildContentColumn(
+    BuildContext context,
+    String page,
+    List<String> sections,
+    DictionaryEntry entry,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (page.isNotEmpty) ...[
+          _buildPageDisplay(context, page),
+          const SizedBox(height: 16),
+        ],
+        if (sections.isNotEmpty) ...[
+          _buildSectionNavigation(context, sections),
+          const SizedBox(height: 12),
+        ],
+        _buildWord(context),
+        if (entry.frequency.isNotEmpty ||
+            entry.pronunciations.isNotEmpty ||
+            entry.certifications.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (entry.frequency.isNotEmpty) _buildFrequencyStars(context),
+              if (entry.pronunciations.isNotEmpty)
+                _buildPronunciations(context),
+              if (entry.certifications.isNotEmpty) ...[
+                ..._buildCertificationsInline(context),
+              ],
+            ],
+          ),
+        ],
+        // 渲染 data（在 sense 之前）
+        _buildDataIfExist(context),
+        if (entry.sense.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildSenses(context),
+        ],
+        if (entry.senseGroup.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildSenseGroups(context),
+        ],
+        // 渲染 phrase
+        _buildPhrases(context),
+        // 渲染所有未渲染的 key 为 board
+        _buildRemainingBoards(context),
+      ],
+    );
+  }
+
+  /// 构建词条标题（headline 或 headword）
+  /// 优先显示 headline，如果没有则显示 headword
+  /// 支持动态字体调整和右键菜单
   Widget _buildWord(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final entry = _localEntry;
 
-    final word = entry.headword;
+    // 优先使用 headword，如果没有则使用 headline
+    final displayText = entry.headword.isNotEmpty
+        ? entry.headword
+        : entry.headline ?? '';
+    final isUsingHeadword = entry.headword.isNotEmpty;
+
     final pos = entry.sense.isNotEmpty
         ? (entry.sense[0]['pos'] as String? ?? '')
         : '';
@@ -3213,27 +4088,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
             Flexible(
               child: PathScope.append(
                 context,
-                key: 'headword',
+                key: isUsingHeadword ? 'headword' : 'headline',
                 child: Builder(
                   builder: (context) {
-                    return _buildTappableWidget(
+                    return _buildHeadwordWithContextMenu(
                       context: context,
-                      pathData: _PathData(PathScope.of(context), 'Headword'),
-                      child: Text.rich(
-                        softWrap: true,
-                        TextSpan(
-                          children: _parseFormattedText(
-                            word,
-                            DictTypography.getBaseStyle(
-                              headwordElementType,
-                              color: colorScheme.onSurface,
-                            ),
-                            context: context,
-                            elementType: headwordElementType,
-                            isBold: true,
-                          ).spans,
-                        ),
-                      ),
+                      text: displayText,
+                      elementType: headwordElementType,
+                      colorScheme: colorScheme,
+                      pathKey: isUsingHeadword ? 'headword' : 'headline',
+                      label: isUsingHeadword ? 'Headword' : 'Headline',
                     );
                   },
                 ),
@@ -3257,6 +4121,64 @@ class ComponentRendererState extends State<ComponentRenderer> {
           ],
         ),
       ],
+    );
+  }
+
+  /// 构建带有右键菜单和动态字体调整的标题widget
+  Widget _buildHeadwordWithContextMenu({
+    required BuildContext context,
+    required String text,
+    required DictElementType elementType,
+    required ColorScheme colorScheme,
+    required String pathKey,
+    required String label,
+  }) {
+    final baseStyle = DictTypography.getBaseStyle(
+      elementType,
+      color: colorScheme.onSurface,
+    );
+
+    // 解析格式化文本
+    final formattedResult = _parseFormattedText(
+      text,
+      baseStyle,
+      context: context,
+      elementType: elementType,
+      isBold: true,
+    );
+
+    final path = PathScope.of(context);
+    final pathData = _PathData(path, label);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 使用 GestureDetector 包装以支持右键菜单
+        return _buildTappableWidget(
+          context: context,
+          pathData: pathData,
+          child: GestureDetector(
+            onSecondaryTapUp: (details) {
+              _lastTapPosition = details.globalPosition;
+              _handleElementSecondaryTap(
+                _convertPathToString(path),
+                label,
+                context,
+                details.globalPosition,
+              );
+            },
+            child: _AutoScalingText(
+              text: text,
+              baseStyle: baseStyle,
+              elementType: elementType,
+              fontScales: _fontScales,
+              sourceLanguage: _sourceLanguage,
+              maxWidth: constraints.maxWidth,
+              isBold: true,
+              spans: formattedResult.spans,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -3513,6 +4435,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       colorScheme: colorScheme,
       contentBuilder: (board, p) => _buildBoardContent(context, board, p),
       onElementTap: _handleElementTap,
+      onElementSecondaryTap: _handleElementSecondaryTap,
       sourceLanguage: _sourceLanguage,
       fontScales: _fontScales,
     );
@@ -3694,85 +4617,96 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
                     return Material(
                       color: Colors.transparent,
-                      child: InkWell(
-                        onTap: audioFile.isNotEmpty
-                            ? () {
-                                _playAudio(entry.dictId ?? '', audioFile);
-                              }
-                            : null,
-                        onLongPress: () {
+                      child: GestureDetector(
+                        onSecondaryTapUp: (details) {
+                          _lastTapPosition = details.globalPosition;
                           _handleElementSecondaryTap(
                             _convertPathToString(path),
                             pathData.label,
                             context,
-                            Offset.zero,
+                            details.globalPosition,
                           );
                         },
-                        borderRadius: BorderRadius.circular(12),
-                        splashColor: audioFile.isNotEmpty
-                            ? colorScheme.primary.withValues(alpha: 0.1)
-                            : null,
-                        mouseCursor: audioFile.isNotEmpty
-                            ? SystemMouseCursors.click
-                            : SystemMouseCursors.basic,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: audioFile.isNotEmpty
-                                ? colorScheme.surfaceContainerHighest
-                                : null,
-                            borderRadius: BorderRadius.circular(12),
-                            border: audioFile.isNotEmpty
-                                ? null
-                                : Border.all(
-                                    color: colorScheme.outlineVariant,
-                                    width: 1,
+                        child: InkWell(
+                          onTap: audioFile.isNotEmpty
+                              ? () {
+                                  _playAudio(entry.dictId ?? '', audioFile);
+                                }
+                              : null,
+                          onLongPress: () {
+                            _handleElementSecondaryTap(
+                              _convertPathToString(path),
+                              pathData.label,
+                              context,
+                              Offset.zero,
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          splashColor: audioFile.isNotEmpty
+                              ? colorScheme.primary.withValues(alpha: 0.1)
+                              : null,
+                          mouseCursor: audioFile.isNotEmpty
+                              ? SystemMouseCursors.click
+                              : SystemMouseCursors.basic,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: audioFile.isNotEmpty
+                                  ? colorScheme.surfaceContainerHighest
+                                  : null,
+                              borderRadius: BorderRadius.circular(12),
+                              border: audioFile.isNotEmpty
+                                  ? null
+                                  : Border.all(
+                                      color: colorScheme.outlineVariant,
+                                      width: 1,
+                                    ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                if (region.isNotEmpty)
+                                  PathScope.append(
+                                    context,
+                                    key: 'region',
+                                    child: Builder(
+                                      builder: (context) {
+                                        return _buildPronunciationRegionElement(
+                                          context,
+                                          region,
+                                          hasAudio: audioFile.isNotEmpty,
+                                        );
+                                      },
+                                    ),
                                   ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              if (region.isNotEmpty)
-                                PathScope.append(
-                                  context,
-                                  key: 'region',
-                                  child: Builder(
-                                    builder: (context) {
-                                      return _buildPronunciationRegionElement(
-                                        context,
-                                        region,
-                                        hasAudio: audioFile.isNotEmpty,
-                                      );
-                                    },
+                                if (notation.isNotEmpty)
+                                  PathScope.append(
+                                    context,
+                                    key: 'notation',
+                                    child: Builder(
+                                      builder: (context) {
+                                        return _buildPronunciationPhoneticElement(
+                                          context,
+                                          notation,
+                                          hasAudio: audioFile.isNotEmpty,
+                                        );
+                                      },
+                                    ),
                                   ),
-                                ),
-                              if (notation.isNotEmpty)
-                                PathScope.append(
-                                  context,
-                                  key: 'notation',
-                                  child: Builder(
-                                    builder: (context) {
-                                      return _buildPronunciationPhoneticElement(
-                                        context,
-                                        notation,
-                                        hasAudio: audioFile.isNotEmpty,
-                                      );
-                                    },
+                                if (audioFile.isNotEmpty) ...[
+                                  const SizedBox(width: 5),
+                                  Icon(
+                                    Icons.volume_up,
+                                    size: 13,
+                                    color: colorScheme.primary,
                                   ),
-                                ),
-                              if (audioFile.isNotEmpty) ...[
-                                const SizedBox(width: 5),
-                                Icon(
-                                  Icons.volume_up,
-                                  size: 13,
-                                  color: colorScheme.primary,
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ),
@@ -3918,6 +4852,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     bool hasAudio = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final path = PathScope.of(context);
+    final pathData = _PathData(path, 'Region');
 
     final text = Text.rich(
       strutStyle: const StrutStyle(
@@ -3942,8 +4878,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ? text
         : _buildTappableWidget(
             context: context,
-            pathData: _PathData(PathScope.of(context), 'Region'),
-            child: text,
+            pathData: pathData,
+            child: GestureDetector(
+              onSecondaryTapUp: (details) {
+                _lastTapPosition = details.globalPosition;
+                _handleElementSecondaryTap(
+                  _convertPathToString(path),
+                  pathData.label,
+                  context,
+                  details.globalPosition,
+                );
+              },
+              child: text,
+            ),
           );
   }
 
@@ -3953,6 +4900,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     bool hasAudio = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final path = PathScope.of(context);
+    final pathData = _PathData(path, 'Phonetic');
 
     final text = Text.rich(
       strutStyle: const StrutStyle(
@@ -3980,8 +4929,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ? text
         : _buildTappableWidget(
             context: context,
-            pathData: _PathData(PathScope.of(context), 'Phonetic'),
-            child: text,
+            pathData: pathData,
+            child: GestureDetector(
+              onSecondaryTapUp: (details) {
+                _lastTapPosition = details.globalPosition;
+                _handleElementSecondaryTap(
+                  _convertPathToString(path),
+                  pathData.label,
+                  context,
+                  details.globalPosition,
+                );
+              },
+              child: text,
+            ),
           );
   }
 
@@ -4055,6 +5015,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           final tapRecognizer = TapGestureRecognizer()
             ..onTapDown = (details) {
               _lastTapPosition = details.globalPosition;
+              // 记录当前路径数据，用于手机端文本选择菜单
+              _currentSelectionPathData = pathData;
             }
             ..onTap = () {
               // 单击立即生效
@@ -4087,8 +5049,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
               }
             };
 
+          // 恢复 SecondaryTapGestureRecognizer 用于电脑端右键菜单
+          // 长按选择由 SelectionArea 处理
           final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
             ..onSecondaryTapUp = (details) {
+              Logger.d(
+                'SecondaryTapRecognizer.onSecondaryTapUp called (definition): position=${details.globalPosition}',
+                tag: 'ComponentRenderer._buildSenseContent',
+              );
               _lastTapPosition = details.globalPosition;
               _handleElementSecondaryTap(
                 _convertPathToString(path),
@@ -4098,28 +5066,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
               );
             };
 
-          final longPressRecognizer = LongPressGestureRecognizer()
-            ..onLongPressStart = (details) {
-              _lastTapPosition = details.globalPosition;
-              _handleElementSecondaryTap(
-                _convertPathToString(path),
-                pathData.label,
-                context,
-                details.globalPosition,
-              );
-            };
+          _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
 
-          _recognizers.addAll([
-            tapRecognizer,
-            secondaryTapRecognizer,
-            longPressRecognizer,
-          ]);
-
-          // 使用 MultiGestureRecognizer 同时支持点击、双击和长按
+          // 使用 MultiGestureRecognizer 支持点击和右键
           final recognizer = _MultiGestureRecognizer(
             tapRecognizer: tapRecognizer,
             secondaryTapRecognizer: secondaryTapRecognizer,
-            longPressRecognizer: longPressRecognizer,
+            longPressRecognizer: null,
             doubleTapRecognizer: null,
           );
 
@@ -4216,10 +5169,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     if (spans.isEmpty) return const SizedBox.shrink();
-    return Builder(
-      key: definitionTextKey,
-      builder: (context) => Text.rich(TextSpan(children: spans)),
-    );
+    return Text.rich(TextSpan(children: spans), key: definitionTextKey);
   }
 
   /// 渲染同义词/反义词的内联标签
@@ -4281,7 +5231,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  /// 创建统一的手势识别器，支持点击、右键和长按
+  /// 创建统一的手势识别器，支持点击和右键
+  /// 长按由 SelectionArea 处理
   _MultiGestureRecognizer _createGestureRecognizer({
     required String pathKey,
     required String label,
@@ -4291,11 +5242,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final tapRecognizer = TapGestureRecognizer()
       ..onTapDown = (details) {
         _lastTapPosition = details.globalPosition;
+        // 记录当前路径数据，用于手机端文本选择菜单
+        _currentSelectionPathData = _PathData(path, label);
       }
       ..onTap = () {
         _handleElementTap(pathKey, label);
       };
 
+    // 恢复 SecondaryTapGestureRecognizer 用于电脑端右键菜单
     final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
       ..onSecondaryTapUp = (details) {
         _lastTapPosition = details.globalPosition;
@@ -4307,27 +5261,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
         );
       };
 
-    final longPressRecognizer = LongPressGestureRecognizer()
-      ..onLongPressStart = (details) {
-        _lastTapPosition = details.globalPosition;
-        _handleElementSecondaryTap(
-          _convertPathToString(path),
-          label,
-          context,
-          details.globalPosition,
-        );
-      };
-
-    _recognizers.addAll([
-      tapRecognizer,
-      secondaryTapRecognizer,
-      longPressRecognizer,
-    ]);
+    _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
 
     return _MultiGestureRecognizer(
       tapRecognizer: tapRecognizer,
       secondaryTapRecognizer: secondaryTapRecognizer,
-      longPressRecognizer: longPressRecognizer,
+      longPressRecognizer: null,
       doubleTapRecognizer: null,
     );
   }
@@ -4472,12 +5411,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         fontWeight: fontWeight,
         isSerif: isSerif,
       );
-      final result = _parseFormattedText(
-        text,
-        style,
-        context: context,
-        elementType: DictElementType.labelPattern,
-      );
+
+      // 创建手势识别器以支持点击和右键菜单
       final recognizer = _createGestureRecognizer(
         pathKey: pathKey,
         label: label,
@@ -4485,7 +5420,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
         context: context,
       );
 
-      return TextSpan(children: result.spans, recognizer: recognizer);
+      final result = _parseFormattedText(
+        text,
+        style,
+        context: context,
+        elementType: DictElementType.labelPattern,
+        recognizer: recognizer,
+        mouseCursor: SystemMouseCursors.click,
+      );
+
+      return TextSpan(children: result.spans);
     }
 
     // 带背景的标签使用 WidgetSpan（样式在 _buildLabelWidget 内部处理）
@@ -4752,55 +5696,93 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final elementType = hasBackground
         ? DictElementType.label
         : (isPattern ? DictElementType.label : DictElementType.labelPattern);
-    final result = _parseFormattedText(
-      text,
-      textStyle,
-      context: context,
-      elementType: elementType,
-    );
-    final richText = Text.rich(TextSpan(children: result.spans));
 
-    Widget child;
-    if (!hasBackground) {
-      if (isPattern) {
-        // pattern 标签：使用默认色纯文本，两边有 []，背景为主题色
-        child = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Builder(key: textKey, builder: (context) => richText),
-        );
-      } else {
-        child = Builder(key: textKey, builder: (context) => richText);
-      }
-    } else {
-      final onSurface = colorScheme.onSurface;
-
-      child = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-        decoration: BoxDecoration(
-          color: onSurface.withValues(alpha: 0.07),
-          border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.45),
-            width: 0.7,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Builder(key: textKey, builder: (context) => richText),
-      );
-    }
-
-    // 使用PathScope和_TappableWrapper包裹
+    // 使用PathScope包裹
     return PathScope.append(
       context,
       key: pathKey,
       child: Builder(
         builder: (context) {
+          final path = PathScope.of(context);
+          final labelName = _capitalizeFirst(key);
+
+          // 创建手势识别器以支持点击和右键菜单
+          final tapRecognizer = TapGestureRecognizer()
+            ..onTapDown = (details) {
+              _lastTapPosition = details.globalPosition;
+              _currentSelectionPathData = _PathData(path, labelName);
+            }
+            ..onTap = () {
+              _handleElementTap(_convertPathToString(path), labelName);
+            };
+
+          // 添加右键菜单支持
+          final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+            ..onSecondaryTapUp = (details) {
+              _lastTapPosition = details.globalPosition;
+              _handleElementSecondaryTap(
+                _convertPathToString(path),
+                labelName,
+                context,
+                details.globalPosition,
+              );
+            };
+
+          _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+          // 使用 MultiGestureRecognizer 支持点击和右键
+          final recognizer = _MultiGestureRecognizer(
+            tapRecognizer: tapRecognizer,
+            secondaryTapRecognizer: secondaryTapRecognizer,
+            longPressRecognizer: null,
+            doubleTapRecognizer: null,
+          );
+
+          final result = _parseFormattedText(
+            text,
+            textStyle,
+            context: context,
+            elementType: elementType,
+            recognizer: recognizer,
+            mouseCursor: SystemMouseCursors.click,
+          );
+          final richText = Text.rich(TextSpan(children: result.spans));
+
+          Widget child;
+          if (!hasBackground) {
+            if (isPattern) {
+              // pattern 标签：使用默认色纯文本，两边有 []，背景为主题色
+              child = Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Builder(key: textKey, builder: (context) => richText),
+              );
+            } else {
+              child = Builder(key: textKey, builder: (context) => richText);
+            }
+          } else {
+            final onSurface = colorScheme.onSurface;
+
+            child = Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+              decoration: BoxDecoration(
+                color: onSurface.withValues(alpha: 0.07),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.45),
+                  width: 0.7,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Builder(key: textKey, builder: (context) => richText),
+            );
+          }
+
           return _buildTappableWidget(
             context: context,
-            pathData: _PathData(PathScope.of(context), _capitalizeFirst(key)),
+            pathData: _PathData(path, labelName),
             text: text,
             textStyle: textStyle,
             customTextKey: textKey,
@@ -5276,6 +6258,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'dict_id',
     'version',
     'headword',
+    'headline', // headline 在 _buildWord 中作为标题渲染，不应再渲染为 board
     'entry_type',
     'page',
     'section',
@@ -5722,6 +6705,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 text: text,
                 style: textStyle,
                 textKey: textKey,
+                path: path,
               ),
             ),
           ],
@@ -5767,6 +6751,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               style: textStyle,
               textKey: textKey,
               hidden: hidden,
+              path: path,
             ),
           ),
         );
@@ -5780,6 +6765,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     required TextStyle style,
     GlobalKey? textKey,
     bool hidden = false,
+    List<String>? path,
   }) {
     final result = _parseFormattedText(
       text,
@@ -5787,12 +6773,94 @@ class ComponentRendererState extends State<ComponentRenderer> {
       context: context,
       hidden: hidden,
     );
-    final richText = Text.rich(TextSpan(children: result.spans));
+
+    // 如果没有 path，使用简单的 Text.rich
+    if (path == null) {
+      if (textKey != null) {
+        return Text.rich(TextSpan(children: result.spans), key: textKey);
+      }
+      return Text.rich(TextSpan(children: result.spans));
+    }
+
+    final pathData = _PathData(path, 'Board Text');
+
+    // 创建手势识别器以支持点击和右键菜单
+    final tapRecognizer = TapGestureRecognizer()
+      ..onTapDown = (details) {
+        _lastTapPosition = details.globalPosition;
+        _currentSelectionPathData = pathData;
+      }
+      ..onTap = () {
+        // 单击立即生效
+        _handleElementTap(_convertPathToString(path), pathData.label);
+
+        // 检测双击
+        final now = DateTime.now();
+        final isDoubleTap =
+            _lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 300) &&
+            _lastTapButton == 0;
+
+        if (isDoubleTap && _lastTapPosition != null && textKey != null) {
+          _handleDoubleTapOnText(
+            _lastTapPosition!,
+            text,
+            style,
+            textKey,
+            context,
+          );
+          _lastTapTime = null;
+          _lastTapButton = null;
+          _lastTapPosition = null;
+        } else {
+          _lastTapTime = now;
+          _lastTapButton = 0;
+        }
+      };
+
+    // 恢复 SecondaryTapGestureRecognizer 用于电脑端右键菜单
+    final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+      ..onSecondaryTapUp = (details) {
+        Logger.d(
+          'Board text secondary tap: path=${_convertPathToString(path)}',
+          tag: 'DoubleTapWord',
+        );
+        _lastTapPosition = details.globalPosition;
+        _handleElementSecondaryTap(
+          _convertPathToString(path),
+          pathData.label,
+          context,
+          details.globalPosition,
+        );
+      };
+
+    _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+    // 使用 MultiGestureRecognizer 支持点击和右键
+    final recognizer = _MultiGestureRecognizer(
+      tapRecognizer: tapRecognizer,
+      secondaryTapRecognizer: secondaryTapRecognizer,
+      longPressRecognizer: null,
+      doubleTapRecognizer: null,
+    );
+
+    // 重新解析文本，添加手势识别器
+    final resultWithRecognizer = _parseFormattedText(
+      text,
+      style,
+      context: context,
+      hidden: hidden,
+      recognizer: recognizer,
+      mouseCursor: SystemMouseCursors.text,
+    );
 
     if (textKey != null) {
-      return Builder(key: textKey, builder: (context) => richText);
+      return Text.rich(
+        TextSpan(children: resultWithRecognizer.spans),
+        key: textKey,
+      );
     }
-    return richText;
+    return Text.rich(TextSpan(children: resultWithRecognizer.spans));
   }
 
   Player? _currentPlayer;
@@ -5914,6 +6982,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   static const Map<String, String> predefinedRenderers = {
     'headword': 'word',
+    'headline': 'word', // headline 使用与 headword 相同的渲染方法
     'frequency': 'frequency',
     'pronunciation': 'pronunciation',
     'certifications': 'certification',
@@ -5963,14 +7032,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   pathData: _PathData(itemPath, 'Inline Item'),
                   text: entry.value,
                   textStyle: textStyle,
-                  child: Text.rich(
-                    TextSpan(
-                      children: _parseFormattedText(
-                        entry.value,
-                        textStyle,
-                        context: context,
-                      ).spans,
-                    ),
+                  child: _buildInlineItemText(
+                    context: context,
+                    text: entry.value,
+                    style: textStyle,
+                    path: itemPath,
                   ),
                 );
               }).toList(),
@@ -5979,6 +7045,59 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ],
       ),
     );
+  }
+
+  /// 渲染内联项目文本，支持右键菜单
+  Widget _buildInlineItemText({
+    required BuildContext context,
+    required String text,
+    required TextStyle style,
+    required List<String> path,
+  }) {
+    final pathData = _PathData(path, 'Inline Item');
+
+    // 创建手势识别器以支持点击和右键菜单
+    final tapRecognizer = TapGestureRecognizer()
+      ..onTapDown = (details) {
+        _lastTapPosition = details.globalPosition;
+        _currentSelectionPathData = pathData;
+      }
+      ..onTap = () {
+        _handleElementTap(_convertPathToString(path), pathData.label);
+      };
+
+    // 添加右键菜单支持
+    final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+      ..onSecondaryTapUp = (details) {
+        _lastTapPosition = details.globalPosition;
+        _handleElementSecondaryTap(
+          _convertPathToString(path),
+          pathData.label,
+          context,
+          details.globalPosition,
+        );
+      };
+
+    _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+    // 使用 MultiGestureRecognizer 支持点击和右键
+    final recognizer = _MultiGestureRecognizer(
+      tapRecognizer: tapRecognizer,
+      secondaryTapRecognizer: secondaryTapRecognizer,
+      longPressRecognizer: null,
+      doubleTapRecognizer: null,
+    );
+
+    // 解析文本，添加手势识别器
+    final result = _parseFormattedText(
+      text,
+      style,
+      context: context,
+      recognizer: recognizer,
+      mouseCursor: SystemMouseCursors.text,
+    );
+
+    return Text.rich(TextSpan(children: result.spans));
   }
 
   Widget renderJsonElement(
@@ -6112,7 +7231,49 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return renderJsonElement(context, key, value, path);
     }
 
+    // 处理字符串类型的值（如 headline、headword）
+    if (value is String) {
+      return _renderStringWithPredefinedMethod(context, renderer, value, path);
+    }
+
     return const SizedBox.shrink();
+  }
+
+  /// 渲染字符串类型的预定义元素
+  Widget _renderStringWithPredefinedMethod(
+    BuildContext context,
+    String renderer,
+    String value,
+    List<String> path,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    switch (renderer) {
+      case 'word':
+        // 对于字符串类型的 headline/headword，直接渲染为标题文本
+        final isPhrase = _localEntry.entryType == 'phrase';
+        final headwordElementType = isPhrase
+            ? DictElementType.headwordPhrase
+            : DictElementType.headword;
+
+        return PathScope(
+          path: path,
+          child: Builder(
+            builder: (context) {
+              return _buildHeadwordWithContextMenu(
+                context: context,
+                text: value,
+                elementType: headwordElementType,
+                colorScheme: colorScheme,
+                pathKey: path.last,
+                label: path.last == 'headline' ? 'Headline' : 'Headword',
+              );
+            },
+          ),
+        );
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   Widget _renderMapWithPredefinedMethod(
@@ -6496,10 +7657,31 @@ class _LazyImageLoaderState extends State<_LazyImageLoader>
         bytes = _imageCache[cacheKey];
       } else {
         if (widget.dictId != null && widget.dictId!.isNotEmpty) {
+          // 优先从本地 media.db 读取图片
           bytes = await DictionaryManager().getImageBytes(
             widget.dictId!,
             widget.imageFile,
           );
+
+          // 如果本地没有，尝试从在线服务器获取
+          if (bytes == null || bytes.isEmpty) {
+            final domain = await DictionaryManager().onlineSubscriptionUrl;
+            if (domain.isNotEmpty) {
+              final cleanDomain = domain.trim().replaceAll(RegExp(r'/$'), '');
+              final imageUrl =
+                  '$cleanDomain/image/${widget.dictId}/${Uri.encodeComponent(widget.imageFile)}';
+              try {
+                final response = await http.get(Uri.parse(imageUrl));
+                if (response.statusCode == 200 &&
+                    response.bodyBytes.isNotEmpty) {
+                  bytes = response.bodyBytes;
+                }
+              } catch (e) {
+                // 在线获取失败，忽略
+              }
+            }
+          }
+
           if (bytes != null && bytes.isNotEmpty) {
             _imageCache[cacheKey] = bytes;
           }
@@ -6542,6 +7724,13 @@ class _DataTabWidget extends StatefulWidget {
   final Widget Function(Map<String, dynamic> board, List<String> path)
   contentBuilder;
   final void Function(String path, String label)? onElementTap;
+  final void Function(
+    String path,
+    String label,
+    BuildContext context,
+    Offset position,
+  )?
+  onElementSecondaryTap;
   final String? sourceLanguage;
   final Map<String, Map<String, double>> fontScales;
 
@@ -6552,6 +7741,7 @@ class _DataTabWidget extends StatefulWidget {
     required this.colorScheme,
     required this.contentBuilder,
     this.onElementTap,
+    this.onElementSecondaryTap,
     this.sourceLanguage,
     required this.fontScales,
   });
@@ -6707,14 +7897,27 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
                     child: tabContent,
                   );
 
-            return InkWell(
-              onTap: () => _selectTab(index, key),
-              borderRadius: borderRadius,
-              mouseCursor: SystemMouseCursors.click,
-              hoverColor: Colors.transparent,
-              splashColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              child: finalTabContent,
+            return GestureDetector(
+              onSecondaryTapUp: (details) {
+                final tabPath = [...widget.path, key];
+                if (widget.onElementSecondaryTap != null) {
+                  widget.onElementSecondaryTap!(
+                    tabPath.join('.'),
+                    'Data Tab',
+                    context,
+                    details.globalPosition,
+                  );
+                }
+              },
+              child: InkWell(
+                onTap: () => _selectTab(index, key),
+                borderRadius: borderRadius,
+                mouseCursor: SystemMouseCursors.click,
+                hoverColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                child: finalTabContent,
+              ),
             );
           }).toList(),
         ),
@@ -6759,5 +7962,30 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
           ),
       ],
     );
+  }
+}
+
+/// 用于定位选择上下文菜单的布局委托
+class _SelectionContextMenuLayoutDelegate extends SingleChildLayoutDelegate {
+  final double dx;
+  final double dy;
+
+  _SelectionContextMenuLayoutDelegate({required this.dx, required this.dy});
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    // 菜单宽度固定为 200
+    return BoxConstraints.tightFor(width: 200.0);
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    // 返回计算好的位置
+    return Offset(dx, dy);
+  }
+
+  @override
+  bool shouldRelayout(_SelectionContextMenuLayoutDelegate oldDelegate) {
+    return dx != oldDelegate.dx || dy != oldDelegate.dy;
   }
 }

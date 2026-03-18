@@ -84,6 +84,10 @@ class _BoardWidgetState extends State<BoardWidget> {
     }
   }
 
+  void _handleSecondaryTap(TapUpDetails details) {
+    _showPath(details.globalPosition);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -106,35 +110,38 @@ class _BoardWidgetState extends State<BoardWidget> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (showTitle)
-              InkWell(
-                onTap: _toggleCollapse,
-                onLongPress: _showPath,
-                mouseCursor: SystemMouseCursors.click,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(child: Text(title, style: boardTitleStyle)),
-                        AnimatedRotation(
-                          turns: _isCollapsed ? -0.25 : 0,
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.easeInOut,
-                          child: Icon(
-                            Icons.keyboard_arrow_down,
-                            size: 14,
-                            color: colorScheme.primary.withValues(alpha: 0.7),
+              GestureDetector(
+                onSecondaryTapUp: _handleSecondaryTap,
+                child: InkWell(
+                  onTap: _toggleCollapse,
+                  onLongPress: _showPath,
+                  mouseCursor: SystemMouseCursors.click,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(child: Text(title, style: boardTitleStyle)),
+                          AnimatedRotation(
+                            turns: _isCollapsed ? -0.25 : 0,
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            child: Icon(
+                              Icons.keyboard_arrow_down,
+                              size: 14,
+                              color: colorScheme.primary.withValues(alpha: 0.7),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    _DashedLine(
-                      color: colorScheme.primary.withValues(alpha: 0.2),
-                      height: 1,
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      _DashedLine(
+                        color: colorScheme.primary.withValues(alpha: 0.2),
+                        height: 1,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             if (!_isCollapsed)
@@ -167,46 +174,49 @@ class _BoardWidgetState extends State<BoardWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: _toggleCollapse,
-            onLongPress: _showPath,
-            borderRadius: _isCollapsed
-                ? BorderRadius.circular(12)
-                : const BorderRadius.vertical(top: Radius.circular(12)),
-            mouseCursor: SystemMouseCursors.click,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                borderRadius: _isCollapsed
-                    ? BorderRadius.circular(12)
-                    : const BorderRadius.vertical(top: Radius.circular(12)),
-              ),
-              child: Row(
-                children: [
-                  AnimatedRotation(
-                    turns: _isCollapsed ? -0.25 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    child: Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 16,
-                      color: colorScheme.onSecondaryContainer.withValues(
-                        alpha: 0.8,
+          GestureDetector(
+            onSecondaryTapUp: _handleSecondaryTap,
+            child: InkWell(
+              onTap: _toggleCollapse,
+              onLongPress: _showPath,
+              borderRadius: _isCollapsed
+                  ? BorderRadius.circular(12)
+                  : const BorderRadius.vertical(top: Radius.circular(12)),
+              mouseCursor: SystemMouseCursors.click,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                  borderRadius: _isCollapsed
+                      ? BorderRadius.circular(12)
+                      : const BorderRadius.vertical(top: Radius.circular(12)),
+                ),
+                child: Row(
+                  children: [
+                    AnimatedRotation(
+                      turns: _isCollapsed ? -0.25 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      child: Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 16,
+                        color: colorScheme.onSecondaryContainer.withValues(
+                          alpha: 0.8,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: _getBoardHeaderStyle(
-                        colorScheme,
-                      ).copyWith(letterSpacing: 0.2),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: _getBoardHeaderStyle(
+                          colorScheme,
+                        ).copyWith(letterSpacing: 0.2),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
