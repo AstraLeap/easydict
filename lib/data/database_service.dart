@@ -413,6 +413,7 @@ class JsonParseParams {
   final bool exactMatch;
   final bool isBiaoyi;
   final String originalWord;
+  final List<(String, String)> matchedAnchors;
 
   JsonParseParams({
     required this.jsonStr,
@@ -421,6 +422,7 @@ class JsonParseParams {
     required this.exactMatch,
     this.isBiaoyi = false,
     required this.originalWord,
+    this.matchedAnchors = const [],
   });
 }
 
@@ -465,7 +467,10 @@ DictionaryEntry? _parseEntryInIsolate(JsonParseParams params) {
     jsonData['entry_id'] = entryId;
   }
 
-  return DictionaryEntry.fromJson(jsonData);
+  return DictionaryEntry.fromJson(
+    jsonData,
+    matchedAnchors: params.matchedAnchors,
+  );
 }
 
 /// 搜索结果，包含 entries 和关系信息
@@ -503,6 +508,11 @@ class DictionaryEntry {
   final List<String> hiddenLanguages;
   final Map<String, dynamic> _rawJson;
 
+  /// 匹配的 headword 及其对应的 anchor 列表
+  /// 每个元素是 (headword, anchor) 的记录
+  /// anchor 是 JSON 路径，如 "$.sense[0]"
+  final List<(String headword, String anchor)> matchedAnchors;
+
   DictionaryEntry({
     required this.id,
     this.dictId,
@@ -521,10 +531,14 @@ class DictionaryEntry {
     this.phrase = const [],
     this.senseGroup = const [],
     this.hiddenLanguages = const [],
+    this.matchedAnchors = const [],
     Map<String, dynamic>? rawJson,
   }) : _rawJson = rawJson ?? {};
 
-  factory DictionaryEntry.fromJson(Map<String, dynamic> json) {
+  factory DictionaryEntry.fromJson(
+    Map<String, dynamic> json, {
+    List<(String, String)>? matchedAnchors,
+  }) {
     try {
       return DictionaryEntry(
         id: json['entry_id']?.toString() ?? json['id']?.toString() ?? '',
@@ -591,6 +605,7 @@ class DictionaryEntry {
                   .where((e) => e.isNotEmpty)
                   .toList()
             : [],
+        matchedAnchors: matchedAnchors ?? [],
         rawJson: json,
       );
     } catch (e) {
@@ -1325,10 +1340,10 @@ class DatabaseService {
         }
       }
 
-      // 从 indices 表获取 entry_id 列表
+      // 从 indices 表获取 entry_id 列表（包含 anchor 字段）
       final indexResults = await db.query(
         'indices',
-        columns: ['entry_id', 'headword'],
+        columns: ['entry_id', 'headword', 'anchor'],
         where: whereClause,
         whereArgs: whereArgs,
         orderBy: isbiaoyi ? 'phonetic ASC, headword ASC' : 'entry_id ASC',
@@ -1341,8 +1356,23 @@ class DatabaseService {
       // 提取 entry_id 列表
       final entryIds = indexResults.map((r) => r['entry_id'] as int).toList();
       final headwordMap = <int, String>{};
+      // 构建 entry_id -> List<(headword, anchor)> 映射
+      final anchorMap = <int, List<(String, String)>>{};
       for (final r in indexResults) {
-        headwordMap[r['entry_id'] as int] = r['headword'] as String? ?? '';
+        final entryId = r['entry_id'] as int;
+        final headword = r['headword'] as String? ?? '';
+        final anchor = r['anchor'] as String? ?? '';
+        headwordMap[entryId] = headword;
+        // 添加 anchor 信息（去重）
+        if (!anchorMap.containsKey(entryId)) {
+          anchorMap[entryId] = [];
+        }
+        // 检查是否已存在相同的 (headword, anchor)
+        if (!anchorMap[entryId]!.any(
+          (item) => item.$1 == headword && item.$2 == anchor,
+        )) {
+          anchorMap[entryId]!.add((headword, anchor));
+        }
       }
 
       // 第二步：从 entries 表批量获取 json_data
@@ -1381,6 +1411,8 @@ class DatabaseService {
 
         DictionaryEntry? entry;
         final row = {'entry_id': entryId, 'headword': headwordMap[entryId]};
+        // 获取该 entry 的 anchor 列表
+        final anchors = anchorMap[entryId] ?? [];
 
         if (kIsWeb) {
           final jsonMap = jsonDecode(jsonStr) as Map<String, dynamic>;
@@ -1389,7 +1421,7 @@ class DatabaseService {
             if (!_headwordMatchesExact(headword, word, isbiaoyi)) continue;
           }
           _ensureEntryId(jsonMap, row, dictId);
-          entry = DictionaryEntry.fromJson(jsonMap);
+          entry = DictionaryEntry.fromJson(jsonMap, matchedAnchors: anchors);
         } else {
           try {
             entry = await compute(
@@ -1401,6 +1433,7 @@ class DatabaseService {
                 exactMatch: exactMatch,
                 isBiaoyi: isbiaoyi,
                 originalWord: word,
+                matchedAnchors: anchors,
               ),
             );
           } catch (e) {
@@ -1412,7 +1445,10 @@ class DatabaseService {
                 if (!_headwordMatchesExact(headword, word, isbiaoyi)) continue;
               }
               _ensureEntryId(jsonMap, row, dictId);
-              entry = DictionaryEntry.fromJson(jsonMap);
+              entry = DictionaryEntry.fromJson(
+                jsonMap,
+                matchedAnchors: anchors,
+              );
             } catch (e2) {
               Logger.e('回退解析也失败，跳过此条目: $e2', tag: 'DatabaseService');
               continue;

@@ -1572,6 +1572,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final colorScheme = Theme.of(context).colorScheme;
     const hPad = 16.0;
 
+    // 过滤出非空的 anchor
+    final nonEmptyAnchors = entry.matchedAnchors
+        .where((item) => item.$2.isNotEmpty)
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1618,6 +1623,28 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     ),
                   ),
                   const SizedBox(width: 6),
+                  // 显示 anchor 图标
+                  ...nonEmptyAnchors.map((item) {
+                    final anchor = item.$2;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Tooltip(
+                        message: '跳转到: $anchor',
+                        child: InkWell(
+                          onTap: () => _scrollToElement(entry.id, anchor),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.link,
+                              size: 16,
+                              color: colorScheme.primary.withOpacity(0.7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                   Icon(
                     isCollapsed
                         ? Icons.keyboard_arrow_down_rounded
