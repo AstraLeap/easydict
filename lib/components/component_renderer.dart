@@ -1342,21 +1342,41 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   /// 执行实际的滚动操作
+  /// 从最深路径开始逐层向上尝试，直到找到可滚动的元素
   void _executeScrollToElement(String path, {int retryCount = 0}) {
-    final key = _elementKeys[path];
-    if (key != null && key.currentContext != null) {
-      Scrollable.ensureVisible(
-        key.currentContext!,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        alignment: 0.1,
-      ).then((_) {
-        // 滚动完成后触发闪烁效果
-        if (mounted) {
-          _triggerHighlight(path);
+    // 尝试从当前路径开始，逐层向上查找可滚动的元素
+    String? foundPath = _findScrollablePath(path);
+
+    if (foundPath != null) {
+      final key = _elementKeys[foundPath];
+      if (key != null && key.currentContext != null) {
+        // 如果找到的路径与原始路径不同，记录日志
+        if (foundPath != path) {
+          Logger.d(
+            'Scrolling to parent path: $foundPath (original: $path)',
+            tag: 'ComponentRenderer',
+          );
+          // 更新 anchor 映射
+          _updateResolvedAnchor(path, foundPath);
         }
-      });
-    } else if (retryCount < 3) {
+
+        Scrollable.ensureVisible(
+          key.currentContext!,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: 0.1,
+        ).then((_) {
+          // 滚动完成后触发闪烁效果
+          if (mounted) {
+            _triggerHighlight(foundPath);
+          }
+        });
+        return;
+      }
+    }
+
+    // 如果重试次数小于3次，延迟重试
+    if (retryCount < 3) {
       Logger.d(
         'Element key not found or context null for path: $path, retrying... ($retryCount)',
         tag: 'ComponentRenderer',
@@ -1371,6 +1391,57 @@ class ComponentRendererState extends State<ComponentRenderer> {
         'Element key not found or context null for path: $path after $retryCount retries',
         tag: 'ComponentRenderer',
       );
+    }
+  }
+
+  /// 从给定路径开始，逐层向上查找可滚动的元素路径
+  /// 返回第一个存在于 _elementKeys 中的路径，如果都找不到则返回 null
+  String? _findScrollablePath(String path) {
+    // 首先检查当前路径是否存在
+    if (_elementKeys.containsKey(path) &&
+        _elementKeys[path]?.currentContext != null) {
+      return path;
+    }
+
+    // 逐层向上查找
+    final parts = path.split('.');
+    for (int i = parts.length - 1; i > 0; i--) {
+      final parentPath = parts.sublist(0, i).join('.');
+      if (_elementKeys.containsKey(parentPath) &&
+          _elementKeys[parentPath]?.currentContext != null) {
+        return parentPath;
+      }
+    }
+
+    return null;
+  }
+
+  /// 存储原始 anchor 到实际滚动路径的映射
+  final Map<String, String> _resolvedAnchorMap = {};
+
+  /// 更新 anchor 映射，同时更新 entry.matchedAnchors
+  void _updateResolvedAnchor(String originalPath, String resolvedPath) {
+    if (originalPath != resolvedPath) {
+      _resolvedAnchorMap[originalPath] = resolvedPath;
+      Logger.d(
+        'Updated anchor mapping: $originalPath -> $resolvedPath',
+        tag: 'ComponentRenderer',
+      );
+
+      // 更新 entry.matchedAnchors 中的 anchor 值
+      // 由于 record 是不可变的，需要找到并替换
+      final anchors = widget.entry.matchedAnchors;
+      for (int i = 0; i < anchors.length; i++) {
+        if (anchors[i].$2 == originalPath) {
+          // 创建新的 record 替换旧的
+          anchors[i] = (anchors[i].$1, resolvedPath);
+          Logger.d(
+            'Updated matchedAnchor: ${anchors[i].$1} -> $resolvedPath',
+            tag: 'ComponentRenderer',
+          );
+          break;
+        }
+      }
     }
   }
 
