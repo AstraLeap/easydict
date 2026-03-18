@@ -53,7 +53,8 @@ class EntryDetailPage extends StatefulWidget {
   State<EntryDetailPage> createState() => _EntryDetailPageState();
 }
 
-class _EntryDetailPageState extends State<EntryDetailPage> {
+class _EntryDetailPageState extends State<EntryDetailPage>
+    with SingleTickerProviderStateMixin {
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
@@ -133,6 +134,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
+  /// anchor 图标闪烁动画控制器
+  AnimationController? _anchorBlinkController;
+
   @override
   void initState() {
     super.initState();
@@ -145,6 +149,35 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     _loadDeferredData();
     // 软件布局缩放已从 FontLoaderService 同步获取，无需异步加载
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionChanged);
+    // 初始化 anchor 图标闪烁动画
+    _initAnchorBlinkAnimation();
+  }
+
+  /// 初始化 anchor 图标闪烁动画
+  void _initAnchorBlinkAnimation() {
+    // 检查是否有 anchor
+    bool hasAnchor = _entryGroup.dictionaryGroups.any(
+      (dictGroup) => dictGroup.pageGroups.any(
+        (pageGroup) => pageGroup.sections.any(
+          (section) =>
+              section.entry.matchedAnchors.any((item) => item.$2.isNotEmpty),
+        ),
+      ),
+    );
+    if (!hasAnchor) return;
+
+    _anchorBlinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+
+    // 延迟启动闪烁动画，等待页面渲染完成
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _anchorBlinkController != null) {
+        // 持续闪烁（repeat）
+        _anchorBlinkController!.repeat(reverse: true);
+      }
+    });
   }
 
   /// 延迟加载非关键数据，避免阻塞首屏渲染
@@ -174,6 +207,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       _onScrollPositionChanged,
     );
     _scrollEndTimer?.cancel();
+    // 释放 anchor 闪烁动画控制器
+    _anchorBlinkController?.dispose();
     // 取消所有正在进行的流式AI请求
     for (final sub in _pendingAiRequests.values) {
       sub.cancel();
@@ -1623,27 +1658,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  // 显示 anchor 图标
+                  // 显示 anchor 图标（带闪烁效果）
                   ...nonEmptyAnchors.map((item) {
                     final anchor = item.$2;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Tooltip(
-                        message: '跳转到: $anchor',
-                        child: InkWell(
-                          onTap: () => _scrollToElement(entry.id, anchor),
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              Icons.link,
-                              size: 16,
-                              color: colorScheme.primary.withOpacity(0.7),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
+                    return _buildAnchorIcon(entry.id, anchor, colorScheme);
                   }),
                   Icon(
                     isCollapsed
@@ -1658,6 +1676,62 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 构建 anchor 图标（带闪烁效果）
+  Widget _buildAnchorIcon(
+    String entryId,
+    String anchor,
+    ColorScheme colorScheme,
+  ) {
+    // 如果有动画控制器，使用闪烁效果
+    if (_anchorBlinkController != null) {
+      return AnimatedBuilder(
+        animation: _anchorBlinkController!,
+        builder: (context, child) {
+          // 圆形背景闪烁效果（颜色范围 0.05-0.2，最深程度更浅）
+          final bgOpacity = 0.05 + 0.1 * _anchorBlinkController!.value;
+          return Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Tooltip(
+              message: '跳转到: $anchor',
+              child: InkWell(
+                onTap: () => _scrollToElement(entryId, anchor),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withOpacity(bgOpacity),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.link, size: 14, color: colorScheme.primary),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    // 没有动画控制器，显示普通图标
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Tooltip(
+        message: '跳转到: $anchor',
+        child: InkWell(
+          onTap: () => _scrollToElement(entryId, anchor),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.link, size: 14, color: colorScheme.primary),
+          ),
+        ),
+      ),
     );
   }
 
