@@ -298,6 +298,84 @@ bool _shouldConvertToSimplified(String? langCode) {
   return ['zh-tw', 'zh-hk', 'zh-mo', 'zh-hant'].contains(normalized);
 }
 
+/// 从 headline 中提取 headword 标签
+/// 格式示例: つける【[付ける](headword)・[附ける](headword)】
+/// 提取 [text](headword) 格式中的 text 作为 headword
+/// 返回: Map，key 为 headword，value 为 anchor（此处 anchor 为空字符串）
+Map<String, String> _extractHeadwordsFromHeadline(String headline) {
+  final result = <String, String>{};
+  // 匹配 [text](headword) 格式
+  final pattern = RegExp(r'\[([^\]]+)\]\(headword\)');
+  final matches = pattern.allMatches(headline);
+  for (final match in matches) {
+    final hw = match.group(1);
+    if (hw != null && hw.isNotEmpty) {
+      result[hw] = '';
+    }
+  }
+  return result;
+}
+
+/// 递归搜索 JSON 对象，提取所有 [text](anchor) 格式的标签
+/// 返回: Map，key 为 headword（提取的 text），value 为 anchor（JSON 路径）
+Map<String, String> _extractAnchorsFromJson(
+  dynamic data, [
+  String currentPath = '',
+]) {
+  final result = <String, String>{};
+
+  if (data is Map) {
+    data.forEach((key, value) {
+      final newPath = currentPath.isNotEmpty
+          ? '$currentPath.$key'
+          : key.toString();
+      result.addAll(_extractAnchorsFromJson(value, newPath));
+    });
+  } else if (data is List) {
+    for (int i = 0; i < data.length; i++) {
+      final newPath = currentPath.isNotEmpty ? '$currentPath.$i' : i.toString();
+      result.addAll(_extractAnchorsFromJson(data[i], newPath));
+    }
+  } else if (data is String) {
+    // 匹配 [text](anchor) 格式
+    final pattern = RegExp(r'\[([^\]]+)\]\(anchor\)');
+    final matches = pattern.allMatches(data);
+    for (final match in matches) {
+      final text = match.group(1);
+      if (text != null && text.isNotEmpty) {
+        result[text] = currentPath;
+      }
+    }
+  }
+
+  return result;
+}
+
+/// 从 JSON 数据中提取所有 headword 及其对应的 anchor
+/// 返回: Map，key 为 headword，value 为 anchor
+Map<String, String> _extractHeadwordAnchorMap(Map<String, dynamic> data) {
+  final result = <String, String>{};
+
+  // 1. 优先从 headword 字段提取
+  if (data.containsKey('headword')) {
+    final hw = data['headword']?.toString();
+    if (hw != null && hw.isNotEmpty) {
+      result[hw] = '';
+    }
+  }
+
+  // 2. 从 headline 字段提取 [text](headword) 格式
+  final headline = data['headline']?.toString() ?? '';
+  if (headline.isNotEmpty) {
+    result.addAll(_extractHeadwordsFromHeadline(headline));
+  }
+
+  // 3. 递归搜索整个 JSON，提取 [text](anchor) 格式
+  result.addAll(_extractAnchorsFromJson(data));
+
+  return result;
+}
+
 Map<String, dynamic> _parseJsonInIsolate(String jsonStr) {
   return Map<String, dynamic>.from(jsonDecode(jsonStr) as Map);
 }
@@ -410,6 +488,7 @@ class DictionaryEntry {
   final String? dictId;
   final String? version;
   final String headword;
+  final String? headline; // 标题字段，优先显示
   final String entryType;
   final String? page;
   final String? section;
@@ -429,6 +508,7 @@ class DictionaryEntry {
     this.dictId,
     this.version,
     required this.headword,
+    this.headline,
     required this.entryType,
     this.page,
     this.section,
@@ -452,6 +532,7 @@ class DictionaryEntry {
         version: json['version']?.toString(),
         headword:
             json['headword']?.toString() ?? json['word']?.toString() ?? '',
+        headline: json['headline']?.toString(),
         entryType: json['entry_type'] as String? ?? 'word',
         page: json['page']?.toString(),
         section: json['section']?.toString(),
@@ -554,6 +635,7 @@ class DictionaryEntry {
       'entry_id': _pureEntryIdAsInt,
       if (dictId != null) 'dict_id': dictId,
       'headword': headword,
+      if (headline != null) 'headline': headline,
       'entry_type': entryType,
       'page': page,
       'section': section,
@@ -2126,7 +2208,7 @@ class DatabaseService {
   }
 
   /// 插入或更新词典条目
-  /// 只更新 entries 表的 json_data，不修改 indices 表
+  /// 同时更新 entries 表和 indices 表
   Future<bool> insertOrUpdateEntry(
     DictionaryEntry entry, {
     bool skipCommit = false,
@@ -2163,11 +2245,59 @@ class DatabaseService {
       );
       final isNewEntry = existingRows.isEmpty;
 
-      // 只更新 entries 表的 json_data
+      // 更新 entries 表
       await db.insert('entries', {
         'entry_id': entryId,
         'json_data': compressedBlob,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // ── 更新 indices 表 ─────────────────────────────────────────────────────
+      // 获取词典的源语言代码
+      final metadata = dictManager.getCachedMetadata(dictId);
+      final langCode = metadata?.sourceLanguage;
+
+      // 判断是否为表意词典（中/日/韩）
+      final isbiaoyi = await _isBiaoyiDict(dictId, db);
+
+      // 处理 phonetic 字段
+      final phoneticRaw = json['phonetic']?.toString() ?? '';
+      final phoneticNorm = isbiaoyi && phoneticRaw.isNotEmpty
+          ? _normalizeSearchWord(
+              phoneticRaw,
+              langCode: langCode,
+              isPhonetic: true,
+            )
+          : null;
+
+      // 提取 headword 和 anchor
+      final headwordAnchorMap = _extractHeadwordAnchorMap(json);
+
+      // 如果没有任何 headword，使用 entry.headword 作为默认值
+      if (headwordAnchorMap.isEmpty && entry.headword.isNotEmpty) {
+        headwordAnchorMap[entry.headword] = '';
+      }
+
+      // 获取 entry_type
+      final entryType = json['entry_type']?.toString() ?? entry.entryType;
+
+      // 先删除该 entry_id 的旧索引记录
+      await db.delete('indices', where: 'entry_id = ?', whereArgs: [entryId]);
+
+      // 为每个 headword 插入新的索引记录
+      for (final hwEntry in headwordAnchorMap.entries) {
+        final hw = hwEntry.key;
+        final anchor = hwEntry.value;
+        final hwNorm = _normalizeSearchWord(hw, langCode: langCode);
+
+        await db.insert('indices', {
+          'headword': hw,
+          'headword_normalized': hwNorm,
+          if (phoneticNorm != null) 'phonetic': phoneticNorm,
+          'entry_type': entryType,
+          'entry_id': entryId,
+          'anchor': anchor,
+        });
+      }
 
       if (!skipCommit) {
         // 若已有 insert 记录（尚未推送）则保持 insert；

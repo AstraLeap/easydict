@@ -96,13 +96,17 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     if (_isDirectoryExpanded && _directoryOverlayEntry == null) {
       final currentDict = widget.entryGroup.currentDictionaryGroup;
       final currentPage = currentDict.currentPageGroup;
-      final sectionIndex =
-          _selectedSectionIndex ?? currentDict.currentSectionIndex;
+      // 始终使用当前活跃的 section index，确保显示正确的目录
+      final sectionIndex = currentDict.currentSectionIndex;
 
       if (sectionIndex >= 0 && sectionIndex < currentPage.sections.length) {
+        // 更新 _selectedSectionIndex 为当前活跃的 section
+        _selectedSectionIndex = sectionIndex;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           // 再次检查状态，防止在回调执行前用户已关闭目录
-          if (mounted && _isDirectoryExpanded) {
+          if (mounted &&
+              _isDirectoryExpanded &&
+              _directoryOverlayEntry == null) {
             _directoryOverlayEntry = _createDirectoryOverlayEntry(
               currentPage,
               sectionIndex,
@@ -1152,9 +1156,15 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           );
         }
 
+        // 关闭page列表的overlay
         _removeOverlay();
+        // 关闭目录列表的overlay，didUpdateWidget 会负责重新打开
+        _removeDirectoryOverlay();
         setState(() {
           _isPageListExpanded = false;
+          // 保持 _isDirectoryExpanded 状态，让 didUpdateWidget 重新创建 overlay
+          // 如果之前是展开的，_isDirectoryExpanded 保持 true
+          // 如果之前是关闭的，_isDirectoryExpanded 保持 false
         });
         break;
       }

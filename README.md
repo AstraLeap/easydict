@@ -147,7 +147,8 @@ CREATE INDEX idx_images_name ON images(name);
 {
     "dict_id": "my_dict", // 必填，词典id
     "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
-    "headword": "fog", // 必填，词头，可重复
+    "headword": "fog", // 与headline二选一，单词头，可重复
+    "headline": "つける【[付ける](headword)・[附ける](headword)】", // 与headword二选一，复杂词头，但必须包含`[xxx](headword)`这样的格式
     "entry_type": "word", // 必填，word或phrase
     "phonetic": "pinyin", // 可选，辅助搜索词，主要用于表意文字
     "page": "medical", // 必填，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry，如果没有则留空:""
