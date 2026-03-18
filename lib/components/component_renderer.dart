@@ -1202,6 +1202,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
   bool _isVisible = false;
   bool _hasBeenVisible = false;
 
+  // 菜单重建计数器（用于强制重建 SelectionArea 的 contextMenuBuilder）
+  int _menuRebuildCounter = 0;
+
   // 缩放指示器相关（桌面端 Ctrl+滚轮缩放）
   bool _showScaleIndicator = false;
   Timer? _scaleIndicatorTimer;
@@ -1218,6 +1221,27 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _loadClickAction();
     _fontScales = FontLoaderService().getFontScales();
     _listenToEvents();
+  }
+
+  /// 滚动结束后重新定位菜单
+  void _onScrollEnded() {
+    // 只有手机端且有选择菜单时才需要重新定位
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    if (isDesktop) return;
+
+    // 如果有当前选择，触发菜单重建
+    // 手机端菜单通过 SelectionArea 的 contextMenuBuilder 构建，
+    // 需要通过增加计数器并 setState 触发重建来更新菜单位置
+    if (_currentSelection != null && _currentSelection!.plainText.isNotEmpty) {
+      Logger.d('_onScrollEnded: triggering menu rebuild', tag: 'ContextMenu');
+      // 触发重建以更新菜单位置
+      if (mounted) {
+        setState(() {
+          _menuRebuildCounter++;
+        });
+      }
+    }
   }
 
   /// Renders the content for a 'clob' element.
@@ -2800,9 +2824,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     double? selectionBottom,
   }) {
     // 菜单显示在下方时的间隙（较大，方便用户操作）
-    const gapBelow = 24.0;
+    const gapBelow = 8.0;
     // 菜单显示在上方时的间隙
-    const gapAbove = 16.0;
+    const gapAbove = 32.0;
 
     // 如果有选择区域信息，使用选择区域的边界来计算空间
     // 选择区域的上部高度：从选择区域顶部到屏幕顶部的距离
@@ -4028,39 +4052,50 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onElementSecondaryTap: _handleElementSecondaryTap,
           child: PathScope(
             path: const ['entry'],
-            child: SingleChildScrollView(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: widget.topPadding >= 0
-                    ? widget.topPadding
-                    : MediaQuery.of(context).padding.top + 16,
-                bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
-              ),
-              child: widget.enableSelection
-                  ? Listener(
-                      // 捕获所有触摸事件，记录长按开始时的位置
-                      onPointerDown: (event) {
-                        _selectionStartPosition = event.position;
-                      },
-                      child: SelectionArea(
-                        // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
-                        contextMenuBuilder: (context, state) {
-                          return _buildSelectionContextMenu(context, state);
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                // 监听滚动结束事件
+                if (notification is ScrollEndNotification) {
+                  _onScrollEnded();
+                }
+                return false; // 不阻止事件继续传递
+              },
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: widget.topPadding >= 0
+                      ? widget.topPadding
+                      : MediaQuery.of(context).padding.top + 16,
+                  bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
+                ),
+                child: widget.enableSelection
+                    ? Listener(
+                        // 捕获所有触摸事件，记录长按开始时的位置
+                        onPointerDown: (event) {
+                          _selectionStartPosition = event.position;
                         },
-                        onSelectionChanged: (selection) {
-                          // 只记录选择状态，不触发任何操作
-                          _currentSelection = selection;
-                        },
-                        child: _buildContentColumn(
-                          context,
-                          page,
-                          sections,
-                          entry,
+                        child: SelectionArea(
+                          // 使用 key 强制在滚动结束后重建菜单
+                          key: ValueKey('selection_area_$_menuRebuildCounter'),
+                          // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
+                          contextMenuBuilder: (context, state) {
+                            return _buildSelectionContextMenu(context, state);
+                          },
+                          onSelectionChanged: (selection) {
+                            // 只记录选择状态，不触发任何操作
+                            _currentSelection = selection;
+                          },
+                          child: _buildContentColumn(
+                            context,
+                            page,
+                            sections,
+                            entry,
+                          ),
                         ),
-                      ),
-                    )
-                  : _buildContentColumn(context, page, sections, entry),
+                      )
+                    : _buildContentColumn(context, page, sections, entry),
+              ),
             ),
           ),
         ),
