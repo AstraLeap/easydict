@@ -38,12 +38,12 @@ jobs:
 
           - target: macos-intel
             os: macos-13
-            build_cmd: flutter build macos --release --target-platform macos-x64
+            build_cmd: flutter build macos --release
             artifact_path: easydict-*-macos-x64.zip
 
           - target: macos-arm
             os: macos-14
-            build_cmd: flutter build macos --release --target-platform macos-arm64
+            build_cmd: flutter build macos --release
             artifact_path: easydict-*-macos-arm64.zip
 
     steps:
