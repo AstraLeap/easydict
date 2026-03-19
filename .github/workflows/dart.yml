@@ -37,7 +37,7 @@ jobs:
             artifact_path: easydict-*-linux-x64.tar.gz
 
           - target: macos-intel
-            os: macos-13
+            os: macos-14
             build_cmd: flutter build macos --release
             artifact_path: easydict-*-macos-x64.zip
 
