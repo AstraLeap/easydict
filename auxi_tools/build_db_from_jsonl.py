@@ -455,10 +455,16 @@ def build_database_from_jsonl(
             if "headword" in data:
                 headword_anchor_map[data["headword"]] = ""
 
-            # 2. 从 headline 字段提取 [text](headword) 格式
-            headline = data.get("headline", "")
-            if headline:
-                headword_anchor_map.update(extract_headwords_from_headline(headline))
+            # 2. 从 links 字段提取词头
+            # links 可以是 string 或 list of string
+            links = data.get("links", "")
+            if links:
+                if isinstance(links, str):
+                    headword_anchor_map[links] = ""
+                elif isinstance(links, list):
+                    for link in links:
+                        if isinstance(link, str) and link:
+                            headword_anchor_map[link] = ""
 
             # 3. 递归搜索整个JSON，提取 [text](anchor) 格式
             headword_anchor_map.update(extract_anchors_from_json(data))
