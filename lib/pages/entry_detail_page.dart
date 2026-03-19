@@ -662,6 +662,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     } else {
       updateLogic();
     }
+
+    // 刷新导航面板的目录（如果打开的话）
+    _navPanelKey.currentState?.handleActiveSectionChanged();
   }
 
   List<DictionaryEntry> get entries => _getAllEntriesInOrder();
@@ -900,6 +903,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         return;
       }
 
+      // 保持原来的复合ID格式，确保 _updateEntryInGroup 能正确找到并替换 entry
+      entryData['entry_id'] = currentEntry.id;
       entryData['dict_id'] = dictId;
       final newEntry = DictionaryEntry.fromJson(entryData);
 
