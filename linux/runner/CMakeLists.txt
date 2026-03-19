@@ -23,4 +23,8 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter zstd)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
+# Export zstd symbols for FFI access (required for DynamicLibrary.process/executable)
+# ENABLE_EXPORTS makes symbols available to dynamic linker
+set_target_properties(${BINARY_NAME} PROPERTIES ENABLE_EXPORTS ON)
+
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

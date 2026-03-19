@@ -159,6 +159,11 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 	@override late final _TranslationsSettingsToolbarDialogEn toolbarDialog = _TranslationsSettingsToolbarDialogEn._(_root);
 	@override late final _TranslationsSettingsMiscPageEn misc_page = _TranslationsSettingsMiscPageEn._(_root);
 	@override late final _TranslationsSettingsActionLabelEn actionLabel = _TranslationsSettingsActionLabelEn._(_root);
+	@override String get clipboardWatch => 'Clipboard Watch';
+	@override String get clipboardWatchEnabled => 'Enabled, auto-search when copying text';
+	@override String get clipboardWatchDisabled => 'Disabled';
+	@override String get minimizeToTray => 'Minimize to Tray';
+	@override String get minimizeToTrayDesc => 'Minimize to system tray when closing window';
 }
 
 // Path: search
@@ -914,6 +919,7 @@ class _TranslationsSettingsMiscPageEn extends TranslationsSettingsMiscPageZh {
 	@override String get keep7Days => 'Keep last 7 days';
 	@override String get keep30Days => 'Keep last 30 days';
 	@override String get keep90Days => 'Keep last 90 days';
+	@override String get desktopFeaturesTitle => 'Desktop Features';
 }
 
 // Path: settings.actionLabel
@@ -1078,6 +1084,7 @@ extension on TranslationsEn {
 			'settings.misc_page.keep7Days' => 'Keep last 7 days',
 			'settings.misc_page.keep30Days' => 'Keep last 30 days',
 			'settings.misc_page.keep90Days' => 'Keep last 90 days',
+			'settings.misc_page.desktopFeaturesTitle' => 'Desktop Features',
 			'settings.actionLabel.aiTranslate' => 'Translate',
 			'settings.actionLabel.copy' => 'Copy Text',
 			'settings.actionLabel.askAi' => 'Ask AI',
@@ -1089,6 +1096,11 @@ extension on TranslationsEn {
 			'settings.actionLabel.toggleTranslate' => 'Show/Hide Translation',
 			'settings.actionLabel.aiHistory' => 'AI History',
 			'settings.actionLabel.resetEntry' => 'Reset Entry',
+			'settings.clipboardWatch' => 'Clipboard Watch',
+			'settings.clipboardWatchEnabled' => 'Enabled, auto-search when copying text',
+			'settings.clipboardWatchDisabled' => 'Disabled',
+			'settings.minimizeToTray' => 'Minimize to Tray',
+			'settings.minimizeToTrayDesc' => 'Minimize to system tray when closing window',
 			'search.hint' => 'Enter a word',
 			'search.hintWordBank' => 'Search word bank',
 			'search.noResult' => ({required Object word}) => 'Word not found: ${word}',
@@ -1474,14 +1486,14 @@ extension on TranslationsEn {
 			'dict.tooltipReplaceFile' => 'Replace File',
 			'dict.tooltipPushUpdate' => 'Push Update',
 			'dict.tooltipDelete' => 'Delete',
+			_ => null,
+		} ?? switch (path) {
 			'dict.tooltipUpdate' => 'Update dictionary',
 			'dict.tooltipDownload' => 'Download dictionary',
 			'dict.daysAgo' => ({required Object n}) => '${n} days ago',
 			'dict.monthsAgo' => ({required Object n}) => '${n} months ago',
 			'dict.yearsAgo' => ({required Object n}) => '${n} years ago',
 			'dict.hoursAgo' => ({required Object n}) => '${n}h ago',
-			_ => null,
-		} ?? switch (path) {
 			'dict.minutesAgo' => ({required Object n}) => '${n}m ago',
 			'dict.justNow' => 'Just now',
 			'dict.dateUnknown' => 'Unknown',

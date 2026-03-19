@@ -1,6 +1,6 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.13)
-project(runner LANGUAGES C CXX)
+project(runner LANGUAGES C CXX ASM)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
@@ -52,7 +52,7 @@ set(ZSTD_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/zstd")
 # Collect zstd source files
 file(GLOB ZSTD_COMMON_SOURCES ${ZSTD_SOURCE_DIR}/lib/common/*.c)
 file(GLOB ZSTD_COMPRESS_SOURCES ${ZSTD_SOURCE_DIR}/lib/compress/*.c)
-file(GLOB ZSTD_DECOMPRESS_SOURCES ${ZSTD_SOURCE_DIR}/lib/decompress/*.c)
+file(GLOB ZSTD_DECOMPRESS_SOURCES ${ZSTD_SOURCE_DIR}/lib/decompress/*.c ${ZSTD_SOURCE_DIR}/lib/decompress/*.S)
 file(GLOB ZSTD_DICTBUILDER_SOURCES ${ZSTD_SOURCE_DIR}/lib/dictBuilder/*.c)
 file(GLOB ZSTD_DEPRECATED_SOURCES ${ZSTD_SOURCE_DIR}/lib/deprecated/*.c)
 
@@ -64,8 +64,9 @@ set(ZSTD_SOURCES
     ${ZSTD_DEPRECATED_SOURCES}
 )
 
-# Create zstd static library
-add_library(zstd STATIC ${ZSTD_SOURCES})
+# Create zstd as OBJECT library (symbols will be embedded in executable)
+# This allows FFI to find zstd symbols via DynamicLibrary.process/executable
+add_library(zstd OBJECT ${ZSTD_SOURCES})
 
 target_include_directories(zstd PUBLIC
     ${ZSTD_SOURCE_DIR}/lib
@@ -77,6 +78,10 @@ target_compile_options(zstd PRIVATE -w)
 
 # Define ZSTD_STATIC_LINKING_ONLY for dictionary support
 target_compile_definitions(zstd PUBLIC ZSTD_STATIC_LINKING_ONLY)
+
+# Make zstd symbols visible for FFI (required for DynamicLibrary access)
+# This is needed because OBJECT library symbols need to be exported explicitly
+set_target_properties(zstd PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Flutter library and tool build rules.
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
@@ -137,6 +142,22 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endforeach(bundled_library)
+
+# Bundle libmpv for media_kit (required for video/audio playback)
+# Find libmpv shared library and copy it to the bundle
+find_library(LIBMPV_LIBRARY NAMES mpv libmpv.so.2 libmpv.so.1 libmpv)
+if(LIBMPV_LIBRARY)
+  # Get the real path (resolve symlinks)
+  get_filename_component(LIBMPV_REALPATH "${LIBMPV_LIBRARY}" REALPATH)
+  # Install the real library file
+  install(FILES "${LIBMPV_REALPATH}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    RENAME "libmpv.so.2"
+    COMPONENT Runtime)
+  message(STATUS "Found libmpv: ${LIBMPV_REALPATH}")
+else()
+  message(WARNING "libmpv not found - media playback may not work")
+endif()
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")

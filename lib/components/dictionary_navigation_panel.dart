@@ -377,7 +377,6 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     return _buildMainNavigation(context);
   }
 
-  // 主导航栏 - 包含词典logo（可展开page列表）和section列表
   Widget _buildMainNavigation(BuildContext context) {
     final allDicts = widget.entryGroup.dictionaryGroups;
     final currentDict = widget.entryGroup.currentDictionaryGroup;
@@ -1299,14 +1298,6 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               dict.setCurrentPageIndex(pageIndex);
               dict.setCurrentSectionIndex(sectionIndex);
 
-              if (isCrossDictionary) {
-                widget.onDictionaryChanged?.call();
-              } else if (isCrossPage) {
-                widget.onPageChanged?.call();
-              } else {
-                widget.onSectionChanged?.call();
-              }
-
               final shouldOpenDirectory = _isDirectoryExpanded;
               if (_isDirectoryExpanded) {
                 _removeDirectoryOverlay();
@@ -1314,6 +1305,14 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                   _isDirectoryExpanded = false;
                   _selectedSectionIndex = null;
                 });
+              }
+
+              if (isCrossDictionary) {
+                widget.onDictionaryChanged?.call();
+              } else if (isCrossPage) {
+                widget.onPageChanged?.call();
+              } else {
+                widget.onSectionChanged?.call();
               }
 
               WidgetsBinding.instance.addPostFrameCallback((_) {

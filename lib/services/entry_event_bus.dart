@@ -59,6 +59,12 @@ class SearchHistoryChangedEvent {
   const SearchHistoryChangedEvent();
 }
 
+/// 剪切板搜索事件（剪切板监听捕获到文本时触发）
+class ClipboardSearchEvent {
+  final String text;
+  const ClipboardSearchEvent(this.text);
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -80,6 +86,8 @@ class EntryEventBus {
       StreamController<LanguageOrderChangedEvent>.broadcast();
   final _searchHistoryChangedController =
       StreamController<SearchHistoryChangedEvent>.broadcast();
+  final _clipboardSearchController =
+      StreamController<ClipboardSearchEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -97,6 +105,8 @@ class EntryEventBus {
       _languageOrderChangedController.stream;
   Stream<SearchHistoryChangedEvent> get searchHistoryChanged =>
       _searchHistoryChangedController.stream;
+  Stream<ClipboardSearchEvent> get clipboardSearch =>
+      _clipboardSearchController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -130,6 +140,10 @@ class EntryEventBus {
     _searchHistoryChangedController.add(const SearchHistoryChangedEvent());
   }
 
+  void emitClipboardSearch(ClipboardSearchEvent event) {
+    _clipboardSearchController.add(event);
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
@@ -139,5 +153,6 @@ class EntryEventBus {
     _dictionariesChangedController.close();
     _languageOrderChangedController.close();
     _searchHistoryChangedController.close();
+    _clipboardSearchController.close();
   }
 }

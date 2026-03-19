@@ -93,6 +93,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   StreamSubscription<DictionariesChangedEvent>? _dictsChangedSubscription;
   StreamSubscription<LanguageOrderChangedEvent>? _langOrderSubscription;
   StreamSubscription<SearchHistoryChangedEvent>? _historyChangedSubscription;
+  StreamSubscription<ClipboardSearchEvent>? _clipboardSearchSubscription;
 
   bool _isInitializing = true;
 
@@ -144,6 +145,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       _,
     ) {
       _loadSearchHistory();
+    });
+    // 监听剪切板搜索事件
+    _clipboardSearchSubscription = EntryEventBus().clipboardSearch.listen((
+      event,
+    ) {
+      _handleClipboardSearch(event.text);
     });
   }
 
@@ -373,6 +380,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _dictsChangedSubscription?.cancel();
     _langOrderSubscription?.cancel();
     _historyChangedSubscription?.cancel();
+    _clipboardSearchSubscription?.cancel();
     _debounceTimer?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
@@ -563,6 +571,15 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     });
     await _searchWord();
+  }
+
+  /// 处理剪切板搜索事件
+  void _handleClipboardSearch(String text) {
+    Logger.i('收到剪切板搜索事件: $text', tag: 'DictionarySearch');
+    // 设置搜索框文本
+    _searchController.text = text;
+    // 执行搜索
+    _searchWord();
   }
 
   Future<void> _searchWord() async {

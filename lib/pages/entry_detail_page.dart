@@ -88,7 +88,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _isModalActive = false;
 
   // 导航栏位置状态（固定在右侧，只保存垂直位置）
-  double _navPanelDy = 0.7; // 相对屏幕高度的比例
+  double _navPanelDy = 0.5; // 相对屏幕高度的比例，默认在屏幕中间
   bool _isNavPanelLoaded = false;
 
   // 导航面板的 GlobalKey，用于访问其状态
@@ -439,13 +439,21 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   Future<void> _loadNavPanelPosition() async {
-    final position = await PreferencesService().getNavPanelPosition();
-    if (mounted) {
-      setState(() {
-        // 导航栏固定在右侧，只读取垂直位置
-        _navPanelDy = position['dy'] ?? 0.7;
-        _isNavPanelLoaded = true;
-      });
+    try {
+      final position = await PreferencesService().getNavPanelPosition();
+      if (mounted) {
+        setState(() {
+          _navPanelDy = position['dy'] ?? 0.5;
+          _isNavPanelLoaded = true;
+        });
+      }
+    } catch (e) {
+      Logger.e('Failed to load nav panel position: $e', tag: 'EntryDetailPage');
+      if (mounted) {
+        setState(() {
+          _isNavPanelLoaded = true;
+        });
+      }
     }
   }
 
@@ -906,21 +914,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       }
 
       if (success && mounted) {
-        final currentDictGroup = _entryGroup.currentDictionaryGroup;
-        final currentPage = currentDictGroup.currentPageGroup;
-        final sectionIndex = currentDictGroup.currentSectionIndex;
-
-        if (sectionIndex >= 0 && sectionIndex < currentPage.sections.length) {
-          final section = currentPage.sections[sectionIndex];
-          currentPage.sections[sectionIndex] = DictionarySection(
-            section: section.section,
-            entry: newEntry,
-          );
-
-          setState(() {});
-
-          showToast(context, context.t.entry.resetSuccess);
-        }
+        _updateEntryInGroup(newEntry);
+        showToast(context, context.t.entry.resetSuccess);
       } else if (mounted) {
         showToast(context, context.t.entry.resetFailed);
       }

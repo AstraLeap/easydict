@@ -27,6 +27,8 @@ import 'services/dict_update_check_service.dart';
 import 'services/app_update_service.dart';
 import 'services/zstd_service.dart';
 import 'services/advanced_search_settings_service.dart';
+import 'services/clipboard_watcher_service.dart';
+import 'services/system_tray_service.dart';
 import 'core/utils/toast_utils.dart';
 import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
@@ -215,9 +217,34 @@ void main() async {
         savedIsDark ? Brightness.dark : Brightness.light,
       );
 
+      // 设置阻止窗口关闭（根据用户设置决定是否最小化到托盘）
+      final prefsService = PreferencesService();
+      final shouldMinimizeToTray = await prefsService.shouldMinimizeToTray();
+      await windowManager.setPreventClose(shouldMinimizeToTray);
+
       Logger.i('窗口管理器初始化完成', tag: 'Startup');
     } catch (e) {
       Logger.e('窗口管理器初始化失败: $e', tag: 'Startup');
+    }
+
+    // 初始化系统托盘和剪切板监听（仅桌面平台）
+    try {
+      // 初始化系统托盘
+      await SystemTrayService().initialize();
+      Logger.i('系统托盘初始化完成', tag: 'Startup');
+
+      // 初始化剪切板监听
+      await ClipboardWatcherService().initialize();
+      Logger.i('剪切板监听服务初始化完成', tag: 'Startup');
+
+      // 根据设置启动剪切板监听
+      final prefsService = PreferencesService();
+      if (await prefsService.isClipboardWatchEnabled()) {
+        await ClipboardWatcherService().startWatching();
+        Logger.i('剪切板监听已启动', tag: 'Startup');
+      }
+    } catch (e) {
+      Logger.e('系统托盘或剪切板监听初始化失败: $e', tag: 'Startup');
     }
   }
 
@@ -363,9 +390,25 @@ class _MyAppState extends State<MyApp>
   }
 
   @override
-  void onWindowClose() async {
+  Future<bool> onWindowClose() async {
     await _saveWindowState();
-    await windowManager.destroy();
+
+    // 检查是否应该最小化到托盘
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      final prefs = PreferencesService();
+      final shouldMinimizeToTray = await prefs.shouldMinimizeToTray();
+
+      if (shouldMinimizeToTray) {
+        // 最小化到托盘而不是关闭
+        await windowManager.hide();
+        Logger.i('窗口已最小化到托盘', tag: 'MyApp');
+        // 返回 false 阻止窗口关闭
+        return false;
+      }
+    }
+
+    // 返回 true 允许窗口关闭
+    return true;
   }
 
   @override
@@ -398,6 +441,11 @@ class _MyAppState extends State<MyApp>
     try {
       final isMaximized = await windowManager.isMaximized();
       final bounds = await windowManager.getBounds();
+      Logger.d(
+        '保存窗口状态: size=${bounds.width.toInt()}x${bounds.height.toInt()}, '
+        'pos=(${bounds.left.toInt()}, ${bounds.top.toInt()}), maximized=$isMaximized',
+        tag: 'WindowState',
+      );
       await WindowStateService().saveWindowState(
         width: bounds.width,
         height: bounds.height,

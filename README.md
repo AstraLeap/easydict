@@ -301,6 +301,7 @@ CREATE INDEX idx_images_name ON images(name);
 | `ai`               | AI生成的内容           |
 | `->dog`            | 查词dog链接            |
 | `==entry_id.path`  | 精确跳转               |
+| `:かん`            | 日文振假名（Ruby）     |
 
 ### 示例
 
