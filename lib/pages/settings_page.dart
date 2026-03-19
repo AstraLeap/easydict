@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import '../core/locale_provider.dart';
 import '../core/theme_provider.dart';
 import '../core/utils/toast_utils.dart';
@@ -12,6 +14,8 @@ import '../services/app_update_service.dart';
 import '../services/english_db_service.dart';
 import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
+import '../services/clipboard_watcher_service.dart';
+import '../services/system_tray_service.dart';
 import '../components/global_scale_wrapper.dart';
 import 'cloud_service_page.dart';
 import 'dictionary_manager_page.dart';
@@ -529,27 +533,17 @@ class _SettingsPageState extends State<SettingsPage> {
     bool showArrow = false,
     bool isExternal = false,
     int? badgeCount,
+    Widget? trailing,
     VoidCallback? onTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      leading: Icon(icon, color: effectiveIconColor, size: 24),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-      ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            )
-          : null,
-      trailing: Row(
+
+    Widget? effectiveTrailing;
+    if (trailing != null) {
+      effectiveTrailing = trailing;
+    } else {
+      effectiveTrailing = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (badgeCount != null && badgeCount > 0)
@@ -574,7 +568,26 @@ class _SettingsPageState extends State<SettingsPage> {
           else if (isExternal)
             Icon(Icons.open_in_new, color: colorScheme.outline, size: 18),
         ],
+      );
+    }
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      leading: Icon(icon, color: effectiveIconColor, size: 24),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            )
+          : null,
+      trailing: effectiveTrailing,
       onTap: onTap,
     );
   }
@@ -665,6 +678,9 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   bool _autoCheckDictUpdate = true;
   bool _englishDbExists = false;
   bool _isLoading = true;
+  // 桌面功能设置
+  bool _clipboardWatchEnabled = false;
+  bool _minimizeToTray = true;
 
   @override
   void initState() {
@@ -676,10 +692,15 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final neverAsk = await _englishDbService.getNeverAskAgain();
     final autoCheck = await _preferencesService.getAutoCheckDictUpdate();
     final englishDbExists = await _englishDbService.dbExists();
+    final clipboardWatchEnabled = await _preferencesService
+        .isClipboardWatchEnabled();
+    final minimizeToTray = await _preferencesService.shouldMinimizeToTray();
     setState(() {
       _neverAskAgain = neverAsk;
       _autoCheckDictUpdate = autoCheck;
       _englishDbExists = englishDbExists;
+      _clipboardWatchEnabled = clipboardWatchEnabled;
+      _minimizeToTray = minimizeToTray;
       _isLoading = false;
     });
   }
@@ -864,6 +885,109 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
                             ),
                           ),
                         ),
+                        // 桌面功能设置组（仅桌面平台显示）
+                        if (Platform.isWindows ||
+                            Platform.isMacOS ||
+                            Platform.isLinux) ...[
+                          const SizedBox(height: 24),
+                          _buildSectionTitle(
+                            context,
+                            context.t.settings.misc_page.desktopFeaturesTitle,
+                          ),
+                          const SizedBox(height: 8),
+                          Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: colorScheme.outlineVariant.withOpacity(
+                                  0.5,
+                                ),
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  leading: Icon(
+                                    Icons.content_paste_search,
+                                    color: colorScheme.primary,
+                                  ),
+                                  title: Text(
+                                    context.t.settings.clipboardWatch,
+                                  ),
+                                  subtitle: Text(
+                                    _clipboardWatchEnabled
+                                        ? context
+                                              .t
+                                              .settings
+                                              .clipboardWatchEnabled
+                                        : context
+                                              .t
+                                              .settings
+                                              .clipboardWatchDisabled,
+                                  ),
+                                  trailing: Switch(
+                                    value: _clipboardWatchEnabled,
+                                    onChanged: (value) async {
+                                      await _preferencesService
+                                          .setClipboardWatchEnabled(value);
+                                      await ClipboardWatcherService()
+                                          .setEnabled(value);
+                                      await SystemTrayService()
+                                          .updateClipboardWatchState(value);
+                                      setState(
+                                        () => _clipboardWatchEnabled = value,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                Divider(
+                                  height: 1,
+                                  indent: 56,
+                                  color: colorScheme.outlineVariant.withOpacity(
+                                    0.3,
+                                  ),
+                                ),
+                                ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  leading: Icon(
+                                    Icons.remove_circle_outline,
+                                    color: colorScheme.primary,
+                                  ),
+                                  title: Text(
+                                    context.t.settings.minimizeToTray,
+                                  ),
+                                  subtitle: Text(
+                                    context.t.settings.minimizeToTrayDesc,
+                                  ),
+                                  trailing: Switch(
+                                    value: _minimizeToTray,
+                                    onChanged: (value) async {
+                                      await _preferencesService
+                                          .setMinimizeToTray(value);
+                                      // 更新窗口管理器的 preventClose 设置
+                                      await windowManager.setPreventClose(
+                                        value,
+                                      );
+                                      // 更新托盘菜单
+                                      await SystemTrayService()
+                                          .updateMinimizeToTrayState(value);
+                                      setState(() => _minimizeToTray = value);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ]),
                     ),
                   ),

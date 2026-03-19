@@ -47,6 +47,10 @@ class PreferencesService {
       'global_translation_visibility';
   static const String _kDictionaryContentScale = 'dictionary_content_scale';
 
+  // 剪切板监听和托盘设置键名
+  static const String _kClipboardWatchEnabled = 'clipboard_watch_enabled';
+  static const String _kMinimizeToTray = 'minimize_to_tray';
+
   // LLM 模型键名
   static const String _kLlmFastPrefix = 'fast_llm';
   static const String _kLlmStandardPrefix = 'standard_llm';
@@ -669,5 +673,31 @@ class PreferencesService {
     } else {
       await p.setString(_kAppLocale, localeCode);
     }
+  }
+
+  // ── 剪切板监听和托盘设置 ──────────────────────────────────────────────────────
+
+  /// 获取剪切板监听是否启用
+  Future<bool> isClipboardWatchEnabled() async {
+    final p = await prefs;
+    return p.getBool(_kClipboardWatchEnabled) ?? false;
+  }
+
+  /// 设置剪切板监听启用状态
+  Future<void> setClipboardWatchEnabled(bool enabled) async {
+    final p = await prefs;
+    await p.setBool(_kClipboardWatchEnabled, enabled);
+  }
+
+  /// 获取是否最小化到托盘
+  Future<bool> shouldMinimizeToTray() async {
+    final p = await prefs;
+    return p.getBool(_kMinimizeToTray) ?? true;
+  }
+
+  /// 设置是否最小化到托盘
+  Future<void> setMinimizeToTray(bool value) async {
+    final p = await prefs;
+    await p.setBool(_kMinimizeToTray, value);
   }
 }

@@ -66,26 +66,30 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isMobile = screenSize.width < 600;
+    final scale = FontLoaderService().getDictionaryContentScale();
     double top;
 
     if (_dragY != null) {
       top = _dragY!;
     } else {
-      top = screenSize.height * _dy;
+      top = screenSize.height * _dy / scale;
       // 确保不超出屏幕底部
-      if (top > screenSize.height - 100) {
-        top = screenSize.height - 100;
+      final maxTop = screenSize.height - 100 / scale;
+      if (top > maxTop) {
+        top = maxTop;
       }
     }
+
+    final rightPosition = (isMobile ? 4 : 16) / scale;
 
     // 固定在右边缘，手机端更贴近边缘
     return Positioned(
       top: top,
-      right: isMobile ? 4 : 16,
+      right: rightPosition,
       child: GestureDetector(
         onPanStart: (details) {
           setState(() {
-            _dragY = screenSize.height * _dy;
+            _dragY = screenSize.height * _dy / scale;
           });
         },
         onPanUpdate: (details) {
@@ -95,7 +99,8 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
         },
         onPanEnd: (details) {
           // 只保存垂直位置，固定在右侧
-          final newDy = (_dragY! / screenSize.height).clamp(0.1, 0.8);
+          // _dy 存储的是相对于原始屏幕高度的比例
+          final newDy = (_dragY! * scale / screenSize.height).clamp(0.1, 0.8);
 
           setState(() {
             _dy = newDy;

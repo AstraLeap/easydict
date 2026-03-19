@@ -289,6 +289,21 @@ class TranslationsSettingsZh {
 	late final TranslationsSettingsToolbarDialogZh toolbarDialog = TranslationsSettingsToolbarDialogZh.internal(_root);
 	late final TranslationsSettingsMiscPageZh misc_page = TranslationsSettingsMiscPageZh.internal(_root);
 	late final TranslationsSettingsActionLabelZh actionLabel = TranslationsSettingsActionLabelZh.internal(_root);
+
+	/// zh: '剪切板监听'
+	String get clipboardWatch => '剪切板监听';
+
+	/// zh: '已开启，复制文本后自动查词'
+	String get clipboardWatchEnabled => '已开启，复制文本后自动查词';
+
+	/// zh: '已关闭'
+	String get clipboardWatchDisabled => '已关闭';
+
+	/// zh: '最小化到托盘'
+	String get minimizeToTray => '最小化到托盘';
+
+	/// zh: '关闭窗口时最小化到系统托盘'
+	String get minimizeToTrayDesc => '关闭窗口时最小化到系统托盘';
 }
 
 // Path: search
@@ -2283,6 +2298,9 @@ class TranslationsSettingsMiscPageZh {
 
 	/// zh: '保留最近 90 天'
 	String get keep90Days => '保留最近 90 天';
+
+	/// zh: '桌面功能'
+	String get desktopFeaturesTitle => '桌面功能';
 }
 
 // Path: settings.actionLabel
@@ -2499,6 +2517,7 @@ extension on Translations {
 			'settings.misc_page.keep7Days' => '保留最近 7 天',
 			'settings.misc_page.keep30Days' => '保留最近 30 天',
 			'settings.misc_page.keep90Days' => '保留最近 90 天',
+			'settings.misc_page.desktopFeaturesTitle' => '桌面功能',
 			'settings.actionLabel.aiTranslate' => '切换翻译',
 			'settings.actionLabel.copy' => '复制文本',
 			'settings.actionLabel.askAi' => '询问 AI',
@@ -2510,6 +2529,11 @@ extension on Translations {
 			'settings.actionLabel.toggleTranslate' => '显示/隐藏翻译',
 			'settings.actionLabel.aiHistory' => 'AI 历史记录',
 			'settings.actionLabel.resetEntry' => '重置词条',
+			'settings.clipboardWatch' => '剪切板监听',
+			'settings.clipboardWatchEnabled' => '已开启，复制文本后自动查词',
+			'settings.clipboardWatchDisabled' => '已关闭',
+			'settings.minimizeToTray' => '最小化到托盘',
+			'settings.minimizeToTrayDesc' => '关闭窗口时最小化到系统托盘',
 			'search.hint' => '输入单词',
 			'search.hintWordBank' => '搜索单词本',
 			'search.noResult' => ({required Object word}) => '未找到单词: ${word}',
@@ -2895,14 +2919,14 @@ extension on Translations {
 			'dict.tooltipReplaceFile' => '替换文件',
 			'dict.tooltipPushUpdate' => '推送更新',
 			'dict.tooltipDelete' => '删除',
+			_ => null,
+		} ?? switch (path) {
 			'dict.tooltipUpdate' => '更新词典',
 			'dict.tooltipDownload' => '下载词典',
 			'dict.daysAgo' => ({required Object n}) => '${n}天前',
 			'dict.monthsAgo' => ({required Object n}) => '${n}个月前',
 			'dict.yearsAgo' => ({required Object n}) => '${n}年前',
 			'dict.hoursAgo' => ({required Object n}) => '${n}小时前',
-			_ => null,
-		} ?? switch (path) {
 			'dict.minutesAgo' => ({required Object n}) => '${n}分钟前',
 			'dict.justNow' => '刚刚',
 			'dict.dateUnknown' => '未知',

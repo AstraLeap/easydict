@@ -144,11 +144,18 @@ class _BoardWidgetState extends State<BoardWidget> {
                   ),
                 ),
               ),
-            if (!_isCollapsed)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: widget.contentBuilder(contentBoard, widget.path),
-              ),
+            // 使用 AnimatedSize 实现平滑的折叠动画，折叠时容器高度变为0
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              alignment: Alignment.topCenter,
+              child: _isCollapsed
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: widget.contentBuilder(contentBoard, widget.path),
+                    ),
+            ),
           ],
         ),
       );
@@ -179,18 +186,18 @@ class _BoardWidgetState extends State<BoardWidget> {
             child: InkWell(
               onTap: _toggleCollapse,
               onLongPress: _showPath,
-              borderRadius: _isCollapsed
-                  ? BorderRadius.circular(12)
-                  : const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
               mouseCursor: SystemMouseCursors.click,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
                   color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                  borderRadius: _isCollapsed
-                      ? BorderRadius.circular(12)
-                      : const BorderRadius.vertical(top: Radius.circular(12)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -220,11 +227,18 @@ class _BoardWidgetState extends State<BoardWidget> {
               ),
             ),
           ),
-          if (!_isCollapsed)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: widget.contentBuilder(contentBoard, widget.path),
-            ),
+          // 使用 AnimatedSize 实现平滑的折叠动画，折叠时容器高度变为0
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _isCollapsed
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    child: widget.contentBuilder(contentBoard, widget.path),
+                  ),
+          ),
         ],
       ),
     );

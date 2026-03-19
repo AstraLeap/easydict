@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 class Logger {
@@ -31,13 +32,14 @@ class Logger {
     if (_fileInitialized) return;
     try {
       final appDir = await getApplicationSupportDirectory();
-      final logDir = Directory('${appDir.path}\\logs');
+      final logDir = Directory(path.join(appDir.path, 'logs'));
       if (!logDir.existsSync()) {
         logDir.createSync(recursive: true);
       }
       final now = DateTime.now();
-      final logPath =
-          '${logDir.path}\\app_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}.log';
+      final logFileName =
+          'app_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}.log';
+      final logPath = path.join(logDir.path, logFileName);
       _logFile = File(logPath);
       _fileInitialized = true;
     } catch (e) {

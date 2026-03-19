@@ -385,14 +385,27 @@ class _ParsedSegment {
   final String? formattedText;
   final String? typesStr;
   final List<_ParsedSegment>? children;
+  // Ruby 支持
+  final bool isRuby;
+  final String? rubyText;
 
   _ParsedSegment.plain(this.plainText)
     : formattedText = null,
       typesStr = null,
-      children = null;
+      children = null,
+      isRuby = false,
+      rubyText = null;
 
   _ParsedSegment.formatted(this.formattedText, this.typesStr, this.children)
-    : plainText = null;
+    : plainText = null,
+      isRuby = false,
+      rubyText = null;
+
+  _ParsedSegment.ruby(this.formattedText, this.rubyText)
+    : plainText = null,
+      typesStr = null,
+      children = null,
+      isRuby = true;
 
   bool get isPlain => plainText != null;
   bool get isFormatted => formattedText != null;
@@ -493,6 +506,14 @@ _ParsedSegment? _tryParseFormattedSegment(_ParseContext ctx) {
 
   final content = contentBuffer.toString();
   final typesStr = typesBuffer.toString();
+
+  // 检测 Ruby 语法: [漢](:かん) - typesStr 以冒号开头表示振假名
+  if (typesStr.startsWith(':') && content.isNotEmpty) {
+    final rubyText = typesStr.substring(1);
+    if (rubyText.isNotEmpty) {
+      return _ParsedSegment.ruby(content, rubyText);
+    }
+  }
 
   if (content.contains('[') && content.contains('](')) {
     if (ctx.currentDepth >= ctx.maxDepth) {
@@ -729,6 +750,7 @@ FormattedTextResult parseFormattedText(
   String? label,
   void Function(String path, String label)? onElementTap,
   void Function(String path, String label)? onElementSecondaryTap,
+  void Function(Offset position, String text)? onShowMenu,
   GestureRecognizer? recognizer,
   bool hidden = false,
   String? language,
@@ -807,6 +829,7 @@ FormattedTextResult parseFormattedText(
     effectiveLanguage: effectiveLanguage,
     spans: spans,
     plainTexts: plainTexts,
+    onShowMenu: onShowMenu,
   );
 
   return FormattedTextResult(spans, plainTexts, hidden: hidden);
@@ -821,6 +844,7 @@ void _processSegments({
   required String? effectiveLanguage,
   required List<InlineSpan> spans,
   required List<String> plainTexts,
+  void Function(Offset position, String text)? onShowMenu,
 }) {
   for (final segment in segments) {
     if (segment.isPlain) {
@@ -834,6 +858,18 @@ void _processSegments({
         ),
       );
       plainTexts.add(text);
+    } else if (segment.isRuby) {
+      // 处理 Ruby 文本
+      _processRubySegment(
+        segment: segment,
+        baseStyle: baseStyle,
+        context: context,
+        recognizer: recognizer,
+        mouseCursor: mouseCursor,
+        spans: spans,
+        plainTexts: plainTexts,
+        onShowMenu: onShowMenu,
+      );
     } else if (segment.isFormatted) {
       _processFormattedSegment(
         segment: segment,
@@ -847,6 +883,86 @@ void _processSegments({
       );
     }
   }
+}
+
+/// 处理 Ruby（振假名）段落
+void _processRubySegment({
+  required _ParsedSegment segment,
+  required TextStyle baseStyle,
+  required BuildContext? context,
+  required GestureRecognizer? recognizer,
+  required MouseCursor? mouseCursor,
+  required List<InlineSpan> spans,
+  required List<String> plainTexts,
+  void Function(Offset position, String text)? onShowMenu,
+}) {
+  final baseText = segment.formattedText ?? '';
+  final rubyText = segment.rubyText ?? '';
+
+  Logger.d(
+    '_processRubySegment: baseText=$baseText, rubyText=$rubyText, onShowMenu=${onShowMenu != null}',
+    tag: 'Ruby',
+  );
+
+  if (baseText.isEmpty) return;
+
+  // Ruby 文本的基础字体大小
+  final baseFontSize = baseStyle.fontSize ?? 14.0;
+  // 振假名字体大小为基础字体的 50%
+  final rubyFontSize = baseFontSize * 0.5;
+
+  // 使用 Transform.translate 来实现 Ruby 文本布局
+  // 汉字（基础文本）与其他文本基线对齐，振假名显示在上方
+  // 注意：WidgetSpan 内的文本不在 SelectionArea 选择范围内
+  // 但外层 SelectionArea 的 contextMenuBuilder 仍然可以处理手势
+  //
+  // 布局说明：
+  // - WidgetSpan 使用 PlaceholderAlignment.middle 让汉字中心与其他文本中心对齐
+  // - 振假名使用 Transform.translate 向上偏移，不占用行高空间
+  spans.add(
+    WidgetSpan(
+      alignment: PlaceholderAlignment.middle,
+      child: MouseRegion(
+        cursor: mouseCursor ?? MouseCursor.defer,
+        child: GestureDetector(
+          // 长按触发菜单
+          onLongPressStart: onShowMenu != null
+              ? (details) {
+                  onShowMenu(details.globalPosition, baseText);
+                }
+              : null,
+          onSecondaryTapDown: onShowMenu != null
+              ? (details) {
+                  onShowMenu(details.globalPosition, baseText);
+                }
+              : null,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // 汉字（基础文本）- 与其他文本中心对齐
+              Text(baseText, style: baseStyle),
+              // 振假名 - 使用 Transform.translate 定位在汉字上方
+              Transform.translate(
+                // 向上偏移：假名高度 + 小间距
+                // 让假名紧贴在汉字上方
+                offset: Offset(0, -rubyFontSize - 1),
+                child: Text(
+                  rubyText,
+                  style: baseStyle.copyWith(
+                    fontSize: rubyFontSize,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  plainTexts.add(baseText);
 }
 
 void _processFormattedSegment({
@@ -2215,6 +2331,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     String? label,
     void Function(String path, String label)? onElementTap,
     void Function(String path, String label)? onElementSecondaryTap,
+    void Function(Offset position, String text)? onShowMenu,
     GestureRecognizer? recognizer,
     bool hidden = false,
     String? language,
@@ -2232,6 +2349,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       label: label,
       onElementTap: onElementTap,
       onElementSecondaryTap: onElementSecondaryTap,
+      onShowMenu: onShowMenu,
       recognizer: recognizer,
       hidden: hidden,
       language: language,
@@ -6286,16 +6404,48 @@ class ComponentRendererState extends State<ComponentRenderer> {
     String label,
     TextStyle textStyle,
   ) {
-    // 不再使用 Listener 包装，让 SelectionArea 完全控制文本选择
+    // 创建路径数据用于菜单
+    final pathData = _PathData(path.split('.'), text);
+
+    Logger.d(
+      '_buildTappableGroupName: text=$text, path=$path, label=$label',
+      tag: 'GroupName',
+    );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
-      child: Text.rich(
-        TextSpan(
-          children: _parseFormattedText(
-            text,
-            textStyle,
-            context: context,
-          ).spans,
+      child: GestureDetector(
+        // 长按触发菜单
+        onLongPressStart: (details) {
+          Logger.d(
+            'onLongPressStart: position=${details.globalPosition}',
+            tag: 'GroupName',
+          );
+          _showContextMenu(context, details.globalPosition, pathData);
+        },
+        // 右键触发菜单
+        onSecondaryTapDown: (details) {
+          Logger.d(
+            'onSecondaryTapDown: position=${details.globalPosition}',
+            tag: 'GroupName',
+          );
+          _showContextMenu(context, details.globalPosition, pathData);
+        },
+        child: Text.rich(
+          TextSpan(
+            children: _parseFormattedText(
+              text,
+              textStyle,
+              context: context,
+              onShowMenu: (position, selectedText) {
+                Logger.d(
+                  'onShowMenu called: position=$position, selectedText=$selectedText',
+                  tag: 'GroupName',
+                );
+                _showContextMenu(context, position, pathData);
+              },
+            ).spans,
+          ),
         ),
       ),
     );
@@ -6417,6 +6567,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'version',
     'headword',
     'headline', // headline 在 _buildWord 中作为标题渲染，不应再渲染为 board
+    'links', // links 用于索引，不需要渲染
     'entry_type',
     'page',
     'section',
@@ -7993,35 +8144,28 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
                     topRight: Radius.circular(0),
                   );
 
+            // 统一使用前景装饰绘制边框，确保展开/折叠状态容器尺寸一致
+            // 两种状态都使用 foregroundDecoration 绘制边框，避免边框宽度影响容器尺寸
             Widget tabContent = Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: isSelected
-                  ? BoxDecoration(
-                      color: widget.colorScheme.primaryContainer,
-                      borderRadius: borderRadius,
-                    )
-                  : BoxDecoration(
-                      color: widget.colorScheme.surfaceContainerHighest,
-                      borderRadius: borderRadius,
-                      border: Border.all(
-                        color: widget.colorScheme.outlineVariant.withValues(
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? widget.colorScheme.primaryContainer
+                    : widget.colorScheme.surfaceContainerHighest,
+                borderRadius: borderRadius,
+              ),
+              // 统一使用前景装饰绘制边框，不改变容器尺寸
+              foregroundDecoration: BoxDecoration(
+                borderRadius: borderRadius,
+                border: Border.all(
+                  color: isSelected
+                      ? widget.colorScheme.primary.withValues(alpha: 0.6)
+                      : widget.colorScheme.outlineVariant.withValues(
                           alpha: 0.3,
                         ),
-                        width: 1,
-                      ),
-                    ),
-              // 展开状态使用前景装饰绘制内边框，不改变尺寸，边框宽度较窄
-              foregroundDecoration: isSelected
-                  ? BoxDecoration(
-                      borderRadius: borderRadius,
-                      border: Border.all(
-                        color: widget.colorScheme.primary.withValues(
-                          alpha: 0.6,
-                        ),
-                        width: 0.7,
-                      ),
-                    )
-                  : null,
+                  width: isSelected ? 0.7 : 1,
+                ),
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -8034,9 +8178,8 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
                           color: isSelected
                               ? widget.colorScheme.onPrimaryContainer
                               : widget.colorScheme.onSurface,
-                          fontWeightOverride: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w500,
+                          // 统一字体粗细，确保展开/折叠状态容器宽度一致
+                          fontWeightOverride: FontWeight.w600,
                         ),
                         context: context,
                         sourceLanguage: widget.sourceLanguage,

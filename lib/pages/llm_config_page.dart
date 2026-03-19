@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -1277,7 +1278,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     if (!_fastFormKey.currentState!.validate()) return;
 
     final appDir = await getApplicationSupportDirectory();
-    final prefsPath = '${appDir.path}\\shared_preferences.json';
+    final prefsPath = path.join(appDir.path, 'shared_preferences.json');
     Logger.i('保存 LLM 配置到 SharedPreferences', tag: 'LLMConfig');
     Logger.i('  文件路径: $prefsPath', tag: 'LLMConfig');
 
@@ -1310,7 +1311,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     if (!_standardFormKey.currentState!.validate()) return;
 
     final appDir = await getApplicationSupportDirectory();
-    final prefsPath = '${appDir.path}\\shared_preferences.json';
+    final prefsPath = path.join(appDir.path, 'shared_preferences.json');
     Logger.i('保存标准 LLM 配置到 SharedPreferences', tag: 'LLMConfig');
     Logger.i('  文件路径: $prefsPath', tag: 'LLMConfig');
 
@@ -1347,7 +1348,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
     if (!_ttsFormKey.currentState!.validate()) return;
 
     final appDir = await getApplicationSupportDirectory();
-    final prefsPath = '${appDir.path}\\shared_preferences.json';
+    final prefsPath = path.join(appDir.path, 'shared_preferences.json');
     Logger.i('保存 TTS 配置到 SharedPreferences', tag: 'LLMConfig');
     Logger.i('  文件路径: $prefsPath', tag: 'LLMConfig');
 

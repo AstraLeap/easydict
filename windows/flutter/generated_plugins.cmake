@@ -3,9 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  clipboard_watcher
   media_kit_libs_windows_audio
   permission_handler_windows
   screen_retriever_windows
+  tray_manager
   url_launcher_windows
   window_manager
 )

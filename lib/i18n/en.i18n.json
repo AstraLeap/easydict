@@ -124,7 +124,8 @@
       "autoCleanupDialogTitle": "Auto Cleanup Settings",
       "keep7Days": "Keep last 7 days",
       "keep30Days": "Keep last 30 days",
-      "keep90Days": "Keep last 90 days"
+      "keep90Days": "Keep last 90 days",
+      "desktopFeaturesTitle": "Desktop Features"
     },
     "actionLabel": {
       "aiTranslate": "Translate",
@@ -138,7 +139,12 @@
       "toggleTranslate": "Show/Hide Translation",
       "aiHistory": "AI History",
       "resetEntry": "Reset Entry"
-    }
+    },
+    "clipboardWatch": "Clipboard Watch",
+    "clipboardWatchEnabled": "Enabled, auto-search when copying text",
+    "clipboardWatchDisabled": "Disabled",
+    "minimizeToTray": "Minimize to Tray",
+    "minimizeToTrayDesc": "Minimize to system tray when closing window"
   },
   "search": {
     "hint": "Enter a word",

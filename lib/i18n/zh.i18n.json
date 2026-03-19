@@ -124,7 +124,8 @@
       "autoCleanupDialogTitle": "自动清理设置",
       "keep7Days": "保留最近 7 天",
       "keep30Days": "保留最近 30 天",
-      "keep90Days": "保留最近 90 天"
+      "keep90Days": "保留最近 90 天",
+      "desktopFeaturesTitle": "桌面功能"
     },
     "actionLabel": {
       "aiTranslate": "切换翻译",
@@ -138,7 +139,12 @@
       "toggleTranslate": "显示/隐藏翻译",
       "aiHistory": "AI 历史记录",
       "resetEntry": "重置词条"
-    }
+    },
+    "clipboardWatch": "剪切板监听",
+    "clipboardWatchEnabled": "已开启，复制文本后自动查词",
+    "clipboardWatchDisabled": "已关闭",
+    "minimizeToTray": "最小化到托盘",
+    "minimizeToTrayDesc": "关闭窗口时最小化到系统托盘"
   },
   "search": {
     "hint": "输入单词",

@@ -3,6 +3,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/logger.dart';
 import '../../core/utils/dict_typography.dart';
 import '../../services/font_loader_service.dart';
 
@@ -90,6 +91,12 @@ const int kLabelBackgroundAlpha = 13;
 
 /// Alpha value for AI text mark background.
 const int kAiTextMarkBackgroundAlpha = 115;
+
+/// Font size scale factor for ruby text (furigana).
+const double kRubyFontScale = 0.5;
+
+/// Spacing between ruby text and base text.
+const double kRubySpacing = 0.0;
 
 /// Known language codes for validation.
 const Set<String> kKnownLanguageCodes = {
@@ -186,10 +193,26 @@ class _FormattedSegment extends _ParsedSegment {
   R accept<R>(_SegmentVisitor<R> visitor) => visitor.visitFormatted(this);
 }
 
+/// A ruby text segment for Japanese furigana.
+/// Syntax: [漢](:かん) where 漢 is the base text and かん is the ruby text.
+class _RubySegment extends _ParsedSegment {
+  final String baseText;
+  final String rubyText;
+
+  const _RubySegment(this.baseText, this.rubyText);
+
+  @override
+  String get textContent => baseText;
+
+  @override
+  R accept<R>(_SegmentVisitor<R> visitor) => visitor.visitRuby(this);
+}
+
 /// Visitor pattern for processing parsed segments.
 abstract class _SegmentVisitor<R> {
   R visitPlain(_PlainTextSegment segment);
   R visitFormatted(_FormattedSegment segment);
+  R visitRuby(_RubySegment segment);
 }
 
 // ============================================================================
@@ -496,7 +519,7 @@ class SegmentParser {
     }
   }
 
-  static _FormattedSegment? _tryParseFormattedSegment(_ParseContext ctx) {
+  static _ParsedSegment? _tryParseFormattedSegment(_ParseContext ctx) {
     if (ctx.currentChar != '[') return null;
 
     final startPos = ctx.pos;
@@ -518,6 +541,21 @@ class SegmentParser {
 
     final content = contentResult;
     final typesStr = typesResult;
+
+    // 调试信息
+    Logger.d('=== Formatted Segment Debug ===', tag: 'RubyParser');
+    Logger.d('content: $content', tag: 'RubyParser');
+    Logger.d('typesStr: $typesStr', tag: 'RubyParser');
+
+    // Check for Ruby syntax: [text](:ruby)
+    if (typesStr.startsWith(':')) {
+      final rubyText = typesStr.substring(1);
+      Logger.d(
+        '>>> Ruby detected! baseText: $content, rubyText: $rubyText',
+        tag: 'RubyParser',
+      );
+      return _RubySegment(content, rubyText);
+    }
 
     // Handle nested formatting
     if (content.contains('[') && content.contains('](')) {
@@ -593,12 +631,24 @@ class SegmentParser {
 // Public Utility Functions
 // ============================================================================
 
+/// Pre-compiled regex pattern for removing ruby formatting.
+final RegExp _removeRubyPattern = RegExp(r'\[([^\]]*?)\]\(:[^\)]*?\)');
+
 /// Removes formatting markers from text.
 String removeFormatting(String text) {
-  return text.replaceAllMapped(
+  // First handle Ruby syntax: [漢](:かん) -> 漢
+  String result = text.replaceAllMapped(
+    _removeRubyPattern,
+    (match) => match.group(1) ?? '',
+  );
+
+  // Then handle regular formatting syntax
+  result = result.replaceAllMapped(
     _removeFormattingPattern,
     (match) => match.group(1) ?? '',
   );
+
+  return result;
 }
 
 /// Extracts text to copy from a dynamic value.
@@ -745,6 +795,11 @@ class _FormattedTextParser {
     FormattedTextConfig config,
     bool hidden,
   ) {
+    // 调试：打印输入文本
+    Logger.d('=== parseFormattedText called ===', tag: 'RubyParser');
+    Logger.d('text: $text', tag: 'RubyParser');
+    Logger.d('hidden: $hidden', tag: 'RubyParser');
+
     if (hidden) {
       return FormattedTextResult.hiddenResult;
     }
@@ -752,6 +807,14 @@ class _FormattedTextParser {
     final effectiveBaseStyle = _resolveEffectiveStyle(baseStyle, config);
     final ctx = _ParseContext(text);
     final segments = SegmentParser.parse(ctx);
+
+    Logger.d('segments count: ${segments.length}', tag: 'RubyParser');
+    for (int i = 0; i < segments.length; i++) {
+      Logger.d(
+        '  segment[$i]: ${segments[i].runtimeType} - ${segments[i].textContent}',
+        tag: 'RubyParser',
+      );
+    }
 
     final processor = _SegmentProcessor(
       baseStyle: effectiveBaseStyle,
@@ -872,6 +935,45 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     }
   }
 
+  @override
+  void visitRuby(_RubySegment segment) {
+    final fontSize = baseStyle.fontSize ?? kDefaultFontSize;
+    final rubyFontSize = fontSize * kRubyFontScale;
+
+    // 振假名特殊样式：使用淡灰色
+    final rubyColor = Colors.grey.shade600;
+
+    // 使用 Stack 实现 Ruby 文本，确保振假名显示在汉字上方
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 基础文本（汉字）
+            Text(segment.baseText, style: baseStyle),
+            // 振假名，定位在汉字上方
+            Positioned(
+              top: -fontSize * kRubyFontScale - kRubySpacing,
+              left: 0,
+              right: 0,
+              child: Text(
+                segment.rubyText,
+                textAlign: TextAlign.center,
+                style: baseStyle.copyWith(
+                  fontSize: rubyFontSize,
+                  height: 1.0,
+                  color: rubyColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    plainTexts.add(segment.baseText);
+  }
+
   void _processNestedSegment(_FormattedSegment segment, StyleInfo styleInfo) {
     final childProcessor = _SegmentProcessor(
       baseStyle: styleInfo.style,
@@ -968,7 +1070,9 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     }
 
     final theme = Theme.of(config.context!);
-    final bgColor = theme.colorScheme.onSurface.withAlpha(kLabelBackgroundAlpha);
+    final bgColor = theme.colorScheme.onSurface.withAlpha(
+      kLabelBackgroundAlpha,
+    );
 
     // 使用纯 TextSpan 实现标签效果，保持选择连续性
     // 通过 backgroundColor 模拟背景，使用特殊字符模拟边框

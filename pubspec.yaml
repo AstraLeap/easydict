@@ -16,7 +16,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.5.1+1
+version: 1.5.2+1
 
 environment:
   sdk: ^3.10.7
@@ -43,6 +43,7 @@ dependencies:
   media_kit_libs_android_audio: ^1.0.0
   media_kit_libs_ios_audio: ^1.0.0
   media_kit_libs_macos_audio: ^1.0.0
+  media_kit_libs_linux: ^1.0.0
   shared_preferences: ^2.5.0
   provider: ^6.1.4
   http: ^1.2.0
@@ -69,6 +70,8 @@ dependencies:
       url: https://github.com/twn39/edgetts-dart.git
   slang_flutter: ^4.0.0
   meta: ^1.17.0
+  clipboard_watcher: ^0.2.1
+  tray_manager: ^0.2.3
 
 dev_dependencies:
   flutter_test:
@@ -107,6 +110,7 @@ flutter:
   assets:
     - assets/word_list.db
     - assets/icon/app_icon.png
+    - assets/icon/app_icon.ico
     - assets/fonts/
 
   fonts:
