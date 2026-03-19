@@ -298,24 +298,6 @@ bool _shouldConvertToSimplified(String? langCode) {
   return ['zh-tw', 'zh-hk', 'zh-mo', 'zh-hant'].contains(normalized);
 }
 
-/// 从 headline 中提取 headword 标签
-/// 格式示例: つける【[付ける](headword)・[附ける](headword)】
-/// 提取 [text](headword) 格式中的 text 作为 headword
-/// 返回: Map，key 为 headword，value 为 anchor（此处 anchor 为空字符串）
-Map<String, String> _extractHeadwordsFromHeadline(String headline) {
-  final result = <String, String>{};
-  // 匹配 [text](headword) 格式
-  final pattern = RegExp(r'\[([^\]]+)\]\(headword\)');
-  final matches = pattern.allMatches(headline);
-  for (final match in matches) {
-    final hw = match.group(1);
-    if (hw != null && hw.isNotEmpty) {
-      result[hw] = '';
-    }
-  }
-  return result;
-}
-
 /// 递归搜索 JSON 对象，提取所有 [text](anchor) 格式的标签
 /// 返回: Map，key 为 headword（提取的 text），value 为 anchor（JSON 路径）
 Map<String, String> _extractAnchorsFromJson(
@@ -364,10 +346,19 @@ Map<String, String> _extractHeadwordAnchorMap(Map<String, dynamic> data) {
     }
   }
 
-  // 2. 从 headline 字段提取 [text](headword) 格式
-  final headline = data['headline']?.toString() ?? '';
-  if (headline.isNotEmpty) {
-    result.addAll(_extractHeadwordsFromHeadline(headline));
+  // 2. 从 links 字段提取词头
+  // links 可以是 string 或 list of string
+  final links = data['links'];
+  if (links != null) {
+    if (links is String && links.isNotEmpty) {
+      result[links] = '';
+    } else if (links is List) {
+      for (final link in links) {
+        if (link is String && link.isNotEmpty) {
+          result[link] = '';
+        }
+      }
+    }
   }
 
   // 3. 递归搜索整个 JSON，提取 [text](anchor) 格式

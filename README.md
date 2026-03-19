@@ -108,11 +108,11 @@ indices 表用于存储词条的索引信息，支持一个词条对应多个索
 
 - **headword 来源**（按优先级）：
     1. JSON 中的 `headword` 字段
-    2. `headline` 字段中的 `[text](headword)` 格式标签
+    2. `links` 字段（可以是 string 或 list of string）
     3. 递归搜索 JSON 中所有 `[text](anchor)` 格式标签
 
 - **anchor 字段**：
-    - 当 headword 来自 `headword` 或 `headline` 时，anchor 为空字符串
+    - 当 headword 来自 `headword` 或 `links` 时，anchor 为空字符串
     - 当 headword 来自 `[text](anchor)` 时，anchor 为 JSON 路径，格式如 `sense_group.0.sense.0.label.pattern.0`
 
 ## media.db
@@ -148,7 +148,8 @@ CREATE INDEX idx_images_name ON images(name);
     "dict_id": "my_dict", // 必填，词典id
     "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
     "headword": "fog", // 与headline二选一，单词头，可重复
-    "headline": "つける【[付ける](headword)・[附ける](headword)】", // 与headword二选一，复杂词头，但必须包含`[xxx](headword)`这样的格式
+    "headline": "つける【付ける・附ける】", // 与headword二选一，复杂词头
+    "links": "from_word", //可以是string或者是list of string，查询"from_word"时也能查到本词条
     "entry_type": "word", // 必填，word或phrase
     "phonetic": "pinyin", // 可选，辅助搜索词，主要用于表意文字
     "page": "medical", // 必填，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry，如果没有则留空:""
@@ -204,7 +205,7 @@ CREATE INDEX idx_images_name ON images(name);
                 "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
                 "en": "A state of mental confusion or uncertainty.",
             }, //释义字段，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
-            "images": {
+            "image": {
                 "image_file": "fog.jpg",
             }, //可选
             "synonym": "test", //可以是string，也可以是list of string
