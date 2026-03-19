@@ -7353,16 +7353,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
               runSpacing: 4,
               children: strings.asMap().entries.map((entry) {
                 final itemPath = [...path, '${entry.key}'];
+                final textKey = GlobalKey();
                 return _buildTappableWidget(
                   context: context,
                   pathData: _PathData(itemPath, 'Inline Item'),
                   text: entry.value,
                   textStyle: textStyle,
+                  customTextKey: textKey,
                   child: _buildInlineItemText(
                     context: context,
                     text: entry.value,
                     style: textStyle,
                     path: itemPath,
+                    textKey: textKey,
                   ),
                 );
               }).toList(),
@@ -7373,14 +7376,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  /// 渲染内联项目文本，支持右键菜单
+  /// 渲染内联项目文本，支持右键菜单和双击查词
   Widget _buildInlineItemText({
     required BuildContext context,
     required String text,
     required TextStyle style,
     required List<String> path,
+    GlobalKey? textKey,
   }) {
     final pathData = _PathData(path, 'Inline Item');
+    final effectiveTextKey = textKey ?? GlobalKey();
 
     // 创建手势识别器以支持点击和右键菜单
     final tapRecognizer = TapGestureRecognizer()
@@ -7389,7 +7394,32 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _currentSelectionPathData = pathData;
       }
       ..onTap = () {
+        // 单击立即生效
         _handleElementTap(_convertPathToString(path), pathData.label);
+
+        // 检测双击
+        final now = DateTime.now();
+        final isDoubleTap =
+            _lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 300) &&
+            _lastTapButton == 0;
+
+        if (isDoubleTap && _lastTapPosition != null) {
+          Logger.d('Inline item 双击触发', tag: 'DoubleTapWord');
+          _handleDoubleTapOnText(
+            _lastTapPosition!,
+            text,
+            style,
+            effectiveTextKey,
+            context,
+          );
+          _lastTapTime = null;
+          _lastTapButton = null;
+          _lastTapPosition = null;
+        } else {
+          _lastTapTime = now;
+          _lastTapButton = 0;
+        }
       };
 
     // 添加右键菜单支持
@@ -7423,7 +7453,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       mouseCursor: SystemMouseCursors.text,
     );
 
-    return Text.rich(TextSpan(children: result.spans));
+    return Text.rich(TextSpan(children: result.spans), key: effectiveTextKey);
   }
 
   Widget renderJsonElement(

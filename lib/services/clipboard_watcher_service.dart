@@ -195,8 +195,8 @@ class ClipboardWatcherService with ClipboardListener {
       return false;
     }
 
-    // 3. 排除纯数字
-    if (RegExp(r'^\d+$').hasMatch(trimmedText)) {
+    // 3. 排除包含数字的文本
+    if (RegExp(r'\d').hasMatch(trimmedText)) {
       return false;
     }
 
