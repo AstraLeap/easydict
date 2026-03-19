@@ -692,7 +692,7 @@ class PreferencesService {
   /// 获取是否最小化到托盘
   Future<bool> shouldMinimizeToTray() async {
     final p = await prefs;
-    return p.getBool(_kMinimizeToTray) ?? true;
+    return p.getBool(_kMinimizeToTray) ?? false;
   }
 
   /// 设置是否最小化到托盘

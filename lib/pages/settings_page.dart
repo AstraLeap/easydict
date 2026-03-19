@@ -680,7 +680,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   bool _isLoading = true;
   // 桌面功能设置
   bool _clipboardWatchEnabled = false;
-  bool _minimizeToTray = true;
+  bool _minimizeToTray = false;
 
   @override
   void initState() {

@@ -22,7 +22,7 @@ class SystemTrayService with TrayListener {
   bool _clipboardWatchEnabled = false;
 
   /// 最小化到托盘是否启用
-  bool _minimizeToTrayEnabled = true;
+  bool _minimizeToTrayEnabled = false;
 
   /// 菜单项 ID
   static const String _menuIdShowWindow = 'show_window';
