@@ -32,19 +32,14 @@ jobs:
           - target: linux
             os: ubuntu-latest
             build_cmd: |
-              sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev
+              sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
               flutter build linux --release
             artifact_path: easydict-*-linux-x64.tar.gz
 
-          - target: macos-intel
-            os: macos-14
+          - target: macos
+            os: macos-latest
             build_cmd: flutter build macos --release
-            artifact_path: easydict-*-macos-x64.zip
-
-          - target: macos-arm
-            os: macos-14
-            build_cmd: flutter build macos --release
-            artifact_path: easydict-*-macos-arm64.zip
+            artifact_path: easydict-*-macos.zip
 
     steps:
       - uses: actions/checkout@v4
@@ -91,12 +86,9 @@ jobs:
             powershell "Compress-Archive -Path 'build/windows/x64/runner/Release/*' -DestinationPath \"easydict-${VERSION}-windows-x64.zip\" -Force"
           elif [ "$TARGET" = "linux" ]; then
             tar -czvf "easydict-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
-          elif [ "$TARGET" = "macos-intel" ]; then
+          elif [ "$TARGET" = "macos" ]; then
             cd build/macos/Build/Products/Release/
-            zip -r "$GITHUB_WORKSPACE/easydict-${VERSION}-macos-x64.zip" *.app
-          elif [ "$TARGET" = "macos-arm" ]; then
-            cd build/macos/Build/Products/Release/
-            zip -r "$GITHUB_WORKSPACE/easydict-${VERSION}-macos-arm64.zip" *.app
+            zip -r "$GITHUB_WORKSPACE/easydict-${VERSION}-macos.zip" *.app
           fi
 
       - name: Upload to Staging
@@ -121,7 +113,7 @@ jobs:
       - name: Generate Release Note
         run: |
           echo "## Release of version ${{ github.ref_name }}" > release_note.md
-          echo "Automated build for Android, Windows (Portable), Linux, and macOS (Intel & Apple Silicon)." >> release_note.md
+          echo "Automated build for Android, Windows (Portable), Linux, and macOS." >> release_note.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
