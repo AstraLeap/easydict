@@ -29,6 +29,7 @@ import '../services/font_loader_service.dart';
 import '../services/media_kit_manager.dart';
 import '../services/preferences_service.dart';
 import '../services/search_history_service.dart';
+import '../services/tts_cache_service.dart';
 import 'board_widget.dart';
 import 'dictionary_interaction_scope.dart';
 import 'global_scale_wrapper.dart';
@@ -2463,17 +2464,41 @@ class ComponentRendererState extends State<ComponentRenderer> {
     languageCode ??= _sourceLanguage;
 
     try {
-      showToast(context, context.t.entry.generatingAudio);
-      Logger.d('开始TTS: $textToSpeak, 语言: $languageCode', tag: '_performSpeak');
+      // 先尝试从缓存获取
+      final ttsCache = TtsCacheService();
+      List<int>? audioData = await ttsCache.getCache(textToSpeak, languageCode);
 
-      final audioData = await AIService().textToSpeech(
-        textToSpeak,
-        languageCode: languageCode,
-      );
+      if (audioData != null && audioData.isNotEmpty) {
+        Logger.d(
+          '使用 TTS 缓存音频，长度: ${audioData.length} bytes',
+          tag: '_performSpeak',
+        );
+      } else {
+        // 缓存未命中，请求 TTS 服务
+        showToast(context, context.t.entry.generatingAudio);
+        Logger.d(
+          '开始TTS: $textToSpeak, 语言: $languageCode',
+          tag: '_performSpeak',
+        );
 
-      Logger.d('TTS音频生成成功，长度: ${audioData.length} bytes', tag: '_performSpeak');
+        audioData = await AIService().textToSpeech(
+          textToSpeak,
+          languageCode: languageCode,
+        );
+
+        Logger.d(
+          'TTS音频生成成功，长度: ${audioData.length} bytes',
+          tag: '_performSpeak',
+        );
+
+        // 保存到缓存
+        await ttsCache.saveCache(textToSpeak, languageCode, audioData);
+      }
 
       await _playTtsAudio(audioData);
+
+      // 清理超过1天的缓存
+      unawaited(ttsCache.cleanOldCache(maxAgeDays: 1));
     } catch (e) {
       Logger.e('TTS失败: $e', tag: '_performSpeak', error: e);
       showToast(context, context.t.entry.speakFailed(error: e));
@@ -2492,7 +2517,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   Future<void> _playTtsAudio(List<int> audioData) async {
-    Directory? tempDir;
     try {
       // 取消之前的完成监听，但不停止播放
       // 让 open() 自动处理切换，避免 stop() 导致的音频管道重置
@@ -2512,8 +2536,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
         Logger.d('创建新播放器', tag: '_playTtsAudio');
       }
 
-      tempDir = await Directory.systemTemp.createTemp();
-      final audioFile = File('${tempDir.path}/tts_audio.mp3');
+      // 使用缓存目录存储音频文件（由 TtsCacheService 管理，1天后自动清理）
+      final ttsCache = TtsCacheService();
+      final tempDir = await ttsCache.getTemporaryDirectory();
+      final cacheDir = Directory(path.join(tempDir.path, 'tts_cache'));
+      if (!await cacheDir.exists()) {
+        await cacheDir.create(recursive: true);
+      }
+      final audioFile = File(
+        path.join(
+          cacheDir.path,
+          'tts_audio_${DateTime.now().millisecondsSinceEpoch}.mp3',
+        ),
+      );
       await audioFile.writeAsBytes(audioData, flush: true);
 
       Logger.d('播放TTS音频: ${audioFile.path}', tag: '_playTtsAudio');
@@ -2548,15 +2583,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
           await _cleanupPlayer();
         }
 
-        if (tempDir != null) {
-          unawaited(
-            Future.delayed(const Duration(seconds: 1), () async {
-              try {
-                await tempDir!.delete(recursive: true);
-              } catch (_) {}
-            }),
-          );
-        }
+        // 播放完成后删除临时音频文件（缓存由 TtsCacheService 统一管理）
+        try {
+          if (await audioFile.exists()) {
+            await audioFile.delete();
+            Logger.d('已删除临时 TTS 音频文件', tag: '_playTtsAudio');
+          }
+        } catch (_) {}
       });
 
       Logger.d('TTS音频播放已启动', tag: '_playTtsAudio');
@@ -2564,11 +2597,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       Logger.e('播放TTS音频失败: $e', tag: '_playTtsAudio', error: e);
       Logger.e('堆栈跟踪: $stackTrace', tag: '_playTtsAudio', error: stackTrace);
       await _cleanupPlayer();
-      if (tempDir != null) {
-        try {
-          await tempDir.delete(recursive: true);
-        } catch (_) {}
-      }
       rethrow;
     }
   }
@@ -2648,7 +2676,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 如果有选中文本，需要额外添加"查词"菜单项
     final itemCount = order.length + (hasSelection ? 1 : 0);
     const menuWidth = 200.0;
-    final menuHeight = itemCount * 48.0 + 15.0;
+    // 菜单高度 = 菜单项高度 + 顶部内边距(8) + 底部内边距(8)
+    final menuHeight = itemCount * 48.0 + 16.0;
     dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
     dy = dy.clamp(topPadding + 8.0, screenSize.height - menuHeight - 8.0);
 
@@ -2672,128 +2701,142 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 如果有选中文本，在最前面显示"查词"菜单项
-                  if (hasSelection) ...[
-                    ListTile(
-                      leading: const Icon(Icons.search, size: 20),
-                      title: Text(
-                        '${context.t.settings.actionLabel.search}："${selectedText.length > 10 ? '${selectedText.substring(0, 10)}...' : selectedText}"',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      dense: true,
-                      onTap: () {
-                        _removeCurrentOverlay();
-                        _handleTextSelectionSearch(selectedText);
-                      },
-                    ),
-                    if (order.isNotEmpty)
-                      Divider(
-                        height: 1,
-                        thickness: 0.5,
-                        color: colorScheme.outlineVariant.withValues(
-                          alpha: 0.5,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 如果有选中文本，在最前面显示"查词"菜单项
+                    if (hasSelection) ...[
+                      ListTile(
+                        leading: const Icon(Icons.search, size: 20),
+                        title: Text(
+                          '${context.t.settings.actionLabel.search}："${selectedText.length > 10 ? '${selectedText.substring(0, 10)}...' : selectedText}"',
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        dense: true,
+                        onTap: () {
+                          _removeCurrentOverlay();
+                          _handleTextSelectionSearch(selectedText);
+                        },
                       ),
+                      if (order.isNotEmpty)
+                        Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        ),
+                    ],
+                    for (int i = 0; i < order.length; i++) ...[
+                      Builder(
+                        builder: (context) {
+                          final action = order[i];
+                          switch (action) {
+                            case PreferencesService.actionAiTranslate:
+                              return ListTile(
+                                leading: const Icon(Icons.translate, size: 20),
+                                title: Text(
+                                  context.t.settings.actionLabel.aiTranslate,
+                                ),
+                                dense: true,
+                                onTap: () {
+                                  _removeCurrentOverlay();
+                                  if (pathData != null) {
+                                    _performAiTranslate(
+                                      pathData.path.join('.'),
+                                      pathData.label,
+                                    );
+                                  }
+                                },
+                              );
+                            case PreferencesService.actionEdit:
+                              return ListTile(
+                                leading: const Icon(Icons.edit, size: 20),
+                                title: Text(
+                                  context.t.settings.actionLabel.edit,
+                                ),
+                                dense: true,
+                                onTap: () {
+                                  _removeCurrentOverlay();
+                                  if (pathData != null) {
+                                    widget.onEditElement?.call(
+                                      pathData.path.join('.'),
+                                      pathData.label,
+                                    );
+                                  }
+                                },
+                              );
+                            case PreferencesService.actionAskAi:
+                              return ListTile(
+                                leading: const Icon(
+                                  Icons.auto_awesome,
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  context.t.settings.actionLabel.askAi,
+                                ),
+                                dense: true,
+                                onTap: () {
+                                  _removeCurrentOverlay();
+                                  if (pathData != null) {
+                                    widget.onAiAsk?.call(
+                                      pathData.path.join('.'),
+                                      pathData.label,
+                                    );
+                                  }
+                                },
+                              );
+                            case PreferencesService.actionCopy:
+                              // 如果有选中文本，复制选中的文本
+                              return ListTile(
+                                leading: const Icon(Icons.copy, size: 20),
+                                title: Text(
+                                  context.t.settings.actionLabel.copy,
+                                ),
+                                dense: true,
+                                onTap: () {
+                                  _removeCurrentOverlay();
+                                  if (hasSelection) {
+                                    // 复制选中的文本
+                                    Clipboard.setData(
+                                      ClipboardData(text: selectedText),
+                                    );
+                                  } else if (pathData != null) {
+                                    // 没有选中文本时，复制元素内容
+                                    _performCopy(
+                                      pathData.path.join('.'),
+                                      pathData.label,
+                                    );
+                                  }
+                                },
+                              );
+                            case PreferencesService.actionSpeak:
+                              return ListTile(
+                                leading: const Icon(Icons.volume_up, size: 20),
+                                title: Text(
+                                  context.t.settings.actionLabel.speak,
+                                ),
+                                dense: true,
+                                onTap: () {
+                                  _removeCurrentOverlay();
+                                  if (pathData != null) {
+                                    _performSpeak(
+                                      pathData.path.join('.'),
+                                      pathData.label,
+                                    );
+                                  }
+                                },
+                              );
+                            default:
+                              return const SizedBox.shrink();
+                          }
+                        },
+                      ),
+                    ],
                   ],
-                  for (int i = 0; i < order.length; i++) ...[
-                    Builder(
-                      builder: (context) {
-                        final action = order[i];
-                        switch (action) {
-                          case PreferencesService.actionAiTranslate:
-                            return ListTile(
-                              leading: const Icon(Icons.translate, size: 20),
-                              title: Text(
-                                context.t.settings.actionLabel.aiTranslate,
-                              ),
-                              dense: true,
-                              onTap: () {
-                                _removeCurrentOverlay();
-                                if (pathData != null) {
-                                  _performAiTranslate(
-                                    pathData.path.join('.'),
-                                    pathData.label,
-                                  );
-                                }
-                              },
-                            );
-                          case PreferencesService.actionEdit:
-                            return ListTile(
-                              leading: const Icon(Icons.edit, size: 20),
-                              title: Text(context.t.settings.actionLabel.edit),
-                              dense: true,
-                              onTap: () {
-                                _removeCurrentOverlay();
-                                if (pathData != null) {
-                                  widget.onEditElement?.call(
-                                    pathData.path.join('.'),
-                                    pathData.label,
-                                  );
-                                }
-                              },
-                            );
-                          case PreferencesService.actionAskAi:
-                            return ListTile(
-                              leading: const Icon(Icons.auto_awesome, size: 20),
-                              title: Text(context.t.settings.actionLabel.askAi),
-                              dense: true,
-                              onTap: () {
-                                _removeCurrentOverlay();
-                                if (pathData != null) {
-                                  widget.onAiAsk?.call(
-                                    pathData.path.join('.'),
-                                    pathData.label,
-                                  );
-                                }
-                              },
-                            );
-                          case PreferencesService.actionCopy:
-                            // 如果有选中文本，复制选中的文本
-                            return ListTile(
-                              leading: const Icon(Icons.copy, size: 20),
-                              title: Text(context.t.settings.actionLabel.copy),
-                              dense: true,
-                              onTap: () {
-                                _removeCurrentOverlay();
-                                if (hasSelection) {
-                                  // 复制选中的文本
-                                  Clipboard.setData(
-                                    ClipboardData(text: selectedText),
-                                  );
-                                } else if (pathData != null) {
-                                  // 没有选中文本时，复制元素内容
-                                  _performCopy(
-                                    pathData.path.join('.'),
-                                    pathData.label,
-                                  );
-                                }
-                              },
-                            );
-                          case PreferencesService.actionSpeak:
-                            return ListTile(
-                              leading: const Icon(Icons.volume_up, size: 20),
-                              title: Text(context.t.settings.actionLabel.speak),
-                              dense: true,
-                              onTap: () {
-                                _removeCurrentOverlay();
-                                if (pathData != null) {
-                                  _performSpeak(
-                                    pathData.path.join('.'),
-                                    pathData.label,
-                                  );
-                                }
-                              },
-                            );
-                          default:
-                            return const SizedBox.shrink();
-                        }
-                      },
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
           ),
@@ -7030,9 +7073,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         audioSource = tempFile.path;
         isLocal = true;
         Logger.d('从media.db读取本地音频成功: $audioSource', tag: '_playAudio');
-      }
-
-      if (audioSource == null) {
+      } else {
+        // 没有本地音频，使用在线音频
         final domain = await dictManager.onlineSubscriptionUrl;
         if (domain.isEmpty) {
           Logger.e('无法获取订阅网站地址', tag: '_playAudio');
@@ -7068,6 +7110,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 使用 play: true 让播放器内部处理缓冲和播放的衔接
       await player.open(Media(audioSource), play: true);
 
+      // 保存临时文件路径用于播放完成后清理
+      final localAudioPath = isLocal ? audioSource : null;
+
       // 监听播放完成，等待尾帧稳定后再清理，避免尾部被截断
       _playbackCompletionSub?.cancel();
       _playbackCompletionSub = player.stream.completed.listen((
@@ -7079,6 +7124,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
         if (_currentPlayer == player) {
           await _cleanupPlayer();
+        }
+
+        // 播放完成1秒后清理临时音频文件
+        if (localAudioPath != null) {
+          unawaited(
+            Future.delayed(const Duration(seconds: 1), () async {
+              try {
+                final tempFile = File(localAudioPath);
+                if (await tempFile.exists()) {
+                  await tempFile.delete();
+                  Logger.d('已删除临时音频文件: $localAudioPath', tag: '_playAudio');
+                }
+              } catch (_) {}
+            }),
+          );
         }
       });
 

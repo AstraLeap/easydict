@@ -3,8 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
 import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import '../data/models/user_dictionary.dart';
 import '../core/logger.dart';
 import '../core/utils/crc32_utils.dart';
@@ -358,18 +356,6 @@ class UserDictsService {
     }
   }
 
-  /// 将文件复制到临时目录以避免文件锁问题
-  Future<File> _copyToTemp(File file, String fileName) async {
-    final tempDir = await getTemporaryDirectory();
-    final tempPath = path.join(
-      tempDir.path,
-      'upload_${DateTime.now().millisecondsSinceEpoch}_$fileName',
-    );
-    final tempFile = await file.copy(tempPath);
-    Logger.d('复制文件到临时目录: $tempPath', tag: 'UserDictsService');
-    return tempFile;
-  }
-
   /// 上传新词典
   Future<UploadResult> uploadDictionary({
     required File metadataFile,
@@ -386,29 +372,18 @@ class UserDictsService {
     )?
     onProgress,
   }) async {
-    // 复制文件到临时目录以避免文件锁问题
-    final tempMetadataFile = await _copyToTemp(metadataFile, 'metadata.json');
-    final tempDictionaryFile = await _copyToTemp(
-      dictionaryFile,
-      'dictionary.db',
-    );
-    final tempLogoFile = await _copyToTemp(logoFile, 'logo.png');
-    File? tempMediaFile;
-    if (mediaFile != null) {
-      tempMediaFile = await _copyToTemp(mediaFile, 'media.db');
-    }
-
+    // 直接使用原始文件上传，不复制到临时目录
     final files = <(String, File, String)>[
-      ('metadata_file', tempMetadataFile, 'metadata.json'),
-      ('dictionary_file', tempDictionaryFile, 'dictionary.db'),
-      ('logo_file', tempLogoFile, 'logo.png'),
+      ('metadata_file', metadataFile, 'metadata.json'),
+      ('dictionary_file', dictionaryFile, 'dictionary.db'),
+      ('logo_file', logoFile, 'logo.png'),
     ];
 
-    if (tempMediaFile != null) {
-      files.add(('media_file', tempMediaFile, 'media.db'));
+    if (mediaFile != null) {
+      files.add(('media_file', mediaFile, 'media.db'));
     }
 
-    // 计算 CRC32 值（直接使用原文件）
+    // 计算 CRC32 值
     final fields = <String, String>{};
     Logger.i('开始计算上传文件的 CRC32...', tag: 'UserDictsService');
     fields['dictionary_crc32'] = await Crc32Utils.calculateFileCrc32(
@@ -547,41 +522,23 @@ class UserDictsService {
     )?
     onProgress,
   }) async {
-    // 复制文件到临时目录以避免文件锁问题
-    File? tempMetadataFile;
-    File? tempDictionaryFile;
-    File? tempLogoFile;
-    File? tempMediaFile;
-
-    if (metadataFile != null) {
-      tempMetadataFile = await _copyToTemp(metadataFile, 'metadata.json');
-    }
-    if (dictionaryFile != null) {
-      tempDictionaryFile = await _copyToTemp(dictionaryFile, 'dictionary.db');
-    }
-    if (logoFile != null) {
-      tempLogoFile = await _copyToTemp(logoFile, 'logo.png');
-    }
-    if (mediaFile != null) {
-      tempMediaFile = await _copyToTemp(mediaFile, 'media.db');
-    }
-
+    // 直接使用原始文件上传，不复制到临时目录
     final files = <(String, File, String)>[];
 
-    if (tempMetadataFile != null) {
-      files.add(('metadata_file', tempMetadataFile, 'metadata.json'));
+    if (metadataFile != null) {
+      files.add(('metadata_file', metadataFile, 'metadata.json'));
     }
 
-    if (tempDictionaryFile != null) {
-      files.add(('dictionary_file', tempDictionaryFile, 'dictionary.db'));
+    if (dictionaryFile != null) {
+      files.add(('dictionary_file', dictionaryFile, 'dictionary.db'));
     }
 
-    if (tempLogoFile != null) {
-      files.add(('logo_file', tempLogoFile, 'logo.png'));
+    if (logoFile != null) {
+      files.add(('logo_file', logoFile, 'logo.png'));
     }
 
-    if (tempMediaFile != null) {
-      files.add(('media_file', tempMediaFile, 'media.db'));
+    if (mediaFile != null) {
+      files.add(('media_file', mediaFile, 'media.db'));
     }
 
     if (files.isEmpty) {
@@ -591,7 +548,7 @@ class UserDictsService {
       );
     }
 
-    // 计算 CRC32 值（只计算上传的数据库文件，直接使用原文件）
+    // 计算 CRC32 值（只计算上传的数据库文件）
     final fields = <String, String>{'message': message};
 
     if (dictionaryFile != null || mediaFile != null) {
