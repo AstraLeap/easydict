@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/font_loader_service.dart';
 import '../services/app_update_service.dart';
 import '../components/global_scale_wrapper.dart';
@@ -17,12 +20,14 @@ class HelpPage extends StatefulWidget {
 class _HelpPageState extends State<HelpPage> {
   final double _contentScale = FontLoaderService().getDictionaryContentScale();
   PackageInfo? _packageInfo;
+  String? _configDirPath;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadPackageInfo();
+    _loadConfigDirPath();
   }
 
   Future<void> _loadPackageInfo() async {
@@ -36,6 +41,35 @@ class _HelpPageState extends State<HelpPage> {
       debugPrint('获取包信息失败: $e');
       setState(() {
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadConfigDirPath() async {
+    try {
+      String path;
+      if (Platform.isWindows) {
+        final appDir = await getApplicationSupportDirectory();
+        path = appDir.path;
+      } else if (Platform.isMacOS) {
+        final appDir = await getApplicationSupportDirectory();
+        path = appDir.path;
+      } else if (Platform.isLinux) {
+        final appDir = await getApplicationSupportDirectory();
+        path = appDir.path;
+      } else if (Platform.isAndroid) {
+        final appDir = await getApplicationSupportDirectory();
+        path = appDir.path;
+      } else {
+        path = '未知平台';
+      }
+      setState(() {
+        _configDirPath = path;
+      });
+    } catch (e) {
+      debugPrint('获取配置目录失败: $e');
+      setState(() {
+        _configDirPath = '获取失败';
       });
     }
   }
@@ -80,20 +114,18 @@ class _HelpPageState extends State<HelpPage> {
                   const SizedBox(height: 20),
                   ShaderMask(
                     shaderCallback: (bounds) => LinearGradient(
-                      colors: [
-                        colorScheme.primary,
-                        colorScheme.secondary,
-                      ],
+                      colors: [colorScheme.primary, colorScheme.secondary],
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                     ).createShader(bounds),
                     child: Text(
                       'EasyDict',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        letterSpacing: 2.0,
-                      ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 2.0,
+                          ),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -172,6 +204,23 @@ class _HelpPageState extends State<HelpPage> {
             ),
 
             const SizedBox(height: 16),
+
+            // 系统信息组
+            if (_configDirPath != null)
+              _buildSettingsGroup(
+                context,
+                children: [
+                  _buildOpenFolderTile(
+                    context,
+                    title: '配置目录',
+                    path: _configDirPath!,
+                    icon: Icons.folder_outlined,
+                    iconColor: colorScheme.primary,
+                  ),
+                ],
+              ),
+
+            if (_configDirPath != null) const SizedBox(height: 16),
 
             // 检查更新组
             _buildSettingsGroup(
@@ -292,6 +341,98 @@ class _HelpPageState extends State<HelpPage> {
     );
   }
 
+  Widget _buildCopyableTile(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    Color? iconColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(icon, color: effectiveIconColor, size: 24),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Icon(Icons.copy, color: colorScheme.outline, size: 18),
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: subtitle));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('路径已复制到剪贴板'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOpenFolderTile(
+    BuildContext context, {
+    required String title,
+    required String path,
+    required IconData icon,
+    Color? iconColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(icon, color: effectiveIconColor, size: 24),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        path,
+        style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Icon(Icons.open_in_new, color: colorScheme.outline, size: 18),
+      onTap: () async {
+        // 使用系统命令打开文件夹，避免 launchUrl 在 Windows 上卡住
+        try {
+          if (Platform.isWindows) {
+            await Process.run('explorer', [path]);
+          } else if (Platform.isMacOS) {
+            await Process.run('open', [path]);
+          } else if (Platform.isLinux) {
+            await Process.run('xdg-open', [path]);
+          } else {
+            // 其他平台回退到 url_launcher
+            final uri = Uri.file(path);
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri);
+            }
+          }
+        } catch (e) {
+          debugPrint('打开文件夹失败: $e');
+          // 回退到 url_launcher
+          final uri = Uri.file(path);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri);
+          }
+        }
+      },
+    );
+  }
+
   Widget _buildUpdateTile(BuildContext context, AppUpdateService service) {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -307,7 +448,9 @@ class _HelpPageState extends State<HelpPage> {
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     } else if (service.hasUpdate) {
-      subtitle = context.t.help.updateAvailable(version: service.latestRelease?.version ?? '');
+      subtitle = context.t.help.updateAvailable(
+        version: service.latestRelease?.version ?? '',
+      );
       trailing = Icon(Icons.open_in_new, color: colorScheme.error, size: 18);
       onTap = () async {
         final url = Uri.tryParse(service.latestRelease?.htmlUrl ?? '');
@@ -328,7 +471,9 @@ class _HelpPageState extends State<HelpPage> {
       trailing = const Icon(Icons.refresh, size: 18);
       onTap = () => service.checkForUpdates();
     } else {
-      subtitle = context.t.help.currentVersion(version: service.currentVersion ?? (_packageInfo?.version ?? ''));
+      subtitle = context.t.help.currentVersion(
+        version: service.currentVersion ?? (_packageInfo?.version ?? ''),
+      );
       trailing = const Icon(Icons.refresh, size: 18);
       onTap = () => service.checkForUpdates();
     }

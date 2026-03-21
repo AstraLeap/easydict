@@ -35,6 +35,7 @@ import '../services/advanced_search_settings_service.dart';
 import '../services/entry_event_bus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../i18n/strings.g.dart';
+import 'group_manage_page.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
   const DictionaryManagerPage({super.key});
@@ -2680,6 +2681,20 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                       _buildFilesSection(),
                       const SizedBox(height: 28),
 
+                      // 组管理按钮
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () => _navigateToGroupManage(metadata),
+                          icon: const Icon(Icons.folder_outlined),
+                          label: Text(context.t.groups.manageGroups),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
                       // 删除词典按鈕
                       SizedBox(
                         width: double.infinity,
@@ -3339,6 +3354,16 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
       'hasAudios': await dictManager.hasAudiosZip(dictId),
       'hasImages': await dictManager.hasImagesZip(dictId),
     };
+  }
+
+  void _navigateToGroupManage(DictionaryMetadata metadata) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            GroupManagePage(dictId: metadata.id, dictName: metadata.name),
+      ),
+    );
   }
 
   Future<void> _deleteDictionary(DictionaryMetadata metadata) async {

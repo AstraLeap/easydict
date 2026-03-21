@@ -54,6 +54,7 @@ class Translations with BaseTranslations<AppLocale, Translations> {
 	late final TranslationsCloudZh cloud = TranslationsCloudZh.internal(_root);
 	late final TranslationsDictZh dict = TranslationsDictZh.internal(_root);
 	late final TranslationsEntryZh entry = TranslationsEntryZh.internal(_root);
+	late final TranslationsGroupsZh groups = TranslationsGroupsZh.internal(_root);
 }
 
 // Path: nav
@@ -2117,6 +2118,132 @@ class TranslationsEntryZh {
 	String get morphThirdSingFull => '第三人称单数';
 }
 
+// Path: groups
+class TranslationsGroupsZh {
+	TranslationsGroupsZh.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// zh: '组管理'
+	String get title => '组管理';
+
+	/// zh: '管理组'
+	String get manageGroups => '管理组';
+
+	/// zh: '创建组'
+	String get createGroup => '创建组';
+
+	/// zh: '编辑组'
+	String get editGroup => '编辑组';
+
+	/// zh: '删除组'
+	String get deleteGroup => '删除组';
+
+	/// zh: '确定要删除组「{name}」吗？其子组也将被删除。'
+	String deleteGroupConfirm({required Object name}) => '确定要删除组「${name}」吗？其子组也将被删除。';
+
+	/// zh: '组名'
+	String get groupName => '组名';
+
+	/// zh: '请输入组名'
+	String get groupNameHint => '请输入组名';
+
+	/// zh: '描述'
+	String get description => '描述';
+
+	/// zh: '可选，支持 JSON 格式的组件列表'
+	String get descriptionHint => '可选，支持 JSON 格式的组件列表';
+
+	/// zh: '子组'
+	String get subGroups => '子组';
+
+	/// zh: '词条'
+	String get entries => '词条';
+
+	/// zh: '暂无组'
+	String get noGroups => '暂无组';
+
+	/// zh: '暂无子组'
+	String get noSubGroups => '暂无子组';
+
+	/// zh: '暂无词条'
+	String get noEntries => '暂无词条';
+
+	/// zh: '属于'
+	String get belongsTo => '属于';
+
+	/// zh: '位置'
+	String get breadcrumb => '位置';
+
+	/// zh: '根目录'
+	String get rootGroup => '根目录';
+
+	/// zh: '添加词条'
+	String get addEntry => '添加词条';
+
+	/// zh: '输入词条 headword 搜索'
+	String get addEntryHint => '输入词条 headword 搜索';
+
+	/// zh: '移除词条'
+	String get removeEntry => '移除词条';
+
+	/// zh: '已添加词条到组'
+	String get entryAdded => '已添加词条到组';
+
+	/// zh: '已从组中移除词条'
+	String get entryRemoved => '已从组中移除词条';
+
+	/// zh: '组创建成功'
+	String get groupCreated => '组创建成功';
+
+	/// zh: '组更新成功'
+	String get groupUpdated => '组更新成功';
+
+	/// zh: '组已删除'
+	String get groupDeleted => '组已删除';
+
+	/// zh: '创建组失败'
+	String get createFailed => '创建组失败';
+
+	/// zh: '更新组失败'
+	String get updateFailed => '更新组失败';
+
+	/// zh: '删除组失败'
+	String get deleteFailed => '删除组失败';
+
+	/// zh: '加载组失败'
+	String get loadFailed => '加载组失败';
+
+	/// zh: '共 {groups} 个组，{items} 个词条'
+	String statsInfo({required Object groups, required Object items}) => '共 ${groups} 个组，${items} 个词条';
+
+	/// zh: '跳转到词条'
+	String get navigateToEntry => '跳转到词条';
+
+	/// zh: '跳转到锚点'
+	String get navigateToAnchor => '跳转到锚点';
+
+	/// zh: '所属组: {name}'
+	String groupLink({required Object name}) => '所属组: ${name}';
+
+	/// zh: '父组'
+	String get parentGroup => '父组';
+
+	/// zh: '选择父组'
+	String get selectParent => '选择父组';
+
+	/// zh: '无（根组）'
+	String get none => '无（根组）';
+
+	/// zh: '锚点: {anchor}'
+	String anchorInfo({required Object anchor}) => '锚点: ${anchor}';
+
+	/// zh: '整个词条'
+	String get wholeEntry => '整个词条';
+}
+
 // Path: settings.audioBackendDialog
 class TranslationsSettingsAudioBackendDialogZh {
 	TranslationsSettingsAudioBackendDialogZh.internal(this._root);
@@ -3124,6 +3251,45 @@ extension on Translations {
 			'entry.acronymLabel' => '首字母缩略词',
 			'entry.morphPluralForm' => '复数形式',
 			'entry.morphThirdSingFull' => '第三人称单数',
+			'groups.title' => '组管理',
+			'groups.manageGroups' => '管理组',
+			'groups.createGroup' => '创建组',
+			'groups.editGroup' => '编辑组',
+			'groups.deleteGroup' => '删除组',
+			'groups.deleteGroupConfirm' => ({required Object name}) => '确定要删除组「${name}」吗？其子组也将被删除。',
+			'groups.groupName' => '组名',
+			'groups.groupNameHint' => '请输入组名',
+			'groups.description' => '描述',
+			'groups.descriptionHint' => '可选，支持 JSON 格式的组件列表',
+			'groups.subGroups' => '子组',
+			'groups.entries' => '词条',
+			'groups.noGroups' => '暂无组',
+			'groups.noSubGroups' => '暂无子组',
+			'groups.noEntries' => '暂无词条',
+			'groups.belongsTo' => '属于',
+			'groups.breadcrumb' => '位置',
+			'groups.rootGroup' => '根目录',
+			'groups.addEntry' => '添加词条',
+			'groups.addEntryHint' => '输入词条 headword 搜索',
+			'groups.removeEntry' => '移除词条',
+			'groups.entryAdded' => '已添加词条到组',
+			'groups.entryRemoved' => '已从组中移除词条',
+			'groups.groupCreated' => '组创建成功',
+			'groups.groupUpdated' => '组更新成功',
+			'groups.groupDeleted' => '组已删除',
+			'groups.createFailed' => '创建组失败',
+			'groups.updateFailed' => '更新组失败',
+			'groups.deleteFailed' => '删除组失败',
+			'groups.loadFailed' => '加载组失败',
+			'groups.statsInfo' => ({required Object groups, required Object items}) => '共 ${groups} 个组，${items} 个词条',
+			'groups.navigateToEntry' => '跳转到词条',
+			'groups.navigateToAnchor' => '跳转到锚点',
+			'groups.groupLink' => ({required Object name}) => '所属组: ${name}',
+			'groups.parentGroup' => '父组',
+			'groups.selectParent' => '选择父组',
+			'groups.none' => '无（根组）',
+			'groups.anchorInfo' => ({required Object anchor}) => '锚点: ${anchor}',
+			'groups.wholeEntry' => '整个词条',
 			_ => null,
 		};
 	}

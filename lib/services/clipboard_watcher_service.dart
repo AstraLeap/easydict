@@ -9,6 +9,10 @@ import 'entry_event_bus.dart';
 
 /// 剪切板监听服务
 /// 监听系统剪切板变化，当用户复制文本时自动弹出窗口并搜索
+/// 
+/// Linux平台说明：
+/// 由于clipboard_watcher在Wayland环境下无法正常工作（监听的是PRIMARY选择区而非CLIPBOARD），
+/// 在Linux上使用定时轮询方式检测剪贴板变化。
 class ClipboardWatcherService with ClipboardListener {
   static final ClipboardWatcherService _instance =
       ClipboardWatcherService._internal();
@@ -39,6 +43,12 @@ class ClipboardWatcherService with ClipboardListener {
   /// 最大文本长度（按字符计算，中文算2个字符）
   static const int maxTextLength = 20;
 
+  /// Linux轮询间隔（毫秒）
+  static const int _linuxPollingInterval = 500;
+
+  /// Linux轮询定时器
+  Timer? _linuxPollingTimer;
+
   /// 搜索事件控制器
   final _searchEventController = StreamController<String>.broadcast();
 
@@ -65,11 +75,13 @@ class ClipboardWatcherService with ClipboardListener {
       final prefs = PreferencesService();
       _isEnabled = await prefs.isClipboardWatchEnabled();
 
-      // 注册剪切板监听器
-      clipboardWatcher.addListener(this);
+      // 非Linux平台注册剪切板监听器
+      if (!Platform.isLinux) {
+        clipboardWatcher.addListener(this);
+      }
 
       _isInitialized = true;
-      Logger.i('剪切板监听服务初始化完成，启用状态: $_isEnabled', tag: 'ClipboardWatcher');
+      Logger.i('剪切板监听服务初始化完成，启用状态: $_isEnabled，平台: ${Platform.operatingSystem}', tag: 'ClipboardWatcher');
     } catch (e) {
       Logger.e('剪切板监听服务初始化失败: $e', tag: 'ClipboardWatcher');
     }
@@ -88,9 +100,17 @@ class ClipboardWatcherService with ClipboardListener {
     }
 
     try {
-      await clipboardWatcher.start();
-      _isWatching = true;
-      Logger.i('剪切板监听已启动', tag: 'ClipboardWatcher');
+      if (Platform.isLinux) {
+        // Linux使用轮询方式（兼容Wayland）
+        _startLinuxPolling();
+        _isWatching = true;
+        Logger.i('Linux剪切板轮询已启动（Wayland兼容模式）', tag: 'ClipboardWatcher');
+      } else {
+        // Windows/macOS使用事件监听
+        await clipboardWatcher.start();
+        _isWatching = true;
+        Logger.i('剪切板监听已启动', tag: 'ClipboardWatcher');
+      }
     } catch (e) {
       Logger.e('启动剪切板监听失败: $e', tag: 'ClipboardWatcher');
     }
@@ -101,12 +121,37 @@ class ClipboardWatcherService with ClipboardListener {
     if (!_isWatching) return;
 
     try {
-      await clipboardWatcher.stop();
+      if (Platform.isLinux) {
+        _stopLinuxPolling();
+      } else {
+        await clipboardWatcher.stop();
+      }
       _isWatching = false;
       Logger.i('剪切板监听已停止', tag: 'ClipboardWatcher');
     } catch (e) {
       Logger.e('停止剪切板监听失败: $e', tag: 'ClipboardWatcher');
     }
+  }
+
+  /// 启动Linux轮询
+  void _startLinuxPolling() {
+    _stopLinuxPolling();
+    _linuxPollingTimer = Timer.periodic(
+      const Duration(milliseconds: _linuxPollingInterval),
+      (_) => _linuxPollClipboard(),
+    );
+  }
+
+  /// 停止Linux轮询
+  void _stopLinuxPolling() {
+    _linuxPollingTimer?.cancel();
+    _linuxPollingTimer = null;
+  }
+
+  /// Linux轮询剪贴板
+  Future<void> _linuxPollClipboard() async {
+    if (!_isEnabled) return;
+    await _processClipboard();
   }
 
   /// 设置启用状态
@@ -275,7 +320,10 @@ class ClipboardWatcherService with ClipboardListener {
   /// 释放资源
   void dispose() {
     stopWatching();
-    clipboardWatcher.removeListener(this);
+    _stopLinuxPolling();
+    if (!Platform.isLinux) {
+      clipboardWatcher.removeListener(this);
+    }
     _searchEventController.close();
     _isInitialized = false;
   }

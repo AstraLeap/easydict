@@ -397,6 +397,25 @@ List<Map<String, dynamic>> _parsePronunciations(dynamic value) {
   return [];
 }
 
+/// 解析 groups 字段，兼容 int / List<int> 两种形式
+List<int> _parseGroups(dynamic value) {
+  if (value == null) return [];
+  // 单个数字
+  if (value is int) return [value];
+  // 数字列表
+  if (value is List) {
+    return value
+        .map((e) {
+          if (e is int) return e;
+          if (e is String) return int.tryParse(e);
+          return null;
+        })
+        .whereType<int>()
+        .toList();
+  }
+  return [];
+}
+
 class JsonParseParams {
   final String jsonStr;
   final String dictId;
@@ -497,6 +516,7 @@ class DictionaryEntry {
   final List<String> phrase;
   final List<Map<String, dynamic>> senseGroup;
   final List<String> hiddenLanguages;
+  final List<int> groups; // 所属分组ID列表
   final Map<String, dynamic> _rawJson;
 
   /// 匹配的 headword 及其对应的 anchor 列表
@@ -522,6 +542,7 @@ class DictionaryEntry {
     this.phrase = const [],
     this.senseGroup = const [],
     this.hiddenLanguages = const [],
+    this.groups = const [],
     this.matchedAnchors = const [],
     Map<String, dynamic>? rawJson,
   }) : _rawJson = rawJson ?? {};
@@ -558,6 +579,7 @@ class DictionaryEntry {
             : {},
         etymology: json['etymology'],
         pronunciations: _parsePronunciations(json['pronunciation']),
+        groups: _parseGroups(json['groups']),
         sense: json['sense'] != null
             ? (json['sense'] as List<dynamic>)
                   .map((e) => e as Map<String, dynamic>?)

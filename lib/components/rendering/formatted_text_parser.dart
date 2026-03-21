@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/logger.dart';
 import '../../core/utils/dict_typography.dart';
 import '../../services/font_loader_service.dart';
+import 'ruby_layout.dart';
 
 /// Result of parsing formatted text containing spans and plain text.
 class FormattedTextResult {
@@ -542,18 +543,9 @@ class SegmentParser {
     final content = contentResult;
     final typesStr = typesResult;
 
-    // 调试信息
-    Logger.d('=== Formatted Segment Debug ===', tag: 'RubyParser');
-    Logger.d('content: $content', tag: 'RubyParser');
-    Logger.d('typesStr: $typesStr', tag: 'RubyParser');
-
     // Check for Ruby syntax: [text](:ruby)
     if (typesStr.startsWith(':')) {
       final rubyText = typesStr.substring(1);
-      Logger.d(
-        '>>> Ruby detected! baseText: $content, rubyText: $rubyText',
-        tag: 'RubyParser',
-      );
       return _RubySegment(content, rubyText);
     }
 
@@ -705,6 +697,7 @@ class FormattedTextConfig {
   final String? label;
   final void Function(String path, String label)? onElementTap;
   final void Function(String path, String label)? onElementSecondaryTap;
+  final void Function(Offset position, String text)? onShowMenu;
   final GestureRecognizer? recognizer;
   final MouseCursor? mouseCursor;
   final String? language;
@@ -723,6 +716,7 @@ class FormattedTextConfig {
     this.label,
     this.onElementTap,
     this.onElementSecondaryTap,
+    this.onShowMenu,
     this.recognizer,
     this.mouseCursor,
     this.language,
@@ -750,6 +744,7 @@ FormattedTextResult parseFormattedText(
   String? label,
   void Function(String path, String label)? onElementTap,
   void Function(String path, String label)? onElementSecondaryTap,
+  void Function(Offset position, String text)? onShowMenu,
   GestureRecognizer? recognizer,
   bool hidden = false,
   String? language,
@@ -769,6 +764,7 @@ FormattedTextResult parseFormattedText(
     label: label,
     onElementTap: onElementTap,
     onElementSecondaryTap: onElementSecondaryTap,
+    onShowMenu: onShowMenu,
     recognizer: recognizer,
     mouseCursor: mouseCursor,
     language: language,
@@ -795,26 +791,17 @@ class _FormattedTextParser {
     FormattedTextConfig config,
     bool hidden,
   ) {
-    // 调试：打印输入文本
-    Logger.d('=== parseFormattedText called ===', tag: 'RubyParser');
-    Logger.d('text: $text', tag: 'RubyParser');
-    Logger.d('hidden: $hidden', tag: 'RubyParser');
-
     if (hidden) {
       return FormattedTextResult.hiddenResult;
     }
+
+    Logger.d('_FormattedTextParser.parse: text=$text, onShowMenu=${config.onShowMenu}', tag: 'Ruby');
 
     final effectiveBaseStyle = _resolveEffectiveStyle(baseStyle, config);
     final ctx = _ParseContext(text);
     final segments = SegmentParser.parse(ctx);
 
-    Logger.d('segments count: ${segments.length}', tag: 'RubyParser');
-    for (int i = 0; i < segments.length; i++) {
-      Logger.d(
-        '  segment[$i]: ${segments[i].runtimeType} - ${segments[i].textContent}',
-        tag: 'RubyParser',
-      );
-    }
+    Logger.d('_FormattedTextParser.parse: segments count=${segments.length}', tag: 'Ruby');
 
     final processor = _SegmentProcessor(
       baseStyle: effectiveBaseStyle,
@@ -822,6 +809,7 @@ class _FormattedTextParser {
     );
 
     for (final segment in segments) {
+      Logger.d('_FormattedTextParser.parse: processing segment type=${segment.runtimeType}', tag: 'Ruby');
       segment.accept(processor);
     }
 
@@ -937,38 +925,55 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
 
   @override
   void visitRuby(_RubySegment segment) {
-    final fontSize = baseStyle.fontSize ?? kDefaultFontSize;
-    final rubyFontSize = fontSize * kRubyFontScale;
+    final baseFontSize = baseStyle.fontSize ?? kDefaultFontSize;
+    final rubyFontSize = baseFontSize * kRubyFontScale;
 
-    // 振假名特殊样式：使用淡灰色
-    final rubyColor = Colors.grey.shade600;
+    Logger.d(
+      'visitRuby: baseText=${segment.baseText}, rubyText=${segment.rubyText}, onShowMenu=${config.onShowMenu}',
+      tag: 'Ruby',
+    );
 
-    // 使用 Stack 实现 Ruby 文本，确保振假名显示在汉字上方
+    // 创建振假名widget
+    Widget rubyWidget = RubyLayout(
+      rubyFontSize: rubyFontSize,
+      rubySpacing: kRubySpacing,
+      baseText: segment.baseText,
+      baseStyle: baseStyle,
+      rubyText: segment.rubyText,
+    );
+
+    // 如果有 onShowMenu 回调，添加右键事件处理
+    if (config.onShowMenu != null) {
+      rubyWidget = Listener(
+        onPointerDown: (event) {
+          Logger.d(
+            'Ruby Listener onPointerDown: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
+            tag: 'Ruby',
+          );
+          // 检查是否是右键（桌面端）或长按（移动端）
+          if (event.buttons == kSecondaryMouseButton) {
+            Logger.d('Ruby right-click detected, calling onShowMenu', tag: 'Ruby');
+            config.onShowMenu!(event.position, segment.baseText);
+          }
+        },
+        onPointerUp: (event) {
+          // 移动端长按由 SelectionArea 处理，这里不处理
+        },
+        child: rubyWidget,
+      );
+    } else {
+      // 如果没有回调，使用 IgnorePointer 让事件穿透
+      rubyWidget = IgnorePointer(
+        ignoring: true,
+        child: rubyWidget,
+      );
+    }
+
     spans.add(
       WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // 基础文本（汉字）
-            Text(segment.baseText, style: baseStyle),
-            // 振假名，定位在汉字上方
-            Positioned(
-              top: -fontSize * kRubyFontScale - kRubySpacing,
-              left: 0,
-              right: 0,
-              child: Text(
-                segment.rubyText,
-                textAlign: TextAlign.center,
-                style: baseStyle.copyWith(
-                  fontSize: rubyFontSize,
-                  height: 1.0,
-                  color: rubyColor,
-                ),
-              ),
-            ),
-          ],
-        ),
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: rubyWidget,
       ),
     );
     plainTexts.add(segment.baseText);

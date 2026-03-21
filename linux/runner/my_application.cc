@@ -7,6 +7,71 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+// Try to load icon from various locations
+static GdkPixbuf* load_icon_pixbuf() {
+  GdkPixbuf* pixbuf = nullptr;
+  
+  // Method 1: Try to find icon relative to executable
+  // This works for both flutter run (intermediates_do_not_run) and flutter build (bundle)
+  gchar* exe_path = realpath("/proc/self/exe", nullptr);
+  if (exe_path) {
+    // Get directory of executable
+    gchar* exe_dir = g_path_get_dirname(exe_path);
+    
+    // Try: exe_dir/../data/app_icon.png (build/bundle structure)
+    gchar* icon_path = g_build_filename(exe_dir, "..", "data", "app_icon.png", nullptr);
+    if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+      GError* error = nullptr;
+      pixbuf = gdk_pixbuf_new_from_file(icon_path, &error);
+      if (error) {
+        g_error_free(error);
+        pixbuf = nullptr;
+      }
+    }
+    g_free(icon_path);
+    
+    // Try: exe_dir/../../../assets/icon/app_icon.png (flutter run structure)
+    if (!pixbuf) {
+      icon_path = g_build_filename(exe_dir, "..", "..", "..", "assets", "icon", "app_icon.png", nullptr);
+      if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+        GError* error = nullptr;
+        pixbuf = gdk_pixbuf_new_from_file(icon_path, &error);
+        if (error) {
+          g_error_free(error);
+          pixbuf = nullptr;
+        }
+      }
+      g_free(icon_path);
+    }
+    
+    g_free(exe_dir);
+    free(exe_path);
+  }
+  
+  // Method 2: Try current directory assets (fallback for flutter run)
+  if (!pixbuf) {
+    gchar* icon_path = g_build_filename(g_get_current_dir(), "assets", "icon", "app_icon.png", nullptr);
+    if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+      GError* error = nullptr;
+      pixbuf = gdk_pixbuf_new_from_file(icon_path, &error);
+      if (error) {
+        g_error_free(error);
+        pixbuf = nullptr;
+      }
+    }
+    g_free(icon_path);
+  }
+  
+  // Method 3: Try looking for the icon by name (for themed icon support)
+  if (!pixbuf) {
+    // Try icon theme lookup
+    GtkIconTheme* icon_theme = gtk_icon_theme_get_default();
+    pixbuf = gtk_icon_theme_load_icon(icon_theme, "easydict", 256, GTK_ICON_LOOKUP_USE_BUILTIN, nullptr);
+  }
+  
+  return pixbuf;
+}
+
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
@@ -53,6 +118,13 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+
+  // Set window icon
+  GdkPixbuf* icon = load_icon_pixbuf();
+  if (icon) {
+    gtk_window_set_icon(window, icon);
+    g_object_unref(icon);
+  }
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

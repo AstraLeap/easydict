@@ -84,6 +84,7 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
+  remove_alpha_ios: true
   web:
     generate: true
   windows:

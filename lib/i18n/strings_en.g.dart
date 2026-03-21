@@ -53,6 +53,7 @@ class TranslationsEn extends Translations with BaseTranslations<AppLocale, Trans
 	@override late final _TranslationsCloudEn cloud = _TranslationsCloudEn._(_root);
 	@override late final _TranslationsDictEn dict = _TranslationsDictEn._(_root);
 	@override late final _TranslationsEntryEn entry = _TranslationsEntryEn._(_root);
+	@override late final _TranslationsGroupsEn groups = _TranslationsGroupsEn._(_root);
 }
 
 // Path: nav
@@ -828,6 +829,54 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get acronymLabel => 'Acronym';
 	@override String get morphPluralForm => 'Plural form';
 	@override String get morphThirdSingFull => 'Third person singular';
+}
+
+// Path: groups
+class _TranslationsGroupsEn extends TranslationsGroupsZh {
+	_TranslationsGroupsEn._(TranslationsEn root) : this._root = root, super.internal(root);
+
+	final TranslationsEn _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'Group Management';
+	@override String get manageGroups => 'Manage Groups';
+	@override String get createGroup => 'Create Group';
+	@override String get editGroup => 'Edit Group';
+	@override String get deleteGroup => 'Delete Group';
+	@override String deleteGroupConfirm({required Object name}) => 'Are you sure you want to delete group "${name}"? Its subgroups will also be deleted.';
+	@override String get groupName => 'Group Name';
+	@override String get groupNameHint => 'Enter group name';
+	@override String get description => 'Description';
+	@override String get descriptionHint => 'Optional, supports JSON format component list';
+	@override String get subGroups => 'Subgroups';
+	@override String get entries => 'Entries';
+	@override String get noGroups => 'No groups';
+	@override String get noSubGroups => 'No subgroups';
+	@override String get noEntries => 'No entries';
+	@override String get belongsTo => 'Belongs to';
+	@override String get breadcrumb => 'Location';
+	@override String get rootGroup => 'Root';
+	@override String get addEntry => 'Add Entry';
+	@override String get addEntryHint => 'Search by headword';
+	@override String get removeEntry => 'Remove Entry';
+	@override String get entryAdded => 'Entry added to group';
+	@override String get entryRemoved => 'Entry removed from group';
+	@override String get groupCreated => 'Group created';
+	@override String get groupUpdated => 'Group updated';
+	@override String get groupDeleted => 'Group deleted';
+	@override String get createFailed => 'Failed to create group';
+	@override String get updateFailed => 'Failed to update group';
+	@override String get deleteFailed => 'Failed to delete group';
+	@override String get loadFailed => 'Failed to load groups';
+	@override String statsInfo({required Object groups, required Object items}) => '${groups} groups, ${items} entries';
+	@override String get navigateToEntry => 'Navigate to entry';
+	@override String get navigateToAnchor => 'Navigate to anchor';
+	@override String groupLink({required Object name}) => 'Group: ${name}';
+	@override String get parentGroup => 'Parent Group';
+	@override String get selectParent => 'Select Parent';
+	@override String get none => 'None (Root)';
+	@override String anchorInfo({required Object anchor}) => 'Anchor: ${anchor}';
+	@override String get wholeEntry => 'Whole Entry';
 }
 
 // Path: settings.audioBackendDialog
@@ -1691,6 +1740,45 @@ extension on TranslationsEn {
 			'entry.acronymLabel' => 'Acronym',
 			'entry.morphPluralForm' => 'Plural form',
 			'entry.morphThirdSingFull' => 'Third person singular',
+			'groups.title' => 'Group Management',
+			'groups.manageGroups' => 'Manage Groups',
+			'groups.createGroup' => 'Create Group',
+			'groups.editGroup' => 'Edit Group',
+			'groups.deleteGroup' => 'Delete Group',
+			'groups.deleteGroupConfirm' => ({required Object name}) => 'Are you sure you want to delete group "${name}"? Its subgroups will also be deleted.',
+			'groups.groupName' => 'Group Name',
+			'groups.groupNameHint' => 'Enter group name',
+			'groups.description' => 'Description',
+			'groups.descriptionHint' => 'Optional, supports JSON format component list',
+			'groups.subGroups' => 'Subgroups',
+			'groups.entries' => 'Entries',
+			'groups.noGroups' => 'No groups',
+			'groups.noSubGroups' => 'No subgroups',
+			'groups.noEntries' => 'No entries',
+			'groups.belongsTo' => 'Belongs to',
+			'groups.breadcrumb' => 'Location',
+			'groups.rootGroup' => 'Root',
+			'groups.addEntry' => 'Add Entry',
+			'groups.addEntryHint' => 'Search by headword',
+			'groups.removeEntry' => 'Remove Entry',
+			'groups.entryAdded' => 'Entry added to group',
+			'groups.entryRemoved' => 'Entry removed from group',
+			'groups.groupCreated' => 'Group created',
+			'groups.groupUpdated' => 'Group updated',
+			'groups.groupDeleted' => 'Group deleted',
+			'groups.createFailed' => 'Failed to create group',
+			'groups.updateFailed' => 'Failed to update group',
+			'groups.deleteFailed' => 'Failed to delete group',
+			'groups.loadFailed' => 'Failed to load groups',
+			'groups.statsInfo' => ({required Object groups, required Object items}) => '${groups} groups, ${items} entries',
+			'groups.navigateToEntry' => 'Navigate to entry',
+			'groups.navigateToAnchor' => 'Navigate to anchor',
+			'groups.groupLink' => ({required Object name}) => 'Group: ${name}',
+			'groups.parentGroup' => 'Parent Group',
+			'groups.selectParent' => 'Select Parent',
+			'groups.none' => 'None (Root)',
+			'groups.anchorInfo' => ({required Object anchor}) => 'Anchor: ${anchor}',
+			'groups.wholeEntry' => 'Whole Entry',
 			_ => null,
 		};
 	}

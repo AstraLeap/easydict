@@ -235,7 +235,8 @@ class SystemTrayService with TrayListener {
   /// 托盘图标右键点击事件
   @override
   void onTrayIconRightMouseDown() {
-    // 右键点击：弹出菜单
+    // 所有平台都调用 popUpContextMenu 显示菜单
+    // Linux 上 AppIndicator 需要显式调用此方法来显示菜单
     trayManager.popUpContextMenu();
   }
 
@@ -350,6 +351,5 @@ class SystemTrayService with TrayListener {
   Future<void> dispose() async {
     trayManager.removeListener(this);
     await trayManager.destroy();
-    _isInitialized = false;
   }
 }
