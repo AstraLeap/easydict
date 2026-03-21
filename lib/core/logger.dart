@@ -52,9 +52,8 @@ class Logger {
     try {
       await _initLogFile();
       if (_logFile != null) {
-        final timestamp = DateTime.now().toIso8601String();
         _logFile!.writeAsStringSync(
-          '$timestamp $message\n',
+          '$message\n',
           mode: FileMode.append,
         );
       }

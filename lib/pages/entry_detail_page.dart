@@ -33,6 +33,9 @@ import '../services/preferences_service.dart';
 import '../services/search_history_service.dart';
 import '../services/user_dicts_service.dart';
 import '../widgets/path_navigator.dart';
+import '../data/models/group_model.dart' as group_model;
+import '../services/group_service.dart';
+import 'group_page.dart';
 import 'json_editor_bottom_sheet.dart';
 
 part 'entry_detail_page_private_widgets.dart';
@@ -137,6 +140,28 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// anchor 图标闪烁动画控制器
   AnimationController? _anchorBlinkController;
 
+  /// 组服务
+  final GroupService _groupService = GroupService();
+
+  /// 缓存每个词典的 entry 所属组的层级路径
+  /// key: "${dictId}_${entryId}", value: GroupPath 列表（每个 GroupPath 代表一条从根到叶的路径）
+  final Map<String, List<group_model.GroupPath>> _entryGroupPathsCache = {};
+
+  /// 缓存每个词典的 entry 特定 anchor 所属组信息
+  /// key: "${dictId}_${entryId}_${anchor}", value: (组, GroupItem) 列表
+  final Map<String, List<(group_model.DictionaryGroup, group_model.GroupItem)>>
+  _entryAnchorGroupsCache = {};
+
+  /// 当前显示的组信息（用于在当前词典内显示组内容）
+  /// 当不为 null 时，表示正在显示组内容而非词条内容
+  String? _displayingGroupDictId;
+  int? _displayingGroupId;
+  group_model.DictionaryGroup? _currentGroup;
+  List<group_model.DictionaryGroup> _subGroups = [];
+  List<group_model.DictionaryGroup> _groupBreadcrumb = [];
+  Map<int, String> _entryHeadwords = {};
+  bool _isLoadingGroup = false;
+
   @override
   void initState() {
     super.initState();
@@ -186,8 +211,93 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     Future.microtask(() async {
       await _loadFavoriteStatus();
       await _loadToolbarConfig();
+      await _loadEntryGroups();
     });
     // AI聊天历史只在需要时加载，不在初始化时加载
+  }
+
+  /// 加载当前词条所属的组信息
+  /// 从 entry JSON 的 groups 字段获取 group_id 列表，然后查询 groups 表获取层级路径
+  Future<void> _loadEntryGroups() async {
+    try {
+      // 遍历所有词典的词条，加载组信息
+      for (final dictGroup in _entryGroup.dictionaryGroups) {
+        final dictId = dictGroup.dictionaryId;
+        if (dictId.isEmpty) continue;
+
+        // 检查是否支持 groups 表
+        final hasGroups = await _groupService.hasGroupsTable(dictId);
+        if (!hasGroups) continue;
+
+        // 遍历当前词典的所有词条
+        for (final pageGroup in dictGroup.pageGroups) {
+          for (final section in pageGroup.sections) {
+            final entry = section.entry;
+            final entryId = _extractNumericEntryId(entry.id);
+            if (entryId == null) continue;
+
+            final cacheKey = '${dictId}_$entryId';
+
+            // 从 entry.groups 字段获取 group_id 列表
+            final groupIds = entry.groups;
+            if (groupIds.isNotEmpty &&
+                !_entryGroupPathsCache.containsKey(cacheKey)) {
+              // 批量获取所有组的层级路径
+              final groupPathsMap = await _groupService.getGroupPathsByGroupIds(
+                dictId,
+                groupIds,
+              );
+              if (groupPathsMap.isNotEmpty) {
+                _entryGroupPathsCache[cacheKey] = groupPathsMap.values.toList();
+              }
+            }
+
+            // 加载特定 anchor 所属的组
+            for (final anchorItem in entry.matchedAnchors) {
+              final anchor = anchorItem.$2;
+              if (anchor.isEmpty) continue;
+
+              final anchorCacheKey = '${dictId}_${entryId}_$anchor';
+              if (!_entryAnchorGroupsCache.containsKey(anchorCacheKey)) {
+                final groupsWithItems = await _groupService
+                    .findGroupsByEntryIdAndAnchor(
+                      dictId,
+                      entryId,
+                      anchor: anchor,
+                    );
+                if (groupsWithItems.isNotEmpty) {
+                  _entryAnchorGroupsCache[anchorCacheKey] = groupsWithItems;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 如果有组信息，触发重建
+      if (_entryGroupPathsCache.isNotEmpty ||
+          _entryAnchorGroupsCache.isNotEmpty) {
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      Logger.e('加载组信息失败: $e', tag: 'EntryDetailPage');
+    }
+  }
+
+  /// 从 entry.id 中提取数字 ID
+  /// entry.id 格式通常为 "dictId_entryId" 或直接是数字
+  int? _extractNumericEntryId(String entryId) {
+    // 尝试直接解析为数字
+    final directParse = int.tryParse(entryId);
+    if (directParse != null) return directParse;
+
+    // 尝试从 "dictId_entryId" 格式中提取
+    final parts = entryId.split('_');
+    if (parts.length >= 2) {
+      return int.tryParse(parts.last);
+    }
+
+    return null;
   }
 
   Future<void> _loadToolbarConfig() async {
@@ -941,6 +1051,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     // 搜索关系横幅现在内嵌在各词典的词典头部下方，不占独立 item
     final totalCount = wordRelationsOffset + entries.length;
 
+    // 判断是否正在显示组内容
+    final isShowingGroup =
+        _displayingGroupId != null && _displayingGroupDictId != null;
+
     final content = Scaffold(
       // 禁止键盘顶起页面，手动处理底部工具栏位置
       resizeToAvoidBottomInset: false,
@@ -952,61 +1066,66 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             // 主内容区域 - 全屏，内容可以滚动到工具栏下方
             SafeArea(
               bottom: false,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  // 手机端：滚动时退出搜索模式
-                  if (_isSearchMode &&
-                      notification is ScrollStartNotification &&
-                      notification.dragDetails != null) {
-                    setState(() {
-                      _isSearchMode = false;
-                      _searchController.clear();
-                    });
-                  }
-                  return false;
-                },
-                child: ScrollablePositionedList.builder(
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  padding: _getDynamicPadding(
-                    context,
-                  ).copyWith(top: 16, bottom: 100),
-                  itemCount: totalCount,
-                  minCacheExtent: 1500,
-                  itemBuilder: (context, index) {
-                    // 索引 0: 单词形态关系横幅
-                    if (index == 0) return _buildWordRelationsBanner();
-
-                    final entryIndex = index - wordRelationsOffset;
-                    final entry = entries[entryIndex];
-
-                    // 仅在该词典第一条 entry 处显示词典 Logo+名称
-                    final showDictHeader =
-                        entryIndex == 0 ||
-                        entries[entryIndex - 1].dictId != entry.dictId;
-
-                    // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
-                    List<SearchRelation>? entryRelations;
-                    if (showDictHeader && widget.searchRelations != null) {
-                      final headword = entry.headword.toLowerCase();
-                      for (final rel in widget.searchRelations!.entries) {
-                        if (rel.key.toLowerCase() == headword) {
-                          entryRelations = rel.value;
-                          break;
+              child: isShowingGroup
+                  ? _buildGroupContent()
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        // 手机端：滚动时退出搜索模式
+                        if (_isSearchMode &&
+                            notification is ScrollStartNotification &&
+                            notification.dragDetails != null) {
+                          setState(() {
+                            _isSearchMode = false;
+                            _searchController.clear();
+                          });
                         }
-                      }
-                    }
+                        return false;
+                      },
+                      child: ScrollablePositionedList.builder(
+                        itemScrollController: _itemScrollController,
+                        itemPositionsListener: _itemPositionsListener,
+                        padding: _getDynamicPadding(
+                          context,
+                        ).copyWith(top: 16, bottom: 100),
+                        itemCount: totalCount,
+                        minCacheExtent: 1500,
+                        itemBuilder: (context, index) {
+                          // 索引 0: 单词形态关系横幅
+                          if (index == 0) return _buildWordRelationsBanner();
 
-                    return _buildEntryContent(
-                      entry,
-                      showDictHeader: showDictHeader,
-                      relations: entryRelations,
-                    );
-                  },
-                ),
-              ),
+                          final entryIndex = index - wordRelationsOffset;
+                          final entry = entries[entryIndex];
+
+                          // 仅在该词典第一条 entry 处显示词典 Logo+名称
+                          final showDictHeader =
+                              entryIndex == 0 ||
+                              entries[entryIndex - 1].dictId != entry.dictId;
+
+                          // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
+                          List<SearchRelation>? entryRelations;
+                          if (showDictHeader &&
+                              widget.searchRelations != null) {
+                            final headword = entry.headword.toLowerCase();
+                            for (final rel in widget.searchRelations!.entries) {
+                              if (rel.key.toLowerCase() == headword) {
+                                entryRelations = rel.value;
+                                break;
+                              }
+                            }
+                          }
+
+                          return _buildEntryContent(
+                            entry,
+                            showDictHeader: showDictHeader,
+                            relations: entryRelations,
+                          );
+                        },
+                      ),
+                    ),
             ),
-            if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
+            if (!isShowingGroup &&
+                _entryGroup.dictionaryGroups.isNotEmpty &&
+                _isNavPanelLoaded)
               _DraggableNavPanel(
                 entryGroup: _entryGroup,
                 onDictionaryChanged: _onDictionaryChanged,
@@ -1612,6 +1731,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         .where((item) => item.$2.isNotEmpty)
         .toList();
 
+    // 获取该词条所属的组层级路径
+    final entryId = _extractNumericEntryId(entry.id);
+    final cacheKey = '${dictId}_$entryId';
+    final entryGroupPaths = _entryGroupPathsCache[cacheKey] ?? [];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1675,8 +1799,246 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             ),
           ),
         ),
+        // 显示组面包屑导航
+        if (entryGroupPaths.isNotEmpty && !isCollapsed)
+          _buildGroupBreadcrumb(dictId, entryGroupPaths, colorScheme, hPad),
       ],
     );
+  }
+
+  /// 构建组面包屑导航（显示层级路径）
+  Widget _buildGroupBreadcrumb(
+    String dictId,
+    List<group_model.GroupPath> groupPaths,
+    ColorScheme colorScheme,
+    double hPad,
+  ) {
+    return Container(
+      margin: EdgeInsets.only(left: hPad, right: hPad, bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: groupPaths.map((groupPath) {
+          return _buildGroupPathChip(dictId, groupPath, colorScheme);
+        }).toList(),
+      ),
+    );
+  }
+
+  /// 构建组路径芯片（显示完整层级路径）
+  Widget _buildGroupPathChip(
+    String dictId,
+    group_model.GroupPath groupPath,
+    ColorScheme colorScheme,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          // 点击跳转到路径末尾的组
+          final currentGroup = groupPath.current;
+          if (currentGroup?.groupId != null) {
+            _navigateToGroup(dictId, currentGroup!.groupId!);
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: colorScheme.outline.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.folder_outlined,
+                size: 14,
+                color: colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 4),
+              // 只显示当前组名称
+              Flexible(
+                child: Text(
+                  groupPath.current?.name ?? '',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建组芯片
+  Widget _buildGroupChip(
+    String dictId,
+    group_model.DictionaryGroup group,
+    ColorScheme colorScheme,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _navigateToGroup(dictId, group.groupId!),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: colorScheme.outline.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.folder_outlined,
+                size: 14,
+                color: colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                group.name,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 导航到组页面（在当前词典内显示）
+  Future<void> _navigateToGroup(String dictId, int groupId) async {
+    // 始终在当前词典内显示组内容，不跳转到新页面
+    // 即使是其他词典的组，也不影响其他词典的显示
+    setState(() {
+      _displayingGroupDictId = dictId;
+      _displayingGroupId = groupId;
+      _isLoadingGroup = true;
+    });
+
+    try {
+      // 加载组信息
+      final group = await _groupService.getGroup(dictId, groupId);
+
+      if (group == null) {
+        if (mounted) {
+          showToast(context, context.t.groups.loadFailed);
+          setState(() {
+            _displayingGroupDictId = null;
+            _displayingGroupId = null;
+            _isLoadingGroup = false;
+          });
+        }
+        return;
+      }
+
+      // 并行加载子组、面包屑和词条 headwords
+      final results = await Future.wait([
+        _groupService.getSubGroups(dictId, groupId),
+        _groupService.getGroupPath(dictId, groupId),
+        _groupService.getGroupEntryHeadwords(dictId, group.itemList),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _currentGroup = group;
+          _subGroups = results[0] as List<group_model.DictionaryGroup>;
+          _groupBreadcrumb = results[1] as List<group_model.DictionaryGroup>;
+          _entryHeadwords = results[2] as Map<int, String>;
+          _isLoadingGroup = false;
+        });
+      }
+    } catch (e) {
+      Logger.e('加载组数据失败: $e', tag: 'EntryDetailPage');
+      if (mounted) {
+        showToast(context, context.t.groups.loadFailed);
+        setState(() {
+          _displayingGroupDictId = null;
+          _displayingGroupId = null;
+          _isLoadingGroup = false;
+        });
+      }
+    }
+  }
+
+  /// 返回到词条内容（从组内容返回）
+  void _exitGroupView() {
+    setState(() {
+      _displayingGroupDictId = null;
+      _displayingGroupId = null;
+      _currentGroup = null;
+      _subGroups = [];
+      _groupBreadcrumb = [];
+      _entryHeadwords = {};
+      _isLoadingGroup = false;
+    });
+  }
+
+  /// 处理从组页面导航到词条（在当前词典内切换）
+  /// 仅在当前词典数据范围内切换，不创建新页面，不影响其他词典
+  Future<void> _handleNavigateToEntry(EntryNavigationInfo info) async {
+    try {
+      // 退出组视图
+      _exitGroupView();
+
+      // 查找词条在当前词典数据中的位置
+      for (int i = 0; i < _entryGroup.dictionaryGroups.length; i++) {
+        final dict = _entryGroup.dictionaryGroups[i];
+        if (dict.dictionaryId == info.dictId) {
+          for (int j = 0; j < dict.pageGroups.length; j++) {
+            final page = dict.pageGroups[j];
+            for (int k = 0; k < page.sections.length; k++) {
+              final section = page.sections[k];
+              final sectionEntryId = _extractNumericEntryId(section.entry.id);
+              if (sectionEntryId == info.entryId) {
+                // 切换到该词条
+                _entryGroup.setCurrentDictionaryIndex(i);
+                dict.setCurrentPageIndex(j);
+                dict.setCurrentSectionIndex(k);
+
+                // 滚动到该词条
+                await Future.delayed(const Duration(milliseconds: 100));
+                _scrollToEntry(section.entry, targetPath: info.anchor);
+
+                setState(() {});
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // 如果词条不在当前词典数据中，显示提示（不创建新页面）
+      if (mounted) {
+        showToast(
+          context,
+          context.t.entry.wordNotFound(word: '#${info.entryId}'),
+        );
+      }
+    } catch (e) {
+      Logger.e('导航到词条失败: $e', tag: 'EntryDetailPage');
+      if (mounted) {
+        showToast(context, context.t.entry.processFailed(error: '$e'));
+      }
+    }
   }
 
   /// 构建 anchor 图标（带闪烁效果）
@@ -1685,6 +2047,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     String anchor,
     ColorScheme colorScheme,
   ) {
+    // 获取该 anchor 所属的组信息
+    final numericEntryId = _extractNumericEntryId(entryId);
+    final currentEntry = _getEntryById(entryId);
+    final dictId = currentEntry?.dictId ?? '';
+    final anchorCacheKey = '${dictId}_${numericEntryId}_$anchor';
+    final anchorGroups = _entryAnchorGroupsCache[anchorCacheKey] ?? [];
+
     // 如果有动画控制器，使用闪烁效果
     if (_anchorBlinkController != null) {
       return AnimatedBuilder(
@@ -1731,6 +2100,34 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             child: Icon(Icons.link, size: 14, color: colorScheme.primary),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 构建 anchor 所属组的链接显示
+  /// 在 anchor 位置显示组链接（不是面包屑导航）
+  Widget _buildAnchorGroupLinks(
+    String entryId,
+    String anchor,
+    ColorScheme colorScheme,
+  ) {
+    final numericEntryId = _extractNumericEntryId(entryId);
+    final currentEntry = _getEntryById(entryId);
+    final dictId = currentEntry?.dictId ?? '';
+    final anchorCacheKey = '${dictId}_${numericEntryId}_$anchor';
+    final anchorGroups = _entryAnchorGroupsCache[anchorCacheKey] ?? [];
+
+    if (anchorGroups.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: anchorGroups.map((item) {
+          final group = item.$1;
+          return _buildGroupChip(dictId, group, colorScheme);
+        }).toList(),
       ),
     );
   }
@@ -5110,6 +5507,383 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             child: Text(ctx.t.common.clear),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 构建组内容视图（在当前词典内显示）
+  Widget _buildGroupContent() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (_isLoadingGroup) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_currentGroup == null) {
+      return Center(child: Text(context.t.groups.loadFailed));
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 返回按钮和组名称
+          Row(
+            children: [
+              IconButton(
+                onPressed: _exitGroupView,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: context.t.common.back,
+              ),
+              Expanded(
+                child: Text(
+                  _currentGroup!.name,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 面包屑导航
+          if (_groupBreadcrumb.isNotEmpty) ...[
+            _buildGroupBreadcrumbCard(),
+            const SizedBox(height: 16),
+          ],
+
+          // 组描述
+          if (_currentGroup!.description != null &&
+              _currentGroup!.description!.isNotEmpty) ...[
+            _buildGroupDescription(),
+            const SizedBox(height: 16),
+          ],
+
+          // 子组列表
+          _buildSubGroupsSection(),
+          const SizedBox(height: 16),
+
+          // 词条列表
+          _buildGroupEntriesSection(),
+        ],
+      ),
+    );
+  }
+
+  /// 构建组面包屑导航卡片
+  Widget _buildGroupBreadcrumbCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.location_on_outlined,
+              size: 18,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (int i = 0; i < _groupBreadcrumb.length; i++) ...[
+                    if (i > 0)
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: colorScheme.outline,
+                      ),
+                    InkWell(
+                      onTap: i == _groupBreadcrumb.length - 1
+                          ? null
+                          : () {
+                              final group = _groupBreadcrumb[i];
+                              if (group.groupId != null) {
+                                _navigateToGroup(
+                                  _displayingGroupDictId!,
+                                  group.groupId!,
+                                );
+                              }
+                            },
+                      child: Text(
+                        _groupBreadcrumb[i].name,
+                        style: TextStyle(
+                          color: i == _groupBreadcrumb.length - 1
+                              ? colorScheme.onSurface
+                              : colorScheme.primary,
+                          fontWeight: i == _groupBreadcrumb.length - 1
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建组描述
+  Widget _buildGroupDescription() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.info_outline, size: 18, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  context.t.groups.description,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _currentGroup!.description ?? '',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建子组列表
+  Widget _buildSubGroupsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.folder_outlined,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              context.t.groups.subGroups,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            if (_subGroups.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${_subGroups.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_subGroups.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  context.t.groups.noSubGroups,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          ..._subGroups.map((group) => _buildSubGroupCard(group)),
+      ],
+    );
+  }
+
+  /// 构建子组卡片
+  Widget _buildSubGroupCard(group_model.DictionaryGroup group) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: () {
+          if (group.groupId != null) {
+            _navigateToGroup(_displayingGroupDictId!, group.groupId!);
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(Icons.folder_outlined, color: colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.name,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${group.subGroupCount} ${context.t.groups.subGroups.toLowerCase()} · ${group.itemCount} ${context.t.groups.entries.toLowerCase()}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: colorScheme.outline),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建词条列表
+  Widget _buildGroupEntriesSection() {
+    final items = _currentGroup?.itemList ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.article_outlined,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              context.t.groups.entries,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            if (items.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${items.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (items.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  context.t.groups.noEntries,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          ...items.map((item) => _buildGroupEntryCard(item)),
+      ],
+    );
+  }
+
+  /// 构建词条卡片
+  Widget _buildGroupEntryCard(group_model.GroupItem item) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final headword = _entryHeadwords[item.entryId] ?? '#${item.entryId}';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: () {
+          _handleNavigateToEntry(
+            EntryNavigationInfo(
+              dictId: _displayingGroupDictId!,
+              entryId: item.entryId,
+              anchor: item.anchor,
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(
+                item.anchor != null && item.anchor!.isNotEmpty
+                    ? Icons.bookmark_outline
+                    : Icons.article_outlined,
+                color: item.anchor != null && item.anchor!.isNotEmpty
+                    ? colorScheme.tertiary
+                    : colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      headword,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    if (item.anchor != null && item.anchor!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        item.anchor!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: colorScheme.outline),
+            ],
+          ),
+        ),
       ),
     );
   }

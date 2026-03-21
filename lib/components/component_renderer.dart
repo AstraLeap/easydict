@@ -14,6 +14,9 @@ import 'package:path/path.dart' as path;
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../core/logger.dart';
+import 'rendering/formatted_text_parser.dart'
+    show parseFormattedText, FormattedTextResult;
+import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
 import '../core/utils/toast_utils.dart';
@@ -35,14 +38,6 @@ import 'dictionary_interaction_scope.dart';
 import 'global_scale_wrapper.dart';
 import 'hidden_languages_scope.dart';
 import 'path_scope.dart';
-
-class FormattedTextResult {
-  final List<InlineSpan> spans;
-  final List<String> plainTexts;
-  final bool hidden;
-
-  FormattedTextResult(this.spans, this.plainTexts, {this.hidden = false});
-}
 
 // 颜色映射表
 const Map<String, Color> _colorMap = {
@@ -327,6 +322,21 @@ class _AutoScalingText extends StatelessWidget {
 
     // 使用传入的spans或创建纯文本span
     final textSpans = spans ?? [TextSpan(text: text, style: effectiveStyle)];
+
+    // 检查是否包含 WidgetSpan
+    // WidgetSpan 使用 PlaceholderAlignment.baseline 时，TextPainter.layout() 会失败
+    // 因为此时 widget 尺寸（dimensions）未知
+    final hasWidgetSpan = textSpans.any((span) => span is WidgetSpan);
+
+    // 如果包含 WidgetSpan，跳过宽度计算，直接返回 Text.rich
+    // 因为 TextPainter 无法正确处理带有 baseline 对齐的 WidgetSpan
+    if (hasWidgetSpan) {
+      return Text.rich(
+        TextSpan(children: textSpans, style: effectiveStyle),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
 
     // 计算文本宽度
     final textPainter = TextPainter(
@@ -742,99 +752,6 @@ _StyleInfo _parseTypes(
   );
 }
 
-FormattedTextResult parseFormattedText(
-  String text,
-  TextStyle baseStyle, {
-  BuildContext? context,
-  List<String>? path,
-  String? label,
-  void Function(String path, String label)? onElementTap,
-  void Function(String path, String label)? onElementSecondaryTap,
-  void Function(Offset position, String text)? onShowMenu,
-  GestureRecognizer? recognizer,
-  bool hidden = false,
-  String? language,
-  String? sourceLanguage,
-  Map<String, Map<String, double>>? fontScales,
-  bool isSerif = false,
-  bool isBold = false,
-  DictElementType? elementType,
-  MouseCursor? mouseCursor,
-  bool useCustomFont = true,
-}) {
-  final effectiveIsSerif = elementType != null
-      ? DictTypography.isSerif(elementType)
-      : isSerif;
-
-  if (hidden) {
-    return FormattedTextResult([], [], hidden: true);
-  }
-
-  TextStyle effectiveBaseStyle = baseStyle;
-
-  final effectiveLanguage = _determineEffectiveLanguage(
-    language: language,
-    path: path,
-    sourceLanguage: sourceLanguage,
-  );
-
-  if (useCustomFont && effectiveLanguage != null) {
-    final fontService = FontLoaderService();
-    final fontInfo = fontService.getFontInfo(
-      effectiveLanguage,
-      isSerif: effectiveIsSerif,
-      isBold: isBold,
-    );
-
-    final fontScale = fontScales != null
-        ? (FontLoaderService().resolveFontScale(
-                effectiveLanguage,
-                isSerif: effectiveIsSerif,
-              ) ??
-              fontScales[effectiveLanguage]?[effectiveIsSerif
-                  ? 'serif'
-                  : 'sans'] ??
-              1.0)
-        : 1.0;
-
-    if (fontInfo != null && baseStyle.fontFamily == null) {
-      effectiveBaseStyle = effectiveBaseStyle.copyWith(
-        fontFamily: fontInfo.fontFamily,
-      );
-    }
-
-    if (fontScale != 1.0 && effectiveBaseStyle.fontSize != null) {
-      effectiveBaseStyle = effectiveBaseStyle.copyWith(
-        fontSize: effectiveBaseStyle.fontSize! * fontScale,
-      );
-    }
-  }
-
-  effectiveBaseStyle = effectiveBaseStyle.copyWith(
-    locale: const Locale('zh', 'CN'),
-  );
-
-  final ctx = _ParseContext(text);
-  final segments = _parseSegments(ctx);
-
-  final spans = <InlineSpan>[];
-  final plainTexts = <String>[];
-
-  _processSegments(
-    segments: segments,
-    baseStyle: effectiveBaseStyle,
-    context: context,
-    recognizer: recognizer,
-    mouseCursor: mouseCursor,
-    effectiveLanguage: effectiveLanguage,
-    spans: spans,
-    plainTexts: plainTexts,
-    onShowMenu: onShowMenu,
-  );
-
-  return FormattedTextResult(spans, plainTexts, hidden: hidden);
-}
-
 void _processSegments({
   required List<_ParsedSegment> segments,
   required TextStyle baseStyle,
@@ -880,6 +797,7 @@ void _processSegments({
         effectiveLanguage: effectiveLanguage,
         spans: spans,
         plainTexts: plainTexts,
+        onShowMenu: onShowMenu,
       );
     }
   }
@@ -900,7 +818,7 @@ void _processRubySegment({
   final rubyText = segment.rubyText ?? '';
 
   Logger.d(
-    '_processRubySegment: baseText=$baseText, rubyText=$rubyText, onShowMenu=${onShowMenu != null}',
+    '_processRubySegment: baseText=$baseText, rubyText=$rubyText',
     tag: 'Ruby',
   );
 
@@ -911,58 +829,88 @@ void _processRubySegment({
   // 振假名字体大小为基础字体的 50%
   final rubyFontSize = baseFontSize * 0.5;
 
-  // 使用 Transform.translate 来实现 Ruby 文本布局
-  // 汉字（基础文本）与其他文本基线对齐，振假名显示在上方
-  // 注意：WidgetSpan 内的文本不在 SelectionArea 选择范围内
-  // 但外层 SelectionArea 的 contextMenuBuilder 仍然可以处理手势
-  //
-  // 布局说明：
-  // - WidgetSpan 使用 PlaceholderAlignment.middle 让汉字中心与其他文本中心对齐
-  // - 振假名使用 Transform.translate 向上偏移，不占用行高空间
+  // 假名与汉字之间的间距
+  const rubySpacing = 1.0;
+
   spans.add(
     WidgetSpan(
-      alignment: PlaceholderAlignment.middle,
-      child: MouseRegion(
-        cursor: mouseCursor ?? MouseCursor.defer,
-        child: GestureDetector(
-          // 长按触发菜单
-          onLongPressStart: onShowMenu != null
-              ? (details) {
-                  onShowMenu(details.globalPosition, baseText);
-                }
-              : null,
-          onSecondaryTapDown: onShowMenu != null
-              ? (details) {
-                  onShowMenu(details.globalPosition, baseText);
-                }
-              : null,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // 汉字（基础文本）- 与其他文本中心对齐
-              Text(baseText, style: baseStyle),
-              // 振假名 - 使用 Transform.translate 定位在汉字上方
-              Transform.translate(
-                // 向上偏移：假名高度 + 小间距
-                // 让假名紧贴在汉字上方
-                offset: Offset(0, -rubyFontSize - 1),
-                child: Text(
-                  rubyText,
-                  style: baseStyle.copyWith(
-                    fontSize: rubyFontSize,
-                    height: 1.0,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
+      alignment: PlaceholderAlignment.baseline,
+      baseline: TextBaseline.alphabetic,
+      child: _RubyTextLayout(
+        rubyFontSize: rubyFontSize,
+        rubySpacing: rubySpacing,
+        baseText: baseText,
+        baseStyle: baseStyle,
+        rubyText: rubyText,
+        onShowMenu: onShowMenu,
       ),
     ),
   );
 
   plainTexts.add(baseText);
+}
+
+/// Ruby 文本布局组件
+/// 使用共享的 RubyLayout 组件正确处理基线对齐
+class _RubyTextLayout extends StatelessWidget {
+  final double rubyFontSize;
+  final double rubySpacing;
+  final String baseText;
+  final TextStyle baseStyle;
+  final String rubyText;
+  final void Function(Offset position, String text)? onShowMenu;
+
+  const _RubyTextLayout({
+    required this.rubyFontSize,
+    required this.rubySpacing,
+    required this.baseText,
+    required this.baseStyle,
+    required this.rubyText,
+    this.onShowMenu,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Logger.d(
+      '_RubyTextLayout.build: onShowMenu=$onShowMenu, baseText=$baseText',
+      tag: 'Ruby',
+    );
+    // 创建振假名widget
+    Widget rubyWidget = RubyLayout(
+      rubyFontSize: rubyFontSize,
+      rubySpacing: rubySpacing,
+      baseText: baseText,
+      baseStyle: baseStyle,
+      rubyText: rubyText,
+    );
+
+    // 如果有 onShowMenu 回调，添加右键事件处理
+    if (onShowMenu != null) {
+      rubyWidget = Listener(
+        onPointerDown: (event) {
+          Logger.d(
+            'Ruby Listener onPointerDown: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
+            tag: 'Ruby',
+          );
+          // 检查是否是右键（桌面端）
+          if (event.buttons == kSecondaryMouseButton) {
+            Logger.d('Ruby right-click detected, calling onShowMenu', tag: 'Ruby');
+            onShowMenu!(event.position, baseText);
+          }
+        },
+        child: rubyWidget,
+      );
+    } else {
+      Logger.d('_RubyTextLayout: onShowMenu is null, using IgnorePointer', tag: 'Ruby');
+      // 如果没有回调，使用 IgnorePointer 让事件穿透
+      rubyWidget = IgnorePointer(
+        ignoring: true,
+        child: rubyWidget,
+      );
+    }
+
+    return rubyWidget;
+  }
 }
 
 void _processFormattedSegment({
@@ -974,6 +922,7 @@ void _processFormattedSegment({
   required String? effectiveLanguage,
   required List<InlineSpan> spans,
   required List<String> plainTexts,
+  void Function(Offset position, String text)? onShowMenu,
 }) {
   final typesStr = segment.typesStr ?? '';
   final styleInfo = _parseTypes(typesStr, baseStyle, context);
@@ -991,6 +940,7 @@ void _processFormattedSegment({
       effectiveLanguage: effectiveLanguage,
       spans: childSpans,
       plainTexts: childPlainTexts,
+      onShowMenu: onShowMenu,
     );
 
     spans.add(
@@ -2557,6 +2507,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // 尝试从路径中提取语言代码（路径的最后一部分通常是语言代码）
     String? languageCode;
+    String? languageSource;
     if (pathParts.isNotEmpty) {
       final lastPart = pathParts.last;
       // 检查是否是语言代码（如 en, zh, ja 等）
@@ -2564,6 +2515,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         'en',
         'zh',
         'ja',
+        'jp', // jp 和 ja 等效，都表示日语
         'ko',
         'fr',
         'de',
@@ -2576,10 +2528,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
       ];
       if (knownLanguages.contains(lastPart.toLowerCase())) {
         languageCode = lastPart.toLowerCase();
+        // jp 统一转换为 ja
+        if (languageCode == 'jp') {
+          languageCode = 'ja';
+        }
+        languageSource = '路径字段 "$lastPart"';
       }
     }
     // 从路径未识别到语言时，回退到词典源语言
-    languageCode ??= _sourceLanguage;
+    if (languageCode == null && _sourceLanguage != null) {
+      languageCode = _sourceLanguage;
+      languageSource = '词典源语言 "$_sourceLanguage"';
+    }
 
     try {
       // 先尝试从缓存获取
@@ -2595,13 +2555,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
         // 缓存未命中，请求 TTS 服务
         showToast(context, context.t.entry.generatingAudio);
         Logger.d(
-          '开始TTS: $textToSpeak, 语言: $languageCode',
+          '开始TTS: 文本="$textToSpeak", 语言代码=$languageCode (来源: $languageSource)',
           tag: '_performSpeak',
         );
 
         audioData = await AIService().textToSpeech(
           textToSpeak,
           languageCode: languageCode,
+          languageSource: languageSource,
         );
 
         Logger.d(
@@ -5367,8 +5328,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
             hidden: hidden,
             elementType: DictElementType.definition,
             mouseCursor: SystemMouseCursors.text,
+            onShowMenu: (position, text) {
+              _handleElementSecondaryTap(
+                _convertPathToString(path),
+                pathData.label,
+                context,
+                position,
+              );
+            },
           );
-
           // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
           spans.addAll(result.spans);
         }
@@ -6581,6 +6549,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'phrases', // 唯一正确字段名，由 _buildPhrases 处理
     'data', // data 单独渲染
     'clob', // clob 单独渲染
+    'groups', // groups 用于索引，不需要渲染
   ];
 
   /// 渲染 data（如果存在），在 sense 之前显示

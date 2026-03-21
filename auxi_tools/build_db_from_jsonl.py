@@ -1,7 +1,91 @@
-import json, random, sqlite3, unicodedata, argparse, re
+import json, random, sqlite3, unicodedata, argparse, re, os
 from pathlib import Path
 
 import zstandard as zstd
+
+
+def create_media_tables(conn):
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audios (
+            name TEXT PRIMARY KEY,
+            blob BLOB NOT NULL
+        )
+    """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS images (
+            name TEXT PRIMARY KEY,
+            blob BLOB NOT NULL
+        )
+    """
+    )
+    conn.commit()
+
+
+def process_directory(conn, table_name, dir_path):
+    if not dir_path or not os.path.isdir(dir_path):
+        return
+
+    cursor = conn.cursor()
+    print(f"正在处理文件夹: {dir_path} -> 表: {table_name}")
+
+    for root, dirs, files in os.walk(dir_path):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            try:
+                with open(file_path, "rb") as f:
+                    blob_data = f.read()
+                cursor.execute(
+                    f"INSERT OR REPLACE INTO {table_name} (name, blob) VALUES (?, ?)",
+                    (filename, blob_data),
+                )
+            except Exception as e:
+                print(f"处理文件 {file_path} 时出错: {e}")
+
+    conn.commit()
+    print(f"完成 {table_name} 表的数据写入。")
+
+
+def create_media_indexes(conn):
+    cursor = conn.cursor()
+    print("正在创建媒体索引...")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audios_name ON audios(name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_name ON images(name)")
+    conn.commit()
+    print("媒体索引创建完毕。")
+
+
+def build_media_db(output_dir, audio_dir=None, image_dir=None, page_size_kb=64):
+    if not audio_dir and not image_dir:
+        return
+
+    db_name = Path(output_dir) / "media.db"
+    conn = sqlite3.connect(db_name)
+
+    try:
+        page_size_bytes = page_size_kb * 1024
+        conn.execute(f"PRAGMA page_size = {page_size_bytes}")
+
+        create_media_tables(conn)
+
+        if audio_dir:
+            process_directory(conn, "audios", audio_dir)
+        else:
+            print("未提供音频文件夹参数，跳过 audios 表处理。")
+
+        if image_dir:
+            process_directory(conn, "images", image_dir)
+        else:
+            print("未提供图片文件夹参数，跳过 images 表处理。")
+
+        create_media_indexes(conn)
+
+    finally:
+        conn.close()
+        print(f"媒体数据库 {db_name} 已生成。")
 
 
 def normalize_japanese(text: str) -> str:
@@ -349,7 +433,15 @@ def reservoir_sampling(jsonl_path, sample_size=10000):
 
 
 def build_database_from_jsonl(
-    jsonl_path, db_path, lang_code, dict_size_kb=112, compress_level=7, page_size=4096
+    jsonl_path,
+    db_path,
+    lang_code,
+    dict_size_kb=112,
+    compress_level=7,
+    page_size=4096,
+    audio_dir=None,
+    image_dir=None,
+    groups_jsonl_path=None,
 ):
     lang_code = lang_code.lower()
 
@@ -410,6 +502,23 @@ def build_database_from_jsonl(
         )
     """
     )
+
+    # 创建 groups 表（可选的词条分组功能）
+    cursor.execute(
+        """
+        CREATE TABLE groups (
+            group_id INTEGER PRIMARY KEY,
+            parent_id INTEGER,
+            name TEXT NOT NULL,
+            description TEXT,
+            item_list TEXT DEFAULT '[]',
+            sub_group_count INTEGER DEFAULT 0,
+            item_count INTEGER DEFAULT 0,
+            FOREIGN KEY (parent_id) REFERENCES groups(group_id) ON DELETE CASCADE
+        )
+    """
+    )
+    cursor.execute("CREATE INDEX idx_groups_parent ON groups(parent_id)")
 
     # 3. 压缩并批量写入数据
     print("Compressing and inserting data...")
@@ -504,6 +613,38 @@ def build_database_from_jsonl(
 
     conn.commit()
 
+    # 4. 导入 groups 数据（如果提供）
+    if groups_jsonl_path and Path(groups_jsonl_path).exists():
+        print(f"Importing groups from {groups_jsonl_path}...")
+        groups_sql = "INSERT INTO groups (group_id, parent_id, name, description, item_list, sub_group_count, item_count) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        groups_batch = []
+        groups_count = 0
+        with open(groups_jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                data = json.loads(line)
+                item_list = json.dumps(data.get("item_list", []), ensure_ascii=False)
+                groups_batch.append((
+                    data["group_id"],
+                    data.get("parent_id"),
+                    data["name"],
+                    data.get("description"),
+                    item_list,
+                    data.get("sub_group_count", 0),
+                    data.get("item_count", 0),
+                ))
+                if len(groups_batch) >= 1000:
+                    cursor.executemany(groups_sql, groups_batch)
+                    groups_count += len(groups_batch)
+                    groups_batch = []
+        if groups_batch:
+            cursor.executemany(groups_sql, groups_batch)
+            groups_count += len(groups_batch)
+        conn.commit()
+        print(f"Imported {groups_count} groups.")
+
     # 5. 收尾：Vacuum
     print("Vacuuming database...")
     size_before = Path(db_path).stat().st_size
@@ -516,6 +657,12 @@ def build_database_from_jsonl(
     print(f"Total Entries: {total_count}")
     print(f"Size before VACUUM: {size_before / 1024 / 1024:.2f} MB")
     print(f"Size after VACUUM: {size_after / 1024 / 1024:.2f} MB")
+
+    build_media_db(
+        output_dir=Path(db_path).parent,
+        audio_dir=audio_dir,
+        image_dir=image_dir,
+    )
 
 
 # --- 命令行入口 ---
@@ -564,11 +711,46 @@ if __name__ == "__main__":
         default=4096,
         help="SQLite page size in bytes (default: 4096)",
     )
+    parser.add_argument(
+        "--audio-dir",
+        default=None,
+        help="包含音频文件的文件夹路径 (可选)",
+    )
+    parser.add_argument(
+        "--image-dir",
+        default=None,
+        help="包含图片文件的文件夹路径 (可选)",
+    )
+    parser.add_argument(
+        "--groups",
+        default=None,
+        help="groups.jsonl 文件路径 (可选)",
+    )
+    parser.add_argument(
+        "-o", "--output",
+        default=None,
+        help="输出目录路径 (默认为 jsonl 文件所在目录)",
+    )
+    parser.add_argument(
+        "--dict-id",
+        default=None,
+        help="词典ID，用于生成 metadata.json",
+    )
+    parser.add_argument(
+        "--dict-name",
+        default=None,
+        help="词典名称，用于生成 metadata.json",
+    )
 
     args = parser.parse_args()
 
     jsonl_path = Path(args.jsonl_path)
-    db_path = jsonl_path.with_suffix(".db")
+    if args.output:
+        output_dir = Path(args.output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir = jsonl_path.parent
+    db_path = output_dir / "dictionary.db"
 
     build_database_from_jsonl(
         jsonl_path=str(jsonl_path),
@@ -577,4 +759,27 @@ if __name__ == "__main__":
         dict_size_kb=args.dict_size,
         compress_level=args.compress_level,
         page_size=args.page_size,
+        audio_dir=args.audio_dir,
+        image_dir=args.image_dir,
+        groups_jsonl_path=args.groups,
     )
+
+    if args.dict_id:
+        from datetime import datetime, timezone
+        metadata = {
+            "id": args.dict_id,
+            "source_language": args.lang,
+            "target_language": [args.lang],
+            "name": args.dict_name or args.dict_id,
+            "description": "",
+            "publisher": "",
+            "maintainer": "",
+            "encode": "utf-8",
+            "contact_maintainer": "",
+            "version": 1,
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        }
+        metadata_path = output_dir / "metadata.json"
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        print(f"Generated metadata.json at {metadata_path}")

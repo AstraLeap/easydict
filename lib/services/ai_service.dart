@@ -8,6 +8,36 @@ import '../core/logger.dart';
 import 'llm_client.dart';
 import 'preferences_service.dart';
 
+/// 语言默认音色映射（Edge TTS）
+const Map<String, String> _edgeDefaultVoicesByLanguage = {
+  'en': 'en-US-AriaNeural',
+  'zh': 'zh-CN-XiaoxiaoNeural',
+  'ja': 'ja-JP-NanamiNeural',
+  'ko': 'ko-KR-SunHiNeural',
+  'fr': 'fr-FR-DeniseNeural',
+  'de': 'de-DE-KatjaNeural',
+  'es': 'es-ES-ElviraNeural',
+  'it': 'it-IT-ElsaNeural',
+  'ru': 'ru-RU-SvetlanaNeural',
+  'pt': 'pt-BR-FranciscaNeural',
+  'ar': 'ar-EG-SalmaNeural',
+};
+
+/// 语言默认音色映射（Google TTS）
+const Map<String, String> _googleDefaultVoicesByLanguage = {
+  'en': 'en-US-Chirp3-HD-Aoede',
+  'zh': 'cmn-CN-Chirp3-HD-A',
+  'ja': 'ja-JP-Chirp3-HD-A',
+  'ko': 'ko-KR-Chirp3-HD-A',
+  'fr': 'fr-FR-Chirp3-HD-A',
+  'de': 'de-DE-Chirp3-HD-A',
+  'es': 'es-ES-Chirp3-HD-A',
+  'it': 'it-IT-Chirp3-HD-A',
+  'ru': 'ru-RU-Chirp3-HD-A',
+  'pt': 'pt-BR-Chirp3-HD-A',
+  'ar': 'ar-XA-Chirp3-HD-A',
+};
+
 class AIService {
   static final AIService _instance = AIService._internal();
   factory AIService() => _instance;
@@ -146,7 +176,8 @@ class AIService {
   Stream<LLMChunk> summarizeDictionaryStream(
     String jsonContent, {
     String appLanguage = 'English',
-    String? instruction, // e.g. 'Be more concise.' or 'Be more detailed and comprehensive.'
+    String?
+    instruction, // e.g. 'Be more concise.' or 'Be more detailed and comprehensive.'
   }) {
     final systemPrompt =
         'You are a professional dictionary content analyst, skilled at distilling key linguistic information from dictionary data. '
@@ -217,7 +248,11 @@ class AIService {
     );
   }
 
-  Future<List<int>> textToSpeech(String text, {String? languageCode}) async {
+  Future<List<int>> textToSpeech(
+    String text, {
+    String? languageCode,
+    String? languageSource,
+  }) async {
     final config = await _prefsService.getTTSConfig();
     if (config == null) {
       throw Exception('未配置TTS服务，请先在设置中配置API');
@@ -230,7 +265,7 @@ class AIService {
     var voice = config['voice'] as String;
 
     Logger.d(
-      'textToSpeech: provider=$provider, languageCode=$languageCode, defaultVoice=$voice',
+      'textToSpeech: provider=$provider, languageCode=$languageCode, languageSource=$languageSource, defaultVoice=$voice',
       tag: 'textToSpeech',
     );
 
@@ -247,7 +282,27 @@ class AIService {
       );
       if (langVoice != null && langVoice.isNotEmpty) {
         voice = langVoice;
-        Logger.d('使用语言音色: $languageCode -> $voice', tag: 'textToSpeech');
+        Logger.d(
+          '根据 $languageSource 选择音色: $languageCode -> $voice',
+          tag: 'textToSpeech',
+        );
+      } else {
+        // 未找到配置时，回退到该语言的默认音色
+        final defaultLangVoice = provider == 'google'
+            ? _googleDefaultVoicesByLanguage[languageCode]
+            : _edgeDefaultVoicesByLanguage[languageCode];
+        if (defaultLangVoice != null && defaultLangVoice.isNotEmpty) {
+          voice = defaultLangVoice;
+          Logger.d(
+            '未找到语言 $languageCode 的音色配置，回退到该语言默认音色: $voice',
+            tag: 'textToSpeech',
+          );
+        } else {
+          Logger.d(
+            '未找到语言 $languageCode 的默认音色映射，使用全局默认音色: $voice',
+            tag: 'textToSpeech',
+          );
+        }
       }
     }
 

@@ -97,6 +97,18 @@ CREATE TABLE indices (
     FOREIGN KEY (entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
 );--索引表，每个entry可能有多条索引记录
 
+CREATE TABLE groups (
+    group_id INTEGER PRIMARY KEY,
+    parent_id INTEGER,                   -- 父级组ID，实现无限层级嵌套
+    name TEXT NOT NULL,                  -- 组名
+    description TEXT,                    -- 组的描述，JSON 组件列表
+    item_list TEXT DEFAULT '[]',         -- 组内项目列表 [{"e": 212, "a": "sense_group.0.sense.1"}]
+    sub_group_count INTEGER DEFAULT 0,   -- 直接子组数量
+    item_count INTEGER DEFAULT 0,        -- item_list 长度
+    FOREIGN KEY (parent_id) REFERENCES groups(group_id) ON DELETE CASCADE
+);
+CREATE INDEX idx_groups_parent ON groups(parent_id);
+
 CREATE INDEX idx_headword_norm ON indices(headword_normalized);
 CREATE INDEX idx_phonetic ON indices(phonetic);
 CREATE INDEX idx_indices_entry_id ON indices(entry_id);
@@ -149,18 +161,18 @@ CREATE INDEX idx_images_name ON images(name);
     "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
     "headword": "fog", // 与headline二选一，单词头，可重复
     "headline": "つける【付ける・附ける】", // 与headword二选一，复杂词头
-    "links": "from_word", //可以是string或者是list of string，查询"from_word"时也能查到本词条
-    "entry_type": "word", // 必填，word或phrase
     "phonetic": "pinyin", // 可选，辅助搜索词，主要用于表意文字
-    "page": "medical", // 必填，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry，如果没有则留空:""
-    "section": "noun", // 必填，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性，如果没有则留空:""
+    "entry_type": "word", // 可选，word或phrase等等
+    "links": "from_word", //可以是string或者是list of string，查询"from_word"时也能查到本词条
+    "groups": [122, 254], // 可选，对应groups表中的group_id，可以是数字，也可以是数字列表
+    "page": "medical", // 可选，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry
+    "section": "noun", // 可选，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性
     "certifications": ["IELTS", "TOEFL", "CET-4"], // 可选，还没想好怎么实现
     "frequency": {
         "level": "B1",
         "stars": "3/5",
         "source": "Oxford 3000",
     }, // 可选，还没想好怎么实现
-    "topic": ["赛车", "时尚", "经济"], // 可选，还没想好怎么实现，感觉这个可以单独在dictionary.db中生成一个表，记录每个类中有哪些子类和哪些单词。
     "stroke": "3", // 可选，笔画数
     "pos": "n", // 可选，词性
     "pronunciation": [

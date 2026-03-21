@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:easydict/components/component_renderer.dart';
+import 'package:easydict/components/rendering/formatted_text_parser.dart';
 
 void main() {
   group('Ruby Text Parsing in component_renderer.dart', () {

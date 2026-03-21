@@ -41,7 +41,7 @@ endif()
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_14)
-  target_compile_options(${TARGET} PRIVATE -Wall -Werror)
+  target_compile_options(${TARGET} PRIVATE -Wall -Werror -Wno-deprecated-declarations)
   target_compile_options(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-O3>")
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()
@@ -157,6 +157,53 @@ if(LIBMPV_LIBRARY)
   message(STATUS "Found libmpv: ${LIBMPV_REALPATH}")
 else()
   message(WARNING "libmpv not found - media playback may not work")
+endif()
+
+# Bundle libayatana-appindicator3 for tray_manager (system tray support)
+pkg_check_modules(APPINDICATOR ayatana-appindicator3-0.1)
+if(APPINDICATOR_FOUND)
+  find_library(LIBAPPINDICATOR_LIBRARY NAMES ayatana-appindicator3 libayatana-appindicator3.so.1)
+  if(LIBAPPINDICATOR_LIBRARY)
+    get_filename_component(LIBAPPINDICATOR_REALPATH "${LIBAPPINDICATOR_LIBRARY}" REALPATH)
+    install(FILES "${LIBAPPINDICATOR_REALPATH}"
+      DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+      RENAME "libayatana-appindicator3.so.1"
+      COMPONENT Runtime)
+    message(STATUS "Found libayatana-appindicator3: ${LIBAPPINDICATOR_REALPATH}")
+  endif()
+endif()
+
+# Bundle libayatana-indicator3 (dependency of libayatana-appindicator3)
+find_library(LIBINDICATOR3_LIBRARY NAMES ayatana-indicator3 libayatana-indicator3.so.7)
+if(LIBINDICATOR3_LIBRARY)
+  get_filename_component(LIBINDICATOR3_REALPATH "${LIBINDICATOR3_LIBRARY}" REALPATH)
+  install(FILES "${LIBINDICATOR3_REALPATH}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    RENAME "libayatana-indicator3.so.7"
+    COMPONENT Runtime)
+  message(STATUS "Found libayatana-indicator3: ${LIBINDICATOR3_REALPATH}")
+endif()
+
+# Bundle libdbusmenu-glib (dependency of libayatana-indicator3)
+find_library(LIBDBUSMENU_GLIB_LIBRARY NAMES dbusmenu-glib libdbusmenu-glib.so.4)
+if(LIBDBUSMENU_GLIB_LIBRARY)
+  get_filename_component(LIBDBUSMENU_GLIB_REALPATH "${LIBDBUSMENU_GLIB_LIBRARY}" REALPATH)
+  install(FILES "${LIBDBUSMENU_GLIB_REALPATH}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    RENAME "libdbusmenu-glib.so.4"
+    COMPONENT Runtime)
+  message(STATUS "Found libdbusmenu-glib: ${LIBDBUSMENU_GLIB_REALPATH}")
+endif()
+
+# Bundle libdbusmenu-gtk3 (dependency of libayatana-appindicator3)
+find_library(LIBDBUSMENU_GTK3_LIBRARY NAMES dbusmenu-gtk3 libdbusmenu-gtk3.so.4)
+if(LIBDBUSMENU_GTK3_LIBRARY)
+  get_filename_component(LIBDBUSMENU_GTK3_REALPATH "${LIBDBUSMENU_GTK3_LIBRARY}" REALPATH)
+  install(FILES "${LIBDBUSMENU_GTK3_REALPATH}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    RENAME "libdbusmenu-gtk3.so.4"
+    COMPONENT Runtime)
+  message(STATUS "Found libdbusmenu-gtk3: ${LIBDBUSMENU_GTK3_REALPATH}")
 endif()
 
 # Copy the native assets provided by the build.dart from all packages.

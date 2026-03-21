@@ -68,6 +68,9 @@ class DictionaryManager {
       final defaultDir = await _getDefaultDirectory();
       savedDir = defaultDir;
       await setBaseDirectory(defaultDir);
+      
+      // 尝试迁移旧数据（仅首次运行时）
+      await _migrateIfNeeded();
     }
 
     _baseDirectory = savedDir;
@@ -82,6 +85,81 @@ class DictionaryManager {
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// 迁移词典数据到新目录（仅 macOS/iOS）
+  /// 从 Documents/easydict 迁移到 Application Support/dictionaries
+  Future<void> _migrateIfNeeded() async {
+    if (!Platform.isMacOS && !Platform.isIOS) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyMigrated = prefs.getBool('dicts_migrated_to_app_support') ?? false;
+
+    if (alreadyMigrated) {
+      Logger.d('词典数据已迁移，跳过', tag: 'DictionaryManager');
+      return;
+    }
+
+    try {
+      // 检查旧目录
+      final oldDir = Directory(
+        path.join(
+          (await getApplicationDocumentsDirectory()).path,
+          'easydict',
+        ),
+      );
+
+      if (!await oldDir.exists()) {
+        Logger.d('旧词典目录不存在，无需迁移', tag: 'DictionaryManager');
+        await prefs.setBool('dicts_migrated_to_app_support', true);
+        return;
+      }
+
+      // 新目录
+      final newDir = Directory(
+        path.join(
+          (await getApplicationSupportDirectory()).path,
+          'dictionaries',
+        ),
+      );
+
+      if (await newDir.exists()) {
+        Logger.d('新词典目录已存在，跳过迁移', tag: 'DictionaryManager');
+        await prefs.setBool('dicts_migrated_to_app_support', true);
+        return;
+      }
+
+      // 执行迁移
+      Logger.i('开始迁移词典数据: ${oldDir.path} -> ${newDir.path}', tag: 'DictionaryManager');
+      await newDir.create(recursive: true);
+
+      int migratedCount = 0;
+      await for (final entity in oldDir.list(recursive: false)) {
+        if (entity is Directory) {
+          final dictName = path.basename(entity.path);
+          final newDictDir = Directory(path.join(newDir.path, dictName));
+          await newDictDir.create(recursive: true);
+
+          await for (final file in entity.list(recursive: true)) {
+            if (file is File) {
+              final relativePath = file.path.substring(entity.path.length);
+              final newFile = File('${newDictDir.path}$relativePath');
+              await newFile.parent.create(recursive: true);
+              await file.copy(newFile.path);
+            }
+          }
+          migratedCount++;
+        }
+      }
+
+      await prefs.setBool('dicts_migrated_to_app_support', true);
+      Logger.i('词典数据迁移完成，共迁移 $migratedCount 个词典', tag: 'DictionaryManager');
+
+      // 迁移成功后删除旧目录（可选，暂时保留）
+      // await oldDir.delete(recursive: true);
+    } catch (e) {
+      Logger.e('词典数据迁移失败: $e', tag: 'DictionaryManager', error: e);
     }
   }
 
@@ -196,6 +274,13 @@ class DictionaryManager {
       }
     }
 
+    // macOS/iOS: 使用 Application Support 目录（沙盒应用可访问）
+    if (Platform.isMacOS || Platform.isIOS) {
+      final appDir = await getApplicationSupportDirectory();
+      return path.join(appDir.path, 'dictionaries');
+    }
+
+    // Windows/Linux: 继续使用 Documents 目录
     final appDir = await getApplicationDocumentsDirectory();
     return path.join(appDir.path, 'easydict');
   }

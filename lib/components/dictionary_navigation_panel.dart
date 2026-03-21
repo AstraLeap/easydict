@@ -3,7 +3,7 @@ import '../data/models/dictionary_entry_group.dart';
 import '../data/database_service.dart';
 import 'dictionary_logo.dart';
 import '../core/logger.dart';
-import 'component_renderer.dart';
+import 'rendering/formatted_text_parser.dart';
 import '../services/dictionary_manager.dart';
 import '../core/utils/language_utils.dart';
 
@@ -781,6 +781,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       'phrase', // toJson() 输出 'phrase'，不生成目录
       'phrases', // 原始 JSON 中的 'phrases' 字段，已被识别为 phrase 元素
       'data',
+      'groups',
       'hiddenLanguages',
       'hidden_languages',
     ];
