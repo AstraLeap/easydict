@@ -1137,3 +1137,135 @@ class _KeyboardAwareBottomBarState extends State<_KeyboardAwareBottomBar> {
     );
   }
 }
+
+/// 面包屑项数据
+class _BreadcrumbItem {
+  final String label;
+  final bool isActive;
+  final VoidCallback? onTap;
+
+  const _BreadcrumbItem({
+    required this.label,
+    required this.isActive,
+    this.onTap,
+  });
+}
+
+/// 统一的组面包屑导航栏组件
+class _GroupBreadcrumbBar extends StatelessWidget {
+  final EdgeInsets margin;
+  final List<_BreadcrumbItem> items;
+  final bool showCloseButton;
+  final String? trailingEntryHeadword;
+  final VoidCallback? onClose;
+
+  const _GroupBreadcrumbBar({
+    required this.margin,
+    required this.items,
+    this.showCloseButton = true,
+    this.trailingEntryHeadword,
+    this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: margin,
+      child: Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                for (int i = 0; i < items.length; i++) ...[
+                  if (i > 0)
+                    Icon(
+                      Icons.chevron_right,
+                      size: 14,
+                      color: colorScheme.outline,
+                    ),
+                  _buildBreadcrumbChip(items[i], colorScheme),
+                ],
+                if (trailingEntryHeadword != null) ...[
+                  Icon(
+                    Icons.chevron_right,
+                    size: 14,
+                    color: colorScheme.outline,
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colorScheme.tertiaryContainer.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: colorScheme.outline.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      trailingEntryHeadword!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (showCloseButton)
+            IconButton(
+              onPressed: onClose,
+              icon: Icon(
+                Icons.close,
+                size: 18,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              tooltip: context.t.common.back,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreadcrumbChip(_BreadcrumbItem item, ColorScheme colorScheme) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: item.isActive
+                ? colorScheme.primaryContainer.withOpacity(0.7)
+                : colorScheme.secondaryContainer.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: colorScheme.outline.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            item.label,
+            style: TextStyle(
+              fontSize: 12,
+              color: item.isActive
+                  ? colorScheme.onPrimaryContainer
+                  : colorScheme.onSecondaryContainer,
+              fontWeight: item.isActive ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

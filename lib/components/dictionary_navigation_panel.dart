@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../core/constants/entry_keys.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/database_service.dart';
 import 'dictionary_logo.dart';
+import '../core/constants/entry_keys.dart';
 import '../core/logger.dart';
 import 'rendering/formatted_text_parser.dart';
 import '../services/dictionary_manager.dart';
@@ -761,37 +763,13 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
     // 3. 添加 boards 章节（从 entryJson 中获取，排除已渲染的key）
     final entryJson = entry.toJson();
-    final renderedKeys = const [
-      'id',
-      'entry_id',
-      'dict_id',
-      'version',
-      'headword',
-      'entry_type',
-      'page',
-      'section',
-      'tags',
-      'certifications',
-      'frequency',
-      'etymology',
-      'pronunciation',
-      'phonetic', // 根节点 phonetic 不生成目录
-      'sense',
-      'sense_group',
-      'phrase', // toJson() 输出 'phrase'，不生成目录
-      'phrases', // 原始 JSON 中的 'phrases' 字段，已被识别为 phrase 元素
-      'data',
-      'groups',
-      'hiddenLanguages',
-      'hidden_languages',
-    ];
 
     for (final jsonEntry in entryJson.entries) {
       final key = jsonEntry.key;
       final value = jsonEntry.value;
 
       // 跳过已渲染的key
-      if (renderedKeys.contains(key)) continue;
+      if (kExcludedEntryKeys.contains(key)) continue;
       // 跳过null值
       if (value == null) continue;
       // 跳过空列表

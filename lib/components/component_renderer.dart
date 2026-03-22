@@ -13,9 +13,10 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as path;
 import 'package:visibility_detector/visibility_detector.dart';
 
+import '../core/constants/entry_keys.dart' show kExcludedEntryKeys;
 import '../core/logger.dart';
 import 'rendering/formatted_text_parser.dart'
-    show parseFormattedText, FormattedTextResult;
+    show parseFormattedText, FormattedTextResult, kRubySpacingRatio;
 import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
@@ -817,20 +818,14 @@ void _processRubySegment({
   final baseText = segment.formattedText ?? '';
   final rubyText = segment.rubyText ?? '';
 
-  Logger.d(
-    '_processRubySegment: baseText=$baseText, rubyText=$rubyText',
-    tag: 'Ruby',
-  );
-
   if (baseText.isEmpty) return;
 
   // Ruby 文本的基础字体大小
   final baseFontSize = baseStyle.fontSize ?? 14.0;
   // 振假名字体大小为基础字体的 50%
   final rubyFontSize = baseFontSize * 0.5;
-
-  // 假名与汉字之间的间距
-  const rubySpacing = 1.0;
+  // 假名与汉字之间的间距（基于字体大小动态计算）
+  final rubySpacing = baseFontSize * kRubySpacingRatio;
 
   spans.add(
     WidgetSpan(
@@ -871,11 +866,6 @@ class _RubyTextLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Logger.d(
-      '_RubyTextLayout.build: onShowMenu=$onShowMenu, baseText=$baseText',
-      tag: 'Ruby',
-    );
-    // 创建振假名widget
     Widget rubyWidget = RubyLayout(
       rubyFontSize: rubyFontSize,
       rubySpacing: rubySpacing,
@@ -884,27 +874,13 @@ class _RubyTextLayout extends StatelessWidget {
       rubyText: rubyText,
     );
 
-    // 如果有 onShowMenu 回调，添加右键事件处理
     if (onShowMenu != null) {
       rubyWidget = Listener(
         onPointerDown: (event) {
-          Logger.d(
-            'Ruby Listener onPointerDown: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
-            tag: 'Ruby',
-          );
-          // 检查是否是右键（桌面端）
           if (event.buttons == kSecondaryMouseButton) {
-            Logger.d('Ruby right-click detected, calling onShowMenu', tag: 'Ruby');
             onShowMenu!(event.position, baseText);
           }
         },
-        child: rubyWidget,
-      );
-    } else {
-      Logger.d('_RubyTextLayout: onShowMenu is null, using IgnorePointer', tag: 'Ruby');
-      // 如果没有回调，使用 IgnorePointer 让事件穿透
-      rubyWidget = IgnorePointer(
-        ignoring: true,
         child: rubyWidget,
       );
     }
@@ -5428,10 +5404,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       color: color,
     ).copyWith(fontSize: 12);
 
-    // 简写标签：Synonym -> syn, Antonym -> ant, Related -> rlt
+    // 简写标签：Synonym -> syn, Antonym -> opp, Related -> rlt
     final shortLabel = label == 'Synonym'
         ? 'syn'
-        : (label == 'Antonym' ? 'ant' : 'rlt');
+        : (label == 'Antonym' ? 'opp' : 'rlt');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -5447,7 +5423,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             '$shortLabel: ',
             style: textStyle.copyWith(fontWeight: FontWeight.w600),
           ),
-          // 每个词都可以点击跳转查词
+          // 每个词都可以点击跳转查词，支持右键菜单
           ...words.asMap().entries.map((entry) {
             final index = entry.key;
             final word = entry.value;
@@ -5455,14 +5431,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                InkWell(
-                  onTap: () => _handleLinkTap(context, word),
-                  mouseCursor: SystemMouseCursors.click,
-                  child: Text(
-                    word,
-                    style: textStyle.copyWith(
-                      decoration: TextDecoration.underline,
-                      decorationColor: color.withValues(alpha: 0.5),
+                Listener(
+                  onPointerDown: (event) {
+                    if (event.buttons == kSecondaryMouseButton) {
+                      _showWordContextMenu(context, word, event.position);
+                    }
+                  },
+                  child: InkWell(
+                    onTap: () => _handleLinkTap(context, word),
+                    mouseCursor: SystemMouseCursors.click,
+                    child: Text(
+                      word,
+                      style: textStyle.copyWith(
+                        decoration: TextDecoration.underline,
+                        decorationColor: color.withValues(alpha: 0.5),
+                      ),
                     ),
                   ),
                 ),
@@ -5473,6 +5456,50 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ],
       ),
     );
+  }
+
+  /// 显示词汇右键菜单
+  void _showWordContextMenu(BuildContext context, String word, Offset position) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        0,
+        0,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'search',
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(context.t.settings.actionLabel.search),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'copy',
+          child: Row(
+            children: [
+              Icon(Icons.copy, size: 18, color: colorScheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Text(context.t.common.copy),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'search') {
+        _handleLinkTap(context, word);
+      } else if (value == 'copy') {
+        Clipboard.setData(ClipboardData(text: word));
+        showToast(context, context.t.entry.copiedToClipboard);
+      }
+    });
   }
 
   /// 创建统一的手势识别器，支持点击和右键
@@ -6528,29 +6555,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   // 已单独渲染的 key 列表，这些 key 不会出现在 _buildRemainingBoards 中
-  static const List<String> _renderedKeys = [
-    'id',
-    'entry_id',
-    'dict_id',
-    'version',
-    'headword',
-    'headline', // headline 在 _buildWord 中作为标题渲染，不应再渲染为 board
-    'links', // links 用于索引，不需要渲染
-    'entry_type',
-    'page',
-    'section',
-    'tags',
-    'certifications',
-    'frequency',
-    'pronunciation',
-    'phonetic', // 根节点 phonetic 不单独渲染
-    'sense',
-    'sense_group',
-    'phrases', // 唯一正确字段名，由 _buildPhrases 处理
-    'data', // data 单独渲染
-    'clob', // clob 单独渲染
-    'groups', // groups 用于索引，不需要渲染
-  ];
+  // 使用共享常量，确保与 dictionary_navigation_panel 保持一致
+  static const List<String> _renderedKeys = kExcludedEntryKeys;
 
   /// 渲染 data（如果存在），在 sense 之前显示
   Widget _buildDataIfExist(BuildContext context) {

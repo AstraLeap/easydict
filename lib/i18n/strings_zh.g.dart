@@ -235,6 +235,12 @@ class TranslationsCommonZh {
 
 	/// zh: '选择语言'
 	String get selectLanguage => '选择语言';
+
+	/// zh: '展开'
+	String get expand => '展开';
+
+	/// zh: '折叠'
+	String get collapse => '折叠';
 }
 
 // Path: settings
@@ -2585,6 +2591,8 @@ extension on Translations {
 			'common.neverAskAgain' => '不再提示',
 			'common.redo' => '重做',
 			'common.selectLanguage' => '选择语言',
+			'common.expand' => '展开',
+			'common.collapse' => '折叠',
 			'settings.title' => '设置',
 			'settings.cloudService' => '云服务',
 			'settings.dictionaryManager' => '词典管理',
@@ -3044,10 +3052,10 @@ extension on Translations {
 			'dict.downloadFailed' => '下载失败',
 			'dict.tooltipUpdateJson' => '更新JSON',
 			'dict.tooltipReplaceFile' => '替换文件',
-			'dict.tooltipPushUpdate' => '推送更新',
-			'dict.tooltipDelete' => '删除',
 			_ => null,
 		} ?? switch (path) {
+			'dict.tooltipPushUpdate' => '推送更新',
+			'dict.tooltipDelete' => '删除',
 			'dict.tooltipUpdate' => '更新词典',
 			'dict.tooltipDownload' => '下载词典',
 			'dict.daysAgo' => ({required Object n}) => '${n}天前',

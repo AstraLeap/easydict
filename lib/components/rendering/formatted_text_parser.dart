@@ -96,8 +96,9 @@ const int kAiTextMarkBackgroundAlpha = 115;
 /// Font size scale factor for ruby text (furigana).
 const double kRubyFontScale = 0.5;
 
-/// Spacing between ruby text and base text.
-const double kRubySpacing = 0.0;
+/// Spacing ratio between ruby text and base text (as fraction of base font size).
+/// This ensures the visual spacing scales proportionally with font size.
+const double kRubySpacingRatio = 0.25;
 
 /// Known language codes for validation.
 const Set<String> kKnownLanguageCodes = {
@@ -795,13 +796,9 @@ class _FormattedTextParser {
       return FormattedTextResult.hiddenResult;
     }
 
-    Logger.d('_FormattedTextParser.parse: text=$text, onShowMenu=${config.onShowMenu}', tag: 'Ruby');
-
     final effectiveBaseStyle = _resolveEffectiveStyle(baseStyle, config);
     final ctx = _ParseContext(text);
     final segments = SegmentParser.parse(ctx);
-
-    Logger.d('_FormattedTextParser.parse: segments count=${segments.length}', tag: 'Ruby');
 
     final processor = _SegmentProcessor(
       baseStyle: effectiveBaseStyle,
@@ -809,7 +806,6 @@ class _FormattedTextParser {
     );
 
     for (final segment in segments) {
-      Logger.d('_FormattedTextParser.parse: processing segment type=${segment.runtimeType}', tag: 'Ruby');
       segment.accept(processor);
     }
 
@@ -927,16 +923,12 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
   void visitRuby(_RubySegment segment) {
     final baseFontSize = baseStyle.fontSize ?? kDefaultFontSize;
     final rubyFontSize = baseFontSize * kRubyFontScale;
-
-    Logger.d(
-      'visitRuby: baseText=${segment.baseText}, rubyText=${segment.rubyText}, onShowMenu=${config.onShowMenu}',
-      tag: 'Ruby',
-    );
+    final rubySpacing = baseFontSize * kRubySpacingRatio;
 
     // 创建振假名widget
     Widget rubyWidget = RubyLayout(
       rubyFontSize: rubyFontSize,
-      rubySpacing: kRubySpacing,
+      rubySpacing: rubySpacing,
       baseText: segment.baseText,
       baseStyle: baseStyle,
       rubyText: segment.rubyText,
@@ -946,13 +938,7 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     if (config.onShowMenu != null) {
       rubyWidget = Listener(
         onPointerDown: (event) {
-          Logger.d(
-            'Ruby Listener onPointerDown: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
-            tag: 'Ruby',
-          );
-          // 检查是否是右键（桌面端）或长按（移动端）
           if (event.buttons == kSecondaryMouseButton) {
-            Logger.d('Ruby right-click detected, calling onShowMenu', tag: 'Ruby');
             config.onShowMenu!(event.position, segment.baseText);
           }
         },

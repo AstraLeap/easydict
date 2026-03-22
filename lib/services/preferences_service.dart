@@ -700,4 +700,27 @@ class PreferencesService {
     final p = await prefs;
     await p.setBool(_kMinimizeToTray, value);
   }
+
+  static const String _kGroupDetailSubGroupsExpanded = 'group_detail_subgroups_expanded';
+  static const String _kGroupDetailEntriesExpanded = 'group_detail_entries_expanded';
+
+  Future<bool> getGroupDetailSubGroupsExpanded() async {
+    final p = await prefs;
+    return p.getBool(_kGroupDetailSubGroupsExpanded) ?? false;
+  }
+
+  Future<void> setGroupDetailSubGroupsExpanded(bool expanded) async {
+    final p = await prefs;
+    await p.setBool(_kGroupDetailSubGroupsExpanded, expanded);
+  }
+
+  Future<bool> getGroupDetailEntriesExpanded() async {
+    final p = await prefs;
+    return p.getBool(_kGroupDetailEntriesExpanded) ?? false;
+  }
+
+  Future<void> setGroupDetailEntriesExpanded(bool expanded) async {
+    final p = await prefs;
+    await p.setBool(_kGroupDetailEntriesExpanded, expanded);
+  }
 }
