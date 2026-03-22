@@ -1815,20 +1815,66 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     ColorScheme colorScheme,
     double hPad,
   ) {
+    if (groupPaths.isEmpty) return const SizedBox.shrink();
+
+    final longestPaths = <group_model.GroupPath>[];
+    for (final path in groupPaths) {
+      bool isContained = false;
+      for (final other in groupPaths) {
+        if (identical(path, other)) continue;
+        if (_isPathContainedIn(path, other)) {
+          isContained = true;
+          break;
+        }
+      }
+      if (!isContained) {
+        longestPaths.add(path);
+      }
+    }
+
+    final items = <_BreadcrumbItem>[];
+    for (int pathIndex = 0; pathIndex < longestPaths.length; pathIndex++) {
+      final groupPath = longestPaths[pathIndex];
+      if (pathIndex > 0) {
+        items.add(_BreadcrumbItem(
+          label: '|',
+          isActive: false,
+          onTap: null,
+        ));
+      }
+
+      final path = groupPath.path;
+      for (int i = 0; i < path.length; i++) {
+        final group = path[i];
+        items.add(_BreadcrumbItem(
+          label: group.name,
+          isActive: false,
+          onTap: group.groupId != null
+              ? () => _navigateToGroup(entryId, dictId, group.groupId!)
+              : null,
+        ));
+      }
+    }
+
     return _GroupBreadcrumbBar(
       margin: EdgeInsets.only(left: hPad, right: hPad, top: 4, bottom: 12),
-      items: groupPaths.map((groupPath) {
-        final currentGroup = groupPath.current;
-        return _BreadcrumbItem(
-          label: currentGroup?.name ?? '',
-          isActive: false,
-          onTap: currentGroup?.groupId != null
-              ? () => _navigateToGroup(entryId, dictId, currentGroup!.groupId!)
-              : null,
-        );
-      }).toList(),
+      items: items,
       showCloseButton: false,
     );
+  }
+
+  /// 检查 path1 是否被包含在 path2 中（path1 是 path2 的子路径）
+  bool _isPathContainedIn(
+    group_model.GroupPath path1,
+    group_model.GroupPath path2,
+  ) {
+    if (path1.path.length >= path2.path.length) return false;
+    for (int i = 0; i < path1.path.length; i++) {
+      if (path1.path[i].groupId != path2.path[i].groupId) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// 构建组面包屑导航栏（组详情/组内词条状态）
@@ -2193,28 +2239,28 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           children: [
             Icon(
               Icons.folder_outlined,
-              size: 16,
+              size: 20,
               color: colorScheme.primary,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Text(
               context.t.groups.subGroups,
               style: Theme.of(context)
                   .textTheme
-                  .titleSmall
+                  .titleMedium
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 '${subGroups.length}',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: colorScheme.onPrimaryContainer,
                 ),
               ),
@@ -2269,31 +2315,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.2),
-        ),
-      ),
+      margin: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                Icons.folder_outlined,
-                size: 16,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   group.name,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: colorScheme.onSurface,
                   ),
@@ -2301,15 +2333,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               ),
               if (group.subGroupCount > 0 || group.itemCount > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     '${group.subGroupCount + group.itemCount}',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       color: colorScheme.onPrimaryContainer,
                     ),
                   ),
@@ -2347,9 +2379,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 return Padding(
                   padding: const EdgeInsets.only(top: 8, left: 24),
                   child: Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: children.take(5).map((child) {
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: children.map((child) {
                       return Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -2360,36 +2392,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                           },
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: colorScheme.surfaceContainerHighest,
+                              border: Border.all(
+                                color: colorScheme.outline.withOpacity(0.4),
+                              ),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.folder_outlined,
-                                  size: 12,
-                                  color: colorScheme.primary.withOpacity(0.7),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  child.name,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                if (child.subGroupCount > 0 || child.itemCount > 0)
-                                  Text(
-                                    ' (${child.subGroupCount + child.itemCount})',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: colorScheme.outline,
-                                    ),
-                                  ),
-                              ],
+                            child: Text(
+                              '${child.name}${child.subGroupCount > 0 || child.itemCount > 0 ? ' (${child.subGroupCount + child.itemCount})' : ''}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: colorScheme.onSurface,
+                              ),
                             ),
                           ),
                         ),
@@ -2472,41 +2487,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: colorScheme.outline.withOpacity(0.2),
+              color: colorScheme.outline.withOpacity(0.4),
             ),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.folder_outlined,
-                size: 14,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                group.name,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              if (group.subGroupCount > 0 || group.itemCount > 0) ...[
-                const SizedBox(width: 4),
-                Text(
-                  '(${group.subGroupCount + group.itemCount})',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: colorScheme.outline,
-                  ),
-                ),
-              ],
-            ],
+          child: Text(
+            '${group.name}${group.subGroupCount > 0 || group.itemCount > 0 ? ' (${group.subGroupCount + group.itemCount})' : ''}',
+            style: TextStyle(
+              fontSize: 13,
+              color: colorScheme.onSurface,
+            ),
           ),
         ),
       ),
@@ -2541,28 +2534,28 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           children: [
             Icon(
               Icons.article_outlined,
-              size: 16,
+              size: 20,
               color: colorScheme.primary,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Text(
               context.t.groups.entries,
               style: Theme.of(context)
                   .textTheme
-                  .titleSmall
+                  .titleMedium
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 '${items.length}',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: colorScheme.onPrimaryContainer,
                 ),
               ),
@@ -2793,37 +2786,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: item.anchor != null && item.anchor!.isNotEmpty
-                ? colorScheme.tertiaryContainer.withOpacity(0.5)
-                : colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: colorScheme.outline.withOpacity(0.2),
+              color: colorScheme.outline.withOpacity(0.4),
             ),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                item.anchor != null && item.anchor!.isNotEmpty
-                    ? Icons.bookmark_outline
-                    : Icons.article_outlined,
-                size: 14,
-                color: item.anchor != null && item.anchor!.isNotEmpty
-                    ? colorScheme.tertiary
-                    : colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                headword,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
+          child: Text(
+            headword,
+            style: TextStyle(
+              fontSize: 13,
+              color: colorScheme.onSurface,
+            ),
           ),
         ),
       ),

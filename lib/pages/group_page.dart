@@ -230,61 +230,60 @@ class _GroupPageState extends State<GroupPage> {
   Widget _buildBreadcrumb() {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(
-              Icons.location_on_outlined,
-              size: 18,
-              color: colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: [
-                  for (int i = 0; i < _breadcrumb.length; i++) ...[
-                    if (i > 0)
-                      Icon(
-                        Icons.chevron_right,
-                        size: 16,
-                        color: colorScheme.outline,
-                      ),
-                    InkWell(
-                      onTap: i == _breadcrumb.length - 1
-                          ? null
-                          : () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => GroupPage(
-                                    dictId: widget.dictId,
-                                    groupId: _breadcrumb[i].groupId!,
-                                  ),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Icon(
+            Icons.location_on_outlined,
+            size: 16,
+            color: colorScheme.primary,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (int i = 0; i < _breadcrumb.length; i++) ...[
+                  if (i > 0)
+                    Icon(
+                      Icons.chevron_right,
+                      size: 14,
+                      color: colorScheme.outline,
+                    ),
+                  InkWell(
+                    onTap: i == _breadcrumb.length - 1
+                        ? null
+                        : () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => GroupPage(
+                                  dictId: widget.dictId,
+                                  groupId: _breadcrumb[i].groupId!,
                                 ),
-                              );
-                            },
-                      child: Text(
-                        _breadcrumb[i].name,
-                        style: TextStyle(
-                          color: i == _breadcrumb.length - 1
-                              ? colorScheme.onSurface
-                              : colorScheme.primary,
-                          fontWeight: i == _breadcrumb.length - 1
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
+                              ),
+                            );
+                          },
+                    child: Text(
+                      _breadcrumb[i].name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: i == _breadcrumb.length - 1
+                            ? colorScheme.primary
+                            : colorScheme.onSurface,
+                        fontWeight: i == _breadcrumb.length - 1
+                            ? FontWeight.w600
+                            : FontWeight.normal,
                       ),
                     ),
-                  ],
+                  ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
