@@ -54,7 +54,9 @@
     "notNow": "暂不",
     "neverAskAgain": "不再提示",
     "redo": "重做",
-    "selectLanguage": "选择语言"
+    "selectLanguage": "选择语言",
+    "expand": "展开",
+    "collapse": "折叠"
   },
   "settings": {
     "title": "设置",

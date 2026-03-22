@@ -233,6 +233,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   final Map<String, (group_model.DictionaryGroup, List<group_model.DictionaryGroup>, Map<int, String>)>
   _groupDataCache = {};
 
+  /// 子组列表展开状态
+  bool _subGroupsExpanded = false;
+
+  /// 词条列表展开状态
+  bool _entriesExpanded = false;
+
+  /// 子组展开状态缓存（存储子组的孙子组数据）
+  final Map<int, List<group_model.DictionaryGroup>> _subGroupChildrenCache = {};
+
   @override
   void initState() {
     super.initState();
@@ -283,8 +292,21 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       await _loadFavoriteStatus();
       await _loadToolbarConfig();
       await _loadEntryGroups();
+      await _loadExpansionStates();
     });
     // AI聊天历史只在需要时加载，不在初始化时加载
+  }
+
+  /// 加载展开状态
+  Future<void> _loadExpansionStates() async {
+    final subGroupsExpanded = await _preferencesService.getGroupDetailSubGroupsExpanded();
+    final entriesExpanded = await _preferencesService.getGroupDetailEntriesExpanded();
+    if (mounted) {
+      setState(() {
+        _subGroupsExpanded = subGroupsExpanded;
+        _entriesExpanded = entriesExpanded;
+      });
+    }
   }
 
   /// 加载当前词条所属的组信息
@@ -1793,69 +1815,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     ColorScheme colorScheme,
     double hPad,
   ) {
-    return Container(
-      margin: EdgeInsets.only(left: hPad, right: hPad, bottom: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        children: groupPaths.map((groupPath) {
-          return _buildGroupPathChip(entryId, dictId, groupPath, colorScheme);
-        }).toList(),
-      ),
-    );
-  }
-
-  /// 构建组路径芯片（可点击进入该组）
-  Widget _buildGroupPathChip(
-    String entryId,
-    String dictId,
-    group_model.GroupPath groupPath,
-    ColorScheme colorScheme,
-  ) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          final currentGroup = groupPath.current;
-          if (currentGroup?.groupId != null) {
-            _navigateToGroup(entryId, dictId, currentGroup!.groupId!);
-          }
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: colorScheme.secondaryContainer.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: colorScheme.outline.withOpacity(0.3),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.folder_outlined,
-                size: 14,
-                color: colorScheme.onSecondaryContainer,
-              ),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  groupPath.current?.name ?? '',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSecondaryContainer,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return _GroupBreadcrumbBar(
+      margin: EdgeInsets.only(left: hPad, right: hPad, top: 4, bottom: 12),
+      items: groupPaths.map((groupPath) {
+        final currentGroup = groupPath.current;
+        return _BreadcrumbItem(
+          label: currentGroup?.name ?? '',
+          isActive: false,
+          onTap: currentGroup?.groupId != null
+              ? () => _navigateToGroup(entryId, dictId, currentGroup!.groupId!)
+              : null,
+        );
+      }).toList(),
+      showCloseButton: false,
     );
   }
 
@@ -1868,86 +1840,29 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     double hPad,
   ) {
     final breadcrumb = navState.breadcrumb;
+    final isGroupEntry = navState.mode == EntryNavMode.groupEntry;
 
-    return Container(
-      margin: EdgeInsets.only(left: hPad, right: hPad, bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                for (int i = 0; i < breadcrumb.length; i++) ...[
-                  if (i > 0)
-                    Icon(
-                      Icons.chevron_right,
-                      size: 14,
-                      color: colorScheme.outline,
-                    ),
-                  InkWell(
-                    onTap: i == breadcrumb.length - 1
-                        ? null
-                        : () {
-                            final group = breadcrumb[i];
-                            if (group.groupId != null) {
-                              _navigateToGroup(entryId, dictId, group.groupId!);
-                            }
-                          },
-                    child: Text(
-                      breadcrumb[i].name,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: i == breadcrumb.length - 1
-                            ? colorScheme.onSurface
-                            : colorScheme.primary,
-                        fontWeight: i == breadcrumb.length - 1
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ],
-                // 如果是组内词条模式，追加显示词条名
-                if (navState.mode == EntryNavMode.groupEntry &&
-                    navState.viewingEntryHeadword != null) ...[
-                  Icon(
-                    Icons.chevron_right,
-                    size: 14,
-                    color: colorScheme.outline,
-                  ),
-                  Text(
-                    navState.viewingEntryHeadword!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colorScheme.tertiary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          // 返回按钮
-          IconButton(
-            onPressed: () => _navigateBack(entryId, navState),
-            icon: Icon(
-              Icons.close,
-              size: 18,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            tooltip: context.t.common.back,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
+    final items = <_BreadcrumbItem>[];
+    for (int i = 0; i < breadcrumb.length; i++) {
+      items.add(_BreadcrumbItem(
+        label: breadcrumb[i].name,
+        isActive: isGroupEntry ? false : i == breadcrumb.length - 1,
+        onTap: (isGroupEntry || i < breadcrumb.length - 1)
+            ? () {
+                final group = breadcrumb[i];
+                if (group.groupId != null) {
+                  _navigateToGroup(entryId, dictId, group.groupId!);
+                }
+              }
+            : null,
+      ));
+    }
+
+    return _GroupBreadcrumbBar(
+      margin: EdgeInsets.only(left: hPad, right: hPad, top: 4, bottom: 12),
+      items: items,
+      trailingEntryHeadword: isGroupEntry ? navState.viewingEntryHeadword : null,
+      onClose: () => _navigateBack(entryId, navState),
     );
   }
 
@@ -2207,32 +2122,35 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     if (currentGroup == null) {
       return Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Center(child: Text(context.t.groups.loadFailed)),
       );
     }
 
     final items = currentGroup.itemList;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 组描述
-        if (currentGroup.description != null &&
-            currentGroup.description!.isNotEmpty) ...[
-          _buildGroupDescription(currentGroup),
-          const SizedBox(height: 12),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 组描述
+          if (currentGroup.description != null &&
+              currentGroup.description!.isNotEmpty) ...[
+            _buildGroupDescription(currentGroup),
+            const SizedBox(height: 12),
+          ],
 
-        // 子组列表
-        if (subGroups.isNotEmpty) ...[
-          _buildSubGroupsSection(entryId, dictId, subGroups),
-          const SizedBox(height: 12),
-        ],
+          // 子组列表
+          if (subGroups.isNotEmpty) ...[
+            _buildSubGroupsSection(entryId, dictId, subGroups),
+            const SizedBox(height: 12),
+          ],
 
-        // 词条列表
-        _buildGroupEntriesSection(entryId, dictId, items, entryHeadwords),
-      ],
+          // 词条列表
+          _buildGroupEntriesSection(entryId, dictId, items, entryHeadwords),
+        ],
+      ),
     );
   }
 
@@ -2301,17 +2219,238 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 ),
               ),
             ),
+            const Spacer(),
+            _buildExpandButton(
+              isExpanded: _subGroupsExpanded,
+              onTap: () async {
+                setState(() {
+                  _subGroupsExpanded = !_subGroupsExpanded;
+                });
+                await _preferencesService.setGroupDetailSubGroupsExpanded(_subGroupsExpanded);
+              },
+            ),
           ],
         ),
         const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: subGroups.map((group) {
-            return _buildSubGroupChip(entryId, dictId, group);
-          }).toList(),
-        ),
+        if (_subGroupsExpanded)
+          _buildExpandedSubGroupsList(entryId, dictId, subGroups)
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: subGroups.map((group) {
+              return _buildSubGroupChip(entryId, dictId, group);
+            }).toList(),
+          ),
       ],
+    );
+  }
+
+  /// 构建展开状态的子组列表
+  Widget _buildExpandedSubGroupsList(
+    String entryId,
+    String dictId,
+    List<group_model.DictionaryGroup> subGroups,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: subGroups.map((group) {
+        return _buildExpandedSubGroupItem(entryId, dictId, group);
+      }).toList(),
+    );
+  }
+
+  /// 构建展开状态的子组项
+  Widget _buildExpandedSubGroupItem(
+    String entryId,
+    String dictId,
+    group_model.DictionaryGroup group,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.folder_outlined,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  group.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              if (group.subGroupCount > 0 || group.itemCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${group.subGroupCount + group.itemCount}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    if (group.groupId != null) {
+                      _navigateToGroup(entryId, dictId, group.groupId!);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      size: 14,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (group.subGroupCount > 0 && group.groupId != null)
+            FutureBuilder<List<group_model.DictionaryGroup>>(
+              future: _loadSubGroupChildren(dictId, group.groupId!),
+              builder: (context, snapshot) {
+                final children = snapshot.data;
+                if (children == null || children.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 24),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: children.take(5).map((child) {
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            if (child.groupId != null) {
+                              _navigateToGroup(entryId, dictId, child.groupId!);
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.folder_outlined,
+                                  size: 12,
+                                  color: colorScheme.primary.withOpacity(0.7),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  child.name,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                if (child.subGroupCount > 0 || child.itemCount > 0)
+                                  Text(
+                                    ' (${child.subGroupCount + child.itemCount})',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: colorScheme.outline,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 加载子组的孙子组
+  Future<List<group_model.DictionaryGroup>> _loadSubGroupChildren(
+    String dictId,
+    int groupId,
+  ) async {
+    if (_subGroupChildrenCache.containsKey(groupId)) {
+      return _subGroupChildrenCache[groupId]!;
+    }
+    final children = await _groupService.getSubGroups(dictId, groupId);
+    _subGroupChildrenCache[groupId] = children;
+    return children;
+  }
+
+  /// 构建展开/折叠按钮
+  Widget _buildExpandButton({
+    required bool isExpanded,
+    required VoidCallback onTap,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isExpanded ? context.t.common.collapse : context.t.common.expand,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                isExpanded ? Icons.unfold_less : Icons.unfold_more,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2428,19 +2567,205 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 ),
               ),
             ),
+            const Spacer(),
+            _buildExpandButton(
+              isExpanded: _entriesExpanded,
+              onTap: () async {
+                setState(() {
+                  _entriesExpanded = !_entriesExpanded;
+                });
+                await _preferencesService.setGroupDetailEntriesExpanded(_entriesExpanded);
+              },
+            ),
           ],
         ),
         const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: items.map((item) {
-            final headword = entryHeadwords[item.entryId] ?? '#${item.entryId}';
-            return _buildGroupEntryChip(entryId, dictId, item, headword);
-          }).toList(),
-        ),
+        if (_entriesExpanded)
+          _buildExpandedEntriesList(entryId, dictId, items, entryHeadwords)
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: items.map((item) {
+              final headword = entryHeadwords[item.entryId] ?? '#${item.entryId}';
+              return _buildGroupEntryChip(entryId, dictId, item, headword);
+            }).toList(),
+          ),
       ],
     );
+  }
+
+  /// 构建展开状态的词条列表
+  Widget _buildExpandedEntriesList(
+    String entryId,
+    String dictId,
+    List<group_model.GroupItem> items,
+    Map<int, String> entryHeadwords,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items.map((item) {
+        final headword = entryHeadwords[item.entryId] ?? '#${item.entryId}';
+        return _buildExpandedEntryItem(entryId, dictId, item, headword);
+      }).toList(),
+    );
+  }
+
+  /// 构建展开状态的词条项
+  Widget _buildExpandedEntryItem(
+    String entryId,
+    String dictId,
+    group_model.GroupItem item,
+    String headword,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final navState = _entryNavStates[entryId] ?? const EntryNavState();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                item.anchor != null && item.anchor!.isNotEmpty
+                    ? Icons.bookmark_outline
+                    : Icons.article_outlined,
+                size: 16,
+                color: item.anchor != null && item.anchor!.isNotEmpty
+                    ? colorScheme.tertiary
+                    : colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  headword,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              if (item.anchor != null && item.anchor!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    item.anchor!,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _entryNavStates[entryId] = navState.copyWith(
+                        mode: EntryNavMode.groupEntry,
+                        viewingEntryId: item.entryId,
+                        viewingEntryHeadword: headword,
+                      );
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      size: 14,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          FutureBuilder<DictionaryEntry?>(
+            future: _loadEntryFromDatabase(dictId, item.entryId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 40,
+                  child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+                );
+              }
+              final entry = snapshot.data;
+              if (entry == null) {
+                return Text(
+                  context.t.groups.noEntries,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.outline,
+                  ),
+                );
+              }
+              return ComponentRenderer(
+                key: ValueKey('expanded_entry_${entry.id}'),
+                entry: entry,
+                topPadding: 0,
+                onElementTap: (path, label) {
+                  _handleTranslationTap(entry, path, label);
+                },
+                onEditElement: (path, label) {
+                  _showJsonElementEditorFromPath(entry, path);
+                },
+                onAiAsk: (path, label) {
+                  _handleAiElementTap(entry, path, label);
+                },
+                onTranslationInsert: (path, newEntry) {
+                  EntryEventBus().emitTranslationInsert(
+                    TranslationInsertEvent(
+                      entryId: entry.id,
+                      path: path,
+                      newEntry: newEntry.toJson(),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 从数据库加载词条
+  Future<DictionaryEntry?> _loadEntryFromDatabase(
+    String dictId,
+    int entryId,
+  ) async {
+    try {
+      final entryJson = await DatabaseService().getEntryJsonById(
+        dictId,
+        entryId.toString(),
+      );
+      if (entryJson != null) {
+        entryJson['dict_id'] = dictId;
+        entryJson['entry_id'] = '${dictId}_$entryId';
+        return DictionaryEntry.fromJson(entryJson);
+      }
+    } catch (e) {
+      Logger.e('Failed to load entry from database: $e', tag: 'EntryDetailPage');
+    }
+    return null;
   }
 
   /// 构建组内词条芯片
@@ -2544,15 +2869,54 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       );
     }
 
-    // 如果找不到词条，显示提示
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Text(
-          context.t.entry.wordNotFound(word: '#$viewingEntryId'),
-          style: TextStyle(color: Theme.of(context).colorScheme.outline),
-        ),
-      ),
+    // 如果当前页面找不到，从数据库加载
+    return FutureBuilder<DictionaryEntry?>(
+      future: _loadEntryFromDatabase(dictId, viewingEntryId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final loadedEntry = snapshot.data;
+        if (loadedEntry != null) {
+          return ComponentRenderer(
+            key: ValueKey('group_entry_${loadedEntry.id}'),
+            entry: loadedEntry,
+            topPadding: 0,
+            onElementTap: (path, label) {
+              _handleTranslationTap(loadedEntry, path, label);
+            },
+            onEditElement: (path, label) {
+              _showJsonElementEditorFromPath(loadedEntry, path);
+            },
+            onAiAsk: (path, label) {
+              _handleAiElementTap(loadedEntry, path, label);
+            },
+            onTranslationInsert: (path, newEntry) {
+              EntryEventBus().emitTranslationInsert(
+                TranslationInsertEvent(
+                  entryId: loadedEntry.id,
+                  path: path,
+                  newEntry: newEntry.toJson(),
+                ),
+              );
+            },
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Text(
+              context.t.entry.wordNotFound(word: '#$viewingEntryId'),
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            ),
+          ),
+        );
+      },
     );
   }
 

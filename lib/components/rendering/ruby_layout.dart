@@ -130,7 +130,10 @@ class RenderRubyLayout extends RenderBox
     )..layout();
 
     _baseTextPainter = TextPainter(
-      text: TextSpan(text: _baseText, style: _baseStyle),
+      text: TextSpan(
+        text: _baseText,
+        style: _baseStyle.copyWith(height: 1.0),
+      ),
       textDirection: TextDirection.ltr,
     )..layout();
 
