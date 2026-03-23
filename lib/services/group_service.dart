@@ -98,8 +98,10 @@ class GroupService {
 
   /// 获取组详情
   Future<DictionaryGroup?> getGroup(String dictId, int groupId) async {
+    Logger.d('getGroup: dictId=$dictId, groupId=$groupId', tag: 'GroupService');
     try {
       final hasTable = await hasGroupsTable(dictId);
+      Logger.d('getGroup: hasGroupsTable=$hasTable', tag: 'GroupService');
       if (!hasTable) return null;
 
       final db = await _dictManager.openDictionaryDatabase(dictId);
@@ -109,10 +111,11 @@ class GroupService {
         whereArgs: [groupId],
         limit: 1,
       );
+      Logger.d('getGroup: query results count=${results.length}', tag: 'GroupService');
       if (results.isEmpty) return null;
       return DictionaryGroup.fromMap(results.first);
-    } catch (e) {
-      Logger.e('获取组详情失败: $e', tag: 'GroupService');
+    } catch (e, stackTrace) {
+      Logger.e('获取组详情失败: $e', tag: 'GroupService', stackTrace: stackTrace);
       return null;
     }
   }

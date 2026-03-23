@@ -1220,16 +1220,16 @@ class _GroupBreadcrumbBar extends StatelessWidget {
             ),
           ),
           if (showCloseButton)
-            IconButton(
-              onPressed: onClose,
-              icon: Icon(
-                Icons.close,
-                size: 18,
-                color: colorScheme.onSurfaceVariant,
+            GestureDetector(
+              onTap: onClose,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.arrow_back,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
-              tooltip: context.t.common.back,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
         ],
       ),

@@ -33,6 +33,7 @@ const List<String> kExcludedEntryKeys = [
   'phrases', // 原始 JSON 中的 'phrases' 字段
   'data',
   'clob', // clob 单独渲染
+  'text', // text 单独渲染
   
   // 索引字段（用于索引，不需要渲染）
   'links',

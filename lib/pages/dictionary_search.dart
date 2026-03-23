@@ -47,9 +47,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   String _selectedGroup = 'auto';
   List<String> _availableGroups = ['auto'];
 
-  // 高级搜索选项
-  bool _usePhoneticSearch = false;
-
   // 按语言独立存储的精确匹配设置
   Map<String, bool> _exactMatchByLanguage = {};
 
@@ -319,7 +316,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final searchResult = await _dbService.getAllEntries(
       word,
       exactMatch: false,
-      usePhoneticSearch: false,
       sourceLanguage: language,
     );
 
@@ -332,7 +328,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         word,
         exactMatch: false,
         biaoyiExactMatch: false,
-        usePhoneticSearch: false,
         group: language,
       );
 
@@ -396,7 +391,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       if (DatabaseService.containsIdeographic(text)) return false;
       return true;
     }
-    const logographic = {'zh', 'ja', 'ko'};
+    const logographic = {'zh', 'jp', 'ko'};
     return !logographic.contains(_selectedGroup);
   }
 
@@ -464,7 +459,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         text,
         sourceLanguage: _selectedGroup,
         exactMatch: _exactMatch,
-        usePhoneticSearch: _usePhoneticSearch,
         biaoyiExactMatch: _biaoyiExactMatch,
         limit: 8,
       );
@@ -565,7 +559,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     setState(() {
       _exactMatch = record.exactMatch;
       _biaoyiExactMatch = record.biaoyiExactMatch;
-      _usePhoneticSearch = record.usePhoneticSearch;
       if (record.group != null) {
         _selectedGroup = record.group!;
       }
@@ -627,13 +620,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       word,
       exactMatch: _exactMatch,
       biaoyiExactMatch: _biaoyiExactMatch,
-      usePhoneticSearch: _usePhoneticSearch,
     );
 
     final searchResult = await _dbService.getAllEntries(
       word,
       exactMatch: _exactMatch,
-      usePhoneticSearch: _usePhoneticSearch,
       sourceLanguage: _selectedGroup,
     );
 
@@ -647,7 +638,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         word,
         exactMatch: _exactMatch,
         biaoyiExactMatch: _biaoyiExactMatch,
-        usePhoneticSearch: _usePhoneticSearch,
         group: _selectedGroup,
       );
       // 更新历史记录
@@ -756,11 +746,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                           // 表意文字（汉字、日文、韩文）：清除不适用的表音选项
                           if (_isLogographicLang(value)) {
                             _exactMatch = false;
-                            _usePhoneticSearch = false;
                           } else {
-                            // 表音文字：清除不适用的简繁区分和读音搜索选项
+                            // 表音文字：清除不适用的简繁区分选项
                             _biaoyiExactMatch = false;
-                            _usePhoneticSearch = false;
                           }
                         });
                         await _advancedSettingsService.setLastSelectedGroup(
@@ -890,9 +878,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                           child: Text(
-                            _usePhoneticSearch
-                                ? context.t.search.phoneticCandidates
-                                : context.t.search.searchResults,
+                            context.t.search.searchResults,
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(
                                   fontWeight: FontWeight.bold,
@@ -1360,8 +1346,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     switch (lang) {
       case 'zh':
         return names.zh;
-      case 'ja':
-        return names.ja;
+      case 'jp':
+        return names.jp;
       case 'ko':
         return names.ko;
       case 'en':
@@ -1386,7 +1372,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   bool _isLogographicLang(String lang) =>
-      lang == 'zh' || lang == 'ja' || lang == 'ko';
+      lang == 'zh' || lang == 'jp' || lang == 'ko';
 
   Widget _buildHistoryView() {
     return GestureDetector(
@@ -1511,7 +1497,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   String _detectLanguage(String text) {
     if (RegExp(r'[\u4e00-\u9fa5]').hasMatch(text)) return 'zh';
-    if (RegExp(r'[\u3040-\u309f\u30a0-\u30ff]').hasMatch(text)) return 'ja';
+    if (RegExp(r'[\u3040-\u309f\u30a0-\u30ff]').hasMatch(text)) return 'jp';
     if (RegExp(r'[\uac00-\ud7af]').hasMatch(text)) return 'ko';
     return 'en';
   }

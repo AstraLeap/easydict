@@ -422,7 +422,7 @@ class PreferencesService {
     'en',
     'zh-hans',
     'zh-hant',
-    'ja',
+    'jp',
     'ko',
     'fr',
     'de',
@@ -701,8 +701,10 @@ class PreferencesService {
     await p.setBool(_kMinimizeToTray, value);
   }
 
-  static const String _kGroupDetailSubGroupsExpanded = 'group_detail_subgroups_expanded';
-  static const String _kGroupDetailEntriesExpanded = 'group_detail_entries_expanded';
+  static const String _kGroupDetailSubGroupsExpanded =
+      'group_detail_subgroups_expanded';
+  static const String _kGroupDetailEntriesExpanded =
+      'group_detail_entries_expanded';
 
   Future<bool> getGroupDetailSubGroupsExpanded() async {
     final p = await prefs;

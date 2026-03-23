@@ -12,14 +12,6 @@ void main() {
       expect(LanguageUtils.standardizeLanguageCode('chi'), 'zh');
     });
 
-    test('should standardize Japanese language code aliases', () {
-      expect(LanguageUtils.standardizeLanguageCode('jp'), 'ja');
-      expect(LanguageUtils.standardizeLanguageCode('JP'), 'ja');
-      expect(LanguageUtils.standardizeLanguageCode('japanese'), 'ja');
-      expect(LanguageUtils.standardizeLanguageCode('JAPANESE'), 'ja');
-      expect(LanguageUtils.standardizeLanguageCode('jpn'), 'ja');
-    });
-
     test('should standardize Korean language code aliases', () {
       expect(LanguageUtils.standardizeLanguageCode('kr'), 'ko');
       expect(LanguageUtils.standardizeLanguageCode('KR'), 'ko');
@@ -39,10 +31,10 @@ void main() {
       expect(LanguageUtils.standardizeLanguageCode('pt-BR'), 'pt');
     });
 
-    test('should return standard ISO 639-1 codes unchanged', () {
+    test('should return standard codes unchanged', () {
       expect(LanguageUtils.standardizeLanguageCode('en'), 'en');
       expect(LanguageUtils.standardizeLanguageCode('zh'), 'zh');
-      expect(LanguageUtils.standardizeLanguageCode('ja'), 'ja');
+      expect(LanguageUtils.standardizeLanguageCode('jp'), 'jp');
       expect(LanguageUtils.standardizeLanguageCode('ko'), 'ko');
       expect(LanguageUtils.standardizeLanguageCode('fr'), 'fr');
       expect(LanguageUtils.standardizeLanguageCode('de'), 'de');
@@ -56,7 +48,7 @@ void main() {
     test('should handle case insensitivity', () {
       expect(LanguageUtils.standardizeLanguageCode('EN'), 'en');
       expect(LanguageUtils.standardizeLanguageCode('ZH'), 'zh');
-      expect(LanguageUtils.standardizeLanguageCode('JA'), 'ja');
+      expect(LanguageUtils.standardizeLanguageCode('JP'), 'jp');
       expect(LanguageUtils.standardizeLanguageCode('KO'), 'ko');
       expect(LanguageUtils.standardizeLanguageCode('FR'), 'fr');
     });
@@ -70,9 +62,7 @@ void main() {
 
   group('LanguageUtils.normalizeSourceLanguage', () {
     test('should use standardizeLanguageCode internally', () {
-      // normalizeSourceLanguage 现在会自动处理别名
       expect(LanguageUtils.normalizeSourceLanguage('cn'), 'zh');
-      expect(LanguageUtils.normalizeSourceLanguage('jp'), 'ja');
       expect(LanguageUtils.normalizeSourceLanguage('kr'), 'ko');
       expect(LanguageUtils.normalizeSourceLanguage('zh-Hans'), 'zh');
       expect(LanguageUtils.normalizeSourceLanguage('en-US'), 'en');
@@ -83,7 +73,7 @@ void main() {
     test('should return correct display names for standard codes', () {
       expect(LanguageUtils.getLanguageDisplayName('en'), '英语');
       expect(LanguageUtils.getLanguageDisplayName('zh'), '中文');
-      expect(LanguageUtils.getLanguageDisplayName('ja'), '日语');
+      expect(LanguageUtils.getLanguageDisplayName('jp'), '日语');
       expect(LanguageUtils.getLanguageDisplayName('ko'), '韩语');
       expect(LanguageUtils.getLanguageDisplayName('fr'), '法语');
       expect(LanguageUtils.getLanguageDisplayName('de'), '德语');
@@ -93,9 +83,6 @@ void main() {
       // cn 应该被标准化为 zh，显示为"中文"
       expect(LanguageUtils.getLanguageDisplayName('cn'), '中文');
       expect(LanguageUtils.getLanguageDisplayName('CN'), '中文');
-      // jp 应该被标准化为 ja，显示为"日语"
-      expect(LanguageUtils.getLanguageDisplayName('jp'), '日语');
-      expect(LanguageUtils.getLanguageDisplayName('JP'), '日语');
       // kr 应该被标准化为 ko，显示为"韩语"
       expect(LanguageUtils.getLanguageDisplayName('kr'), '韩语');
     });

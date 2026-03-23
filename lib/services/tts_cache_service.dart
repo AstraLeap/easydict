@@ -33,9 +33,9 @@ class TtsCacheService {
     return Directory.systemTemp;
   }
 
-  /// 生成缓存键（基于文本和语言代码的 MD5）
-  String _generateCacheKey(String text, String? languageCode) {
-    final content = '$text|$languageCode';
+  /// 生成缓存键（基于文本、语言代码和音色的 MD5）
+  String _generateCacheKey(String text, String? languageCode, String? voice) {
+    final content = '$text|$languageCode|$voice';
     return md5.convert(utf8.encode(content)).toString();
   }
 
@@ -77,16 +77,20 @@ class TtsCacheService {
   }
 
   /// 检查缓存是否存在
-  Future<bool> hasCache(String text, String? languageCode) async {
-    final cacheKey = _generateCacheKey(text, languageCode);
+  Future<bool> hasCache(String text, String? languageCode, String? voice) async {
+    final cacheKey = _generateCacheKey(text, languageCode, voice);
     final cacheFile = await _getCacheFile(cacheKey);
     return await cacheFile.exists();
   }
 
   /// 获取缓存的音频数据
-  Future<List<int>?> getCache(String text, String? languageCode) async {
+  Future<List<int>?> getCache(
+    String text,
+    String? languageCode,
+    String? voice,
+  ) async {
     try {
-      final cacheKey = _generateCacheKey(text, languageCode);
+      final cacheKey = _generateCacheKey(text, languageCode, voice);
       final cacheFile = await _getCacheFile(cacheKey);
 
       if (await cacheFile.exists()) {
@@ -103,9 +107,10 @@ class TtsCacheService {
   Future<File> saveCache(
     String text,
     String? languageCode,
+    String? voice,
     List<int> audioData,
   ) async {
-    final cacheKey = _generateCacheKey(text, languageCode);
+    final cacheKey = _generateCacheKey(text, languageCode, voice);
     final cacheFile = await _getCacheFile(cacheKey);
 
     await cacheFile.writeAsBytes(audioData);

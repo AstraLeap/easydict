@@ -274,12 +274,17 @@ class FontLoaderService {
     // 带子标签的中文（如 zh-sg 等未明确分类的）默认简体
     if (lower.startsWith('zh-')) return ['zh-hans', 'zh-hant'];
     // 其他语言：取基础语言代码（去除地区子标签）
-    final base = lower.contains('-') ? lower.substring(0, lower.indexOf('-')) : lower;
+    final base = lower.contains('-')
+        ? lower.substring(0, lower.indexOf('-'))
+        : lower;
     return [base];
   }
 
   /// 返回内置 bundled 字体信息（SourceSerif4 衬线 / SourceSans3 非衬线）
-  FontInfo _getBundledFontInfo({required bool isSerif, required bool isItalic}) {
+  FontInfo _getBundledFontInfo({
+    required bool isSerif,
+    required bool isItalic,
+  }) {
     return FontInfo(
       fontFamily: isSerif ? 'SourceSerif4' : 'SourceSans3',
       fontWeight: FontWeight.normal,
@@ -296,7 +301,10 @@ class FontLoaderService {
   ///
   /// [isSerif] 是否使用衬线字体
   /// [isItalic] 是否使用斜体
-  List<String> getUnifiedFontFallbackChain({bool isSerif = false, bool isItalic = false}) {
+  List<String> getUnifiedFontFallbackChain({
+    bool isSerif = false,
+    bool isItalic = false,
+  }) {
     final chain = <String>[];
     final addedFonts = <String>{};
 
@@ -324,7 +332,7 @@ class FontLoaderService {
       'en',
       'zh-hans',
       'zh-hant',
-      'ja',
+      'jp',
       'ko',
       'fr',
       'de',

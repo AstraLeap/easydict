@@ -13,6 +13,7 @@ class RubyLayout extends MultiChildRenderObjectWidget {
   final String baseText;
   final TextStyle baseStyle;
   final String rubyText;
+  final Color? rubyColor;
 
   const RubyLayout({
     super.key,
@@ -21,6 +22,7 @@ class RubyLayout extends MultiChildRenderObjectWidget {
     required this.baseText,
     required this.baseStyle,
     required this.rubyText,
+    this.rubyColor,
   }) : super(children: const []);
 
   @override
@@ -31,6 +33,7 @@ class RubyLayout extends MultiChildRenderObjectWidget {
       baseText: baseText,
       baseStyle: baseStyle,
       rubyText: rubyText,
+      rubyColor: rubyColor,
     );
   }
 
@@ -44,7 +47,8 @@ class RubyLayout extends MultiChildRenderObjectWidget {
       ..rubySpacing = rubySpacing
       ..baseText = baseText
       ..baseStyle = baseStyle
-      ..rubyText = rubyText;
+      ..rubyText = rubyText
+      ..rubyColor = rubyColor;
   }
 }
 
@@ -67,11 +71,13 @@ class RenderRubyLayout extends RenderBox
     required String baseText,
     required TextStyle baseStyle,
     required String rubyText,
+    Color? rubyColor,
   })  : _rubyFontSize = rubyFontSize,
         _rubySpacing = rubySpacing,
         _baseText = baseText,
         _baseStyle = baseStyle,
-        _rubyText = rubyText {
+        _rubyText = rubyText,
+        _rubyColor = rubyColor {
     _updateChildren();
   }
 
@@ -80,6 +86,7 @@ class RenderRubyLayout extends RenderBox
   String _baseText;
   TextStyle _baseStyle;
   String _rubyText;
+  Color? _rubyColor;
 
   set rubyFontSize(double value) {
     if (_rubyFontSize != value) {
@@ -116,13 +123,20 @@ class RenderRubyLayout extends RenderBox
     }
   }
 
+  set rubyColor(Color? value) {
+    if (_rubyColor != value) {
+      _rubyColor = value;
+      _updateChildren();
+    }
+  }
+
   void _updateChildren() {
     _rubyTextPainter = TextPainter(
       text: TextSpan(
         text: _rubyText,
         style: _baseStyle.copyWith(
           fontSize: _rubyFontSize,
-          color: Colors.grey.shade600,
+          color: _rubyColor ?? Colors.grey.shade600,
           height: 1.0,
         ),
       ),

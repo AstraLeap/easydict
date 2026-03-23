@@ -12,7 +12,7 @@ import 'preferences_service.dart';
 const Map<String, String> _edgeDefaultVoicesByLanguage = {
   'en': 'en-US-AriaNeural',
   'zh': 'zh-CN-XiaoxiaoNeural',
-  'ja': 'ja-JP-NanamiNeural',
+  'jp': 'ja-JP-NanamiNeural',
   'ko': 'ko-KR-SunHiNeural',
   'fr': 'fr-FR-DeniseNeural',
   'de': 'de-DE-KatjaNeural',
@@ -27,7 +27,7 @@ const Map<String, String> _edgeDefaultVoicesByLanguage = {
 const Map<String, String> _googleDefaultVoicesByLanguage = {
   'en': 'en-US-Chirp3-HD-Aoede',
   'zh': 'cmn-CN-Chirp3-HD-A',
-  'ja': 'ja-JP-Chirp3-HD-A',
+  'jp': 'ja-JP-Chirp3-HD-A',
   'ko': 'ko-KR-Chirp3-HD-A',
   'fr': 'fr-FR-Chirp3-HD-A',
   'de': 'de-DE-Chirp3-HD-A',
@@ -248,7 +248,7 @@ class AIService {
     );
   }
 
-  Future<List<int>> textToSpeech(
+  Future<({List<int> audio, String voice})> textToSpeech(
     String text, {
     String? languageCode,
     String? languageSource,
@@ -262,49 +262,11 @@ class AIService {
     var apiKey = config['apiKey'] as String;
     final baseUrl = config['baseUrl'] as String;
     final model = config['model'] as String;
-    var voice = config['voice'] as String;
-
-    Logger.d(
-      'textToSpeech: provider=$provider, languageCode=$languageCode, languageSource=$languageSource, defaultVoice=$voice',
-      tag: 'textToSpeech',
+    final voice = await getVoiceForLanguage(
+      languageCode,
+      languageSource,
+      config,
     );
-
-    // 如果提供了语言代码，尝试获取该语言对应的音色
-    if (languageCode != null &&
-        languageCode.isNotEmpty &&
-        languageCode != 'text') {
-      final prefs = await SharedPreferences.getInstance();
-      final langVoiceKey = 'voice_$languageCode';
-      final langVoice = prefs.getString(langVoiceKey);
-      Logger.d(
-        '查找音色: key=$langVoiceKey, value=$langVoice',
-        tag: 'textToSpeech',
-      );
-      if (langVoice != null && langVoice.isNotEmpty) {
-        voice = langVoice;
-        Logger.d(
-          '根据 $languageSource 选择音色: $languageCode -> $voice',
-          tag: 'textToSpeech',
-        );
-      } else {
-        // 未找到配置时，回退到该语言的默认音色
-        final defaultLangVoice = provider == 'google'
-            ? _googleDefaultVoicesByLanguage[languageCode]
-            : _edgeDefaultVoicesByLanguage[languageCode];
-        if (defaultLangVoice != null && defaultLangVoice.isNotEmpty) {
-          voice = defaultLangVoice;
-          Logger.d(
-            '未找到语言 $languageCode 的音色配置，回退到该语言默认音色: $voice',
-            tag: 'textToSpeech',
-          );
-        } else {
-          Logger.d(
-            '未找到语言 $languageCode 的默认音色映射，使用全局默认音色: $voice',
-            tag: 'textToSpeech',
-          );
-        }
-      }
-    }
 
     // Edge TTS 不需要 API Key
     if (apiKey.isEmpty) {
@@ -319,26 +281,75 @@ class AIService {
 
     switch (provider) {
       case 'edge':
-        return await _callEdgeTTS(voice: voice, text: text);
+        final audio = await _callEdgeTTS(voice: voice, text: text);
+        return (audio: audio, voice: voice);
       case 'google':
-        return await _callGoogleTTS(
+        final audio = await _callGoogleTTS(
           baseUrl: baseUrl,
           apiKey: apiKey,
           model: model,
           voice: voice,
           text: text,
         );
+        return (audio: audio, voice: voice);
       case 'azure':
-        return await _callAzureTTS(
+        final audio = await _callAzureTTS(
           baseUrl: baseUrl,
           apiKey: apiKey,
           model: model,
           voice: voice,
           text: text,
         );
+        return (audio: audio, voice: voice);
       default:
         throw Exception('不支持的TTS服务商: $provider');
     }
+  }
+
+  Future<String> getVoiceForLanguage(
+    String? languageCode,
+    String? languageSource,
+    Map<String, dynamic>? config,
+  ) async {
+    config ??= await _prefsService.getTTSConfig();
+    if (config == null) {
+      throw Exception('未配置TTS服务');
+    }
+
+    final provider = config['provider'] as String;
+    var voice = config['voice'] as String;
+
+    Logger.d(
+      'getVoiceForLanguage: languageCode=$languageCode, defaultVoice=$voice',
+      tag: 'getVoiceForLanguage',
+    );
+
+    if (languageCode != null &&
+        languageCode.isNotEmpty &&
+        languageCode != 'text') {
+      final prefs = await SharedPreferences.getInstance();
+      final langVoiceKey = 'voice_$languageCode';
+      final langVoice = prefs.getString(langVoiceKey);
+      if (langVoice != null && langVoice.isNotEmpty) {
+        voice = langVoice;
+        Logger.d(
+          '根据 $languageSource 选择音色: $languageCode -> $voice',
+          tag: 'getVoiceForLanguage',
+        );
+      } else {
+        final defaultLangVoice = provider == 'google'
+            ? _googleDefaultVoicesByLanguage[languageCode]
+            : _edgeDefaultVoicesByLanguage[languageCode];
+        if (defaultLangVoice != null && defaultLangVoice.isNotEmpty) {
+          voice = defaultLangVoice;
+          Logger.d(
+            '未找到语言 $languageCode 的音色配置，回退到该语言默认音色: $voice',
+            tag: 'getVoiceForLanguage',
+          );
+        }
+      }
+    }
+    return voice;
   }
 
   Future<List<int>> _callEdgeTTS({
