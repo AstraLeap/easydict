@@ -23,17 +23,17 @@
 
 ```json
 {
-  "id": "example_dict",//必填
-  "source_language": "en",//必填
-  "target_language": ["en", "zh"],//必填
-  "name": "Example Dictionary",
-  "description": "An example dictionary for demonstration purposes",
-  "publisher": "Example Publisher",
-  "maintainer": "example_user",
-  "encode": "utf-8",
-  "contact_maintainer": "example@example.com",
-  "version": 13, //一定要是整型！！！
-  "updatedAt": ""2026-02-23T01:54:36.679419+00:00""//唯一指定的标准时间格式
+    "id": "example_dict", //必填
+    "source_language": "en", //必填
+    "target_language": ["en", "zh"], //必填
+    "name": "Example Dictionary",
+    "description": "An example dictionary for demonstration purposes",
+    "publisher": "Example Publisher",
+    "maintainer": "example_user",
+    "encode": "utf-8",
+    "contact_maintainer": "example@example.com",
+    "version": 13, //一定要是整型！！！
+    "updatedAt": "2026-02-23T01:54:36.679419+00:00" //唯一指定的标准时间格式
 }
 ```
 
@@ -70,7 +70,7 @@ CREATE TABLE groups (
     sub_group_count INTEGER DEFAULT 0,   -- 直接子组数量
     item_count INTEGER DEFAULT 0,        -- item_list 长度
     FOREIGN KEY (parent_id) REFERENCES groups(group_id) ON DELETE CASCADE
-);
+);--分组表，组织词条结构
 
 CREATE INDEX idx_groups_parent ON groups(parent_id);
 CREATE INDEX idx_headword_norm ON indices(headword_normalized);
@@ -99,41 +99,41 @@ CREATE INDEX idx_images_name ON images(name);
 
 ## 词典生成方法
 
-词典作者需要准备以下文件，然后调用 `build_dictionary.py` 脚本生成词典数据库。
+词典作者需要准备以下文件，然后调用 `auxi_tools/build_dictionary.py` 脚本生成词典数据库。
 
 ### 准备文件
 
-| 文件            | 必需 | 说明                                                                          |
-| --------------- | ---- | ----------------------------------------------------------------------------- |
-| `entries.jsonl` | 是   | 词条数据文件，每行一个 JSON 对象，详见 [entries.jsonl结构](#entriesjsonl结构) |
-| `groups.jsonl`  | 否   | 分组数据文件，每行一个 JSON 对象，用于词条分组功能(#groups.jsonl结构)         |
-| `audio/` 文件夹 | 否   | 音频文件目录，文件名需与词条中的 `audio_file` 字段对应                        |
-| `image/` 文件夹 | 否   | 图片文件目录，文件名需与词条中的 `image_file` 字段对应                        |
+| 文件            | 必需 | 说明                                                        |
+| --------------- | ---- | ----------------------------------------------------------- |
+| `entries.jsonl` | 是   | 词条数据文件，每行一个 JSON 对象，[详见](#entriesjsonl结构) |
+| `groups.jsonl`  | 否   | 分组数据文件，每行一个 JSON 对象，[详见](#groupsjsonl结构)  |
+| `audio/` 文件夹 | 否   | 音频文件目录，文件名需与词条中的 `audio_file` 字段对应      |
+| `image/` 文件夹 | 否   | 图片文件目录，文件名需与词条中的 `image_file` 字段对应      |
 
 ### 调用方法
 
 ```bash
-python auxi_tools/build_dictionary.py <jsonl_path> <lang> [options]
+python build_dictionary.py <jsonl_path> <lang> [options]
 ```
 
 #### 位置参数
 
-| 参数          | 说明                      | 默认值 |
-| ------------- | ------------------------- | ------ |
-| `jsonl_path`  | JSONL 文件路径            | -      |
-| `lang`        | 语言代码（如 zh, ja, en） | -      |
+| 参数         | 说明                      | 默认值 |
+| ------------ | ------------------------- | ------ |
+| `jsonl_path` | JSONL 文件路径            | -      |
+| `lang`       | 语言代码（如 zh, ja, en） | -      |
 
 #### 可选参数
 
-| 参数                    | 说明                                      | 默认值 |
-| ----------------------- | ----------------------------------------- | ------ |
-| `--dict-size <KB>`      | Zstd 字典大小 (KB)                        | 112    |
-| `--compress-level <N>`  | Zstd 压缩级别                             | 7      |
-| `--page-size <BYTES>`   | SQLite 页大小 (字节)                      | 4096   |
-| `--audio-dir <path>`    | 音频文件夹路径                            | -      |
-| `--image-dir <path>`    | 图片文件夹路径                            | -      |
-| `--groups <path>`       | groups.jsonl 文件路径                     | -      |
-| `-o, --output <path>`   | 输出目录路径（默认为 JSONL 文件所在目录） | -      |
+| 参数                   | 说明                                      | 默认值 |
+| ---------------------- | ----------------------------------------- | ------ |
+| `--dict-size <KB>`     | Zstd 字典大小 (KB)                        | 112    |
+| `--compress-level <N>` | Zstd 压缩级别                             | 7      |
+| `--page-size <BYTES>`  | SQLite 页大小 (字节)                      | 4096   |
+| `--audio-dir <path>`   | 音频文件夹路径                            | -      |
+| `--image-dir <path>`   | 图片文件夹路径                            | -      |
+| `--groups <path>`      | groups.jsonl 文件路径                     | -      |
+| `-o, --output <path>`  | 输出目录路径（默认为 JSONL 文件所在目录） | -      |
 
 ### 使用示例
 
@@ -163,9 +163,9 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
 
 ## entries.jsonl结构
 
-- 词典数据以json格式的`entry`为基础单位，数据库中存储着一堆`entry`。
-- 同一个单词可以下涵多个`entry`，`entry`有两个重要属性，page和section。
-- 同一个单词的诸多`entry`按照page属性分类，同一个page的多个`entry`组成一个独立单元，比如“药学词典”page、”儿童词典“page、“美语词典”page、”英语词典“page等。
+- jsonl格式，每行一个json格式的`entry`数据，`entry`是词典组织内容的基础单位。
+- 同一个词头可下涵多个`entry`，`entry`有两个重要属性，page和section。
+- 同一个词头的诸多`entry`按照page属性分类，同一个page的多个`entry`组成一个独立单元，比如“药学词典”page、”儿童词典“page、“美语词典”page、”英语词典“page等。
 - 同一个page的各个`entry`之间通过section属性区分，section可以表示不同起源，或是不同词性等等。
 
 ```jsonc
@@ -347,10 +347,12 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
 
 ## groups.jsonl结构
 
+储存jsonl格式，每行的json格式要求如下
+
 ```jsonc
 {
     "group_id": 1, // 分组ID，需唯一，整型
-    "parent_id": 15, // 父分组ID，用于构建层级结构，整型，根分组时为 null
+    "parent_id": 15, // 父分组ID，整型，用于构建层级结构，整型，根分组时为 null
     "name": "基础词汇", // 分组名称
     "description": { "text": "some content." }, // 分组描述，json格式
     "item_list": [
