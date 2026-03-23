@@ -335,7 +335,7 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
 | `=>group_id`       | 指向group_id的界面         |
 | `==entry_id::path` | 根据entry_id和path精确跳转 |
 | `==entry_id`       | 跳转到entry_id             |
-| `::path`           | 跳转到目标json的path       |
+| `::path`           | 跳转到目标json_path        |
 
 #### 示例
 
