@@ -4,54 +4,40 @@ import '../../i18n/strings.g.dart';
 /// 语言代码别名映射表。
 ///
 /// 将非标准语言代码映射到 ISO 639-1 标准代码。
-/// 例如：'cn' → 'zh'，'jp' → 'ja'。
+/// 例如：'cn' → 'zh'。
 const Map<String, String> _languageCodeAliases = {
   // 中文别名
   'cn': 'zh',
   'chinese': 'zh',
   'zho': 'zh', // ISO 639-2/T
   'chi': 'zh', // ISO 639-2/B
-
-  // 日语别名
-  'jp': 'ja',
-  'japanese': 'ja',
-  'jpn': 'ja', // ISO 639-2
-
   // 韩语别名
   'kr': 'ko',
   'korean': 'ko',
   'kor': 'ko', // ISO 639-2
-
   // 英语别名
   'english': 'en',
   'eng': 'en', // ISO 639-2
-
   // 法语别名
   'french': 'fr',
   'fra': 'fr', // ISO 639-2/T
   'fre': 'fr', // ISO 639-2/B
-
   // 德语别名
   'german': 'de',
   'deu': 'de', // ISO 639-2/T
   'ger': 'de', // ISO 639-2/B
-
   // 西班牙语别名
   'spanish': 'es',
   'spa': 'es', // ISO 639-2
-
   // 意大利语别名
   'italian': 'it',
   'ita': 'it', // ISO 639-2
-
   // 俄语别名
   'russian': 'ru',
   'rus': 'ru', // ISO 639-2
-
   // 葡萄牙语别名
   'portuguese': 'pt',
   'por': 'pt', // ISO 639-2
-
   // 阿拉伯语别名
   'arabic': 'ar',
   'ara': 'ar', // ISO 639-2
@@ -71,7 +57,7 @@ class LanguageUtils {
   /// 这些语言使用字母（每个字母代表一个音素），在小字号时视觉上偏小，
   /// 建议默认放大 1.15 倍以改善可读性。
   ///
-  /// 注意：日语（ja）和韩语（ko）虽属表音系统，但使用非字母文字
+  /// 注意：日语（jp）和韩语（ko）虽属表音系统，但使用非字母文字
   /// （假名/谚文），与CJK汉字在视觉尺寸上接近，不在此列。
   static const Set<String> phoneticScriptLanguages = {
     'en',
@@ -93,7 +79,6 @@ class LanguageUtils {
   ///
   /// 例如：
   /// - "cn" → "zh"
-  /// - "jp" → "ja"
   /// - "zh-Hans" → "zh"
   /// - "Zh-HK" → "zh"
   /// - "EN" → "en"
@@ -127,13 +112,13 @@ class LanguageUtils {
   static String getLanguageDisplayName(String langCode) {
     if (langCode.toLowerCase() == 'auto') return '自动';
 
-    // 标准化语言代码（处理别名如 cn→zh, jp→ja）
+    // 标准化语言代码（处理别名如 cn→zh）
     final standardized = standardizeLanguageCode(langCode);
 
     final languageNames = {
       'en': '英语',
       'zh': '中文',
-      'ja': '日语',
+      'jp': '日语',
       'ko': '韩语',
       'fr': '法语',
       'de': '德语',
@@ -183,7 +168,7 @@ class LanguageUtils {
   /// I18n-aware display name for a basic language code.
   /// Falls back to [getLanguageDisplayName] for unknown codes.
   ///
-  /// 自动处理语言代码别名（如 "cn" → "zh"，"jp" → "ja"）。
+  /// 自动处理语言代码别名（如 "cn" → "zh"）。
   static String getDisplayName(String langCode, Translations t) {
     final lc = langCode.toLowerCase();
     final ln = t.langNames;
@@ -192,7 +177,7 @@ class LanguageUtils {
     if (lc == 'auto') return ln.auto;
     if (lc == 'text') return ln.text;
 
-    // 标准化语言代码（处理别名如 cn→zh, jp→ja）
+    // 标准化语言代码（处理别名如 cn→zh）
     final standardized = standardizeLanguageCode(langCode);
 
     switch (standardized) {
@@ -200,8 +185,8 @@ class LanguageUtils {
         return ln.en;
       case 'zh':
         return ln.zh;
-      case 'ja':
-        return ln.ja;
+      case 'jp':
+        return ln.jp;
       case 'ko':
         return ln.ko;
       case 'fr':

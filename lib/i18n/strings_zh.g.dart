@@ -666,7 +666,7 @@ class TranslationsLangNamesZh {
 	String get zh => '中文';
 
 	/// zh: '日语'
-	String get ja => '日语';
+	String get jp => '日语';
 
 	/// zh: '韩语'
 	String get ko => '韩语';
@@ -2069,6 +2069,9 @@ class TranslationsEntryZh {
 	/// zh: '未找到词条: {entryId}'
 	String entryNotFound({required Object entryId}) => '未找到词条: ${entryId}';
 
+	/// zh: '返回'
+	String get returnToOriginal => '返回';
+
 	/// zh: '提取文本失败'
 	String get extractFailed => '提取文本失败';
 
@@ -2786,7 +2789,7 @@ extension on Translations {
 			'help.githubApiError' => ({required Object code}) => 'GitHub API 错误 (状态码 ${code})',
 			'help.checkUpdateError' => ({required Object error}) => '检查更新失败: ${error}',
 			'langNames.zh' => '中文',
-			'langNames.ja' => '日语',
+			'langNames.jp' => '日语',
 			'langNames.ko' => '韩语',
 			'langNames.en' => '英语',
 			'langNames.fr' => '法语',
@@ -3241,6 +3244,7 @@ extension on Translations {
 			'entry.currentWord' => ({required Object word}) => '当前查询单词: ${word}',
 			'entry.currentDict' => ({required Object dictId}) => '当前词典: ${dictId}',
 			'entry.entryNotFound' => ({required Object entryId}) => '未找到词条: ${entryId}',
+			'entry.returnToOriginal' => '返回',
 			'entry.extractFailed' => '提取文本失败',
 			'entry.generatingAudio' => '生成音频中...',
 			'entry.speakFailed' => ({required Object error}) => '语音合成失败: ${error}',

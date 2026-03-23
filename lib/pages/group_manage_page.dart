@@ -7,8 +7,6 @@ import '../i18n/strings.g.dart';
 import '../services/dictionary_manager.dart';
 import '../services/font_loader_service.dart';
 import '../services/group_service.dart';
-import 'group_page.dart';
-
 /// 组管理页面
 class GroupManagePage extends StatefulWidget {
   final String dictId;
@@ -262,16 +260,6 @@ class _GroupManagePageState extends State<GroupManagePage> {
     }
   }
 
-  void _navigateToGroup(DictionaryGroup group) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            GroupPage(dictId: widget.dictId, groupId: group.groupId!),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -389,12 +377,9 @@ class _GroupManagePageState extends State<GroupManagePage> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        onTap: () => _navigateToGroup(group),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
             children: [
               Icon(Icons.folder_outlined, color: colorScheme.primary),
               const SizedBox(width: 12),
@@ -469,7 +454,6 @@ class _GroupManagePageState extends State<GroupManagePage> {
             ],
           ),
         ),
-      ),
-    );
+      );
+    }
   }
-}

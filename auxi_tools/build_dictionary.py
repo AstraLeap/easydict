@@ -4,6 +4,76 @@ from pathlib import Path
 import zstandard as zstd
 
 
+# ============================================================
+# 模块级常量：避免每次函数调用时重复创建
+# ============================================================
+
+# 罗马音到平假名映射表
+ROMAJI_TO_HIRAGANA = {
+    "kya": "きゃ", "kyu": "きゅ", "kyo": "きょ",
+    "sha": "しゃ", "shi": "し", "shu": "しゅ", "she": "しぇ", "sho": "しょ",
+    "cha": "ちゃ", "chi": "ち", "chu": "ちゅ", "che": "ちぇ", "cho": "ちょ",
+    "nya": "にゃ", "nyu": "にゅ", "nyo": "にょ",
+    "hya": "ひゃ", "hyu": "ひゅ", "hyo": "ひょ",
+    "mya": "みゃ", "myu": "みゅ", "myo": "みょ",
+    "rya": "りゃ", "ryu": "りゅ", "ryo": "りょ",
+    "gya": "ぎゃ", "gyu": "ぎゅ", "gyo": "ぎょ",
+    "ja": "じゃ", "ji": "じ", "ju": "じゅ", "je": "じぇ", "jo": "じょ",
+    "bya": "びゃ", "byu": "びゅ", "byo": "びょ",
+    "pya": "ぴゃ", "pyu": "ぴゅ", "pyo": "ぴょ",
+    "ka": "か", "ki": "き", "ku": "く", "ke": "け", "ko": "こ",
+    "sa": "さ", "su": "す", "se": "せ", "so": "そ",
+    "ta": "た", "te": "て", "to": "と", "tsu": "つ",
+    "na": "な", "ni": "に", "nu": "ぬ", "ne": "ね", "no": "の",
+    "ha": "は", "hi": "ひ", "fu": "ふ", "hu": "ふ", "he": "へ", "ho": "ほ",
+    "ma": "ま", "mi": "み", "mu": "む", "me": "め", "mo": "も",
+    "ya": "や", "yu": "ゆ", "yo": "よ",
+    "ra": "ら", "ri": "り", "ru": "る", "re": "れ", "ro": "ろ",
+    "wa": "わ", "wi": "ゐ", "we": "ゑ", "wo": "を",
+    "ga": "が", "gi": "ぎ", "gu": "ぐ", "ge": "げ", "go": "ご",
+    "za": "ざ", "zu": "ず", "ze": "ぜ", "zo": "ぞ",
+    "da": "だ", "di": "ぢ", "du": "づ", "de": "で", "do": "ど",
+    "ba": "ば", "bi": "び", "bu": "ぶ", "be": "べ", "bo": "ぼ",
+    "pa": "ぱ", "pi": "ぴ", "pu": "ぷ", "pe": "ぺ", "po": "ぽ",
+    "a": "あ", "i": "い", "u": "う", "e": "え", "o": "お",
+    "ā": "ああ", "ī": "いい", "ū": "うう", "ē": "ええ", "ō": "おお",
+}
+
+# 按长度降序排列的罗马音键列表（用于替换时优先匹配长串）
+ROMAJI_KEYS_SORTED = sorted(ROMAJI_TO_HIRAGANA.keys(), key=len, reverse=True)
+
+# 长音转换映射：根据前一个假名确定长音应转换成的母音
+VOWEL_MAP = {
+    "あ": "あ", "か": "あ", "さ": "あ", "た": "あ", "な": "あ",
+    "は": "あ", "ま": "あ", "や": "あ", "ら": "あ", "わ": "あ",
+    "ぁ": "あ", "ゃ": "あ", "ゎ": "あ",
+    "い": "い", "き": "い", "し": "い", "ち": "い", "に": "い",
+    "ひ": "い", "み": "い", "り": "い", "ゐ": "い", "ぃ": "い",
+    "う": "う", "く": "う", "す": "う", "つ": "う", "ぬ": "う",
+    "ふ": "う", "む": "う", "ゆ": "う", "る": "う", "ぅ": "う", "ゅ": "う",
+    "え": "え", "け": "え", "せ": "え", "て": "え", "ね": "え",
+    "へ": "え", "め": "え", "れ": "え", "ゑ": "え", "ぇ": "え",
+    "お": "お", "こ": "お", "そ": "お", "と": "お", "の": "お",
+    "ほ": "お", "も": "お", "よ": "お", "ろ": "お", "を": "お",
+    "ぉ": "お", "ょ": "お",
+}
+
+# 小文字转大文字映射表
+SMALL_TO_LARGE = str.maketrans("ぁぃぅぇぉゃゅょゎっ", "あいうえおやゆよわつ")
+
+# OpenCC 繁简转换器（延迟初始化）
+_opencc_converter = None
+
+
+def _get_opencc_converter():
+    """获取或创建 OpenCC 转换器实例（单例模式）"""
+    global _opencc_converter
+    if _opencc_converter is None:
+        import opencc
+        _opencc_converter = opencc.OpenCC("t2s.json")
+    return _opencc_converter
+
+
 def create_media_tables(conn):
     cursor = conn.cursor()
     cursor.execute(
@@ -103,124 +173,9 @@ def normalize_japanese(text: str) -> str:
     # 修复词尾或辅音前的 n
     text = re.sub(r"n(?=[^aeiouy]|$)", "ん", text)
 
-    romaji_map = {
-        "kya": "きゃ",
-        "kyu": "きゅ",
-        "kyo": "きょ",
-        "sha": "しゃ",
-        "shi": "し",
-        "shu": "しゅ",
-        "she": "しぇ",
-        "sho": "しょ",
-        "cha": "ちゃ",
-        "chi": "ち",
-        "chu": "ちゅ",
-        "che": "ちぇ",
-        "cho": "ちょ",
-        "nya": "にゃ",
-        "nyu": "にゅ",
-        "nyo": "にょ",
-        "hya": "ひゃ",
-        "hyu": "ひゅ",
-        "hyo": "ひょ",
-        "mya": "みゃ",
-        "myu": "みゅ",
-        "myo": "みょ",
-        "rya": "りゃ",
-        "ryu": "りゅ",
-        "ryo": "りょ",
-        "gya": "ぎゃ",
-        "gyu": "ぎゅ",
-        "gyo": "ぎょ",
-        "ja": "じゃ",
-        "ji": "じ",
-        "ju": "じゅ",
-        "je": "じぇ",
-        "jo": "じょ",
-        "bya": "びゃ",
-        "byu": "びゅ",
-        "byo": "びょ",
-        "pya": "ぴゃ",
-        "pyu": "ぴゅ",
-        "pyo": "ぴょ",
-        "ka": "か",
-        "ki": "き",
-        "ku": "く",
-        "ke": "け",
-        "ko": "こ",
-        "sa": "さ",
-        "su": "す",
-        "se": "せ",
-        "so": "そ",
-        "ta": "た",
-        "te": "て",
-        "to": "と",
-        "tsu": "つ",
-        "na": "な",
-        "ni": "に",
-        "nu": "ぬ",
-        "ne": "ね",
-        "no": "の",
-        "ha": "は",
-        "hi": "ひ",
-        "fu": "ふ",
-        "hu": "ふ",
-        "he": "へ",
-        "ho": "ほ",
-        "ma": "ま",
-        "mi": "み",
-        "mu": "む",
-        "me": "め",
-        "mo": "も",
-        "ya": "や",
-        "yu": "ゆ",
-        "yo": "よ",
-        "ra": "ら",
-        "ri": "り",
-        "ru": "る",
-        "re": "れ",
-        "ro": "ろ",
-        "wa": "わ",
-        "wi": "ゐ",
-        "we": "ゑ",
-        "wo": "を",
-        "ga": "が",
-        "gi": "ぎ",
-        "gu": "ぐ",
-        "ge": "げ",
-        "go": "ご",
-        "za": "ざ",
-        "zu": "ず",
-        "ze": "ぜ",
-        "zo": "ぞ",
-        "da": "だ",
-        "di": "ぢ",
-        "du": "づ",
-        "de": "で",
-        "do": "ど",
-        "ba": "ば",
-        "bi": "び",
-        "bu": "ぶ",
-        "be": "べ",
-        "bo": "ぼ",
-        "pa": "ぱ",
-        "pi": "ぴ",
-        "pu": "ぷ",
-        "pe": "ぺ",
-        "po": "ぽ",
-        "a": "あ",
-        "i": "い",
-        "u": "う",
-        "e": "え",
-        "o": "お",
-        "ā": "ああ",
-        "ī": "いい",
-        "ū": "うう",
-        "ē": "ええ",
-        "ō": "おお",
-    }
-    for romaji in sorted(romaji_map.keys(), key=len, reverse=True):
-        text = text.replace(romaji, romaji_map[romaji])
+    # 使用模块级常量进行罗马音替换
+    for romaji in ROMAJI_KEYS_SORTED:
+        text = text.replace(romaji, ROMAJI_TO_HIRAGANA[romaji])
 
     # -----------------------------------------------------
     # 2 & 3 & 4: 清洗与片转平、去浊音逻辑（保持不变）
@@ -239,65 +194,6 @@ def normalize_japanese(text: str) -> str:
     # -----------------------------------------------------
     # 5. 长音 "ー" 转换 (修复连续长音和汉字中断 Bug)
     # -----------------------------------------------------
-    vowel_map = {
-        "あ": "あ",
-        "か": "あ",
-        "さ": "あ",
-        "た": "あ",
-        "な": "あ",
-        "は": "あ",
-        "ま": "あ",
-        "や": "あ",
-        "ら": "あ",
-        "わ": "あ",
-        "ぁ": "あ",
-        "ゃ": "あ",
-        "ゎ": "あ",
-        "い": "い",
-        "き": "い",
-        "し": "い",
-        "ち": "い",
-        "に": "い",
-        "ひ": "い",
-        "み": "い",
-        "り": "い",
-        "ゐ": "い",
-        "ぃ": "い",
-        "う": "う",
-        "く": "う",
-        "す": "う",
-        "つ": "う",
-        "ぬ": "う",
-        "ふ": "う",
-        "む": "う",
-        "ゆ": "う",
-        "る": "う",
-        "ぅ": "う",
-        "ゅ": "う",
-        "え": "え",
-        "け": "え",
-        "せ": "え",
-        "て": "え",
-        "ね": "え",
-        "へ": "え",
-        "め": "え",
-        "れ": "え",
-        "ゑ": "え",
-        "ぇ": "え",
-        "お": "お",
-        "こ": "お",
-        "そ": "お",
-        "と": "お",
-        "の": "お",
-        "ほ": "お",
-        "も": "お",
-        "よ": "お",
-        "ろ": "お",
-        "を": "お",
-        "ぉ": "お",
-        "ょ": "お",
-    }
-
     res_choonpu = []
     current_vowel = None
 
@@ -311,8 +207,8 @@ def normalize_japanese(text: str) -> str:
         else:
             res_choonpu.append(c)
             # 动态更新当前母音环境（如果遇到汉字或无母音符号，则清除上下文）
-            if c in vowel_map:
-                current_vowel = vowel_map[c]
+            if c in VOWEL_MAP:
+                current_vowel = VOWEL_MAP[c]
             else:
                 current_vowel = None
 
@@ -321,8 +217,7 @@ def normalize_japanese(text: str) -> str:
     # -----------------------------------------------------
     # 6. 小文字转大文字
     # -----------------------------------------------------
-    small_to_large = str.maketrans("ぁぃぅぇぉゃゅょゎっ", "あいうえおやゆよわつ")
-    text = text.translate(small_to_large)
+    text = text.translate(SMALL_TO_LARGE)
 
     return text
 
@@ -337,11 +232,9 @@ def normalize_text(text, lang_code, is_phonetic):
     if is_phonetic:
         text = text.replace(" ", "")
 
-    # 汉语繁体转简体
+    # 汉语繁体转简体（使用缓存的 OpenCC 实例）
     if lang_code in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"} and not is_phonetic:
-        import opencc
-
-        converter = opencc.OpenCC("t2s.json")
+        converter = _get_opencc_converter()
         text = converter.convert(text)
 
     # 日语发音标准化
@@ -370,8 +263,6 @@ def extract_headwords_from_headline(headline):
 
     返回: dict，key为headword，value为anchor（此处anchor为空字符串）
     """
-    import re
-
     # 匹配 [text](headword) 格式
     pattern = r"\[([^\]]+)\]\(headword\)"
     matches = re.findall(pattern, headline)
@@ -389,8 +280,6 @@ def extract_anchors_from_json(data, current_path=""):
 
     返回: dict，key为headword（提取的text），value为anchor（JSON路径）
     """
-    import re
-
     result = {}
 
     if isinstance(data, dict):
@@ -463,12 +352,13 @@ def build_database_from_jsonl(
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # 极致性能 PRAGMA
+    # 极致性能 PRAGMA（page_size 必须在创建任何表之前设置）
     cursor.execute(f"PRAGMA page_size = {page_size}")
     cursor.execute("PRAGMA synchronous = OFF")
-    cursor.execute("PRAGMA journal_mode = WAL")
+    cursor.execute("PRAGMA journal_mode = OFF")  # 批量写入时关闭 journal 更快
     cursor.execute("PRAGMA cache_size = -64000")  # 64MB 缓存
     cursor.execute("PRAGMA foreign_keys = ON")  # 启用外键约束
+    cursor.execute("PRAGMA temp_store = MEMORY")  # 临时表存储在内存中
 
     cursor.execute("CREATE TABLE config (key TEXT PRIMARY KEY, value BLOB)")
 
@@ -591,13 +481,14 @@ def build_database_from_jsonl(
                 hw_norm = normalize_text(hw, lang_code, False)
                 indices_batch.append((hw, hw_norm, phonetic_norm, etype, eid, anchor))
 
-            if len(entries_batch) >= 1000:
+            BATCH_SIZE = 1000
+            if len(entries_batch) >= BATCH_SIZE:
                 cursor.executemany(entries_sql, entries_batch)
                 cursor.executemany(indices_sql, indices_batch)
                 total_count += len(entries_batch)
                 entries_batch = []
                 indices_batch = []
-                if total_count % 5000 == 0:
+                if total_count % (BATCH_SIZE * 5) == 0:
                     print(f"Processed {total_count} entries...")
 
         if entries_batch:
@@ -668,78 +559,73 @@ def build_database_from_jsonl(
 # --- 命令行入口 ---
 
 if __name__ == "__main__":
-    ## for test
-    # print(
-    #     extract_headwords_from_headline(
-    #         "つける【[付ける](headword)・[附ける](headword)】"
-    #     )
-    # )
-    # test_cases = [
-    #     "コンピューター",  # 片假名+长音+半浊音 -> こんひゆうたあ
-    #     "ローマ字",  # 罗马音(片假名)+汉字 -> ろおま字 (保留非匹配字符)
-    #     "chotto matteta",  # 罗马音+促音 -> ちよつとまつてた
-    #     "ぎゅうにゅう",  # 浊音+拗音 -> きゆうにゆう
-    #     "パーティー",  # 半浊音+小文字+长音 -> はあていい
-    #     "A・B－C’",  # 特殊符号 -> abc (全角减号等被移除)
-    # ]
-    # for case in test_cases:
-    #     print(f"{case}  =>  {normalize_japanese(case)}")
-
     parser = argparse.ArgumentParser(
-        description="JSONL to Optimized SQLite Dictionary Builder"
+        description="JSONL to Optimized SQLite Dictionary Builder",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python build_dictionary.py input.jsonl ja
+  python build_dictionary.py input.jsonl zh --dict-size 128 --compress-level 9
+  python build_dictionary.py input.jsonl en --audio-dir ./audio --image-dir ./images
+        """,
     )
-    parser.add_argument("jsonl_path", help="Input JSONL file path")
-    parser.add_argument("lang", help="Language code (e.g., zh, ja, en)")
-    parser.add_argument(
-        "dict_size",
-        nargs="?",
+
+    # 必需参数
+    required = parser.add_argument_group("必需参数")
+    required.add_argument(
+        "jsonl_path",
+        help="输入 JSONL 文件路径",
+    )
+    required.add_argument(
+        "lang",
+        help="语言代码 (如 zh, ja, en)",
+    )
+
+    # 可选参数 - 压缩设置
+    compress_group = parser.add_argument_group("压缩设置")
+    compress_group.add_argument(
+        "--dict-size",
         type=int,
         default=112,
-        help="Zstd dict size in KB (default: 112)",
+        metavar="KB",
+        help="Zstd 字典大小，单位 KB (默认: 112)",
     )
-    parser.add_argument(
-        "compress_level",
-        nargs="?",
+    compress_group.add_argument(
+        "--compress-level",
         type=int,
         default=7,
-        help="Zstd compression level (default: 7)",
+        metavar="LEVEL",
+        help="Zstd 压缩级别 (默认: 7)",
     )
-    parser.add_argument(
-        "page_size",
-        nargs="?",
+    compress_group.add_argument(
+        "--page-size",
         type=int,
         default=4096,
-        help="SQLite page size in bytes (default: 4096)",
+        metavar="BYTES",
+        help="SQLite 页面大小，单位字节 (默认: 4096)",
     )
-    parser.add_argument(
-        "--audio-dir",
-        default=None,
-        help="包含音频文件的文件夹路径 (可选)",
-    )
-    parser.add_argument(
-        "--image-dir",
-        default=None,
-        help="包含图片文件的文件夹路径 (可选)",
-    )
-    parser.add_argument(
-        "--groups",
-        default=None,
-        help="groups.jsonl 文件路径 (可选)",
-    )
-    parser.add_argument(
+
+    # 可选参数 - 输入输出
+    io_group = parser.add_argument_group("输入输出")
+    io_group.add_argument(
         "-o", "--output",
-        default=None,
+        metavar="DIR",
         help="输出目录路径 (默认为 jsonl 文件所在目录)",
     )
-    parser.add_argument(
-        "--dict-id",
-        default=None,
-        help="词典ID，用于生成 metadata.json",
+    io_group.add_argument(
+        "--audio-dir",
+        metavar="DIR",
+        help="包含音频文件的文件夹路径",
     )
-    parser.add_argument(
-        "--dict-name",
-        default=None,
-        help="词典名称，用于生成 metadata.json",
+    io_group.add_argument(
+        "--image-dir",
+        metavar="DIR",
+        help="包含图片文件的文件夹路径",
+    )
+    io_group.add_argument(
+        "--groups",
+        metavar="FILE",
+        help="groups.jsonl 文件路径",
     )
 
     args = parser.parse_args()
@@ -763,23 +649,3 @@ if __name__ == "__main__":
         image_dir=args.image_dir,
         groups_jsonl_path=args.groups,
     )
-
-    if args.dict_id:
-        from datetime import datetime, timezone
-        metadata = {
-            "id": args.dict_id,
-            "source_language": args.lang,
-            "target_language": [args.lang],
-            "name": args.dict_name or args.dict_id,
-            "description": "",
-            "publisher": "",
-            "maintainer": "",
-            "encode": "utf-8",
-            "contact_maintainer": "",
-            "version": 1,
-            "updatedAt": datetime.now(timezone.utc).isoformat()
-        }
-        metadata_path = output_dir / "metadata.json"
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
-        print(f"Generated metadata.json at {metadata_path}")

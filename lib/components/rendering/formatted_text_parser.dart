@@ -1,7 +1,10 @@
 // ignore_for_file: library_private_types_in_public_api
 
+import 'dart:typed_data';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/logger.dart';
 import '../../core/utils/dict_typography.dart';
@@ -104,7 +107,7 @@ const double kRubySpacingRatio = 0.25;
 const Set<String> kKnownLanguageCodes = {
   'en',
   'zh',
-  'ja',
+  'jp',
   'ko',
   'fr',
   'de',
@@ -116,7 +119,7 @@ const Set<String> kKnownLanguageCodes = {
 };
 
 /// Language code prefixes that indicate valid language codes.
-const Set<String> kLanguagePrefixes = {'zh_', 'ja_', 'ko_'};
+const Set<String> kLanguagePrefixes = {'zh_', 'jp_', 'ko_'};
 
 /// Pre-compiled regex pattern for removing formatting.
 final RegExp _removeFormattingPattern = RegExp(r'\[([^\]]*?)\]\([^\)]*?\)');
@@ -210,11 +213,28 @@ class _RubySegment extends _ParsedSegment {
   R accept<R>(_SegmentVisitor<R> visitor) => visitor.visitRuby(this);
 }
 
+/// An inline image segment.
+/// Syntax: [](~font.png) where font.png is the image file name from media.db.
+/// The image height matches the text line height.
+class _ImageSegment extends _ParsedSegment {
+  final String content;
+  final String imageFile;
+
+  const _ImageSegment(this.content, this.imageFile);
+
+  @override
+  String get textContent => content;
+
+  @override
+  R accept<R>(_SegmentVisitor<R> visitor) => visitor.visitImage(this);
+}
+
 /// Visitor pattern for processing parsed segments.
 abstract class _SegmentVisitor<R> {
   R visitPlain(_PlainTextSegment segment);
   R visitFormatted(_FormattedSegment segment);
   R visitRuby(_RubySegment segment);
+  R visitImage(_ImageSegment segment);
 }
 
 // ============================================================================
@@ -233,6 +253,8 @@ class StyleInfo {
   final Color? customColor;
   final String? linkTarget;
   final String? exactJumpTarget;
+  final String? pathJumpTarget;
+  final String? groupJumpTarget;
 
   const StyleInfo({
     required this.style,
@@ -245,6 +267,8 @@ class StyleInfo {
     this.customColor,
     this.linkTarget,
     this.exactJumpTarget,
+    this.pathJumpTarget,
+    this.groupJumpTarget,
   });
 
   /// Returns true if this style has a link target.
@@ -252,6 +276,12 @@ class StyleInfo {
 
   /// Returns true if this style has an exact jump target.
   bool get hasExactJump => exactJumpTarget != null;
+
+  /// Returns true if this style has a path jump target.
+  bool get hasPathJump => pathJumpTarget != null;
+
+  /// Returns true if this style has a group jump target.
+  bool get hasGroupJump => groupJumpTarget != null;
 
   /// Returns true if this style requires special rendering (sup/sub/label).
   bool get requiresSpecialRendering => isSup || isSub || isLabelType;
@@ -283,6 +313,8 @@ class TypeParser {
     Color? customColor;
     String? linkTarget;
     String? exactJumpTarget;
+    String? pathJumpTarget;
+    String? groupJumpTarget;
 
     for (final type in types) {
       if (type.isEmpty) continue;
@@ -301,10 +333,24 @@ class TypeParser {
         continue;
       }
 
+      // Check for path jump target (::path)
+      final pathJump = _tryParsePathJump(type);
+      if (pathJump != null) {
+        pathJumpTarget = pathJump;
+        continue;
+      }
+
       // Check for exact jump target
       final jump = _tryParseExactJump(type);
       if (jump != null) {
         exactJumpTarget = jump;
+        continue;
+      }
+
+      // Check for group jump target
+      final groupJump = _tryParseGroupJump(type);
+      if (groupJump != null) {
+        groupJumpTarget = groupJump;
         continue;
       }
 
@@ -351,6 +397,8 @@ class TypeParser {
       customColor: customColor,
       linkTarget: linkTarget,
       exactJumpTarget: exactJumpTarget,
+      pathJumpTarget: pathJumpTarget,
+      groupJumpTarget: groupJumpTarget,
     );
   }
 
@@ -374,6 +422,44 @@ class TypeParser {
       return type.substring(2).trim();
     }
     return null;
+  }
+
+  static String? _tryParseGroupJump(String type) {
+    if (type.startsWith('=>')) {
+      return type.substring(2).trim();
+    }
+    return null;
+  }
+
+  static String? _tryParsePathJump(String type) {
+    if (type.startsWith('::')) {
+      return type.substring(2).trim();
+    }
+    return null;
+  }
+
+  /// 解析 exactJumpTarget 为 entryId 和 path
+  /// 新格式: entryid::path (如 25153::sense.0)
+  /// 兼容旧格式: entryid.path (如 25153.sense.0)
+  static ({String entryId, String? path}) parseExactJumpTarget(String target) {
+    // 使用 :: 分隔 entryId 和 path
+    final doubleColonIndex = target.indexOf('::');
+    if (doubleColonIndex != -1) {
+      final entryId = target.substring(0, doubleColonIndex);
+      final path = target.substring(doubleColonIndex + 2);
+      return (entryId: entryId, path: path.isEmpty ? null : path);
+    }
+
+    // 兼容旧格式：用 . 分隔，但注意 path 本身可能包含 .
+    final dotIndex = target.indexOf('.');
+    if (dotIndex != -1) {
+      final entryId = target.substring(0, dotIndex);
+      final path = target.substring(dotIndex + 1);
+      return (entryId: entryId, path: path.isEmpty ? null : path);
+    }
+
+    // 只有 entryId，无 path
+    return (entryId: target, path: null);
   }
 
   static _StyleParseResult _parseStyleModifier({
@@ -545,9 +631,20 @@ class SegmentParser {
     final typesStr = typesResult;
 
     // Check for Ruby syntax: [text](:ruby)
-    if (typesStr.startsWith(':')) {
+    // 注意：只匹配单冒号开头，排除双冒号 (::path) 的 path jump 格式
+    if (typesStr.startsWith(':') && !typesStr.startsWith('::')) {
       final rubyText = typesStr.substring(1);
       return _RubySegment(content, rubyText);
+    }
+
+    // Check for image syntax: [](~image.png)
+    if (typesStr.startsWith('~')) {
+      final imageFile = typesStr.substring(1);
+      Logger.d(
+        'SegmentParser: found image segment, content=$content, imageFile=$imageFile',
+        tag: 'InlineImage',
+      );
+      return _ImageSegment(content, imageFile);
     }
 
     // Handle nested formatting
@@ -627,15 +724,24 @@ class SegmentParser {
 /// Pre-compiled regex pattern for removing ruby formatting.
 final RegExp _removeRubyPattern = RegExp(r'\[([^\]]*?)\]\(:[^\)]*?\)');
 
+/// Pre-compiled regex pattern for removing inline image formatting.
+final RegExp _removeImagePattern = RegExp(r'\[([^\]]*?)\]\(~[^\)]*?\)');
+
 /// Removes formatting markers from text.
 String removeFormatting(String text) {
-  // First handle Ruby syntax: [漢](:かん) -> 漢
+  // First handle image syntax: [](~image.png) -> content inside brackets
   String result = text.replaceAllMapped(
+    _removeImagePattern,
+    (match) => match.group(1) ?? '',
+  );
+
+  // Then handle Ruby syntax: [漢](:かん) -> 漢
+  result = result.replaceAllMapped(
     _removeRubyPattern,
     (match) => match.group(1) ?? '',
   );
 
-  // Then handle regular formatting syntax
+  // Finally handle regular formatting syntax
   result = result.replaceAllMapped(
     _removeFormattingPattern,
     (match) => match.group(1) ?? '',
@@ -710,6 +816,11 @@ class FormattedTextConfig {
   final bool useCustomFont;
   final void Function(String word, BuildContext context)? onLinkTap;
   final void Function(String target, BuildContext context)? onExactJump;
+  final void Function(String path, BuildContext context)? onPathJump;
+  final void Function(int groupId, BuildContext context)? onGroupJump;
+  final String? dictId;
+  final Future<Uint8List?> Function(String dictId, String imageFile)?
+  onLoadImage;
 
   const FormattedTextConfig({
     this.context,
@@ -729,6 +840,10 @@ class FormattedTextConfig {
     this.useCustomFont = true,
     this.onLinkTap,
     this.onExactJump,
+    this.onPathJump,
+    this.onGroupJump,
+    this.dictId,
+    this.onLoadImage,
   });
 
   /// Returns effective isSerif value based on element type.
@@ -758,6 +873,10 @@ FormattedTextResult parseFormattedText(
   bool useCustomFont = true,
   void Function(String word, BuildContext context)? onLinkTap,
   void Function(String target, BuildContext context)? onExactJump,
+  void Function(String path, BuildContext context)? onPathJump,
+  void Function(int groupId, BuildContext context)? onGroupJump,
+  String? dictId,
+  Future<Uint8List?> Function(String dictId, String imageFile)? onLoadImage,
 }) {
   final config = FormattedTextConfig(
     context: context,
@@ -777,6 +896,10 @@ FormattedTextResult parseFormattedText(
     useCustomFont: useCustomFont,
     onLinkTap: onLinkTap,
     onExactJump: onExactJump,
+    onPathJump: onPathJump,
+    onGroupJump: onGroupJump,
+    dictId: dictId,
+    onLoadImage: onLoadImage,
   );
 
   return _FormattedTextParser.parse(text, baseStyle, config, hidden);
@@ -925,6 +1048,11 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
     final rubyFontSize = baseFontSize * kRubyFontScale;
     final rubySpacing = baseFontSize * kRubySpacingRatio;
 
+    // 获取主题色用于振假名
+    final rubyColor = config.context != null
+        ? Theme.of(config.context!).colorScheme.primary
+        : null;
+
     // 创建振假名widget
     Widget rubyWidget = RubyLayout(
       rubyFontSize: rubyFontSize,
@@ -932,6 +1060,7 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
       baseText: segment.baseText,
       baseStyle: baseStyle,
       rubyText: segment.rubyText,
+      rubyColor: rubyColor,
     );
 
     // 如果有 onShowMenu 回调，添加右键事件处理
@@ -949,10 +1078,7 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
       );
     } else {
       // 如果没有回调，使用 IgnorePointer 让事件穿透
-      rubyWidget = IgnorePointer(
-        ignoring: true,
-        child: rubyWidget,
-      );
+      rubyWidget = IgnorePointer(ignoring: true, child: rubyWidget);
     }
 
     spans.add(
@@ -963,6 +1089,43 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
       ),
     );
     plainTexts.add(segment.baseText);
+  }
+
+  @override
+  void visitImage(_ImageSegment segment) {
+    final imageHeight = baseStyle.fontSize ?? kDefaultFontSize;
+    final fallbackText = segment.content.isNotEmpty
+        ? segment.content
+        : segment.imageFile;
+
+    Logger.d(
+      'visitImage: imageFile=${segment.imageFile}, content=${segment.content}, '
+      'dictId=${config.dictId}, onLoadImage=${config.onLoadImage != null}',
+      tag: 'InlineImage',
+    );
+
+    if (config.dictId != null &&
+        config.dictId!.isNotEmpty &&
+        config.onLoadImage != null) {
+      final imageWidget = _InlineImageLoader(
+        dictId: config.dictId!,
+        imageFile: segment.imageFile,
+        imageHeight: imageHeight,
+        fallbackText: fallbackText,
+        onLoadImage: config.onLoadImage!,
+      );
+
+      spans.add(
+        WidgetSpan(alignment: PlaceholderAlignment.middle, child: imageWidget),
+      );
+    } else {
+      Logger.d(
+        'visitImage: fallback to text (dictId=${config.dictId}, onLoadImage=${config.onLoadImage != null})',
+        tag: 'InlineImage',
+      );
+      spans.add(TextSpan(text: fallbackText, style: baseStyle));
+    }
+    plainTexts.add(fallbackText);
   }
 
   void _processNestedSegment(_FormattedSegment segment, StyleInfo styleInfo) {
@@ -998,6 +1161,14 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
         config.context != null &&
         config.onExactJump != null) {
       _addExactJumpSpan(text, styleInfo);
+    } else if (styleInfo.hasPathJump &&
+        config.context != null &&
+        config.onPathJump != null) {
+      _addPathJumpSpan(text, styleInfo);
+    } else if (styleInfo.hasGroupJump &&
+        config.context != null &&
+        config.onGroupJump != null) {
+      _addGroupJumpSpan(text, styleInfo);
     } else if (styleInfo.isLabelType && config.context != null) {
       _addLabelSpan(text, styleInfo);
     } else if (styleInfo.isSup) {
@@ -1016,15 +1187,34 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
       color: Theme.of(config.context!).colorScheme.primary,
       decoration: TextDecoration.underline,
     );
-    spans.add(
-      TextSpan(
-        text: text,
-        style: style,
-        recognizer: TapGestureRecognizer()
-          ..onTap = () =>
-              config.onLinkTap!(styleInfo.linkTarget!, config.context!),
+
+    Widget linkWidget = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => config.onLinkTap!(styleInfo.linkTarget!, config.context!),
+        child: Text(text, style: style),
       ),
     );
+
+    if (config.onShowMenu != null) {
+      linkWidget = Listener(
+        onPointerDown: (event) {
+          if (event.buttons == kSecondaryMouseButton) {
+            config.onShowMenu!(event.position, text);
+          }
+        },
+        child: linkWidget,
+      );
+    }
+
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: linkWidget,
+      ),
+    );
+    plainTexts.add(text);
   }
 
   void _addExactJumpSpan(String text, StyleInfo styleInfo) {
@@ -1033,15 +1223,111 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
       decoration: TextDecoration.underline,
       decorationStyle: TextDecorationStyle.dotted,
     );
-    spans.add(
-      TextSpan(
-        text: text,
-        style: style,
-        recognizer: TapGestureRecognizer()
-          ..onTap = () =>
-              config.onExactJump!(styleInfo.exactJumpTarget!, config.context!),
+
+    Widget linkWidget = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () =>
+            config.onExactJump!(styleInfo.exactJumpTarget!, config.context!),
+        child: Text(text, style: style),
       ),
     );
+
+    if (config.onShowMenu != null) {
+      linkWidget = Listener(
+        onPointerDown: (event) {
+          if (event.buttons == kSecondaryMouseButton) {
+            config.onShowMenu!(event.position, text);
+          }
+        },
+        child: linkWidget,
+      );
+    }
+
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: linkWidget,
+      ),
+    );
+    plainTexts.add(text);
+  }
+
+  void _addPathJumpSpan(String text, StyleInfo styleInfo) {
+    final style = styleInfo.style.copyWith(
+      color: Theme.of(config.context!).colorScheme.primary,
+      decoration: TextDecoration.underline,
+      decorationStyle: TextDecorationStyle.dotted,
+    );
+
+    Widget linkWidget = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () =>
+            config.onPathJump!(styleInfo.pathJumpTarget!, config.context!),
+        child: Text(text, style: style),
+      ),
+    );
+
+    if (config.onShowMenu != null) {
+      linkWidget = Listener(
+        onPointerDown: (event) {
+          if (event.buttons == kSecondaryMouseButton) {
+            config.onShowMenu!(event.position, text);
+          }
+        },
+        child: linkWidget,
+      );
+    }
+
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: linkWidget,
+      ),
+    );
+    plainTexts.add(text);
+  }
+
+  void _addGroupJumpSpan(String text, StyleInfo styleInfo) {
+    final groupId = int.tryParse(styleInfo.groupJumpTarget!);
+    if (groupId == null) return;
+
+    final style = styleInfo.style.copyWith(
+      color: Theme.of(config.context!).colorScheme.primary,
+      decoration: TextDecoration.underline,
+      decorationStyle: TextDecorationStyle.dotted,
+    );
+
+    Widget linkWidget = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => config.onGroupJump!(groupId, config.context!),
+        child: Text(text, style: style),
+      ),
+    );
+
+    if (config.onShowMenu != null) {
+      linkWidget = Listener(
+        onPointerDown: (event) {
+          if (event.buttons == kSecondaryMouseButton) {
+            config.onShowMenu!(event.position, text);
+          }
+        },
+        child: linkWidget,
+      );
+    }
+
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: linkWidget,
+      ),
+    );
+    plainTexts.add(text);
   }
 
   void _addLabelSpan(String text, StyleInfo styleInfo) {
@@ -1133,6 +1419,134 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
         recognizer: config.recognizer,
         mouseCursor: config.mouseCursor,
       ),
+    );
+  }
+}
+
+class _InlineImageLoader extends StatefulWidget {
+  final String dictId;
+  final String imageFile;
+  final double imageHeight;
+  final String fallbackText;
+  final Future<Uint8List?> Function(String dictId, String imageFile)
+  onLoadImage;
+
+  const _InlineImageLoader({
+    required this.dictId,
+    required this.imageFile,
+    required this.imageHeight,
+    required this.fallbackText,
+    required this.onLoadImage,
+  });
+
+  @override
+  State<_InlineImageLoader> createState() => _InlineImageLoaderState();
+}
+
+class _InlineImageLoaderState extends State<_InlineImageLoader> {
+  Uint8List? _imageBytes;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    Logger.d(
+      'InlineImageLoader.initState: dictId=${widget.dictId}, imageFile=${widget.imageFile}, height=${widget.imageHeight}',
+      tag: 'InlineImage',
+    );
+    _loadImage();
+  }
+
+  Future<void> _loadImage() async {
+    try {
+      Logger.d(
+        'InlineImageLoader._loadImage: loading image ${widget.imageFile} from dict ${widget.dictId}',
+        tag: 'InlineImage',
+      );
+      final bytes = await widget.onLoadImage(widget.dictId, widget.imageFile);
+      Logger.d(
+        'InlineImageLoader._loadImage: loaded ${bytes?.length ?? 0} bytes for ${widget.imageFile}',
+        tag: 'InlineImage',
+      );
+      if (mounted) {
+        setState(() {
+          _imageBytes = bytes;
+          _isLoading = false;
+        });
+      }
+    } catch (e, stackTrace) {
+      Logger.e(
+        'InlineImageLoader._loadImage error: $e',
+        tag: 'InlineImage',
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return SizedBox(
+        height: widget.imageHeight,
+        width: widget.imageHeight * 0.6,
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    if (_imageBytes != null && _imageBytes!.isNotEmpty) {
+      final isSvg = widget.imageFile.toLowerCase().endsWith('.svg');
+
+      if (isSvg) {
+        try {
+          final svgString = String.fromCharCodes(_imageBytes!);
+          return SvgPicture.string(
+            svgString,
+            height: widget.imageHeight,
+            fit: BoxFit.fitHeight,
+          );
+        } catch (e) {
+          Logger.e(
+            'InlineImageLoader SvgPicture error: $e',
+            tag: 'InlineImage',
+          );
+          return Text(
+            widget.fallbackText,
+            style: TextStyle(fontSize: widget.imageHeight),
+          );
+        }
+      }
+
+      return Image.memory(
+        _imageBytes!,
+        height: widget.imageHeight,
+        fit: BoxFit.fitHeight,
+        errorBuilder: (context, error, stackTrace) {
+          Logger.e(
+            'InlineImageLoader Image.memory error: $error',
+            tag: 'InlineImage',
+          );
+          return Text(
+            widget.fallbackText,
+            style: TextStyle(fontSize: widget.imageHeight),
+          );
+        },
+      );
+    }
+
+    Logger.d(
+      'InlineImageLoader.build: no image bytes, showing fallback text "${widget.fallbackText}", error=$_errorMessage',
+      tag: 'InlineImage',
+    );
+    return Text(
+      widget.fallbackText,
+      style: TextStyle(fontSize: widget.imageHeight),
     );
   }
 }

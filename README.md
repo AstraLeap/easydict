@@ -2,43 +2,9 @@
 
 使用说明及反馈渠道：https://forum.freemdict.com/t/topic/43251
 
-# 快速开始
-
-```bash
-# 安装依赖
-flutter pub get
-
-# 运行应用
-flutter run
-```
-
-## 构建发布版本
-
-| 平台    | 命令                    |
-| ------- | ----------------------- |
-| Windows | `flutter build windows` |
-| Android | `flutter build apk`     |
-| macOS   | `flutter build macos`   |
-| iOS     | `flutter build ios`     |
-| Linux   | `flutter build linux`   |
-
-## 可选编译参数（--dart-define）
-
-| 参数               | 说明                                      |
-| ------------------ | ----------------------------------------- |
-| `ENABLE_LOG=true`  | 启用日志输出（默认关闭），调试时使用      |
-| `LOG_TO_FILE=true` | 将日志同时写入文件，适合 Release 模式调试 |
-
-两个参数可以同时使用：
-
-```bash
-flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
-flutter build windows --dart-define=LOG_TO_FILE=true
-```
-
 # 词典文件结构
 
-词典格式组织如下：
+## 词典文件组织结构
 
 ```
 {dict_root_folder}/
@@ -73,8 +39,6 @@ flutter build windows --dart-define=LOG_TO_FILE=true
 
 ## dictionary.db
 
-制作词典时可使用本项目的`auxi_tools/build_db_from_jsonl.py`脚本，将jsonl文件转换为sqlite数据库。
-
 ```sql
 CREATE TABLE config (
     key TEXT PRIMARY KEY,--唯一键值为'zstd_dict'
@@ -99,37 +63,22 @@ CREATE TABLE indices (
 
 CREATE TABLE groups (
     group_id INTEGER PRIMARY KEY,
-    parent_id INTEGER,                   -- 父级组ID，实现无限层级嵌套
+    parent_id INTEGER,                   -- 父级组ID
     name TEXT NOT NULL,                  -- 组名
-    description TEXT,                    -- 组的描述，JSON 组件列表
+    description TEXT,                    -- 组的描述，JSON文本
     item_list TEXT DEFAULT '[]',         -- 组内项目列表 [{"e": 212, "a": "sense_group.0.sense.1"}]
     sub_group_count INTEGER DEFAULT 0,   -- 直接子组数量
     item_count INTEGER DEFAULT 0,        -- item_list 长度
     FOREIGN KEY (parent_id) REFERENCES groups(group_id) ON DELETE CASCADE
 );
-CREATE INDEX idx_groups_parent ON groups(parent_id);
 
+CREATE INDEX idx_groups_parent ON groups(parent_id);
 CREATE INDEX idx_headword_norm ON indices(headword_normalized);
 CREATE INDEX idx_phonetic ON indices(phonetic);
 CREATE INDEX idx_indices_entry_id ON indices(entry_id);
 ```
 
-### indices 表说明
-
-indices 表用于存储词条的索引信息，支持一个词条对应多个索引记录：
-
-- **headword 来源**（按优先级）：
-    1. JSON 中的 `headword` 字段
-    2. `links` 字段（可以是 string 或 list of string）
-    3. 递归搜索 JSON 中所有 `[text](anchor)` 格式标签
-
-- **anchor 字段**：
-    - 当 headword 来自 `headword` 或 `links` 时，anchor 为空字符串
-    - 当 headword 来自 `[text](anchor)` 时，anchor 为 JSON 路径，格式如 `sense_group.0.sense.0.label.pattern.0`
-
 ## media.db
-
-制作词典时可使用本项目的`auxi_tools/build_media_db.py`脚本，将多媒体文件转换为sqlite数据库，该脚本可递归处理子文件夹。
 
 ```sql
 CREATE TABLE audios (
@@ -146,24 +95,88 @@ CREATE INDEX idx_audios_name ON audios(name);
 CREATE INDEX idx_images_name ON images(name);
 ```
 
-# json数据格式
+# 生成词典需要准备的文件
+
+## 词典生成方法
+
+词典作者需要准备以下文件，然后调用 `build_dictionary.py` 脚本生成词典数据库。
+
+### 准备文件
+
+| 文件            | 必需 | 说明                                                                          |
+| --------------- | ---- | ----------------------------------------------------------------------------- |
+| `entries.jsonl` | 是   | 词条数据文件，每行一个 JSON 对象，详见 [entries.jsonl结构](#entriesjsonl结构) |
+| `groups.jsonl`  | 否   | 分组数据文件，每行一个 JSON 对象，用于词条分组功能(#groups.jsonl结构)         |
+| `audio/` 文件夹 | 否   | 音频文件目录，文件名需与词条中的 `audio_file` 字段对应                        |
+| `image/` 文件夹 | 否   | 图片文件目录，文件名需与词条中的 `image_file` 字段对应                        |
+
+### 调用方法
+
+```bash
+python auxi_tools/build_dictionary.py <jsonl_path> <lang> [options]
+```
+
+#### 位置参数
+
+| 参数          | 说明                      | 默认值 |
+| ------------- | ------------------------- | ------ |
+| `jsonl_path`  | JSONL 文件路径            | -      |
+| `lang`        | 语言代码（如 zh, ja, en） | -      |
+
+#### 可选参数
+
+| 参数                    | 说明                                      | 默认值 |
+| ----------------------- | ----------------------------------------- | ------ |
+| `--dict-size <KB>`      | Zstd 字典大小 (KB)                        | 112    |
+| `--compress-level <N>`  | Zstd 压缩级别                             | 7      |
+| `--page-size <BYTES>`   | SQLite 页大小 (字节)                      | 4096   |
+| `--audio-dir <path>`    | 音频文件夹路径                            | -      |
+| `--image-dir <path>`    | 图片文件夹路径                            | -      |
+| `--groups <path>`       | groups.jsonl 文件路径                     | -      |
+| `-o, --output <path>`   | 输出目录路径（默认为 JSONL 文件所在目录） | -      |
+
+### 使用示例
+
+```bash
+# 基础用法：仅生成词典数据库
+python auxi_tools/build_dictionary.py data/entries.jsonl ja
+
+# 自定义压缩参数
+python auxi_tools/build_dictionary.py data/entries.jsonl zh \
+    --dict-size 128 \
+    --compress-level 9
+
+# 完整用法：包含媒体资源和分组
+python auxi_tools/build_dictionary.py data/entries.jsonl ja \
+    --audio-dir data/audio \
+    --image-dir data/image \
+    --groups data/groups.jsonl \
+    -o output/my_dict
+```
+
+### 输出文件
+
+执行成功后会在输出目录生成以下文件：
+
+- `dictionary.db` - 词典主数据库
+- `media.db` - 媒体资源数据库（如有音频或图片）
+
+## entries.jsonl结构
 
 - 词典数据以json格式的`entry`为基础单位，数据库中存储着一堆`entry`。
 - 同一个单词可以下涵多个`entry`，`entry`有两个重要属性，page和section。
 - 同一个单词的诸多`entry`按照page属性分类，同一个page的多个`entry`组成一个独立单元，比如“药学词典”page、”儿童词典“page、“美语词典”page、”英语词典“page等。
 - 同一个page的各个`entry`之间通过section属性区分，section可以表示不同起源，或是不同词性等等。
 
-## entry的json结构
-
 ```jsonc
 {
     "dict_id": "my_dict", // 必填，词典id
     "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
-    "headword": "fog", // 与headline二选一，单词头，可重复
-    "headline": "つける【付ける・附ける】", // 与headword二选一，复杂词头
+    "headword": "fog", // 与headline二选一。可重复的词头
+    "headline": "つける【付ける・附ける】", // 与headword二选一。如果选择headline，则必须使用links字段，用来表明查什么词可以查到本词头
+    "links": "from_word", //可以是string或者是list of string，查询"from_word"时也能查到本词条
     "phonetic": "pinyin", // 可选，辅助搜索词，主要用于表意文字
     "entry_type": "word", // 可选，word或phrase等等
-    "links": "from_word", //可以是string或者是list of string，查询"from_word"时也能查到本词条
     "groups": [122, 254], // 可选，对应groups表中的group_id，可以是数字，也可以是数字列表
     "page": "medical", // 可选，比如“药学词典”、“美语词典”，查词界面会根据不同的page给entry分组，同时只会显示一组page相同的entry
     "section": "noun", // 可选，区分同一个page下不同的entry，section可以是不同起源，也可以是不同词性
@@ -217,12 +230,15 @@ CREATE INDEX idx_images_name ON images(name);
                 "zh": "困惑，迷惘；（理智、感情等）混浊不清的状态",
                 "en": "A state of mental confusion or uncertainty.",
             }, //释义字段，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
+            "tail": {
+                "synonym": "test",
+                "antonym": ["test", "test2"],
+                "related": ["test", "test2"],
+                "others": "",
+            }, //里面任意元素可以是string，也可以是list of string，现实在definition后面
             "image": {
                 "image_file": "fog.jpg",
             }, //可选
-            "synonym": "test", //可以是string，也可以是list of string
-            "antonym": ["test", "test2"], //可以是string，也可以是list of string
-            "related": ["test", "test2"], //可以是string，也可以是list of string
             "note": "常用于 'in a fog' 结构，描述因疲倦或震惊而无法正常思考。", //可选，批准部分
             "example": [
                 {
@@ -277,47 +293,105 @@ CREATE INDEX idx_images_name ON images(name);
             "sense": [{}, {}], // 无 group_name 和 group_sub_name 时，仅渲染 sense 列表
         },
     ], //释义组
-    "clob": "any text", //在这里显示任意无法结构化的文本，不推荐使用
+    "text": "any text", //在这里显示任意文本
+    "clob": "any text", //在这里显示任意文本，并且不会使用格式化文本渲染
 }
 ```
 
-### 注意
+### 重要补充说明
 
 - data和board内部还可以继续嵌套data或board
 - 强烈建议data和board里需要显示的文本键名为语言代码，比如`"zh":"这是一句话"`。
 - pronunciation、sense、sense_group、example后面可以是符合格式的map，也可以是符合格式的map组成的列表
+- 文本中可以使用`[{someword}](anchor)`的格式化文本，若如此做，查词`{someword}`时可以查到本entry，并滚动到此为止
 
-## 文本修饰语法
+### 文本修饰语法
 
-### 基本语法
+#### 基本语法
 
 ```
 [text](type1,type2)
 ```
 
-### type支持的类型
+#### type支持的类型
 
-| 语法               | 说明                   |
-| ------------------ | ---------------------- |
-| `strike`           | 删除线                 |
-| `underline`        | 下划线                 |
-| `double_underline` | 双下划线               |
-| `wavy`             | 波浪线                 |
-| `bold`             | 加粗                   |
-| `italic`           | 斜体                   |
-| `sup`              | 上标                   |
-| `sub`              | 下标                   |
-| `color`            | 主题色                 |
-| `special`          | 主题色、斜体           |
-| `label`            | 一个带背景和边框的标签 |
-| `ai`               | AI生成的内容           |
-| `->dog`            | 查词dog链接            |
-| `==entry_id.path`  | 精确跳转               |
-| `:かん`            | 日文振假名（Ruby）     |
+| 语法               | 说明                       |
+| ------------------ | -------------------------- |
+| `strike`           | 删除线                     |
+| `underline`        | 下划线                     |
+| `double_underline` | 双下划线                   |
+| `wavy`             | 波浪线                     |
+| `bold`             | 加粗                       |
+| `italic`           | 斜体                       |
+| `sup`              | 上标                       |
+| `sub`              | 下标                       |
+| `color`            | 主题色                     |
+| `special`          | 主题色、斜体               |
+| `label`            | 一个带背景和边框的标签     |
+| `ai`               | AI生成的内容               |
+| `:かん`            | 日文振假名（Ruby）         |
+| `~apple.svg`       | 行内图片，与文本等高       |
+| `->headword`       | 查词headword               |
+| `=>group_id`       | 指向group_id的界面         |
+| `==entry_id::path` | 根据entry_id和path精确跳转 |
+| `==entry_id`       | 跳转到entry_id             |
+| `::path`           | 跳转到目标json的path       |
 
-### 示例
+#### 示例
 
 ```
-For more information, please [see here](->wood).
+"Fruit, such as apple, [banana](banana)."
+"For more information, please [see here](==18551::sense_group.0.sense.1)."
 "Wow, you are so [pretty](color,bold)!"
+```
+
+## groups.jsonl结构
+
+```jsonc
+{
+    "group_id": 1, // 分组ID，需唯一，整型
+    "parent_id": 15, // 父分组ID，用于构建层级结构，整型，根分组时为 null
+    "name": "基础词汇", // 分组名称
+    "description": { "text": "some content." }, // 分组描述，json格式
+    "item_list": [
+        { "e": 212 }, // e: entry_id，整型
+        { "e": 213, "a": "sense.0" }, // a: anchor，JSON Path 锚点，指向词条内的具体位置，可选
+    ], // group中包含的entry信息
+    "sub_group_count": 2, // 子分组数量，整型
+    "item_count": 100, // entry词条数量，整型
+}
+```
+
+# 软件编译
+
+```bash
+# 安装依赖
+flutter pub get
+
+# 运行应用
+flutter run
+```
+
+## 构建发布版本
+
+| 平台    | 命令                    |
+| ------- | ----------------------- |
+| Windows | `flutter build windows` |
+| Android | `flutter build apk`     |
+| macOS   | `flutter build macos`   |
+| iOS     | `flutter build ios`     |
+| Linux   | `flutter build linux`   |
+
+## 可选编译参数（--dart-define）
+
+| 参数               | 说明                                      |
+| ------------------ | ----------------------------------------- |
+| `ENABLE_LOG=true`  | 启用日志输出（默认关闭），调试时使用      |
+| `LOG_TO_FILE=true` | 将日志同时写入文件，适合 Release 模式调试 |
+
+两个参数可以同时使用：
+
+```bash
+flutter run --dart-define=ENABLE_LOG=true --dart-define=LOG_TO_FILE=true
+flutter build windows --dart-define=LOG_TO_FILE=true
 ```

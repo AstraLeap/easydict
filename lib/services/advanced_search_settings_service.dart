@@ -4,13 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class LanguageDefaultSearchOptions {
   final bool exactMatch;
 
-  const LanguageDefaultSearchOptions({
-    this.exactMatch = false,
-  });
+  const LanguageDefaultSearchOptions({this.exactMatch = false});
 
-  Map<String, dynamic> toJson() => {
-    'exactMatch': exactMatch,
-  };
+  Map<String, dynamic> toJson() => {'exactMatch': exactMatch};
 
   factory LanguageDefaultSearchOptions.fromJson(Map<String, dynamic> json) {
     return LanguageDefaultSearchOptions(
@@ -44,7 +40,7 @@ class AdvancedSearchSettingsService {
   _defaultOptionsByLanguage = {
     'en': LanguageDefaultSearchOptions(exactMatch: false),
     'zh': LanguageDefaultSearchOptions(exactMatch: false),
-    'ja': LanguageDefaultSearchOptions(exactMatch: false),
+    'jp': LanguageDefaultSearchOptions(exactMatch: false),
     'ko': LanguageDefaultSearchOptions(exactMatch: false),
     'fr': LanguageDefaultSearchOptions(exactMatch: false),
     'de': LanguageDefaultSearchOptions(exactMatch: false),
@@ -140,7 +136,7 @@ class AdvancedSearchSettingsService {
   }
 
   /// 获取指定语言的精确搜索设置
-  /// [language] 语言代码，如 'en', 'zh', 'ja' 等
+  /// [language] 语言代码，如 'en', 'zh', 'jp' 等
   Future<bool> getExactMatchForLanguage(String language) async {
     final prefs = await SharedPreferences.getInstance();
     final langCode = language.toLowerCase();
@@ -175,7 +171,7 @@ class AdvancedSearchSettingsService {
   }
 
   /// 获取指定语言的默认搜索选项
-  /// [language] 语言代码，如 'en', 'zh', 'ja' 等
+  /// [language] 语言代码，如 'en', 'zh', 'jp' 等
   /// 如果没有自定义配置，返回内置的默认配置
   LanguageDefaultSearchOptions getDefaultOptionsForLanguage(String? language) {
     if (language == null || language.isEmpty || language == 'auto') {

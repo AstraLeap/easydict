@@ -10,6 +10,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../components/component_renderer.dart';
+import '../components/rendering/formatted_text_parser.dart' show TypeParser;
 import '../components/dictionary_logo.dart';
 import '../components/dictionary_navigation_panel.dart';
 import '../components/global_scale_wrapper.dart';
@@ -43,8 +44,10 @@ part 'entry_detail_page_private_widgets.dart';
 enum EntryNavMode {
   /// 初始状态：显示 entry.groups 的组芯片
   initial,
+
   /// 组详情状态：显示组的子组和词条列表
   groupDetail,
+
   /// 组内词条状态：显示组内的某个词条内容
   groupEntry,
 }
@@ -98,16 +101,23 @@ class EntryNavState {
       mode: mode ?? this.mode,
       currentGroupId: currentGroupId ?? this.currentGroupId,
       breadcrumb: breadcrumb ?? this.breadcrumb,
-      viewingEntryId: clearViewingEntry ? null : (viewingEntryId ?? this.viewingEntryId),
-      viewingEntryHeadword: clearViewingEntry ? null : (viewingEntryHeadword ?? this.viewingEntryHeadword),
-      currentGroup: clearCurrentGroup ? null : (currentGroup ?? this.currentGroup),
+      viewingEntryId: clearViewingEntry
+          ? null
+          : (viewingEntryId ?? this.viewingEntryId),
+      viewingEntryHeadword: clearViewingEntry
+          ? null
+          : (viewingEntryHeadword ?? this.viewingEntryHeadword),
+      currentGroup: clearCurrentGroup
+          ? null
+          : (currentGroup ?? this.currentGroup),
       subGroups: subGroups ?? this.subGroups,
       entryHeadwords: entryHeadwords ?? this.entryHeadwords,
     );
   }
 
   /// 是否在组相关模式（组详情或组内词条）
-  bool get isInGroupMode => mode == EntryNavMode.groupDetail || mode == EntryNavMode.groupEntry;
+  bool get isInGroupMode =>
+      mode == EntryNavMode.groupDetail || mode == EntryNavMode.groupEntry;
 }
 
 class EntryDetailPage extends StatefulWidget {
@@ -226,11 +236,22 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// key: entry.id
   final Map<String, EntryNavState> _entryNavStates = {};
 
+  /// 临时 Entry 替换状态
+  /// key: 原始 entry.id, value: 临时显示的目标 entry
+  final Map<String, DictionaryEntry> _tempReplacementEntries = {};
+
   /// 组详情数据加载状态（按 entry.id 记录）
   final Set<String> _loadingGroupEntries = {};
 
   /// 组详情数据缓存（按 dictId_groupId 缓存，避免重复加载）
-  final Map<String, (group_model.DictionaryGroup, List<group_model.DictionaryGroup>, Map<int, String>)>
+  final Map<
+    String,
+    (
+      group_model.DictionaryGroup,
+      List<group_model.DictionaryGroup>,
+      Map<int, String>,
+    )
+  >
   _groupDataCache = {};
 
   /// 子组列表展开状态
@@ -241,6 +262,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 子组展开状态缓存（存储子组的孙子组数据）
   final Map<int, List<group_model.DictionaryGroup>> _subGroupChildrenCache = {};
+
+  /// 子组词条 headwords 缓存
+  final Map<int, Map<int, String>> _subGroupEntryHeadwordsCache = {};
 
   @override
   void initState() {
@@ -299,8 +323,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 加载展开状态
   Future<void> _loadExpansionStates() async {
-    final subGroupsExpanded = await _preferencesService.getGroupDetailSubGroupsExpanded();
-    final entriesExpanded = await _preferencesService.getGroupDetailEntriesExpanded();
+    final subGroupsExpanded = await _preferencesService
+        .getGroupDetailSubGroupsExpanded();
+    final entriesExpanded = await _preferencesService
+        .getGroupDetailEntriesExpanded();
     if (mounted) {
       setState(() {
         _subGroupsExpanded = subGroupsExpanded;
@@ -773,6 +799,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       ),
       padding: const EdgeInsets.only(left: 10, top: 5, bottom: 5),
       child: Wrap(
+        alignment: WrapAlignment.start,
         spacing: 20,
         runSpacing: 5,
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -890,6 +917,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     return entries;
   }
 
+  /// 从复合 ID 中提取纯数字 entry_id（去掉 dict_id 前缀）
+  String _extractNumericId(String fullId) {
+    if (fullId.contains('_')) {
+      final parts = fullId.split('_');
+      if (parts.length >= 2) {
+        return parts.last;
+      }
+    }
+    return fullId;
+  }
+
   void _scrollToEntry(DictionaryEntry entry, {String? targetPath}) async {
     final entries = _getAllEntriesInOrder();
     int index = entries.indexWhere((e) => e.id == entry.id);
@@ -985,6 +1023,279 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         _isProgrammaticScroll = false;
       }
     });
+  }
+
+  /// 处理 ExactJump 跳转（在 EntryDetailPage 级别处理）
+  ///
+  /// [currentEntry] 当前 entry（用于确定替换位置）
+  /// [target] 跳转目标，格式为 entryId 或 entryId::path
+  Future<void> _handleExactJumpInPage(
+    DictionaryEntry currentEntry,
+    String target,
+  ) async {
+    // 解析 target
+    final (:entryId, :path) = TypeParser.parseExactJumpTarget(target);
+    final currentDictId = currentEntry.dictId;
+
+    if (currentDictId == null || currentDictId.isEmpty) {
+      showToast(context, context.t.entry.entryNotFound(entryId: entryId));
+      return;
+    }
+
+    // 获取当前词典组
+    DictionaryGroup? dictGroup;
+    try {
+      dictGroup = _entryGroup.dictionaryGroups.firstWhere(
+        (g) => g.dictionaryId == currentDictId,
+      );
+    } catch (_) {
+      dictGroup = null;
+    }
+
+    if (dictGroup == null) {
+      // 当前词典不在 entryGroup 中，临时替换显示
+      await _replaceEntryWithTemp(currentEntry, entryId, currentDictId, path);
+      return;
+    }
+
+    // 1. 建立索引 map：{pageId -> {entryId -> sectionIndex}}
+    final Map<String, Map<String, int>> pageEntryMap = {};
+    for (
+      int pageIndex = 0;
+      pageIndex < dictGroup.pageGroups.length;
+      pageIndex++
+    ) {
+      final pageGroup = dictGroup.pageGroups[pageIndex];
+      final Map<String, int> entryMap = {};
+      for (
+        int sectionIndex = 0;
+        sectionIndex < pageGroup.sections.length;
+        sectionIndex++
+      ) {
+        final entry = pageGroup.sections[sectionIndex].entry;
+        final numericId = _extractNumericId(entry.id);
+        entryMap[numericId] = sectionIndex;
+      }
+      pageEntryMap[pageGroup.page] = entryMap;
+    }
+
+    final currentPage = dictGroup.currentPage;
+    final currentEntryId = _extractNumericId(currentEntry.id);
+
+    // 2. 判断目标 entry 的位置
+    String? targetPageId;
+    int? targetSectionIndex;
+
+    for (final entry in pageEntryMap.entries) {
+      if (entry.value.containsKey(entryId)) {
+        targetPageId = entry.key;
+        targetSectionIndex = entry.value[entryId];
+        break;
+      }
+    }
+
+    // 3. 根据位置执行不同操作
+    if (targetPageId == null || targetSectionIndex == null) {
+      // 情况4：目标 entry 不在当前查词结果中
+      // 从 database.db 获取目标 entry 数据，临时替换显示
+      await _replaceEntryWithTemp(currentEntry, entryId, currentDictId, path);
+      return;
+    }
+
+    if (targetPageId == currentPage && entryId == currentEntryId) {
+      // 情况1：目标 entry == 当前 entry
+      // 直接滚动到 json path
+      if (path != null) {
+        _scrollToElement(currentEntry.id, path);
+      }
+      return;
+    }
+
+    if (targetPageId == currentPage) {
+      // 情况2：目标 entry 与当前 entry 同 page（不同 section）
+      // 切换 section，滚动到 entry，再滚动到 json path
+      dictGroup.setCurrentSectionIndex(targetSectionIndex);
+      _onSectionChanged();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final entries = _getAllEntriesInOrder();
+        final targetEntry = entries
+            .where(
+              (e) =>
+                  _extractNumericId(e.id) == entryId &&
+                  e.dictId == currentDictId,
+            )
+            .firstOrNull;
+        if (targetEntry != null) {
+          _scrollToEntry(targetEntry, targetPath: path);
+        }
+      });
+      return;
+    }
+
+    // 情况3：目标 entry 属于当前词典的其他 page
+    // 切换 page，切换 section，滚动到 entry，再滚动到 json path
+    final targetPageIndex = dictGroup.pageGroups.indexWhere(
+      (pg) => pg.page == targetPageId,
+    );
+
+    if (targetPageIndex != -1) {
+      dictGroup.setCurrentPageIndex(targetPageIndex);
+      dictGroup.setCurrentSectionIndex(targetSectionIndex);
+      _onPageChanged();
+      _onSectionChanged();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final entries = _getAllEntriesInOrder();
+        final targetEntry = entries
+            .where(
+              (e) =>
+                  _extractNumericId(e.id) == entryId &&
+                  e.dictId == currentDictId,
+            )
+            .firstOrNull;
+        if (targetEntry != null) {
+          _scrollToEntry(targetEntry, targetPath: path);
+        }
+      });
+    }
+  }
+
+  /// 临时替换 entry 显示
+  Future<void> _replaceEntryWithTemp(
+    DictionaryEntry originalEntry,
+    String targetEntryId,
+    String dictId,
+    String? path,
+  ) async {
+    // 1. 从数据库加载目标 entry
+    final targetEntry = await _loadEntryById(dictId, targetEntryId);
+
+    if (targetEntry == null) {
+      if (mounted) {
+        showToast(
+          context,
+          context.t.entry.entryNotFound(entryId: targetEntryId),
+        );
+      }
+      return;
+    }
+
+    // 2. 设置临时替换
+    setState(() {
+      _tempReplacementEntries[originalEntry.id] = targetEntry;
+    });
+
+    // 3. 如果有 path，滚动到对应位置
+    // 注意：使用目标 entry 的 id，因为 ComponentRenderer 显示的是目标 entry 的内容
+    if (path != null && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToElement(targetEntry.id, path);
+      });
+    }
+  }
+
+  /// 从当前词典加载指定 ID 的 entry
+  Future<DictionaryEntry?> _loadEntryById(String dictId, String entryId) async {
+    try {
+      final dictManager = DictionaryManager();
+      final db = await dictManager.openDictionaryDatabase(dictId);
+      final zstdDict = await dictManager.getZstdDictionary(dictId);
+      final entryIdInt = int.tryParse(entryId);
+
+      if (entryIdInt != null) {
+        final results = await db.query(
+          'entries',
+          where: 'entry_id = ?',
+          whereArgs: [entryIdInt],
+          limit: 1,
+        );
+
+        if (results.isNotEmpty) {
+          final jsonStr = extractJsonFromFieldWithDict(
+            results.first['json_data'],
+            zstdDict,
+          );
+          if (jsonStr != null) {
+            final jsonData = Map<String, dynamic>.from(
+              jsonDecode(jsonStr) as Map<String, dynamic>,
+            );
+            String fullId = jsonData['id']?.toString() ?? '';
+            if (fullId.isEmpty) {
+              fullId = '${dictId}_$entryId';
+              jsonData['id'] = fullId;
+            } else if (!fullId.startsWith('${dictId}_')) {
+              fullId = '${dictId}_$fullId';
+              jsonData['id'] = fullId;
+            }
+            await db.close();
+            return DictionaryEntry.fromJson(jsonData);
+          }
+        }
+      }
+      await db.close();
+    } catch (e, stackTrace) {
+      Logger.e(
+        '_loadEntryById error: $e',
+        tag: 'EntryDetail',
+        stackTrace: stackTrace,
+      );
+    }
+    return null;
+  }
+
+  /// 恢复原始 entry 显示
+  void _restoreOriginalEntry(String originalEntryId) {
+    if (_tempReplacementEntries.containsKey(originalEntryId)) {
+      setState(() {
+        _tempReplacementEntries.remove(originalEntryId);
+      });
+    }
+  }
+
+  /// 检查指定 entry 是否处于临时替换状态
+  bool _isEntryTempReplaced(String entryId) {
+    return _tempReplacementEntries.containsKey(entryId);
+  }
+
+  /// 获取 entry 的实际显示内容（考虑临时替换）
+  DictionaryEntry _getDisplayEntry(DictionaryEntry entry) {
+    return _tempReplacementEntries[entry.id] ?? entry;
+  }
+
+  /// 构建临时替换的返回按钮
+  Widget _buildTempReplacementReturnButton(String originalEntryId) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colorScheme.primaryContainer,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _restoreOriginalEntry(originalEntryId),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.arrow_back,
+                size: 16,
+                color: colorScheme.onPrimaryContainer,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                context.t.entry.returnToOriginal,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _onDictionaryChanged() {
@@ -1190,8 +1501,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
                     // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
                     List<SearchRelation>? entryRelations;
-                    if (showDictHeader &&
-                        widget.searchRelations != null) {
+                    if (showDictHeader && widget.searchRelations != null) {
                       final headword = entry.headword.toLowerCase();
                       for (final rel in widget.searchRelations!.entries) {
                         if (rel.key.toLowerCase() == headword) {
@@ -1210,8 +1520,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 ),
               ),
             ),
-            if (_entryGroup.dictionaryGroups.isNotEmpty &&
-                _isNavPanelLoaded)
+            if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
               _DraggableNavPanel(
                 entryGroup: _entryGroup,
                 onDictionaryChanged: _onDictionaryChanged,
@@ -1248,11 +1557,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     // 应用软件布局缩放
     final scale = FontLoaderService().getDictionaryContentScale();
-    if (scale == 1.0) {
-      return content;
-    }
+    final scaledContent = scale == 1.0
+        ? content
+        : PageScaleWrapper(scale: scale, child: content);
 
-    return PageScaleWrapper(scale: scale, child: content);
+    return Listener(
+      onPointerDown: (event) {
+        // 鼠标侧边后退键 (button 8 = kBackMouseButton)
+        if (event.buttons == 8) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: scaledContent,
+    );
   }
 
   /// 桌面端左上角悬浮返回按钮
@@ -1798,12 +2115,24 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
         if (entryGroupPaths.isEmpty) return const SizedBox.shrink();
 
-        return _buildGroupChips(entry.id, dictId, entryGroupPaths, colorScheme, hPad);
+        return _buildGroupChips(
+          entry.id,
+          dictId,
+          entryGroupPaths,
+          colorScheme,
+          hPad,
+        );
 
       case EntryNavMode.groupDetail:
       case EntryNavMode.groupEntry:
         // 组详情或组内词条状态：显示组层级路径 + 返回按钮
-        return _buildGroupBreadcrumbBar(entry.id, navState, dictId, colorScheme, hPad);
+        return _buildGroupBreadcrumbBar(
+          entry.id,
+          navState,
+          dictId,
+          colorScheme,
+          hPad,
+        );
     }
   }
 
@@ -1836,23 +2165,21 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     for (int pathIndex = 0; pathIndex < longestPaths.length; pathIndex++) {
       final groupPath = longestPaths[pathIndex];
       if (pathIndex > 0) {
-        items.add(_BreadcrumbItem(
-          label: '|',
-          isActive: false,
-          onTap: null,
-        ));
+        items.add(_BreadcrumbItem(label: '|', isActive: false, onTap: null));
       }
 
       final path = groupPath.path;
       for (int i = 0; i < path.length; i++) {
         final group = path[i];
-        items.add(_BreadcrumbItem(
-          label: group.name,
-          isActive: false,
-          onTap: group.groupId != null
-              ? () => _navigateToGroup(entryId, dictId, group.groupId!)
-              : null,
-        ));
+        items.add(
+          _BreadcrumbItem(
+            label: group.name,
+            isActive: false,
+            onTap: group.groupId != null
+                ? () => _navigateToGroup(entryId, dictId, group.groupId!)
+                : null,
+          ),
+        );
       }
     }
 
@@ -1890,24 +2217,28 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     final items = <_BreadcrumbItem>[];
     for (int i = 0; i < breadcrumb.length; i++) {
-      items.add(_BreadcrumbItem(
-        label: breadcrumb[i].name,
-        isActive: isGroupEntry ? false : i == breadcrumb.length - 1,
-        onTap: (isGroupEntry || i < breadcrumb.length - 1)
-            ? () {
-                final group = breadcrumb[i];
-                if (group.groupId != null) {
-                  _navigateToGroup(entryId, dictId, group.groupId!);
+      items.add(
+        _BreadcrumbItem(
+          label: breadcrumb[i].name,
+          isActive: isGroupEntry ? false : i == breadcrumb.length - 1,
+          onTap: (isGroupEntry || i < breadcrumb.length - 1)
+              ? () {
+                  final group = breadcrumb[i];
+                  if (group.groupId != null) {
+                    _navigateToGroup(entryId, dictId, group.groupId!);
+                  }
                 }
-              }
-            : null,
-      ));
+              : null,
+        ),
+      );
     }
 
     return _GroupBreadcrumbBar(
       margin: EdgeInsets.only(left: hPad, right: hPad, top: 4, bottom: 12),
       items: items,
-      trailingEntryHeadword: isGroupEntry ? navState.viewingEntryHeadword : null,
+      trailingEntryHeadword: isGroupEntry
+          ? navState.viewingEntryHeadword
+          : null,
       onClose: () => _navigateBack(entryId, navState),
     );
   }
@@ -1922,22 +2253,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     switch (navState.mode) {
       case EntryNavMode.initial:
         // 初始状态：显示词条内容
-        return Column(
+        final displayEntry = _getDisplayEntry(entry);
+        final isTempReplaced = _isEntryTempReplaced(entry.id);
+
+        Widget content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (relations != null && relations.isNotEmpty)
               _buildInlineDictRelationBanner(relations),
             ComponentRenderer(
               key: ValueKey(entry.id),
-              entry: entry,
+              entry: displayEntry,
               topPadding: 12,
               onElementTap: (path, label) {
-                _handleTranslationTap(entry, path, label);
+                _handleTranslationTap(displayEntry, path, label);
               },
               onEditElement: (path, label) {
-                _showJsonElementEditorFromPath(entry, path);
+                _showJsonElementEditorFromPath(displayEntry, path);
               },
               onAiAsk: (path, label) {
-                _handleAiElementTap(entry, path, label);
+                _handleAiElementTap(displayEntry, path, label);
               },
               onTranslationInsert: (path, newEntry) {
                 EntryEventBus().emitTranslationInsert(
@@ -1948,9 +2283,37 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   ),
                 );
               },
+              onGroupJump: (groupId, context) {
+                final dictId = displayEntry.dictId;
+                if (dictId != null && dictId.isNotEmpty) {
+                  _navigateToGroup(entry.id, dictId, groupId);
+                }
+              },
+              onExactJump: (target, ctx) {
+                _handleExactJumpInPage(entry, target);
+              },
+              onPathJump: (path, ctx) {
+                _scrollToElement(entry.id, path);
+              },
             ),
           ],
         );
+
+        // 如果是临时替换状态，添加返回按钮
+        if (isTempReplaced) {
+          return Stack(
+            children: [
+              content,
+              Positioned(
+                top: 8,
+                right: 16,
+                child: _buildTempReplacementReturnButton(entry.id),
+              ),
+            ],
+          );
+        }
+
+        return content;
 
       case EntryNavMode.groupDetail:
         // 组详情状态：显示组的子组和词条列表
@@ -1992,12 +2355,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       child: InkWell(
         onTap: onToggle,
         child: Padding(
-          padding: EdgeInsets.only(
-            left: hPad,
-            right: hPad,
-            top: 6,
-            bottom: 6,
-          ),
+          padding: EdgeInsets.only(left: hPad, right: hPad, top: 6, bottom: 6),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2055,6 +2413,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     String dictId,
     int groupId,
   ) async {
+    Logger.d(
+      '_navigateToGroup: entryId=$entryId, dictId=$dictId, groupId=$groupId',
+      tag: 'GroupJump',
+    );
     final cacheKey = '${dictId}_$groupId';
 
     // 检查是否已经在加载
@@ -2183,7 +2545,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           // 组描述
           if (currentGroup.description != null &&
               currentGroup.description!.isNotEmpty) ...[
-            _buildGroupDescription(currentGroup),
+            _buildGroupDescription(currentGroup, dictId),
             const SizedBox(height: 12),
           ],
 
@@ -2201,7 +2563,62 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 构建组描述
-  Widget _buildGroupDescription(group_model.DictionaryGroup group) {
+  /// 支持 JSON 格式的组件列表，会使用 ComponentRenderer 渲染
+  /// 如果不是有效的 JSON，则回退到纯文本显示
+  Widget _buildGroupDescription(
+    group_model.DictionaryGroup group,
+    String dictId,
+  ) {
+    final description = group.description;
+    if (description == null || description.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    Map<String, dynamic>? jsonContent;
+    try {
+      final parsed = jsonDecode(description);
+      if (parsed is Map<String, dynamic>) {
+        jsonContent = parsed;
+      }
+    } catch (_) {
+      // 不是有效的 JSON，使用纯文本显示
+    }
+
+    if (jsonContent != null) {
+      final virtualEntry = DictionaryEntry(
+        id: 'group_${group.groupId}_description',
+        dictId: dictId,
+        headword: '',
+        entryType: 'group_description',
+        tags: [],
+        certifications: [],
+        frequency: {},
+        pronunciations: [],
+        sense: [],
+        rawJson: jsonContent,
+      );
+
+      return ComponentRenderer(
+        key: ValueKey('group_desc_${group.groupId}'),
+        entry: virtualEntry,
+        topPadding: 0,
+        bottomPadding: 0,
+        leftPadding: 0,
+        rightPadding: 0,
+        enableElementActions: true,
+        onElementTap: (path, label) {
+          // 可以添加元素点击处理
+        },
+        onEditElement: (path, label) {
+          // 可以添加编辑处理
+        },
+        onAiAsk: (path, label) {
+          // 可以添加 AI 询问处理
+        },
+      );
+    }
+
+    // 回退到纯文本显示
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -2214,11 +2631,39 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                group.description ?? '',
+                description,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建数字标签
+  Widget _buildCountBadge(int count) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Transform.translate(
+      offset: const Offset(0, 1),
+      child: Container(
+        padding: const EdgeInsets.only(left: 5, right: 5, top: 1, bottom: 2),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withOpacity(0.5),
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          '$count',
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.bold,
+            color: colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );
@@ -2237,34 +2682,16 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       children: [
         Row(
           children: [
-            Icon(
-              Icons.folder_outlined,
-              size: 20,
-              color: colorScheme.primary,
-            ),
+            Icon(Icons.folder_outlined, size: 20, color: colorScheme.primary),
             const SizedBox(width: 8),
             Text(
               context.t.groups.subGroups,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${subGroups.length}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onPrimaryContainer,
-                ),
-              ),
-            ),
+            _buildCountBadge(subGroups.length),
             const Spacer(),
             _buildExpandButton(
               isExpanded: _subGroupsExpanded,
@@ -2272,7 +2699,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 setState(() {
                   _subGroupsExpanded = !_subGroupsExpanded;
                 });
-                await _preferencesService.setGroupDetailSubGroupsExpanded(_subGroupsExpanded);
+                await _preferencesService.setGroupDetailSubGroupsExpanded(
+                  _subGroupsExpanded,
+                );
               },
             ),
           ],
@@ -2332,20 +2761,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 ),
               ),
               if (group.subGroupCount > 0 || group.itemCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${group.subGroupCount + group.itemCount}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
+                _buildCountBadge(group.subGroupCount + group.itemCount),
               const SizedBox(width: 8),
               Material(
                 color: Colors.transparent,
@@ -2392,7 +2808,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                           },
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
                             decoration: BoxDecoration(
                               border: Border.all(
                                 color: colorScheme.outline.withOpacity(0.4),
@@ -2405,6 +2824,120 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                                 fontSize: 13,
                                 color: colorScheme.onSurface,
                               ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          if (group.itemList.isNotEmpty && group.groupId != null)
+            FutureBuilder<Map<int, String>>(
+              future: _loadSubGroupEntryHeadwords(
+                dictId,
+                group.groupId!,
+                group.itemList,
+              ),
+              builder: (context, snapshot) {
+                final headwords = snapshot.data;
+                if (headwords == null) {
+                  return const Padding(
+                    padding: EdgeInsets.only(top: 8, left: 24),
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 1.5),
+                    ),
+                  );
+                }
+                if (headwords.isEmpty && group.itemList.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                final navState =
+                    _entryNavStates[entryId] ?? const EntryNavState();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 24),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: group.itemList.map((item) {
+                      final headword =
+                          headwords[item.entryId] ?? '#${item.entryId}';
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _entryNavStates[entryId] = navState.copyWith(
+                                mode: EntryNavMode.groupEntry,
+                                viewingEntryId: item.entryId,
+                                viewingEntryHeadword: headword,
+                              );
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color:
+                                    (item.anchor != null &&
+                                                item.anchor!.isNotEmpty
+                                            ? colorScheme.tertiary
+                                            : colorScheme.outline)
+                                        .withOpacity(0.4),
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  item.anchor != null && item.anchor!.isNotEmpty
+                                      ? Icons.bookmark_outline
+                                      : Icons.article_outlined,
+                                  size: 14,
+                                  color:
+                                      item.anchor != null &&
+                                          item.anchor!.isNotEmpty
+                                      ? colorScheme.tertiary
+                                      : colorScheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  headword,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                ),
+                                if (item.anchor != null &&
+                                    item.anchor!.isNotEmpty) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.tertiaryContainer,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      item.anchor!,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: colorScheme.onTertiaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ),
@@ -2432,6 +2965,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     return children;
   }
 
+  /// 加载子组词条 headwords
+  Future<Map<int, String>> _loadSubGroupEntryHeadwords(
+    String dictId,
+    int groupId,
+    List<group_model.GroupItem> items,
+  ) async {
+    if (_subGroupEntryHeadwordsCache.containsKey(groupId)) {
+      return _subGroupEntryHeadwordsCache[groupId]!;
+    }
+    final headwords = await _groupService.getGroupEntryHeadwords(dictId, items);
+    _subGroupEntryHeadwordsCache[groupId] = headwords;
+    return headwords;
+  }
+
   /// 构建展开/折叠按钮
   Widget _buildExpandButton({
     required bool isExpanded,
@@ -2450,11 +2997,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isExpanded ? context.t.common.collapse : context.t.common.expand,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: colorScheme.primary,
-                ),
+                isExpanded
+                    ? context.t.common.collapse
+                    : context.t.common.expand,
+                style: TextStyle(fontSize: 11, color: colorScheme.primary),
               ),
               const SizedBox(width: 2),
               Icon(
@@ -2489,17 +3035,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: colorScheme.outline.withOpacity(0.4),
-            ),
+            border: Border.all(color: colorScheme.outline.withOpacity(0.4)),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
             '${group.name}${group.subGroupCount > 0 || group.itemCount > 0 ? ' (${group.subGroupCount + group.itemCount})' : ''}',
-            style: TextStyle(
-              fontSize: 13,
-              color: colorScheme.onSurface,
-            ),
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
           ),
         ),
       ),
@@ -2532,34 +3073,16 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       children: [
         Row(
           children: [
-            Icon(
-              Icons.article_outlined,
-              size: 20,
-              color: colorScheme.primary,
-            ),
+            Icon(Icons.article_outlined, size: 20, color: colorScheme.primary),
             const SizedBox(width: 8),
             Text(
               context.t.groups.entries,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${items.length}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onPrimaryContainer,
-                ),
-              ),
-            ),
+            _buildCountBadge(items.length),
             const Spacer(),
             _buildExpandButton(
               isExpanded: _entriesExpanded,
@@ -2567,7 +3090,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 setState(() {
                   _entriesExpanded = !_entriesExpanded;
                 });
-                await _preferencesService.setGroupDetailEntriesExpanded(_entriesExpanded);
+                await _preferencesService.setGroupDetailEntriesExpanded(
+                  _entriesExpanded,
+                );
               },
             ),
           ],
@@ -2580,7 +3105,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             spacing: 8,
             runSpacing: 6,
             children: items.map((item) {
-              final headword = entryHeadwords[item.entryId] ?? '#${item.entryId}';
+              final headword =
+                  entryHeadwords[item.entryId] ?? '#${item.entryId}';
               return _buildGroupEntryChip(entryId, dictId, item, headword);
             }).toList(),
           ),
@@ -2597,9 +3123,22 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: items.map((item) {
+      children: items.asMap().entries.map((entry) {
+        final index = entry.key;
+        final item = entry.value;
         final headword = entryHeadwords[item.entryId] ?? '#${item.entryId}';
-        return _buildExpandedEntryItem(entryId, dictId, item, headword);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildExpandedEntryItem(entryId, dictId, item, headword),
+            if (index < items.length - 1)
+              Divider(
+                height: 16,
+                thickness: 0.5,
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              ),
+          ],
+        );
       }).toList(),
     );
   }
@@ -2614,106 +3153,39 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final colorScheme = Theme.of(context).colorScheme;
     final navState = _entryNavStates[entryId] ?? const EntryNavState();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                item.anchor != null && item.anchor!.isNotEmpty
-                    ? Icons.bookmark_outline
-                    : Icons.article_outlined,
-                size: 16,
-                color: item.anchor != null && item.anchor!.isNotEmpty
-                    ? colorScheme.tertiary
-                    : colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  headword,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface,
+    return Stack(
+      children: [
+        FutureBuilder<DictionaryEntry?>(
+          future: _loadEntryFromDatabase(dictId, item.entryId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                height: 40,
+                child: Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-              ),
-              if (item.anchor != null && item.anchor!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: colorScheme.tertiaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    item.anchor!,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: colorScheme.onTertiaryContainer,
-                    ),
-                  ),
-                ),
-              const SizedBox(width: 8),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _entryNavStates[entryId] = navState.copyWith(
-                        mode: EntryNavMode.groupEntry,
-                        viewingEntryId: item.entryId,
-                        viewingEntryHeadword: headword,
-                      );
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      Icons.arrow_forward_ios,
-                      size: 14,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          FutureBuilder<DictionaryEntry?>(
-            future: _loadEntryFromDatabase(dictId, item.entryId),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SizedBox(
-                  height: 40,
-                  child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
-                );
-              }
-              final entry = snapshot.data;
-              if (entry == null) {
-                return Text(
-                  context.t.groups.noEntries,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: colorScheme.outline,
-                  ),
-                );
-              }
-              return ComponentRenderer(
+              );
+            }
+            final entry = snapshot.data;
+            if (entry == null) {
+              return Text(
+                context.t.groups.noEntries,
+                style: TextStyle(fontSize: 11, color: colorScheme.outline),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: ComponentRenderer(
                 key: ValueKey('expanded_entry_${entry.id}'),
                 entry: entry,
                 topPadding: 0,
+                bottomPadding: 0,
+                leftPadding: 0,
+                rightPadding: 0,
                 onElementTap: (path, label) {
                   _handleTranslationTap(entry, path, label);
                 },
@@ -2732,11 +3204,45 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                     ),
                   );
                 },
-              );
-            },
+                onGroupJump: (groupId, ctx) {
+                  _navigateToGroup(entryId, dictId, groupId);
+                },
+              ),
+            );
+          },
+        ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _entryNavStates[entryId] = navState.copyWith(
+                    mode: EntryNavMode.groupEntry,
+                    viewingEntryId: item.entryId,
+                    viewingEntryHeadword: headword,
+                  );
+                });
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  Icons.arrow_forward_ios,
+                  size: 14,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -2756,7 +3262,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         return DictionaryEntry.fromJson(entryJson);
       }
     } catch (e) {
-      Logger.e('Failed to load entry from database: $e', tag: 'EntryDetailPage');
+      Logger.e(
+        'Failed to load entry from database: $e',
+        tag: 'EntryDetailPage',
+      );
     }
     return null;
   }
@@ -2788,17 +3297,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: colorScheme.outline.withOpacity(0.4),
-            ),
+            border: Border.all(color: colorScheme.outline.withOpacity(0.4)),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
             headword,
-            style: TextStyle(
-              fontSize: 13,
-              color: colorScheme.onSurface,
-            ),
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
           ),
         ),
       ),
@@ -2841,6 +3345,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             ),
           );
         },
+        onGroupJump: (groupId, ctx) {
+          _navigateToGroup(entryId, dictId, groupId);
+        },
       );
     }
 
@@ -2878,6 +3385,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   newEntry: newEntry.toJson(),
                 ),
               );
+            },
+            onGroupJump: (groupId, ctx) {
+              _navigateToGroup(entryId, dictId, groupId);
             },
           );
         }
@@ -3878,6 +4388,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 根据元素路径判断翻译类型，返回对应的 system prompt。
   /// - 路径中包含 "definition" → 词典释义专用提示词
   /// - 路径中包含 "example" → 例句专用提示词
+  /// - 路径中包含 "note" → 备注专用提示词
   /// - 其他 → 通用补充信息提示词
   String _getTranslationSystemPrompt(List<String> pathParts) {
     final pathStr = pathParts.join('.').toLowerCase();
@@ -3892,6 +4403,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           'Translate the given dictionary example sentence to be natural and idiomatic. '
           'Ensure the translation accurately reflects the specific usage and nuance '
           'of the keyword in context. '
+          'Output only the translated text — no explanations, no commentary.';
+    } else if (pathStr.contains('note')) {
+      return 'You are a professional lexicographer. '
+          'Translate the given dictionary note to be clear and informative. '
+          'Preserve any technical terms, abbreviations, or special formatting. '
           'Output only the translated text — no explanations, no commentary.';
     } else {
       return 'You are a professional linguistic consultant. '
@@ -4180,17 +4696,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     return text.replaceAllMapped(pattern, (match) => match.group(1) ?? '');
   }
 
-  /// 对中文词典的文本，将波浪线（～、～）替换为 entry 的 headword
+  /// 对中文和日文词典的文本，将占位符替换为 headword 或 headline
+  /// 中文：～（全角波浪线）、\u301c（波浪线）
+  /// 日文：～、\u301c、―（U+2015 HORIZONTAL BAR）、—（U+2014 EM DASH）
   String _substituteHeadword(String text, DictionaryEntry entry) {
     final dictId = entry.dictId ?? '';
     final meta = DictionaryManager().getCachedMetadata(dictId);
-    if (LanguageUtils.normalizeSourceLanguage(meta?.sourceLanguage ?? '') ==
-        'zh') {
-      return text
-          .replaceAll('～', entry.headword)
-          .replaceAll('\u301c', entry.headword);
-    }
-    return text;
+    final lang = LanguageUtils.normalizeSourceLanguage(
+      meta?.sourceLanguage ?? '',
+    );
+    if (lang != 'zh' && lang != 'jp') return text;
+
+    final replacement = entry.headword.isNotEmpty
+        ? entry.headword
+        : _removeFormatting(entry.headline ?? '');
+
+    return text
+        .replaceAll('～', replacement)
+        .replaceAll('\u301c', replacement)
+        .replaceAll('\u2015', replacement)
+        .replaceAll('\u2014', replacement);
   }
 
   /// 显示AI元素对话框

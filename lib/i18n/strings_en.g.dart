@@ -313,7 +313,7 @@ class _TranslationsLangNamesEn extends TranslationsLangNamesZh {
 
 	// Translations
 	@override String get zh => 'Chinese';
-	@override String get ja => 'Japanese';
+	@override String get jp => 'Japanese';
 	@override String get ko => 'Korean';
 	@override String get en => 'English';
 	@override String get fr => 'French';
@@ -811,6 +811,7 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String currentWord({required Object word}) => 'Current word: ${word}';
 	@override String currentDict({required Object dictId}) => 'Current dictionary: ${dictId}';
 	@override String entryNotFound({required Object entryId}) => 'Entry not found: ${entryId}';
+	@override String get returnToOriginal => 'Return';
 	@override String get extractFailed => 'Failed to extract text';
 	@override String get generatingAudio => 'Generating audio...';
 	@override String speakFailed({required Object error}) => 'TTS failed: ${error}';
@@ -1267,7 +1268,7 @@ extension on TranslationsEn {
 			'help.githubApiError' => ({required Object code}) => 'GitHub API error (status ${code})',
 			'help.checkUpdateError' => ({required Object error}) => 'Update check failed: ${error}',
 			'langNames.zh' => 'Chinese',
-			'langNames.ja' => 'Japanese',
+			'langNames.jp' => 'Japanese',
 			'langNames.ko' => 'Korean',
 			'langNames.en' => 'English',
 			'langNames.fr' => 'French',
@@ -1722,6 +1723,7 @@ extension on TranslationsEn {
 			'entry.currentWord' => ({required Object word}) => 'Current word: ${word}',
 			'entry.currentDict' => ({required Object dictId}) => 'Current dictionary: ${dictId}',
 			'entry.entryNotFound' => ({required Object entryId}) => 'Entry not found: ${entryId}',
+			'entry.returnToOriginal' => 'Return',
 			'entry.extractFailed' => 'Failed to extract text',
 			'entry.generatingAudio' => 'Generating audio...',
 			'entry.speakFailed' => ({required Object error}) => 'TTS failed: ${error}',

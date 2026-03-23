@@ -78,6 +78,12 @@ enum DictElementType {
 
   /// sense 分组副标题（group_sub_name 字段）
   groupSubName,
+
+  /// clob 字段（纯文本内容）
+  clob,
+
+  /// text 字段（格式化文本内容）
+  text,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -277,6 +283,18 @@ class DictTypography {
       isSerifOrMonospace: false,
       fontWeight: FontWeight.w400,
     ),
+
+    // ── clob / text ──
+    DictElementType.clob: _ElementMeta(
+      baseFontSize: 14.0,
+      isSerifOrMonospace: false,
+      lineHeight: 1.6,
+    ),
+    DictElementType.text: _ElementMeta(
+      baseFontSize: 14.0,
+      isSerifOrMonospace: false,
+      lineHeight: 1.6,
+    ),
   };
 
   // ── 快捷访问器 ──────────────────────────────────────────────────────────────
@@ -332,7 +350,7 @@ class DictTypography {
   ///
   /// 字体查找链：用户自定义字体 → 同语言同类别回退 → SourceSerif4/SourceSans3 → 系统默认。
   ///
-  /// [language]    该文本所属的语言代码（如 'en'、'zh'、'ja'）。
+  /// [language]    该文本所属的语言代码（如 'en'、'zh'、'jp'）。
   /// [fontScales]  用户在字体配置页面设置的每语言缩放比例
   ///               格式：{ language: { 'serif'|'sans': scale } }
   /// [isBold]      是否需要粗体变体（影响字体族选取）。

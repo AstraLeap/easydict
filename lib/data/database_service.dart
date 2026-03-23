@@ -950,31 +950,19 @@ class DatabaseService {
     );
   }
 
-  /// 规范化搜索词（与 build_db_from_jsonl.py 的 normalize_text() 保持一致）：
-  /// 1. RFC 3986 百分号编码解码（如 %20 → 空格，%E4%B8%AD%E6%96%87 → 中文）
-  /// 2. 根据语言代码处理：
+  /// 规范化搜索词：
+  /// 1. 根据语言代码处理：
   ///    - 繁体中文（zh-tw/zh-hk/zh-mo/zh-hant）转简体
   ///    - 日语发音（isPhonetic=true）进行标准化处理
-  /// 3. 小写化
-  /// 4. 去除音调符号（Unicode 组合字符）
-  /// 5. 去除两端空格
-  /// 6. isPhonetic 时去除所有空格
+  /// 2. 小写化
+  /// 3. 去除音调符号（Unicode 组合字符）
+  /// 4. 去除两端空格
+  /// 5. isPhonetic 时去除所有空格
   String _normalizeSearchWord(
     String word, {
     String? langCode,
     bool isPhonetic = false,
   }) {
-    // RFC 3986: 解码百分号编码（URI/URL 编码）
-    // 例如：%20 → 空格，%C3%A9 → é，%E4%B8%AD%E6%96%87 → 中文
-    if (word.contains('%')) {
-      try {
-        word = Uri.decodeComponent(word);
-      } catch (e) {
-        // 解码失败（如无效的百分号编码），保持原文本
-        Logger.d('URI解码失败，保持原文本: $e', tag: 'DatabaseService');
-      }
-    }
-
     // isPhonetic 时先去除所有空格
     if (isPhonetic) {
       word = word.replaceAll(' ', '');
@@ -987,8 +975,7 @@ class DatabaseService {
 
     // 日语发音标准化（仅当 isPhonetic 且语言为日语时）
     final normalizedLangCode = langCode?.toLowerCase();
-    if (isPhonetic &&
-        (normalizedLangCode == 'ja' || normalizedLangCode == 'jp')) {
+    if (isPhonetic && normalizedLangCode == 'jp') {
       word = _normalizeJapanese(word);
     }
 
@@ -1010,7 +997,7 @@ class DatabaseService {
     Set<String> languageCodes,
   ) {
     final result = <String, _NormalizedQuery>{};
-    const logographic = {'zh', 'ja', 'ko'};
+    const logographic = {'zh', 'jp', 'ko'};
 
     for (final langCode in languageCodes) {
       final normalizedLang = LanguageUtils.normalizeSourceLanguage(langCode);
@@ -1045,15 +1032,14 @@ class DatabaseService {
     final hasHangul = _koreanRegExp.hasMatch(text);
 
     if (hasHangul) return ['ko'];
-    if (hasKana) return ['ja']; // 有假名（含汉字）→ 日语
-    if (hasCJK) return ['zh', 'ja']; // 纯汉字 → 中文或日文均可
+    if (hasKana) return ['jp']; // 有假名（含汉字）→ 日语
+    if (hasCJK) return ['zh', 'jp']; // 纯汉字 → 中文或日文均可
     return null; // 拉丁字母等表音文字 → 搜索所有非表意词典
   }
 
   Future<SearchResult> getAllEntries(
     String word, {
     bool exactMatch = false,
-    bool usePhoneticSearch = false,
     String? sourceLanguage,
     String? dictId,
   }) async {
@@ -1063,14 +1049,11 @@ class DatabaseService {
     entries = await _searchEntriesInternal(
       word,
       exactMatch: exactMatch,
-      usePhoneticSearch: usePhoneticSearch,
       sourceLanguage: sourceLanguage,
       dictId: dictId,
     );
 
-    if (entries.isEmpty &&
-        _detectQueryMode(word) == _QueryMode.normal &&
-        !usePhoneticSearch) {
+    if (entries.isEmpty && _detectQueryMode(word) == _QueryMode.normal) {
       // 判断是否需要调用英语关系词搜索
       bool shouldSearchEnglish;
       if (sourceLanguage == 'auto') {
@@ -1113,7 +1096,6 @@ class DatabaseService {
             return _searchEntriesInternal(
               relatedWord,
               exactMatch: exactMatch,
-              usePhoneticSearch: false,
               sourceLanguage: sourceLanguage,
             ).timeout(
               const Duration(seconds: 2),
@@ -1150,7 +1132,6 @@ class DatabaseService {
   Future<List<DictionaryEntry>> _searchEntriesInternal(
     String word, {
     required bool exactMatch,
-    bool usePhoneticSearch = false,
     String? sourceLanguage,
     String? dictId,
   }) async {
@@ -1183,7 +1164,6 @@ class DatabaseService {
         word,
         normQuery,
         exactMatch: exactMatch,
-        usePhoneticSearch: usePhoneticSearch,
       );
       return result;
     }
@@ -1246,7 +1226,6 @@ class DatabaseService {
         word,
         normQuery,
         exactMatch: exactMatch,
-        usePhoneticSearch: usePhoneticSearch,
       );
     }).toList();
 
@@ -1265,7 +1244,7 @@ class DatabaseService {
     // 不再用 phonetic 列是否存在判断——表音文字词典（如英语）也可能有 phonetic 列用于存储音标。
     try {
       final meta = await _dictManager.getDictionaryMetadata(dictId);
-      const logographic = {'zh', 'ja', 'jp', 'cn'};
+      const logographic = {'zh', 'jp', 'cn'};
       final normalizedLang = LanguageUtils.normalizeSourceLanguage(
         meta?.sourceLanguage ?? '',
       );
@@ -1283,7 +1262,6 @@ class DatabaseService {
     String word,
     _NormalizedQuery normQuery, {
     required bool exactMatch,
-    bool usePhoneticSearch = false,
   }) async {
     final entries = <DictionaryEntry>[];
 
@@ -1311,33 +1289,18 @@ class DatabaseService {
       // ── 新结构：在 indices 表查询 ────────────────────────────────────────
       // 第一步：在 indices 表中查询符合条件的 entry_id 和 headword
       if (isbiaoyi) {
-        // 表意文字词典：同时检索 headword 和 phonetic 字段
-        if (usePhoneticSearch && phoneticNorm != null) {
-          // 读音搜索：使用 phonetic 标准化结果
-          if (qMode == _QueryMode.like) {
-            whereClause = 'phonetic LIKE ?';
-            whereArgs = [phoneticNorm];
-          } else if (qMode == _QueryMode.glob) {
-            whereClause = 'phonetic GLOB ?';
-            whereArgs = [phoneticNorm];
-          } else {
-            whereClause = 'phonetic = ?';
-            whereArgs = [phoneticNorm];
-          }
+        // 表意文字词典：同时检索 headword_normalized 和 phonetic 字段
+        // headword_normalized 使用 headwordNorm，phonetic 使用 phoneticNorm
+        final phNorm = phoneticNorm ?? headwordNorm;
+        if (qMode == _QueryMode.like) {
+          whereClause = '(headword_normalized LIKE ? OR phonetic LIKE ?)';
+          whereArgs = [headwordNorm, phNorm];
+        } else if (qMode == _QueryMode.glob) {
+          whereClause = '(headword_normalized GLOB ? OR phonetic GLOB ?)';
+          whereArgs = [headwordNorm, phNorm];
         } else {
-          // 默认：同时匹配 headword_normalized 和 phonetic
-          // headword_normalized 使用 headwordNorm，phonetic 使用 phoneticNorm
-          final phNorm = phoneticNorm ?? headwordNorm;
-          if (qMode == _QueryMode.like) {
-            whereClause = '(headword_normalized LIKE ? OR phonetic LIKE ?)';
-            whereArgs = [headwordNorm, phNorm];
-          } else if (qMode == _QueryMode.glob) {
-            whereClause = '(headword_normalized GLOB ? OR phonetic GLOB ?)';
-            whereArgs = [headwordNorm, phNorm];
-          } else {
-            whereClause = '(headword_normalized = ? OR phonetic = ?)';
-            whereArgs = [headwordNorm, phNorm];
-          }
+          whereClause = '(headword_normalized = ? OR phonetic = ?)';
+          whereArgs = [headwordNorm, phNorm];
         }
       } else {
         // 表音文字词典：只检索 headword_normalized 字段
@@ -1522,7 +1485,6 @@ class DatabaseService {
     String query, {
     required String sourceLanguage,
     bool exactMatch = false,
-    bool usePhoneticSearch = false,
     bool biaoyiExactMatch = false,
     int limit = 8,
   }) async {
@@ -1530,7 +1492,7 @@ class DatabaseService {
     // SQL 使用预计算的标准化结果进行索引查找。
     Logger.i(
       'getPreSearchCandidates 开始: query=|$query| lang=$sourceLanguage exactMatch=$exactMatch '
-      'usePhoneticSearch=$usePhoneticSearch biaoyiExactMatch=$biaoyiExactMatch limit=$limit',
+      'biaoyiExactMatch=$biaoyiExactMatch limit=$limit',
       tag: 'PrefixSearch',
     );
 
@@ -1619,7 +1581,6 @@ class DatabaseService {
             db,
             query,
             normQuery,
-            usePhoneticSearch: usePhoneticSearch,
             biaoyiExactMatch: biaoyiExactMatch,
             limit: limit,
           );
@@ -1663,7 +1624,7 @@ class DatabaseService {
         (a, b) => a.headword.toLowerCase().compareTo(b.headword.toLowerCase()),
       );
     } else {
-      const logographic = {'zh', 'ja', 'ko'};
+      const logographic = {'zh', 'jp', 'ko'};
       if (logographic.contains(
         LanguageUtils.normalizeSourceLanguage(sourceLanguage),
       )) {
@@ -1699,7 +1660,6 @@ class DatabaseService {
     Database db,
     String query,
     _NormalizedQuery normQuery, {
-    bool usePhoneticSearch = false,
     bool biaoyiExactMatch = false,
     required int limit,
   }) async {
@@ -1707,125 +1667,87 @@ class DatabaseService {
     final headwordNorm = normQuery.headword;
     final phoneticNorm = normQuery.phonetic;
 
-    if (usePhoneticSearch && phoneticNorm != null) {
-      // 读音搜索：仅在 phonetic 字段上搜索，使用 phonetic 标准化结果
-      // 利用覆盖索引 idx_phonetic(phonetic, headword_normalized, headword)
-      final String phoneticWhere;
-      final List<dynamic> phoneticArgs;
-      if (qMode == _QueryMode.like) {
-        phoneticWhere = 'phonetic LIKE ?';
-        phoneticArgs = [phoneticNorm];
-      } else if (qMode == _QueryMode.glob) {
-        phoneticWhere = 'phonetic GLOB ?';
-        phoneticArgs = [phoneticNorm];
-      } else {
-        phoneticWhere = 'phonetic LIKE ?';
-        phoneticArgs = ['$phoneticNorm%'];
-      }
-      final rows = await db.rawQuery(
-        'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
-        ' WHERE $phoneticWhere'
-        ' GROUP BY headword'
-        ' ORDER BY MIN(phonetic) ASC, headword ASC'
-        ' LIMIT ?',
-        [...phoneticArgs, limit],
-      );
-      return rows
-          .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-          .map(
-            (r) => _Candidate(
-              r['headword'] as String,
-              r['phonetic'] as String? ?? '',
-              1,
-            ),
-          )
-          .toList();
+    // 同时检索 headword_normalized 和 phonetic 字段
+    // headword_normalized 使用 headwordNorm，phonetic 使用 phoneticNorm
+    final phNorm = phoneticNorm ?? headwordNorm;
+    final String hwWhere, phWhere;
+    final List<dynamic> hwArgs, phArgs;
+    final int fetchLimit = biaoyiExactMatch ? limit * 2 : limit;
+    if (qMode == _QueryMode.like) {
+      hwWhere = 'headword_normalized LIKE ?';
+      hwArgs = [headwordNorm];
+      phWhere = 'phonetic LIKE ?';
+      phArgs = [phNorm];
+    } else if (qMode == _QueryMode.glob) {
+      hwWhere = 'headword_normalized GLOB ?';
+      hwArgs = [headwordNorm];
+      phWhere = 'phonetic GLOB ?';
+      phArgs = [phNorm];
     } else {
-      // 普通/简繁区分模式。
-      // 为了让「简繁区分」的 startsWith 过滤仅作用于 headword_normalized 臂而不影响
-      // phonetic 臂（用户通过拼音/假名输入找到的字符串不应被 headword 前缀约束），
-      // 两臂分别查询，再在 Dart 层合并去重。
-      // headword_normalized 使用 headwordNorm，phonetic 使用 phoneticNorm
-      final phNorm = phoneticNorm ?? headwordNorm;
-      final String hwWhere, phWhere;
-      final List<dynamic> hwArgs, phArgs;
-      final int fetchLimit = biaoyiExactMatch ? limit * 2 : limit;
-      if (qMode == _QueryMode.like) {
-        hwWhere = 'headword_normalized LIKE ?';
-        hwArgs = [headwordNorm];
-        phWhere = 'phonetic LIKE ?';
-        phArgs = [phNorm];
-      } else if (qMode == _QueryMode.glob) {
-        hwWhere = 'headword_normalized GLOB ?';
-        hwArgs = [headwordNorm];
-        phWhere = 'phonetic GLOB ?';
-        phArgs = [phNorm];
-      } else {
-        hwWhere = 'headword_normalized LIKE ?';
-        hwArgs = ['$headwordNorm%'];
-        phWhere = 'phonetic LIKE ?';
-        phArgs = ['$phNorm%'];
-      }
-
-      // headword_normalized 臂：简繁区分时对结果应用 startsWith 过滤
-      final hwRows = await db.rawQuery(
-        'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
-        ' WHERE $hwWhere'
-        ' GROUP BY headword'
-        ' ORDER BY MIN(phonetic) ASC, headword ASC'
-        ' LIMIT ?',
-        [...hwArgs, fetchLimit],
-      );
-      var hwCandidates = hwRows
-          .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-          .map(
-            (r) => _Candidate(
-              r['headword'] as String,
-              r['phonetic'] as String? ?? '',
-              1,
-            ),
-          )
-          .toList();
-      if (biaoyiExactMatch && qMode == _QueryMode.normal) {
-        final trimmedForExact = query.trim();
-        hwCandidates = hwCandidates
-            .where((c) => c.headword.startsWith(trimmedForExact))
-            .toList();
-      }
-
-      // phonetic 臂：不参与简繁区分筛选
-      final phRows = await db.rawQuery(
-        'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
-        ' WHERE $phWhere'
-        ' GROUP BY headword'
-        ' ORDER BY MIN(phonetic) ASC, headword ASC'
-        ' LIMIT ?',
-        [...phArgs, fetchLimit],
-      );
-      final phCandidates = phRows
-          .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
-          .map(
-            (r) => _Candidate(
-              r['headword'] as String,
-              r['phonetic'] as String? ?? '',
-              1,
-            ),
-          )
-          .toList();
-
-      // Dart 层合并去重，headword_normalized 臂优先
-      final seen = <String>{};
-      final merged = <_Candidate>[];
-      for (final c in [...hwCandidates, ...phCandidates]) {
-        if (seen.add(c.headword)) merged.add(c);
-      }
-      merged.sort((a, b) {
-        final sk = a.sortKey.compareTo(b.sortKey);
-        if (sk != 0) return sk;
-        return a.headword.compareTo(b.headword);
-      });
-      return merged.take(limit).toList();
+      hwWhere = 'headword_normalized LIKE ?';
+      hwArgs = ['$headwordNorm%'];
+      phWhere = 'phonetic LIKE ?';
+      phArgs = ['$phNorm%'];
     }
+
+    // headword_normalized 臂：简繁区分时对结果应用 startsWith 过滤
+    final hwRows = await db.rawQuery(
+      'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
+      ' WHERE $hwWhere'
+      ' GROUP BY headword'
+      ' ORDER BY MIN(phonetic) ASC, headword ASC'
+      ' LIMIT ?',
+      [...hwArgs, fetchLimit],
+    );
+    var hwCandidates = hwRows
+        .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
+        .map(
+          (r) => _Candidate(
+            r['headword'] as String,
+            r['phonetic'] as String? ?? '',
+            1,
+          ),
+        )
+        .toList();
+    if (biaoyiExactMatch && qMode == _QueryMode.normal) {
+      final trimmedForExact = query.trim();
+      hwCandidates = hwCandidates
+          .where((c) => c.headword.startsWith(trimmedForExact))
+          .toList();
+    }
+
+    // phonetic 臂：不参与简繁区分筛选
+    final phRows = await db.rawQuery(
+      'SELECT headword, MIN(phonetic) AS phonetic FROM indices'
+      ' WHERE $phWhere'
+      ' GROUP BY headword'
+      ' ORDER BY MIN(phonetic) ASC, headword ASC'
+      ' LIMIT ?',
+      [...phArgs, fetchLimit],
+    );
+    final phCandidates = phRows
+        .where((r) => (r['headword'] as String?)?.isNotEmpty == true)
+        .map(
+          (r) => _Candidate(
+            r['headword'] as String,
+            r['phonetic'] as String? ?? '',
+            1,
+          ),
+        )
+        .toList();
+
+    // Dart 层合并去重，headword_normalized 臂优先
+    final seen = <String>{};
+    final merged = <_Candidate>[];
+    for (final c in [...hwCandidates, ...phCandidates]) {
+      if (seen.add(c.headword)) merged.add(c);
+    }
+    merged.sort((a, b) {
+      final sk = a.sortKey.compareTo(b.sortKey);
+      if (sk != 0) return sk;
+      return a.headword.compareTo(b.headword);
+    });
+    return merged.take(limit).toList();
   }
 
   /// Auto 模式下的表音词典前缀候选词搜索（简单前缀，无分级排名）。

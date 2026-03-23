@@ -912,7 +912,7 @@ class LanguageVoiceMapping {
 const List<LanguageVoiceMapping> supportedLanguages = [
   LanguageVoiceMapping(langCode: 'en'),
   LanguageVoiceMapping(langCode: 'zh'),
-  LanguageVoiceMapping(langCode: 'ja'),
+  LanguageVoiceMapping(langCode: 'jp'),
   LanguageVoiceMapping(langCode: 'ko'),
   LanguageVoiceMapping(langCode: 'fr'),
   LanguageVoiceMapping(langCode: 'de'),
@@ -929,7 +929,7 @@ final Map<String, List<GoogleTTSVoice>> googleTTSVoicesByLanguage = {
       .where((v) => v.language.contains('英语') && v.language.contains('美国'))
       .toList(),
   'zh': googleTTSVoices.where((v) => v.language.contains('中文')).toList(),
-  'ja': googleTTSVoices.where((v) => v.language.contains('日语')).toList(),
+  'jp': googleTTSVoices.where((v) => v.language.contains('日语')).toList(),
   'ko': googleTTSVoices.where((v) => v.language.contains('韩语')).toList(),
   'fr': googleTTSVoices.where((v) => v.language.contains('法语')).toList(),
   'de': googleTTSVoices.where((v) => v.language.contains('德语')).toList(),
@@ -943,7 +943,7 @@ final Map<String, List<GoogleTTSVoice>> googleTTSVoicesByLanguage = {
 final Map<String, List<EdgeTTSVoice>> edgeTTSVoicesByLanguage = {
   'en': edgeTTSVoices.where((v) => v.language.contains('英语')).toList(),
   'zh': edgeTTSVoices.where((v) => v.language.contains('中文')).toList(),
-  'ja': edgeTTSVoices.where((v) => v.language.contains('日语')).toList(),
+  'jp': edgeTTSVoices.where((v) => v.language.contains('日语')).toList(),
   'ko': edgeTTSVoices.where((v) => v.language.contains('韩语')).toList(),
   'fr': edgeTTSVoices.where((v) => v.language.contains('法语')).toList(),
   'de': edgeTTSVoices.where((v) => v.language.contains('德语')).toList(),

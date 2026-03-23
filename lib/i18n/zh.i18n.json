@@ -276,7 +276,7 @@
   },
   "langNames": {
     "zh": "中文",
-    "ja": "日语",
+    "jp": "日语",
     "ko": "韩语",
     "en": "英语",
     "fr": "法语",
@@ -739,6 +739,7 @@
     "currentWord": "当前查询单词: {word}",
     "currentDict": "当前词典: {dictId}",
     "entryNotFound": "未找到词条: {entryId}",
+    "returnToOriginal": "返回",
     "extractFailed": "提取文本失败",
     "generatingAudio": "生成音频中...",
     "speakFailed": "语音合成失败: {error}",

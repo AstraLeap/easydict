@@ -16,7 +16,11 @@ import 'package:visibility_detector/visibility_detector.dart';
 import '../core/constants/entry_keys.dart' show kExcludedEntryKeys;
 import '../core/logger.dart';
 import 'rendering/formatted_text_parser.dart'
-    show parseFormattedText, FormattedTextResult, kRubySpacingRatio;
+    show
+        parseFormattedText,
+        FormattedTextResult,
+        kRubySpacingRatio,
+        TypeParser;
 import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
@@ -572,7 +576,7 @@ bool _isKnownLanguageCode(String key) {
   const known = {
     'en',
     'zh',
-    'ja',
+    'jp',
     'ko',
     'fr',
     'de',
@@ -584,7 +588,7 @@ bool _isKnownLanguageCode(String key) {
   };
   return known.contains(key) ||
       key.startsWith('zh_') ||
-      key.startsWith('ja_') ||
+      key.startsWith('jp_') ||
       key.startsWith('ko_');
 }
 
@@ -866,12 +870,14 @@ class _RubyTextLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rubyColor = Theme.of(context).colorScheme.primary;
     Widget rubyWidget = RubyLayout(
       rubyFontSize: rubyFontSize,
       rubySpacing: rubySpacing,
       baseText: baseText,
       baseStyle: baseStyle,
       rubyText: rubyText,
+      rubyColor: rubyColor,
     );
 
     if (onShowMenu != null) {
@@ -1070,84 +1076,67 @@ Future<void> _handleLinkTap(BuildContext context, String word) async {
   }
 }
 
-Future<void> _handleExactJump(BuildContext context, String target) async {
-  // target format: entry_id.path (e.g., 25153.sense.0)
-  final parts = target.split('.');
-  if (parts.length < 2) return;
+Future<void> _handleExactJump(
+  BuildContext context,
+  String target, {
+  String? currentDictId,
+}) async {
+  // target format: entry_id 或 entry_id:path (e.g., 25153 或 25153:sense.0)
+  Logger.d(
+    '_handleExactJump: target=$target, currentDictId=$currentDictId',
+    tag: 'ExactJump',
+  );
 
-  final entryId = parts[0];
-  // 剩余部分作为路径
-  // final path = parts.sublist(1).join('.');
+  if (target.isEmpty) {
+    if (context.mounted) {
+      showToast(context, context.t.entry.entryNotFound(entryId: target));
+    }
+    return;
+  }
+
+  // 使用新的解析方法，支持 : 和 . 分隔符
+  final (:entryId, :path) = TypeParser.parseExactJumpTarget(target);
 
   final dictManager = DictionaryManager();
 
-  // 1. 获取当前启用的词典
-  final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
-
-  // 2. 在所有启用词典中查找该 entryId
   DictionaryEntry? targetEntry;
 
-  for (final metadata in enabledDicts) {
-    try {
-      final db = await dictManager.openDictionaryDatabase(metadata.id);
+  // 1. 优先在当前词典中查找
+  if (currentDictId != null && currentDictId.isNotEmpty) {
+    Logger.d(
+      '_handleExactJump: searching in current dict $currentDictId',
+      tag: 'ExactJump',
+    );
+    targetEntry = await _findEntryInDict(dictManager, currentDictId, entryId);
+    if (targetEntry != null) {
+      Logger.d('_handleExactJump: found in current dict', tag: 'ExactJump');
+    }
+  }
 
-      // 尝试查找 entry
-      // entry_id 可能是纯数字，也可能是 dictId_数字
-      // 我们需要根据 entryId 查找
-
-      // 尝试直接匹配 entry_id 字段 (int)
-      final entryIdInt = int.tryParse(entryId);
-      if (entryIdInt != null) {
-        final results = await db.query(
-          'entries',
-          where: 'entry_id = ?',
-          whereArgs: [entryIdInt],
-          limit: 1,
+  // 2. 如果当前词典没找到，在所有启用词典中查找
+  if (targetEntry == null) {
+    Logger.d(
+      '_handleExactJump: searching in all enabled dicts',
+      tag: 'ExactJump',
+    );
+    final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
+    for (final metadata in enabledDicts) {
+      if (currentDictId != null && metadata.id == currentDictId)
+        continue; // 已查询过
+      targetEntry = await _findEntryInDict(dictManager, metadata.id, entryId);
+      if (targetEntry != null) {
+        Logger.d(
+          '_handleExactJump: found in dict ${metadata.id}',
+          tag: 'ExactJump',
         );
-
-        if (results.isNotEmpty) {
-          final jsonStr = extractJsonFromField(results.first['json_data']);
-          if (jsonStr == null) {
-            Logger.e('无法解析json_data字段', tag: 'ComponentRenderer');
-            await db.close();
-            continue;
-          }
-          final jsonData = Map<String, dynamic>.from(
-            // ignore: unnecessary_cast
-            (jsonDecode(jsonStr) as Map<String, dynamic>),
-          );
-
-          // 确保 ID 格式正确
-          String fullId = jsonData['id']?.toString() ?? '';
-          if (fullId.isEmpty) {
-            fullId = '${metadata.id}_$entryId';
-            jsonData['id'] = fullId;
-          } else if (!fullId.startsWith('${metadata.id}_')) {
-            fullId = '${metadata.id}_$fullId';
-            jsonData['id'] = fullId;
-          }
-
-          targetEntry = DictionaryEntry.fromJson(jsonData);
-          await db.close();
-          break;
-        }
+        break;
       }
-
-      await db.close();
-    } catch (e) {
-      // Error handling without debug output
     }
   }
 
   if (targetEntry != null) {
     if (context.mounted) {
-      // 跳转到详情页
-      // 注意：这里我们构造一个临时的 DictionaryEntryGroup
-      // 实际上 EntryDetailPage 需要完整的上下文，但这里我们只能提供单个 entry
-      // 更好的做法可能是让 EntryDetailPage 支持定位到特定 entry
-
       final entryGroup = DictionaryEntryGroup.groupEntries([targetEntry]);
-
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => EntryDetailPage(
@@ -1158,10 +1147,66 @@ Future<void> _handleExactJump(BuildContext context, String target) async {
       );
     }
   } else {
+    Logger.d('_handleExactJump: entry not found: $entryId', tag: 'ExactJump');
     if (context.mounted) {
       showToast(context, context.t.entry.entryNotFound(entryId: entryId));
     }
   }
+}
+
+Future<DictionaryEntry?> _findEntryInDict(
+  DictionaryManager dictManager,
+  String dictId,
+  String entryId,
+) async {
+  try {
+    final db = await dictManager.openDictionaryDatabase(dictId);
+    final zstdDict = await dictManager.getZstdDictionary(dictId);
+    final entryIdInt = int.tryParse(entryId);
+    if (entryIdInt != null) {
+      final results = await db.query(
+        'entries',
+        where: 'entry_id = ?',
+        whereArgs: [entryIdInt],
+        limit: 1,
+      );
+      Logger.d(
+        '_findEntryInDict: dictId=$dictId, entryId=$entryId, results=${results.length}',
+        tag: 'ExactJump',
+      );
+      if (results.isNotEmpty) {
+        final jsonStr = extractJsonFromFieldWithDict(
+          results.first['json_data'],
+          zstdDict,
+        );
+        if (jsonStr != null) {
+          final jsonData = Map<String, dynamic>.from(
+            jsonDecode(jsonStr) as Map<String, dynamic>,
+          );
+          String fullId = jsonData['id']?.toString() ?? '';
+          if (fullId.isEmpty) {
+            fullId = '${dictId}_$entryId';
+            jsonData['id'] = fullId;
+          } else if (!fullId.startsWith('${dictId}_')) {
+            fullId = '${dictId}_$fullId';
+            jsonData['id'] = fullId;
+          }
+          await db.close();
+          return DictionaryEntry.fromJson(jsonData);
+        } else {
+          Logger.e('_findEntryInDict: jsonStr is null', tag: 'ExactJump');
+        }
+      }
+    }
+    await db.close();
+  } catch (e, stackTrace) {
+    Logger.e(
+      '_findEntryInDict error: $e',
+      tag: 'ExactJump',
+      stackTrace: stackTrace,
+    );
+  }
+  return null;
 }
 
 /// 用于管理隐藏语言状态的通知器
@@ -1182,10 +1227,25 @@ class ComponentRenderer extends StatefulWidget {
   /// 自定义底部内边距。如果为 -1（默认），则使用 16px。
   final double bottomPadding;
 
+  /// 自定义左侧内边距。如果为 -1（默认），则使用 16px。
+  final double leftPadding;
+
+  /// 自定义右侧内边距。如果为 -1（默认），则使用 16px。
+  final double rightPadding;
+
   /// 是否启用文本选择功能。默认为 true。
   /// 当 ComponentRenderer 被嵌入到另一个可滚动组件中时，
   /// 应设置为 false 以避免 SelectionArea 和 SingleChildScrollView 的嵌套冲突。
   final bool enableSelection;
+
+  /// 分组跳转回调，点击 [text](=>group_id) 格式的链接时触发
+  final void Function(int groupId, BuildContext context)? onGroupJump;
+
+  /// 精确跳转回调，点击 [text](==entryid::path) 格式的链接时触发
+  final void Function(String target, BuildContext context)? onExactJump;
+
+  /// 路径跳转回调，点击 [text](::path) 格式的链接时触发
+  final void Function(String path, BuildContext context)? onPathJump;
 
   const ComponentRenderer({
     super.key,
@@ -1197,7 +1257,12 @@ class ComponentRenderer extends StatefulWidget {
     this.enableElementActions = true,
     this.topPadding = -1,
     this.bottomPadding = -1,
+    this.leftPadding = -1,
+    this.rightPadding = -1,
     this.enableSelection = true,
+    this.onGroupJump,
+    this.onExactJump,
+    this.onPathJump,
   });
 
   @override
@@ -1296,13 +1361,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     dynamic clob,
     List<String> path,
   ) {
-    // Only render clob at root level, skip nested clob
     if (path.length != 1) {
       return const SizedBox.shrink();
     }
 
     final colorScheme = Theme.of(context).colorScheme;
-    // Handle both plain string and object with 'text' field
     final String text;
     if (clob is String) {
       text = clob;
@@ -1314,16 +1377,121 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     if (text.isEmpty) return const SizedBox.shrink();
 
-    // Display as plain text without title or container styling
-    // 使用普通 Text 而不是 SelectableText，因为外层已经有 SelectionArea 提供选择功能
-    // SelectableText 在 SelectionArea 内部会导致选择系统冲突
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        text,
-        style: DictTypography.getBaseStyle(
-          DictElementType.boardContent,
-          color: colorScheme.onSurface,
+    final clobPath = path;
+    final pathStr = _convertPathToString(clobPath);
+    final clobStyle = DictTypography.getBaseStyle(
+      DictElementType.clob,
+      color: colorScheme.onSurface,
+    );
+    final clobTextKey = GlobalKey();
+
+    final recognizer = _createGestureRecognizer(
+      pathKey: pathStr,
+      label: 'Clob',
+      path: clobPath,
+      context: context,
+      text: text,
+      textStyle: clobStyle,
+      textKey: clobTextKey,
+    );
+
+    final formattedResult = _parseFormattedText(
+      text,
+      clobStyle,
+      context: context,
+      elementType: DictElementType.clob,
+      recognizer: recognizer,
+      mouseCursor: SystemMouseCursors.text,
+      onShowMenu: (position, text) {
+        _handleElementSecondaryTap(pathStr, 'Clob', context, position);
+      },
+    );
+
+    return _buildTappableWidget(
+      context: context,
+      pathData: _PathData(clobPath, 'clob'),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: colorScheme.outlineVariant, width: 1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text.rich(
+          TextSpan(children: formattedResult.spans),
+          key: clobTextKey,
+        ),
+      ),
+    );
+  }
+
+  /// Renders the content for a 'text' element.
+  /// Only renders text at root level (path.length == 1) as formatted text.
+  /// Nested text elements are not displayed.
+  Widget _buildTextContent(
+    BuildContext context,
+    dynamic textValue,
+    List<String> path,
+  ) {
+    if (path.length != 1) {
+      return const SizedBox.shrink();
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final String text;
+    if (textValue is String) {
+      text = textValue;
+    } else if (textValue is Map<String, dynamic>) {
+      text = textValue['text'] as String? ?? '';
+    } else {
+      text = '';
+    }
+
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    final textPath = path;
+    final pathStr = _convertPathToString(textPath);
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.text,
+      color: colorScheme.onSurface,
+    );
+    final textTextKey = GlobalKey();
+
+    final recognizer = _createGestureRecognizer(
+      pathKey: pathStr,
+      label: 'Text',
+      path: textPath,
+      context: context,
+      text: text,
+      textStyle: textStyle,
+      textKey: textTextKey,
+    );
+
+    final formattedResult = _parseFormattedText(
+      text,
+      textStyle,
+      context: context,
+      elementType: DictElementType.text,
+      recognizer: recognizer,
+      mouseCursor: SystemMouseCursors.text,
+      onShowMenu: (position, text) {
+        _handleElementSecondaryTap(pathStr, 'Text', context, position);
+      },
+    );
+
+    return _buildTappableWidget(
+      context: context,
+      pathData: _PathData(textPath, 'text'),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: colorScheme.outlineVariant, width: 1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text.rich(
+          TextSpan(children: formattedResult.spans),
+          key: textTextKey,
         ),
       ),
     );
@@ -1993,10 +2161,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       // 判断是否为 CJK（日小或汉字）
       final isCJK =
-          key == 'ja' ||
+          key == 'jp' ||
           key == 'zh' ||
           key.startsWith('zh_') ||
-          key.startsWith('ja_');
+          key.startsWith('jp_');
 
       // 使用 DictTypography 获取 example 基础样式（字体族和缩放由 _parseFormattedText 处理）
       final exampleTextStyle = DictTypography.getBaseStyle(
@@ -2266,7 +2434,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
     DictElementType? elementType,
     MouseCursor? mouseCursor,
     bool useCustomFont = true,
+    void Function(String word, BuildContext context)? onLinkTap,
+    void Function(String target, BuildContext context)? onExactJump,
+    void Function(String path, BuildContext context)? onPathJump,
+    void Function(int groupId, BuildContext context)? onGroupJump,
   }) {
+    final effectiveOnLinkTap =
+        onLinkTap ?? ((word, ctx) => _handleLinkTap(ctx, word));
+    final effectiveOnExactJump = onExactJump ??
+        widget.onExactJump ??
+        ((target, ctx) =>
+            _handleExactJump(ctx, target, currentDictId: _localEntry.dictId));
+    final effectiveOnPathJump = onPathJump ??
+        widget.onPathJump ??
+        ((path, ctx) => _handlePathJump(ctx, path));
+    final effectiveOnGroupJump = onGroupJump ?? widget.onGroupJump;
+
     return parseFormattedText(
       text,
       baseStyle,
@@ -2286,7 +2469,30 @@ class ComponentRendererState extends State<ComponentRenderer> {
       elementType: elementType,
       mouseCursor: mouseCursor,
       useCustomFont: useCustomFont,
+      onLinkTap: effectiveOnLinkTap,
+      onExactJump: effectiveOnExactJump,
+      onPathJump: effectiveOnPathJump,
+      onGroupJump: effectiveOnGroupJump,
+      dictId: _localEntry.dictId,
+      onLoadImage: _loadInlineImage,
     );
+  }
+
+  void _handlePathJump(BuildContext context, String path) {
+    scrollToElement(path);
+  }
+
+  Future<Uint8List?> _loadInlineImage(String dictId, String imageFile) async {
+    Logger.d(
+      '_loadInlineImage: dictId=$dictId, imageFile=$imageFile',
+      tag: 'InlineImage',
+    );
+    final bytes = await DictionaryManager().getImageBytes(dictId, imageFile);
+    Logger.d(
+      '_loadInlineImage: got ${bytes?.length ?? 0} bytes for $imageFile',
+      tag: 'InlineImage',
+    );
+    return bytes;
   }
 
   dynamic _getValueByPath(dynamic json, List<String> pathParts) {
@@ -2342,8 +2548,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         if (currentSourceLang == null && parentValue is Map) {
           if (parentValue.containsKey('en')) {
             currentSourceLang = 'en';
-          } else if (parentValue.containsKey('ja')) {
-            currentSourceLang = 'ja';
+          } else if (parentValue.containsKey('jp')) {
+            currentSourceLang = 'jp';
           } else if (parentValue.containsKey('zh')) {
             currentSourceLang = 'zh';
           }
@@ -2490,8 +2696,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final knownLanguages = [
         'en',
         'zh',
-        'ja',
-        'jp', // jp 和 ja 等效，都表示日语
+        'jp',
         'ko',
         'fr',
         'de',
@@ -2504,10 +2709,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       ];
       if (knownLanguages.contains(lastPart.toLowerCase())) {
         languageCode = lastPart.toLowerCase();
-        // jp 统一转换为 ja
-        if (languageCode == 'jp') {
-          languageCode = 'ja';
-        }
         languageSource = '路径字段 "$lastPart"';
       }
     }
@@ -2518,9 +2719,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     try {
-      // 先尝试从缓存获取
       final ttsCache = TtsCacheService();
-      List<int>? audioData = await ttsCache.getCache(textToSpeak, languageCode);
+      final voice = await AIService().getVoiceForLanguage(
+        languageCode,
+        languageSource,
+        null,
+      );
+      List<int>? audioData = await ttsCache.getCache(
+        textToSpeak,
+        languageCode,
+        voice,
+      );
 
       if (audioData != null && audioData.isNotEmpty) {
         Logger.d(
@@ -2528,31 +2737,34 @@ class ComponentRendererState extends State<ComponentRenderer> {
           tag: '_performSpeak',
         );
       } else {
-        // 缓存未命中，请求 TTS 服务
         showToast(context, context.t.entry.generatingAudio);
         Logger.d(
           '开始TTS: 文本="$textToSpeak", 语言代码=$languageCode (来源: $languageSource)',
           tag: '_performSpeak',
         );
 
-        audioData = await AIService().textToSpeech(
+        final result = await AIService().textToSpeech(
           textToSpeak,
           languageCode: languageCode,
           languageSource: languageSource,
         );
+        audioData = result.audio;
 
         Logger.d(
           'TTS音频生成成功，长度: ${audioData.length} bytes',
           tag: '_performSpeak',
         );
 
-        // 保存到缓存
-        await ttsCache.saveCache(textToSpeak, languageCode, audioData);
+        await ttsCache.saveCache(
+          textToSpeak,
+          languageCode,
+          result.voice,
+          audioData,
+        );
       }
 
       await _playTtsAudio(audioData);
 
-      // 清理超过1天的缓存
       unawaited(ttsCache.cleanOldCache(maxAgeDays: 1));
     } catch (e) {
       Logger.e('TTS失败: $e', tag: '_performSpeak', error: e);
@@ -2560,15 +2772,24 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
   }
 
-  /// 对中文词典的文本，将波浪线（～、～）替换为当前 entry 的 headword
+  /// 对中文和日文词典的文本，将占位符替换为 headword 或 headline
+  /// 中文：～（全角波浪线）、\u301c（波浪线）
+  /// 日文：～、\u301c、―（U+2015 HORIZONTAL BAR）、—（U+2014 EM DASH）
   String _substituteHeadword(String text) {
-    if (_sourceLanguage != null &&
-        LanguageUtils.normalizeSourceLanguage(_sourceLanguage!) == 'zh') {
-      return text
-          .replaceAll('～', _localEntry.headword)
-          .replaceAll('\u301c', _localEntry.headword);
-    }
-    return text;
+    if (_sourceLanguage == null) return text;
+
+    final lang = LanguageUtils.normalizeSourceLanguage(_sourceLanguage!);
+    if (lang != 'zh' && lang != 'jp') return text;
+
+    final replacement = _localEntry.headword.isNotEmpty
+        ? _localEntry.headword
+        : _removeFormatting(_localEntry.headline ?? '');
+
+    return text
+        .replaceAll('～', replacement)
+        .replaceAll('\u301c', replacement)
+        .replaceAll('\u2015', replacement)
+        .replaceAll('\u2014', replacement);
   }
 
   Future<void> _playTtsAudio(List<int> audioData) async {
@@ -3124,15 +3345,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     BuildContext context,
     SelectableRegionState state,
   ) {
-    Logger.d('_buildSelectionContextMenu called', tag: 'ContextMenu');
-    // 桌面端：返回空，右键菜单由 SecondaryTapGestureRecognizer 处理
     final isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     if (isDesktop) {
-      Logger.d(
-        '_buildSelectionContextMenu: desktop, returning empty',
-        tag: 'ContextMenu',
-      );
       return const SizedBox.shrink();
     }
 
@@ -3802,17 +4017,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                         topPadding: 8,
                                         bottomPadding: 8,
                                         enableElementActions: false,
-                                        // 禁用选择功能，避免 SelectionArea 和 SingleChildScrollView 嵌套冲突
                                         enableSelection: false,
-                                        // 切换翻译：导航到短语词条的全屏详情页（在那里可正常操作）
                                         onElementTap: (path, label) {
                                           navigateToPhraseDetail();
                                         },
-                                        // 编辑、询问AI：同样导航到全屏页
                                         onEditElement: (path, label) {
                                           navigateToPhraseDetail();
                                         },
                                         onAiAsk: (path, label) {
+                                          navigateToPhraseDetail();
+                                        },
+                                        onGroupJump: (groupId, ctx) {
                                           navigateToPhraseDetail();
                                         },
                                       ),
@@ -4160,8 +4375,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
               },
               child: SingleChildScrollView(
                 padding: EdgeInsets.only(
-                  left: 16,
-                  right: 16,
+                  left: widget.leftPadding >= 0 ? widget.leftPadding : 16,
+                  right: widget.rightPadding >= 0 ? widget.rightPadding : 16,
                   top: widget.topPadding >= 0
                       ? widget.topPadding
                       : MediaQuery.of(context).padding.top + 16,
@@ -4266,6 +4481,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _buildPhrases(context),
         // 渲染所有未渲染的 key 为 board
         _buildRemainingBoards(context),
+        // 渲染 clob 和 text（在最后）
+        _buildClobIfExist(context),
+        _buildTextIfExist(context),
       ],
     );
   }
@@ -4656,20 +4874,157 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   Widget _buildnote(
     BuildContext context,
-    Map<String, dynamic> value, {
+    Map<String, String> noteMap, {
     List<String>? path,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final note = value['note'] as String? ?? '';
+    final notePath = path ?? PathScope.of(context);
 
-    if (note.isEmpty) {
+    List<MapEntry<String, String>> texts = [];
+    for (final entry in noteMap.entries) {
+      if (entry.value.isNotEmpty) {
+        texts.add(MapEntry(entry.key, entry.value));
+      }
+    }
+
+    if (texts.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final notePath = path ?? PathScope.of(context);
+    final sourceLang = _sourceLanguage ?? 'en';
+    texts.sort((a, b) {
+      if (a.key == sourceLang) return -1;
+      if (b.key == sourceLang) return 1;
+      return 0;
+    });
+
+    return HiddenLanguagesSelector<String>(
+      selector: (hiddenLanguages) {
+        final relevantHidden = <String>[];
+        for (final entry in texts) {
+          final textPath = [...notePath, entry.key];
+          final pathStr = textPath.join('.');
+          if (hiddenLanguages.contains(pathStr)) {
+            relevantHidden.add(pathStr);
+          }
+        }
+        relevantHidden.sort();
+        return relevantHidden.join(',');
+      },
+      builder: (context, hiddenPathsStr, child) {
+        return _buildNoteItem(
+          context: context,
+          texts: texts,
+          basePath: notePath,
+          sourceLanguage: _sourceLanguage,
+        );
+      },
+    );
+  }
+
+  Widget _buildNoteItem({
+    required BuildContext context,
+    required List<MapEntry<String, String>> texts,
+    required List<String> basePath,
+    String? sourceLanguage,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final noteBaseStyle = DictTypography.getBaseStyle(
+      DictElementType.note,
+      color: colorScheme.onSurfaceVariant,
+    );
+    final noteStyle = noteBaseStyle.copyWith(
+      fontSize: (noteBaseStyle.fontSize ?? 14) + 1.0,
+    );
+
+    final spans = <InlineSpan>[];
+    final noteTextKey = GlobalKey();
+    final sourceLang = sourceLanguage ?? 'en';
+
+    for (int i = 0; i < texts.length; i++) {
+      final textEntry = texts[i];
+      final text = textEntry.value;
+      final langKey = textEntry.key;
+
+      final textPath = [...basePath, langKey];
+      final pathStr = textPath.join('.');
+      final hidden = _hiddenLanguagesNotifier.value.contains(pathStr);
+
+      if (hidden) continue;
+
+      if (i > 0 && spans.isNotEmpty) {
+        spans.add(WidgetSpan(child: SizedBox(width: 12)));
+      }
+
+      final pathData = _PathData(textPath, 'Note ($langKey)');
+
+      final tapRecognizer = TapGestureRecognizer()
+        ..onTapDown = (details) {
+          _lastTapPosition = details.globalPosition;
+          _currentSelectionPathData = pathData;
+        }
+        ..onTap = () {
+          _handleElementTap(_convertPathToString(textPath), pathData.label);
+
+          final now = DateTime.now();
+          final isDoubleTap =
+              _lastTapTime != null &&
+              now.difference(_lastTapTime!) <
+                  const Duration(milliseconds: 300) &&
+              _lastTapButton == 0;
+
+          if (isDoubleTap && _lastTapPosition != null) {
+            _lastTapTime = null;
+            _lastTapButton = null;
+            _lastTapPosition = null;
+          } else {
+            _lastTapTime = now;
+            _lastTapButton = 0;
+          }
+        };
+
+      final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+        ..onSecondaryTapUp = (details) {
+          _lastTapPosition = details.globalPosition;
+          _handleElementSecondaryTap(
+            _convertPathToString(textPath),
+            pathData.label,
+            context,
+            details.globalPosition,
+          );
+        };
+
+      _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+      final recognizer = _MultiGestureRecognizer(
+        tapRecognizer: tapRecognizer,
+        secondaryTapRecognizer: secondaryTapRecognizer,
+        longPressRecognizer: null,
+        doubleTapRecognizer: null,
+      );
+
+      final result = _parseFormattedText(
+        text,
+        noteStyle,
+        context: context,
+        path: textPath,
+        language: langKey,
+        label: 'Note ($langKey)',
+        recognizer: recognizer,
+        elementType: DictElementType.note,
+        mouseCursor: SystemMouseCursors.click,
+      );
+
+      spans.addAll(result.spans);
+    }
+
+    if (spans.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return _buildTappableWidget(
       context: context,
-      pathData: _PathData(notePath, 'note'),
+      pathData: _PathData(basePath, 'Note'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
@@ -4684,7 +5039,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 2),
               child: Icon(
                 Icons.info_outline,
                 size: 16,
@@ -4693,19 +5048,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text.rich(
-                TextSpan(
-                  children: _parseFormattedText(
-                    note,
-                    DictTypography.getBaseStyle(
-                      DictElementType.note,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    context: context,
-                    elementType: DictElementType.note,
-                  ).spans,
-                ),
-              ),
+              child: Text.rich(TextSpan(children: spans), key: noteTextKey),
             ),
           ],
         ),
@@ -4975,6 +5318,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }).toList();
   }
 
+  String _parseIndexValue(dynamic indexValue) {
+    if (indexValue == null) return '';
+    if (indexValue is int) return '$indexValue';
+    if (indexValue is String && indexValue.isNotEmpty) return indexValue;
+    return '';
+  }
+
   Widget _renderIndex(
     BuildContext context,
     String indexStr, {
@@ -4986,13 +5336,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // Row(crossAxisAlignment: CrossAxisAlignment.baseline) 保证，
     // 不再需要手动计算 topPadding。
     if (indexStr.isEmpty) {
-      // 无 index 时显示圆点符号，使用 RichText 以保持文本 baseline 对齐
       return _buildTappableWidget(
         context: context,
         pathData: _PathData(PathScope.of(context), 'Index'),
-        child: Text.rich(
-          TextSpan(
-            text: '•',
+        child: Padding(
+          padding: const EdgeInsets.only(left: 5),
+          child: Text(
+            '•',
             style: DictTypography.getBaseStyle(
               DictElementType.senseIndex,
               color: colorScheme.primary.withValues(alpha: 0.8),
@@ -5170,10 +5520,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     dynamic synonym,
     dynamic antonym,
     dynamic related,
+    Map<String, dynamic>? tail,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final spans = <InlineSpan>[];
     int currentTextOffset = 0;
+
+    // 获取当前 sense 的路径作为 basePath
+    final basePath = PathScope.of(context);
 
     final labelSpans = <InlineSpan>[];
     if (labels != null && labels.isNotEmpty) {
@@ -5321,70 +5675,81 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // 渲染 synonym（同义词）
     if (synonym != null) {
-      final synonymList = synonym is List
-          ? synonym.map((e) => e.toString()).toList()
-          : [synonym.toString()];
-      if (synonymList.isNotEmpty) {
-        if (spans.isNotEmpty) {
-          spans.add(const TextSpan(text: '  '));
-        }
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: _buildSynonymAntonymWidget(
-              context,
-              'Synonym',
-              synonymList,
-              Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        );
+      if (spans.isNotEmpty) {
+        spans.add(const TextSpan(text: '  '));
       }
+      spans.add(
+        _buildInlineFieldSpan(
+          context,
+          'synonym',
+          synonym,
+          Theme.of(context).colorScheme.primary,
+          basePath: basePath,
+        ),
+      );
     }
 
     // 渲染 antonym（反义词）
     if (antonym != null) {
-      final antonymList = antonym is List
-          ? antonym.map((e) => e.toString()).toList()
-          : [antonym.toString()];
-      if (antonymList.isNotEmpty) {
-        if (spans.isNotEmpty) {
-          spans.add(const TextSpan(text: '  '));
-        }
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: _buildSynonymAntonymWidget(
-              context,
-              'Antonym',
-              antonymList,
-              Theme.of(context).colorScheme.tertiary,
-            ),
-          ),
-        );
+      if (spans.isNotEmpty) {
+        spans.add(const TextSpan(text: '  '));
       }
+      spans.add(
+        _buildInlineFieldSpan(
+          context,
+          'antonym',
+          antonym,
+          Theme.of(context).colorScheme.tertiary,
+          basePath: basePath,
+        ),
+      );
     }
 
     // 渲染 related（相关词）
     if (related != null) {
-      final relatedList = related is List
-          ? related.map((e) => e.toString()).toList()
-          : [related.toString()];
-      if (relatedList.isNotEmpty) {
-        if (spans.isNotEmpty) {
-          spans.add(const TextSpan(text: '  '));
-        }
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: _buildSynonymAntonymWidget(
+      if (spans.isNotEmpty) {
+        spans.add(const TextSpan(text: '  '));
+      }
+      spans.add(
+        _buildInlineFieldSpan(
+          context,
+          'related',
+          related,
+          Theme.of(context).colorScheme.secondary,
+          basePath: basePath,
+        ),
+      );
+    }
+
+    // 渲染 tail 字段
+    if (tail != null && tail.isNotEmpty) {
+      for (final entry in tail.entries) {
+        if (entry.value != null) {
+          if (spans.isNotEmpty) {
+            spans.add(const TextSpan(text: '  '));
+          }
+          // tail 内的 synonym/antonym/related 使用对应颜色，其他字段使用 primary
+          Color fieldColor;
+          if (entry.key == 'synonym') {
+            fieldColor = Theme.of(context).colorScheme.primary;
+          } else if (entry.key == 'antonym') {
+            fieldColor = Theme.of(context).colorScheme.tertiary;
+          } else if (entry.key == 'related') {
+            fieldColor = Theme.of(context).colorScheme.secondary;
+          } else {
+            fieldColor = Theme.of(context).colorScheme.primary;
+          }
+          spans.add(
+            _buildInlineFieldSpan(
               context,
-              'Related',
-              relatedList,
-              Theme.of(context).colorScheme.secondary,
+              entry.key,
+              entry.value,
+              fieldColor,
+              labelPrefix: 'tail',
+              basePath: basePath,
             ),
-          ),
-        );
+          );
+        }
       }
     }
 
@@ -5392,123 +5757,179 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return Text.rich(TextSpan(children: spans), key: definitionTextKey);
   }
 
-  /// 渲染同义词/反义词的内联标签
-  Widget _buildSynonymAntonymWidget(
+  /// 渲染 sense 层级的内联字段（synonym/antonym/related/tail 内字段等）
+  /// 前面带框的标签 + 后面带虚线下划线的文本，点击可直接查词
+  InlineSpan _buildInlineFieldSpan(
     BuildContext context,
-    String label,
-    List<String> words,
-    Color color,
-  ) {
-    final textStyle = DictTypography.getBaseStyle(
-      DictElementType.label,
-      color: color,
-    ).copyWith(fontSize: 12);
-
-    // 简写标签：Synonym -> syn, Antonym -> opp, Related -> rlt
-    final shortLabel = label == 'Synonym'
-        ? 'syn'
-        : (label == 'Antonym' ? 'opp' : 'rlt');
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.7),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$shortLabel: ',
-            style: textStyle.copyWith(fontWeight: FontWeight.w600),
-          ),
-          // 每个词都可以点击跳转查词，支持右键菜单
-          ...words.asMap().entries.map((entry) {
-            final index = entry.key;
-            final word = entry.value;
-            final isLast = index == words.length - 1;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Listener(
-                  onPointerDown: (event) {
-                    if (event.buttons == kSecondaryMouseButton) {
-                      _showWordContextMenu(context, word, event.position);
-                    }
-                  },
-                  child: InkWell(
-                    onTap: () => _handleLinkTap(context, word),
-                    mouseCursor: SystemMouseCursors.click,
-                    child: Text(
-                      word,
-                      style: textStyle.copyWith(
-                        decoration: TextDecoration.underline,
-                        decorationColor: color.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ),
-                ),
-                if (!isLast) Text(', ', style: textStyle),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  /// 显示词汇右键菜单
-  void _showWordContextMenu(BuildContext context, String word, Offset position) {
+    String fieldName,
+    dynamic value,
+    Color color, {
+    String? labelPrefix,
+    required List<String> basePath,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    showMenu<String>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        0,
-        0,
+    // 字段名缩写映射
+    final labelMap = {'synonym': 'SYN', 'antonym': 'OPP', 'related': 'RLT'};
+    final displayLabel = labelMap[fieldName] ?? fieldName;
+
+    final labelStyle = DictTypography.getBaseStyle(
+      DictElementType.label,
+      color: color,
+    ).copyWith(fontSize: 12, fontWeight: FontWeight.w600);
+
+    final textStyle =
+        DictTypography.getBaseStyle(
+          DictElementType.definition,
+          color: colorScheme.onSurface,
+        ).copyWith(
+          decoration: TextDecoration.underline,
+          decorationStyle: TextDecorationStyle.dashed,
+          decorationColor: color,
+        );
+
+    final spans = <InlineSpan>[];
+
+    // 标签部分
+    spans.add(
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          margin: const EdgeInsets.only(right: 4),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: color.withValues(alpha: 0.3), width: 0.7),
+          ),
+          child: Text(displayLabel, style: labelStyle),
+        ),
       ),
-      items: [
-        PopupMenuItem(
-          value: 'search',
-          child: Row(
-            children: [
-              Icon(Icons.search, size: 18, color: colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(context.t.settings.actionLabel.search),
-            ],
+    );
+
+    // 构建值的路径前缀
+    // 对于 sense 层级的 synonym/antonym/related，labelPrefix 为空
+    // 对于 tail 内的字段，labelPrefix 为 'tail'
+    final valuePathPrefix = (labelPrefix != null && labelPrefix.isNotEmpty)
+        ? '$labelPrefix.$fieldName'
+        : fieldName;
+
+    // 构建字段路径（用于右键菜单）
+    // 如果有 labelPrefix（如 'tail'），需要添加到路径中
+    final fieldPath = (labelPrefix != null && labelPrefix.isNotEmpty)
+        ? [...basePath, labelPrefix, fieldName]
+        : [...basePath, fieldName];
+
+    // 渲染值部分
+    if (value is List) {
+      // 数组：逐个元素渲染，每个元素有独立的 Text.rich 以支持双击查词
+      for (int i = 0; i < value.length; i++) {
+        if (i > 0) {
+          spans.add(TextSpan(text: ', ', style: textStyle));
+        }
+
+        final itemText = value[i].toString();
+        final itemPath = [...fieldPath, i.toString()];
+
+        final tapRecognizer = TapGestureRecognizer()
+          ..onTap = () {
+            widget.onElementTap?.call('lookup:$itemText', itemText);
+          };
+
+        final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+          ..onSecondaryTapUp = (details) {
+            _lastTapPosition = details.globalPosition;
+            _handleElementSecondaryTap(
+              _convertPathToString(itemPath),
+              itemText,
+              context,
+              details.globalPosition,
+            );
+          };
+
+        _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+        final recognizer = _MultiGestureRecognizer(
+          tapRecognizer: tapRecognizer,
+          secondaryTapRecognizer: secondaryTapRecognizer,
+          longPressRecognizer: null,
+          doubleTapRecognizer: null,
+        );
+
+        final formattedResult = _parseFormattedText(
+          itemText,
+          textStyle,
+          context: context,
+          recognizer: recognizer,
+          mouseCursor: SystemMouseCursors.click,
+        );
+
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Text.rich(TextSpan(children: formattedResult.spans)),
           ),
-        ),
-        PopupMenuItem(
-          value: 'copy',
-          child: Row(
-            children: [
-              Icon(Icons.copy, size: 18, color: colorScheme.onSurfaceVariant),
-              const SizedBox(width: 8),
-              Text(context.t.common.copy),
-            ],
-          ),
-        ),
-      ],
-    ).then((value) {
-      if (value == 'search') {
-        _handleLinkTap(context, word);
-      } else if (value == 'copy') {
-        Clipboard.setData(ClipboardData(text: word));
-        showToast(context, context.t.entry.copiedToClipboard);
+        );
       }
-    });
+    } else {
+      final itemText = value.toString();
+
+      final tapRecognizer = TapGestureRecognizer()
+        ..onTap = () {
+          widget.onElementTap?.call('lookup:$itemText', itemText);
+        };
+
+      final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+        ..onSecondaryTapUp = (details) {
+          _lastTapPosition = details.globalPosition;
+          _handleElementSecondaryTap(
+            _convertPathToString(fieldPath),
+            itemText,
+            context,
+            details.globalPosition,
+          );
+        };
+
+      _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+      final recognizer = _MultiGestureRecognizer(
+        tapRecognizer: tapRecognizer,
+        secondaryTapRecognizer: secondaryTapRecognizer,
+        longPressRecognizer: null,
+        doubleTapRecognizer: null,
+      );
+
+      final formattedResult = _parseFormattedText(
+        itemText,
+        textStyle,
+        context: context,
+        recognizer: recognizer,
+        mouseCursor: SystemMouseCursors.click,
+      );
+
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: Text.rich(TextSpan(children: formattedResult.spans)),
+        ),
+      );
+    }
+
+    return TextSpan(children: spans);
   }
 
-  /// 创建统一的手势识别器，支持点击和右键
+  /// 创建统一的手势识别器，支持点击、右键和双击查词
   /// 长按由 SelectionArea 处理
   _MultiGestureRecognizer _createGestureRecognizer({
     required String pathKey,
     required String label,
     required List<String> path,
     required BuildContext context,
+    String? text,
+    TextStyle? textStyle,
+    GlobalKey? textKey,
   }) {
     final tapRecognizer = TapGestureRecognizer()
       ..onTapDown = (details) {
@@ -5517,7 +5938,36 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _currentSelectionPathData = _PathData(path, label);
       }
       ..onTap = () {
+        // 单击立即生效
         _handleElementTap(pathKey, label);
+
+        // 检测双击
+        final now = DateTime.now();
+        final isDoubleTap =
+            _lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 300) &&
+            _lastTapButton == 0;
+
+        if (isDoubleTap &&
+            _lastTapPosition != null &&
+            text != null &&
+            textStyle != null &&
+            textKey != null) {
+          Logger.d('$label 双击触发', tag: 'DoubleTapWord');
+          _handleDoubleTapOnText(
+            _lastTapPosition!,
+            text,
+            textStyle,
+            textKey,
+            context,
+          );
+          _lastTapTime = null;
+          _lastTapButton = null;
+          _lastTapPosition = null;
+        } else {
+          _lastTapTime = now;
+          _lastTapButton = 0;
+        }
       };
 
     // 恢复 SecondaryTapGestureRecognizer 用于电脑端右键菜单
@@ -5683,12 +6133,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
         isSerif: isSerif,
       );
 
-      // 创建手势识别器以支持点击和右键菜单
+      final textKey = GlobalKey();
+
+      // 创建手势识别器以支持点击、右键和双击查词
       final recognizer = _createGestureRecognizer(
         pathKey: pathKey,
         label: label,
         path: path,
         context: context,
+        text: text,
+        textStyle: style,
+        textKey: textKey,
       );
 
       final result = _parseFormattedText(
@@ -5700,7 +6155,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
         mouseCursor: SystemMouseCursors.click,
       );
 
-      return TextSpan(children: result.spans);
+      // 使用 WidgetSpan 包裹独立的 Text.rich，以支持双击查词
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: Text.rich(TextSpan(children: result.spans), key: textKey),
+      );
     }
 
     // 带背景的标签使用 WidgetSpan（样式在 _buildLabelWidget 内部处理）
@@ -5977,36 +6437,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
           final path = PathScope.of(context);
           final labelName = _capitalizeFirst(key);
 
-          // 创建手势识别器以支持点击和右键菜单
-          final tapRecognizer = TapGestureRecognizer()
-            ..onTapDown = (details) {
-              _lastTapPosition = details.globalPosition;
-              _currentSelectionPathData = _PathData(path, labelName);
-            }
-            ..onTap = () {
-              _handleElementTap(_convertPathToString(path), labelName);
-            };
-
-          // 添加右键菜单支持
-          final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
-            ..onSecondaryTapUp = (details) {
-              _lastTapPosition = details.globalPosition;
-              _handleElementSecondaryTap(
-                _convertPathToString(path),
-                labelName,
-                context,
-                details.globalPosition,
-              );
-            };
-
-          _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
-
-          // 使用 MultiGestureRecognizer 支持点击和右键
-          final recognizer = _MultiGestureRecognizer(
-            tapRecognizer: tapRecognizer,
-            secondaryTapRecognizer: secondaryTapRecognizer,
-            longPressRecognizer: null,
-            doubleTapRecognizer: null,
+          // 创建手势识别器以支持点击、右键和双击查词
+          final recognizer = _createGestureRecognizer(
+            pathKey: _convertPathToString(path),
+            label: labelName,
+            path: path,
+            context: context,
+            text: text,
+            textStyle: textStyle,
+            textKey: textKey,
           );
 
           final result = _parseFormattedText(
@@ -6077,6 +6516,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'synonym',
     'antonym',
     'related',
+    'tail',
   ];
 
   /// 渲染单个 sense 项
@@ -6117,11 +6557,25 @@ class ComponentRendererState extends State<ComponentRenderer> {
       exampleIsOriginalList = false;
     }
     final subSenses = sense['subsense'] as List<dynamic>?;
-    final note = sense['note'] as String?;
+    final noteRaw = sense['note'];
+    Map<String, String>? noteMap;
+    if (noteRaw is Map<String, dynamic>) {
+      noteMap = {};
+      for (final entry in noteRaw.entries) {
+        if (entry.value is String && entry.value.isNotEmpty) {
+          noteMap[entry.key] = entry.value as String;
+        }
+      }
+      if (noteMap.isEmpty) noteMap = null;
+    } else if (noteRaw is String && noteRaw.isNotEmpty) {
+      final sourceLang = _sourceLanguage ?? 'en';
+      noteMap = {sourceLang: noteRaw};
+    }
     final image = sense['image'] as Map<String, dynamic>?;
     final synonym = sense['synonym'];
     final antonym = sense['antonym'];
     final related = sense['related'];
+    final tail = sense['tail'] as Map<String, dynamic>?;
 
     List<MapEntry<String, String>> definitions = [];
     if (definitionObj != null) {
@@ -6216,6 +6670,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           synonym: synonym,
                           antonym: antonym,
                           related: related,
+                          tail: tail,
                         );
                       },
                     ),
@@ -6268,14 +6723,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       .toList(),
                 ),
               ],
-              if (note != null && note.isNotEmpty)
+              if (noteMap != null && noteMap.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: PathScope.append(
                     context,
                     key: 'note',
                     child: Builder(
-                      builder: (context) => _buildnote(context, {'note': note}),
+                      builder: (context) => _buildnote(context, noteMap!),
                     ),
                   ),
                 ),
@@ -6291,17 +6746,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 // 仅当 sense 中有其他内容时才添加上边距
                 if (definitions.isNotEmpty ||
                     (example != null && example.isNotEmpty) ||
-                    (note != null && note.isNotEmpty) ||
+                    (noteMap != null && noteMap.isNotEmpty) ||
                     (image != null && image.isNotEmpty) ||
                     extraWidgets.isNotEmpty)
                   const SizedBox(height: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: subSenses.asMap().entries.expand((subEntry) {
-                    final subIndexValue = subEntry.value['index'];
-                    final subIndexStr = subIndexValue is String
-                        ? subIndexValue
-                        : '${subEntry.key + 1}';
+                    final subIndexStr = _parseIndexValue(
+                      subEntry.value['index'],
+                    );
                     final widgets = <Widget>[
                       PathScope.append(
                         context,
@@ -6357,10 +6811,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: entry.sense.asMap().entries.map((entryData) {
               final sense = entryData.value;
-              final indexValue = sense['index'];
-              final indexStr = indexValue is int
-                  ? '$indexValue'
-                  : (indexValue as String? ?? '${entryData.key + 1}');
+              final indexStr = _parseIndexValue(sense['index']);
 
               return PathScope.append(
                 context,
@@ -6504,11 +6955,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: senses.asMap().entries.map((senseEntry) {
                         final sense = senseEntry.value;
-                        final indexValue = sense['index'];
-                        final indexStr = indexValue is int
-                            ? '$indexValue'
-                            : (indexValue as String? ??
-                                  '${senseEntry.key + 1}');
+                        final indexStr = _parseIndexValue(sense['index']);
 
                         return PathScope.append(
                           context,
@@ -6577,6 +7024,32 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _buildData(context, value, path: ['data']),
       ],
     );
+  }
+
+  /// 渲染 clob（如果存在），在最后显示
+  Widget _buildClobIfExist(BuildContext context) {
+    final entry = _localEntry;
+    final entryJson = entry.toJson();
+
+    if (!entryJson.containsKey('clob')) return const SizedBox.shrink();
+
+    final value = entryJson['clob'];
+    if (value == null) return const SizedBox.shrink();
+
+    return _buildClobContent(context, value, ['clob']);
+  }
+
+  /// 渲染 text（如果存在），在最后显示
+  Widget _buildTextIfExist(BuildContext context) {
+    final entry = _localEntry;
+    final entryJson = entry.toJson();
+
+    if (!entryJson.containsKey('text')) return const SizedBox.shrink();
+
+    final value = entryJson['text'];
+    if (value == null) return const SizedBox.shrink();
+
+    return _buildTextContent(context, value, ['text']);
   }
 
   Widget _buildPhrases(BuildContext context) {
@@ -7293,6 +7766,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'note': 'note',
     'image': 'image',
     'clob': 'clob',
+    'text': 'text',
   };
 
   Widget _buildStringListAsRow(
@@ -7634,7 +8108,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
           ),
         );
       case 'note':
-        return _buildnote(context, value, path: path);
+        final noteMap = <String, String>{};
+        for (final entry in value.entries) {
+          if (entry.value is String && (entry.value as String).isNotEmpty) {
+            noteMap[entry.key] = entry.value as String;
+          }
+        }
+        if (noteMap.isEmpty) return const SizedBox.shrink();
+        return _buildnote(context, noteMap, path: path);
       case 'image':
         final imageFile = value['image_file'] as String?;
         if (imageFile == null || imageFile.isEmpty) {
@@ -7649,6 +8130,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         );
       case 'clob':
         return _buildClobContent(context, value, path);
+      case 'text':
+        return _buildTextContent(context, value, path);
       default:
         return const SizedBox.shrink();
     }

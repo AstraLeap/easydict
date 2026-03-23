@@ -274,7 +274,7 @@
   },
   "langNames": {
     "zh": "Chinese",
-    "ja": "Japanese",
+    "jp": "Japanese",
     "ko": "Korean",
     "en": "English",
     "fr": "French",
@@ -737,6 +737,7 @@
     "currentWord": "Current word: {word}",
     "currentDict": "Current dictionary: {dictId}",
     "entryNotFound": "Entry not found: {entryId}",
+    "returnToOriginal": "Return",
     "extractFailed": "Failed to extract text",
     "generatingAudio": "Generating audio...",
     "speakFailed": "TTS failed: {error}",
