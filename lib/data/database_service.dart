@@ -178,10 +178,7 @@ String _normalizeJapanese(String text) {
   }
   text = hiraganaBuffer.toString();
 
-  // 去浊音符号 (NFD 分解后去除)
-  text = text
-      .replaceAll('\u3099', '') // 组合浊音符号
-      .replaceAll('\u309A', ''); // 组合半浊音符号
+  // 注：浊音/半浊音假名的去浊音已在 _decomposeDiacritics() 中统一处理
 
   // -----------------------------------------------------
   // 5. 长音 "ー" 转换
@@ -835,7 +832,138 @@ class DatabaseService {
   DatabaseService._internal();
 
   // 静态 RegExp 常量，避免每次调用时重新创建对象
-  static final RegExp _diacriticsRegExp = RegExp(r'[\u0300-\u036f]');
+  // 组合变音符号范围（Unicode Mn 类别的常用子集）
+  // \u0300-\u036f: 组合变音符号
+  // \u0483-\u0489: 西里尔字母组合标记
+  // \u0591-\u05bd,\u05bf,\u05c1-\u05c2,\u05c4-\u05c7: 希伯来语标记
+  // \u0610-\u061a,\u064b-\u065f,\u0670: 阿拉伯语标记
+  // \u06d6-\u06dc,\u06df-\u06e4,\u06e7-\u06e8,\u06ea-\u06ed: 阿拉伯语标记
+  // \u0730-\u074a: 叙利亚语标记
+  // \u0e31,\u0e34-\u0e3a,\u0e47-\u0e4e: 泰语标记
+  static final RegExp _diacriticsRegExp = RegExp(
+    r'[\u0300-\u036f\u0483-\u0489\u0591-\u05bd\u05bf\u05c1-\u05c2\u05c4-\u05c7'
+    r'\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7-\u06e8'
+    r'\u06ea-\u06ed\u0730-\u074a\u0e31\u0e34-\u0e3a\u0e47-\u0e4e'
+    r'\u3099\u309a]', // 日语组合浊音/半浊音符号
+  );
+
+  // 预组合字符到基本字符的映射（NFD 分解的替代方案）
+  // 覆盖常见的带变音符号的拉丁字母 + 日语浊音/半浊音假名
+  static final Map<String, String> _composedToBase = {
+    // Latin-1 Supplement: 大写带变音字母 → 基本字母
+    'À': 'A', 'Á': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'Å': 'A',
+    'Æ': 'AE',
+    'Ç': 'C',
+    'È': 'E', 'É': 'E', 'Ê': 'E', 'Ë': 'E',
+    'Ì': 'I', 'Í': 'I', 'Î': 'I', 'Ï': 'I',
+    'Ð': 'D',
+    'Ñ': 'N',
+    'Ò': 'O', 'Ó': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
+    'Ø': 'O',
+    'Ù': 'U', 'Ú': 'U', 'Û': 'U', 'Ü': 'U',
+    'Ý': 'Y',
+    'Þ': 'TH',
+    // Latin-1 Supplement: 小写带变音字母 → 基本字母
+    'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a',
+    'æ': 'ae',
+    'ç': 'c',
+    'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
+    'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+    'ð': 'd',
+    'ñ': 'n',
+    'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+    'ø': 'o',
+    'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
+    'ý': 'y', 'ÿ': 'y',
+    'þ': 'th',
+    'ß': 'ss',
+    // Latin Extended-A (部分常用)
+    'Ā': 'A', 'ā': 'a',
+    'Ă': 'A', 'ă': 'a',
+    'Ą': 'A', 'ą': 'a',
+    'Ć': 'C', 'ć': 'c',
+    'Ĉ': 'C', 'ĉ': 'c',
+    'Ċ': 'C', 'ċ': 'c',
+    'Č': 'C', 'č': 'c',
+    'Ď': 'D', 'ď': 'd',
+    'Đ': 'D', 'đ': 'd',
+    'Ē': 'E', 'ē': 'e',
+    'Ĕ': 'E', 'ĕ': 'e',
+    'Ė': 'E', 'ė': 'e',
+    'Ę': 'E', 'ę': 'e',
+    'Ě': 'E', 'ě': 'e',
+    'Ĝ': 'G', 'ĝ': 'g',
+    'Ğ': 'G', 'ğ': 'g',
+    'Ġ': 'G', 'ġ': 'g',
+    'Ģ': 'G', 'ģ': 'g',
+    'Ĥ': 'H', 'ĥ': 'h',
+    'Ħ': 'H', 'ħ': 'h',
+    'Ĩ': 'I', 'ĩ': 'i',
+    'Ī': 'I', 'ī': 'i',
+    'Ĭ': 'I', 'ĭ': 'i',
+    'Į': 'I', 'į': 'i',
+    'İ': 'I', 'ı': 'i',
+    'Ĳ': 'IJ', 'ĳ': 'ij',
+    'Ĵ': 'J', 'ĵ': 'j',
+    'Ķ': 'K', 'ķ': 'k',
+    'Ĺ': 'L', 'ĺ': 'l',
+    'Ļ': 'L', 'ļ': 'l',
+    'Ľ': 'L', 'ľ': 'l',
+    'Ŀ': 'L', 'ŀ': 'l',
+    'Ł': 'L', 'ł': 'l',
+    'Ń': 'N', 'ń': 'n',
+    'Ņ': 'N', 'ņ': 'n',
+    'Ň': 'N', 'ň': 'n',
+    'Ō': 'O', 'ō': 'o',
+    'Ŏ': 'O', 'ŏ': 'o',
+    'Ő': 'O', 'ő': 'o',
+    'Œ': 'OE', 'œ': 'oe',
+    'Ŕ': 'R', 'ŕ': 'r',
+    'Ŗ': 'R', 'ŗ': 'r',
+    'Ř': 'R', 'ř': 'r',
+    'Ś': 'S', 'ś': 's',
+    'Ŝ': 'S', 'ŝ': 's',
+    'Ş': 'S', 'ş': 's',
+    'Š': 'S', 'š': 's',
+    'Ţ': 'T', 'ţ': 't',
+    'Ť': 'T', 'ť': 't',
+    'Ŧ': 'T', 'ŧ': 't',
+    'Ũ': 'U', 'ũ': 'u',
+    'Ū': 'U', 'ū': 'u',
+    'Ŭ': 'U', 'ŭ': 'u',
+    'Ů': 'U', 'ů': 'u',
+    'Ű': 'U', 'ű': 'u',
+    'Ų': 'U', 'ų': 'u',
+    'Ŵ': 'W', 'ŵ': 'w',
+    'Ŷ': 'Y', 'ŷ': 'y',
+    'Ÿ': 'Y', 'Ź': 'Z', 'ź': 'z',
+    'Ż': 'Z', 'ż': 'z',
+    'Ž': 'Z', 'ž': 'z',
+    // 日语浊音平假名 (が-ご, ざ-ぞ, だ-ど, ば-ぼ) → 清音
+    'が': 'か', 'ぎ': 'き', 'ぐ': 'く', 'げ': 'け', 'ご': 'こ',
+    'ざ': 'さ', 'じ': 'し', 'ず': 'す', 'ぜ': 'せ', 'ぞ': 'そ',
+    'だ': 'た', 'ぢ': 'ち', 'づ': 'つ', 'で': 'て', 'ど': 'と',
+    'ば': 'は', 'び': 'ひ', 'ぶ': 'ふ', 'べ': 'へ', 'ぼ': 'ほ',
+    // 日语半浊音平假名 (ぱ-ぽ) → 清音
+    'ぱ': 'は', 'ぴ': 'ひ', 'ぷ': 'ふ', 'ぺ': 'へ', 'ぽ': 'ほ',
+    // 日语浊音片假名 (ガ-ゴ, ザ-ゾ, ダ-ド, バ-ボ) → 清音
+    'ガ': 'カ', 'ギ': 'キ', 'グ': 'ク', 'ゲ': 'ケ', 'ゴ': 'コ',
+    'ザ': 'サ', 'ジ': 'シ', 'ズ': 'ス', 'ゼ': 'セ', 'ゾ': 'ソ',
+    'ダ': 'タ', 'ヂ': 'チ', 'ヅ': 'ツ', 'デ': 'テ', 'ド': 'ト',
+    'バ': 'ハ', 'ビ': 'ヒ', 'ブ': 'フ', 'ベ': 'ヘ', 'ボ': 'ホ',
+    // 日语半浊音片假名 (パ-ポ) → 清音
+    'パ': 'ハ', 'ピ': 'ヒ', 'プ': 'フ', 'ペ': 'ヘ', 'ポ': 'ホ',
+  };
+
+  // 构建反向映射（处理特殊情况）
+  static String _decomposeDiacritics(String text) {
+    final buffer = StringBuffer();
+    for (final char in text.split('')) {
+      buffer.write(_composedToBase[char] ?? char);
+    }
+    return buffer.toString();
+  }
+
   static final RegExp _chineseRegExp = RegExp(r'[\u4e00-\u9fa5]');
   static final RegExp _japaneseRegExp = RegExp(r'[\u3040-\u309f\u30a0-\u30ff]');
   static final RegExp _koreanRegExp = RegExp(r'[\uac00-\ud7af]');
@@ -973,16 +1101,21 @@ class DatabaseService {
       word = ChineseConvertService().convertToSimplified(word);
     }
 
+    // NFD 分解：将预组合字符转换为基本字符
+    // 注意：必须在日语标准化之前执行，否则 vowelMap 无法匹配浊音假名
+    String normalized = _decomposeDiacritics(word);
+    // 去除组合变音符号（NFD 后的组合标记）
+    normalized = normalized.replaceAll(_diacriticsRegExp, '');
+
     // 日语发音标准化（仅当 isPhonetic 且语言为日语时）
+    // 此时浊音已转为清音，vowelMap 可以正确匹配
     final normalizedLangCode = langCode?.toLowerCase();
     if (isPhonetic && normalizedLangCode == 'jp') {
-      word = _normalizeJapanese(word);
+      normalized = _normalizeJapanese(normalized);
     }
 
     // 小写化
-    String normalized = word.toLowerCase();
-    // 去除音调符号（Unicode组合字符）
-    normalized = normalized.replaceAll(_diacriticsRegExp, '');
+    normalized = normalized.toLowerCase();
     // 去除两端空格
     normalized = normalized.trim();
 
