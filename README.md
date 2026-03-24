@@ -62,8 +62,8 @@ CREATE TABLE indices (
 );--索引表，每个entry可能有多条索引记录
 
 CREATE TABLE groups (
-    group_id INTEGER PRIMARY KEY,
-    parent_id INTEGER,                   -- 父级组ID
+    group_id TEXT PRIMARY KEY,
+    parent_id TEXT,                   -- 父级组ID
     name TEXT NOT NULL,                  -- 组名
     description TEXT,                    -- 组的描述，JSON文本
     item_list TEXT DEFAULT '[]',         -- 组内项目列表 [{"e": 212, "a": "sense_group.0.sense.1"}]
@@ -351,8 +351,8 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
 
 ```jsonc
 {
-    "group_id": 1, // 分组ID，需唯一，整型
-    "parent_id": 15, // 父分组ID，整型，用于构建层级结构，整型，根分组时为 null
+    "group_id": "325" // 分组ID，需唯一，字符串
+    "parent_id": "IV", // 父分组ID，字符串，用于构建层级结构，整型，根分组时为 null
     "name": "基础词汇", // 分组名称
     "description": { "text": "some content." }, // 分组描述，json格式
     "item_list": [
