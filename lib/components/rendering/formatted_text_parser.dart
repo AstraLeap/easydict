@@ -1053,32 +1053,42 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
         ? Theme.of(config.context!).colorScheme.primary
         : null;
 
-    // 创建振假名widget
-    Widget rubyWidget = RubyLayout(
-      rubyFontSize: rubyFontSize,
-      rubySpacing: rubySpacing,
-      baseText: segment.baseText,
-      baseStyle: baseStyle,
-      rubyText: segment.rubyText,
-      rubyColor: rubyColor,
+    // 创建振假名widget - 使用 Column + Text 替代 RubyLayout
+    // 这样 Text widget 的内容可以被 SelectionArea 选择
+    // 使用 NoBaseline 包装假名，让 Column 返回汉字的基线
+    Widget rubyWidget = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        NoBaseline(
+          child: Text(
+            segment.rubyText,
+            style: baseStyle.copyWith(
+              fontSize: rubyFontSize,
+              color: rubyColor ?? Colors.grey.shade600,
+              height: 1.0,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        SizedBox(height: rubySpacing),
+        Text(
+          segment.baseText,
+          style: baseStyle.copyWith(height: 1.0),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
 
     // 如果有 onShowMenu 回调，添加右键事件处理
     if (config.onShowMenu != null) {
-      rubyWidget = Listener(
-        onPointerDown: (event) {
-          if (event.buttons == kSecondaryMouseButton) {
-            config.onShowMenu!(event.position, segment.baseText);
-          }
+      rubyWidget = GestureDetector(
+        onSecondaryTapDown: (details) {
+          config.onShowMenu!(details.globalPosition, segment.baseText);
         },
-        onPointerUp: (event) {
-          // 移动端长按由 SelectionArea 处理，这里不处理
-        },
+        behavior: HitTestBehavior.translucent,
         child: rubyWidget,
       );
-    } else {
-      // 如果没有回调，使用 IgnorePointer 让事件穿透
-      rubyWidget = IgnorePointer(ignoring: true, child: rubyWidget);
     }
 
     spans.add(

@@ -1,6 +1,24 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
 
+/// 一个不返回基线的 widget，用于包装振假名中的假名部分
+/// 这样 Column 会跳过它，返回汉字的基线
+class NoBaseline extends SingleChildRenderObjectWidget {
+  const NoBaseline({super.key, required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderNoBaseline();
+  }
+}
+
+class _RenderNoBaseline extends RenderProxyBox {
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) {
+    return null; // 不返回基线，让父级跳过这个 widget
+  }
+}
+
 /// Ruby 文本布局组件
 /// 用于正确渲染振假名（日语注音假名）
 ///
@@ -220,7 +238,8 @@ class RenderRubyLayout extends RenderBox
 
   @override
   bool hitTestSelf(Offset position) {
-    // 返回 true 让 Listener 能够捕获事件
-    return size.contains(position);
+    // 返回 false 让事件穿透到父级的 SelectionArea
+    // 这样用户可以点击振假名区域开始文本选择
+    return false;
   }
 }
