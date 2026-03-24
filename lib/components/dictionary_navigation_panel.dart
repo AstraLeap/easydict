@@ -222,6 +222,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               height: screenHeight,
               child: GestureDetector(
                 onTap: _closePageList,
+                onSecondaryTap: _closePageList,
                 behavior: HitTestBehavior.opaque,
                 child: const SizedBox.expand(),
               ),
@@ -235,6 +236,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 height: navTop,
                 child: GestureDetector(
                   onTap: _closePageList,
+                  onSecondaryTap: _closePageList,
                   behavior: HitTestBehavior.opaque,
                   child: const SizedBox.expand(),
                 ),
@@ -248,6 +250,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 height: screenHeight - navBottom,
                 child: GestureDetector(
                   onTap: _closePageList,
+                  onSecondaryTap: _closePageList,
                   behavior: HitTestBehavior.opaque,
                   child: const SizedBox.expand(),
                 ),
@@ -316,6 +319,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               height: screenHeight,
               child: GestureDetector(
                 onTap: _closeDirectory,
+                onSecondaryTap: _closeDirectory,
                 behavior: HitTestBehavior.opaque,
                 child: const SizedBox.expand(),
               ),
@@ -329,6 +333,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 height: navTop,
                 child: GestureDetector(
                   onTap: _closeDirectory,
+                  onSecondaryTap: _closeDirectory,
                   behavior: HitTestBehavior.opaque,
                   child: const SizedBox.expand(),
                 ),
@@ -342,6 +347,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 height: screenHeight - navBottom,
                 child: GestureDetector(
                   onTap: _closeDirectory,
+                  onSecondaryTap: _closeDirectory,
                   behavior: HitTestBehavior.opaque,
                   child: const SizedBox.expand(),
                 ),
