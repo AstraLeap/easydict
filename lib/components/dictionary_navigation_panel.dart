@@ -608,17 +608,17 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         Container(
           constraints: const BoxConstraints(maxHeight: 400),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
+            color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: colorScheme.shadow.withOpacity(0.15),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: colorScheme.shadow.withOpacity(0.1),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
             border: Border.all(
-              color: colorScheme.outlineVariant.withOpacity(0.2),
+              color: colorScheme.outlineVariant.withOpacity(0.5),
               width: 1,
             ),
           ),
@@ -643,8 +643,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               offset: const Offset(8, 0),
               child: CustomPaint(
                 painter: _ArrowPainter(
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
-                  borderColor: colorScheme.outlineVariant.withOpacity(0.2),
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
+                  borderColor: colorScheme.outlineVariant.withOpacity(0.5),
                 ),
                 size: const Size(8, 16),
               ),

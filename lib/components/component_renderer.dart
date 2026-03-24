@@ -1239,7 +1239,7 @@ class ComponentRenderer extends StatefulWidget {
   final bool enableSelection;
 
   /// 分组跳转回调，点击 [text](=>group_id) 格式的链接时触发
-  final void Function(int groupId, BuildContext context)? onGroupJump;
+  final void Function(String groupId, BuildContext context)? onGroupJump;
 
   /// 精确跳转回调，点击 [text](==entryid::path) 格式的链接时触发
   final void Function(String target, BuildContext context)? onExactJump;
@@ -1532,7 +1532,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     });
     _batchToggleHiddenSubscription = eventBus.batchToggleHidden.listen((event) {
-      if (mounted) {
+      if (event.entryId == widget.entry.id && mounted) {
         batchToggleHiddenLanguages(
           pathsToHide: event.pathsToHide,
           pathsToShow: event.pathsToShow,
@@ -1772,15 +1772,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 检查是否正在闪烁
     final isHighlighting = _isHighlighting(pathStr);
 
-    // 不再使用 Listener 包装，让 SelectionArea 完全控制文本选择
-    // 单击、双击、右键菜单等功能由 SelectionArea 的回调处理
+    // 使用 Listener 包装以支持手机端文本选择菜单
+    // onPointerDown 记录路径数据，用于菜单操作
     return _HighlightWrapper(
       isHighlighting: isHighlighting,
       child: _TappableWrapper(
         pathData: pathData,
-        child: customTextKey != null
-            ? child
-            : Builder(key: textKey, builder: (context) => child),
+        child: Listener(
+          onPointerDown: (_) {
+            // 记录当前路径数据，用于手机端文本选择菜单
+            _currentSelectionPathData = pathData;
+          },
+          child: customTextKey != null
+              ? child
+              : Builder(key: textKey, builder: (context) => child),
+        ),
       ),
     );
   }
@@ -2437,7 +2443,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     void Function(String word, BuildContext context)? onLinkTap,
     void Function(String target, BuildContext context)? onExactJump,
     void Function(String path, BuildContext context)? onPathJump,
-    void Function(int groupId, BuildContext context)? onGroupJump,
+    void Function(String groupId, BuildContext context)? onGroupJump,
   }) {
     final effectiveOnLinkTap =
         onLinkTap ?? ((word, ctx) => _handleLinkTap(ctx, word));
@@ -4496,10 +4502,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final entry = _localEntry;
 
     // 优先使用 headword，如果没有则使用 headline
-    final displayText = entry.headword.isNotEmpty
+    // 注意：如果原始 JSON 没有 headword 字段，应该使用 headline（包含完整格式如振假名）
+    final displayText = entry.hasOriginalHeadword && entry.headword.isNotEmpty
         ? entry.headword
         : entry.headline ?? '';
-    final isUsingHeadword = entry.headword.isNotEmpty;
+    final isUsingHeadword = entry.hasOriginalHeadword;
 
     final pos = entry.sense.isNotEmpty
         ? (entry.sense[0]['pos'] as String? ?? '')
@@ -4569,25 +4576,39 @@ class ComponentRendererState extends State<ComponentRenderer> {
       color: colorScheme.onSurface,
     );
 
-    // 解析格式化文本
+    final path = PathScope.of(context);
+    final pathData = _PathData(path, label);
+
+    // 创建手势识别器以支持点击事件
+    final tapRecognizer = TapGestureRecognizer()
+      ..onTapDown = (details) {
+        _lastTapPosition = details.globalPosition;
+        _currentSelectionPathData = pathData;
+      }
+      ..onTap = () {
+        _handleElementTap(_convertPathToString(path), label);
+      };
+
+    // 解析格式化文本，传递 recognizer 以支持点击
     final formattedResult = _parseFormattedText(
       text,
       baseStyle,
       context: context,
       elementType: elementType,
       isBold: true,
+      recognizer: tapRecognizer,
     );
-
-    final path = PathScope.of(context);
-    final pathData = _PathData(path, label);
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 使用 GestureDetector 包装以支持右键菜单
+        // 使用 GestureDetector 包装以支持点击和右键菜单
         return _buildTappableWidget(
           context: context,
           pathData: pathData,
           child: GestureDetector(
+            onTap: () {
+              _handleElementTap(_convertPathToString(path), label);
+            },
             onSecondaryTapUp: (details) {
               _lastTapPosition = details.globalPosition;
               _handleElementSecondaryTap(
@@ -5793,7 +5814,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 标签部分
     spans.add(
       WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           margin: const EdgeInsets.only(right: 4),
@@ -5830,8 +5852,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
         final itemText = value[i].toString();
         final itemPath = [...fieldPath, i.toString()];
+        final itemPathData = _PathData(itemPath, itemText);
 
         final tapRecognizer = TapGestureRecognizer()
+          ..onTapDown = (details) {
+            _lastTapPosition = details.globalPosition;
+            // 记录当前路径数据，用于手机端文本选择菜单
+            _currentSelectionPathData = itemPathData;
+          }
           ..onTap = () {
             widget.onElementTap?.call('lookup:$itemText', itemText);
           };
@@ -5874,8 +5902,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     } else {
       final itemText = value.toString();
+      final itemPathData = _PathData(fieldPath, itemText);
 
       final tapRecognizer = TapGestureRecognizer()
+        ..onTapDown = (details) {
+          _lastTapPosition = details.globalPosition;
+          // 记录当前路径数据，用于手机端文本选择菜单
+          _currentSelectionPathData = itemPathData;
+        }
         ..onTap = () {
           widget.onElementTap?.call('lookup:$itemText', itemText);
         };
@@ -6177,12 +6211,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontWeight: fontWeight,
     );
 
-    // 没有特殊指定样式的label，垂直位置降低一点
-    final needsVerticalOffset = fontSize == null;
+    // 使用 baseline 对齐，确保跨平台一致性
     return WidgetSpan(
-      alignment: PlaceholderAlignment.middle,
+      alignment: PlaceholderAlignment.baseline,
+      baseline: TextBaseline.alphabetic,
       child: Padding(
-        padding: EdgeInsets.only(right: 8, top: needsVerticalOffset ? 1 : 0),
+        padding: const EdgeInsets.only(right: 8),
         child: labelWidget,
       ),
     );
@@ -6268,16 +6302,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final signpostText = value is String ? value : '$value';
         spans.add(
           WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Transform.translate(
-              offset: const Offset(0, 1),
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _buildSignpostWidget(
-                  context,
-                  signpostText,
-                  labelPrefix: labelPrefix,
-                ),
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildSignpostWidget(
+                context,
+                signpostText,
+                labelPrefix: labelPrefix,
               ),
             ),
           ),

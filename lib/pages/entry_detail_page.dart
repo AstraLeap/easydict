@@ -58,7 +58,7 @@ class EntryNavState {
   final EntryNavMode mode;
 
   /// 当前组 ID
-  final int? currentGroupId;
+  final String? currentGroupId;
 
   /// 组层级路径（面包屑）
   final List<group_model.DictionaryGroup> breadcrumb;
@@ -87,7 +87,7 @@ class EntryNavState {
 
   EntryNavState copyWith({
     EntryNavMode? mode,
-    int? currentGroupId,
+    String? currentGroupId,
     List<group_model.DictionaryGroup>? breadcrumb,
     int? viewingEntryId,
     String? viewingEntryHeadword,
@@ -189,6 +189,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   DateTime? _lastScrollUpdateTime;
   static const _scrollUpdateThrottle = Duration(milliseconds: 100);
   bool _isProgrammaticScroll = false;
+  bool _waitForUserScroll = false; // 等待用户手动滚动后恢复位置检测
   DateTime? _lastDictionaryChangeTime;
   static const _dictionaryChangeCooldown = Duration(milliseconds: 200);
 
@@ -261,10 +262,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _entriesExpanded = false;
 
   /// 子组展开状态缓存（存储子组的孙子组数据）
-  final Map<int, List<group_model.DictionaryGroup>> _subGroupChildrenCache = {};
+  final Map<String, List<group_model.DictionaryGroup>> _subGroupChildrenCache = {};
 
   /// 子组词条 headwords 缓存
-  final Map<int, Map<int, String>> _subGroupEntryHeadwordsCache = {};
+  final Map<String, Map<int, String>> _subGroupEntryHeadwordsCache = {};
 
   @override
   void initState() {
@@ -457,7 +458,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   void _onScrollPositionChanged() {
+    // 程序化滚动期间跳过
     if (_isProgrammaticScroll) {
+      return;
+    }
+
+    // 等待用户手动滚动时跳过
+    if (_waitForUserScroll) {
       return;
     }
 
@@ -625,40 +632,46 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 应用全局翻译显示状态到 ComponentRenderer
+  /// 每个词典独立处理自己的目标语言隐藏状态
   Future<void> _applyGlobalTranslationVisibility(bool visible) async {
     try {
-      final entries = _getAllEntriesInOrder();
-      if (entries.isEmpty) return;
+      final allDicts = _entryGroup.dictionaryGroups;
+      if (allDicts.isEmpty) return;
 
-      // 获取当前词典的元数据
-      final currentDictId = _entryGroup.currentDictionaryId;
-      if (currentDictId.isEmpty) return;
+      // 遍历每个词典，使用各自的元数据收集语言路径
+      for (final dictGroup in allDicts) {
+        final dictId = dictGroup.dictionaryId;
+        if (dictId.isEmpty) continue;
 
-      final metadata = await DictionaryManager().getDictionaryMetadata(
-        currentDictId,
-      );
-      if (metadata == null) return;
+        // 获取该词典的元数据
+        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        if (metadata == null) continue;
 
-      final sourceLang = metadata.sourceLanguage;
-      final targetLangs = metadata.targetLanguages;
+        final sourceLang = metadata.sourceLanguage;
+        final targetLangs = metadata.targetLanguages;
 
-      // 收集所有需要切换的语言路径
-      final Set<String> languagePaths = {};
+        // 收集该词典的语言路径
+        final Set<String> dictLanguagePaths = {};
+        for (final pageGroup in dictGroup.pageGroups) {
+          for (final section in pageGroup.sections) {
+            final json = section.entry.toJson();
+            _collectLanguagePaths(json, '', dictLanguagePaths, sourceLang, targetLangs);
+          }
+        }
 
-      for (final entry in entries) {
-        final json = entry.toJson();
-        _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
+        // 为每个词典条目单独发送事件，确保每个 ComponentRenderer 只处理属于自己的隐藏路径
+        for (final pageGroup in dictGroup.pageGroups) {
+          for (final section in pageGroup.sections) {
+            EntryEventBus().emitBatchToggleHiddenLanguages(
+              BatchToggleHiddenLanguagesEvent(
+                entryId: section.entry.id,
+                pathsToHide: visible ? [] : dictLanguagePaths.toList(),
+                pathsToShow: visible ? dictLanguagePaths.toList() : [],
+              ),
+            );
+          }
+        }
       }
-
-      final pathsToHide = visible ? <String>[] : languagePaths.toList();
-      final pathsToShow = visible ? languagePaths.toList() : <String>[];
-
-      EntryEventBus().emitBatchToggleHiddenLanguages(
-        BatchToggleHiddenLanguagesEvent(
-          pathsToHide: pathsToHide,
-          pathsToShow: pathsToShow,
-        ),
-      );
     } catch (e) {
       Logger.d(
         'Error in _applyGlobalTranslationVisibility: $e',
@@ -964,7 +977,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             .then((_) {
               // 动画结束后额外缓冲，防止位置监听器在动画完成后触发误判
               Future.delayed(const Duration(milliseconds: 400), () {
-                if (mounted) _isProgrammaticScroll = false;
+                if (mounted) {
+                  _isProgrammaticScroll = false;
+                  _waitForUserScroll = true; // 等待用户手动滚动
+                }
               });
             });
       } else {
@@ -991,7 +1007,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 )
                 .then((_) {
                   Future.delayed(const Duration(milliseconds: 400), () {
-                    if (mounted) _isProgrammaticScroll = false;
+                    if (mounted) {
+                      _isProgrammaticScroll = false;
+                      _waitForUserScroll = true; // 等待用户手动滚动
+                    }
                   });
                 });
           } else {
@@ -1021,6 +1040,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     Future.delayed(const Duration(milliseconds: 700), () {
       if (mounted) {
         _isProgrammaticScroll = false;
+        _waitForUserScroll = true; // 等待用户手动滚动
       }
     });
   }
@@ -1477,6 +1497,23 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                       _searchController.clear();
                     });
                   }
+
+                  // 检测用户手动滚动，重置等待标志
+                  // 包括：拖动滚动、滚轮滚动
+                  // 注意：程序化滚动期间 _isProgrammaticScroll 为 true，跳过检测
+                  if (_waitForUserScroll && !_isProgrammaticScroll) {
+                    if (notification is ScrollStartNotification) {
+                      _waitForUserScroll = false;
+                    }
+                    // 滚轮滚动可能直接触发 ScrollUpdateNotification
+                    else if (notification is ScrollUpdateNotification &&
+                        notification.dragDetails == null &&
+                        notification.scrollDelta != null &&
+                        notification.scrollDelta!.abs() > 0) {
+                      _waitForUserScroll = false;
+                    }
+                  }
+
                   return false;
                 },
                 child: ScrollablePositionedList.builder(
@@ -2411,7 +2448,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Future<void> _navigateToGroup(
     String entryId,
     String dictId,
-    int groupId,
+    String groupId,
   ) async {
     Logger.d(
       '_navigateToGroup: entryId=$entryId, dictId=$dictId, groupId=$groupId',
@@ -2955,7 +2992,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 加载子组的孙子组
   Future<List<group_model.DictionaryGroup>> _loadSubGroupChildren(
     String dictId,
-    int groupId,
+    String groupId,
   ) async {
     if (_subGroupChildrenCache.containsKey(groupId)) {
       return _subGroupChildrenCache[groupId]!;
@@ -2968,7 +3005,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 加载子组词条 headwords
   Future<Map<int, String>> _loadSubGroupEntryHeadwords(
     String dictId,
-    int groupId,
+    String groupId,
     List<group_model.GroupItem> items,
   ) async {
     if (_subGroupEntryHeadwordsCache.containsKey(groupId)) {
@@ -4514,29 +4551,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 保存到全局设置（shared_preferences），同时更新本地状态
   Future<void> _toggleAllNonTargetLanguages() async {
     try {
-      final entries = _getAllEntriesInOrder();
-      if (entries.isEmpty) return;
-
-      // 获取当前词典的元数据
-      final currentDictId = _entryGroup.currentDictionaryId;
-      if (currentDictId.isEmpty) return;
-
-      final metadata = await DictionaryManager().getDictionaryMetadata(
-        currentDictId,
-      );
-      if (metadata == null) return;
-
-      final sourceLang = metadata.sourceLanguage;
-      final targetLangs = metadata.targetLanguages;
-
-      // 收集所有需要切换的语言路径（目标语言列表扣除源语言）
-      final Set<String> languagePaths = {};
-
-      for (final entry in entries) {
-        final json = entry.toJson();
-        _collectLanguagePaths(json, '', languagePaths, sourceLang, targetLangs);
-      }
-
       // 切换显示状态
       final newVisibility = !_isNonTargetLanguagesVisible;
       setState(() {
@@ -4547,6 +4561,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       await PreferencesService().setGlobalTranslationVisibility(newVisibility);
 
       // 应用全局状态到 ComponentRenderer，实现实时切换
+      // 每个词典独立处理自己的目标语言隐藏状态
       await _applyGlobalTranslationVisibility(newVisibility);
     } catch (e) {
       Logger.d('Error in _toggleAllNonTargetLanguages: $e', tag: 'Translation');

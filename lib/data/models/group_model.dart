@@ -33,8 +33,8 @@ class GroupItem {
 
 /// 组模型
 class DictionaryGroup {
-  final int? groupId;
-  final int? parentId;
+  final String? groupId;
+  final String? parentId;
   final String name;
   final String? description; // JSON字符串，存储组件列表
   final List<GroupItem> itemList;
@@ -58,8 +58,8 @@ class DictionaryGroup {
         .toList();
 
     return DictionaryGroup(
-      groupId: map['group_id'] as int?,
-      parentId: map['parent_id'] as int?,
+      groupId: map['group_id'] as String?,
+      parentId: map['parent_id'] as String?,
       name: map['name'] as String? ?? '',
       description: map['description'] as String?,
       itemList: itemList,
@@ -83,8 +83,8 @@ class DictionaryGroup {
 
   /// 创建副本
   DictionaryGroup copyWith({
-    int? groupId,
-    int? parentId,
+    String? groupId,
+    String? parentId,
     String? name,
     String? description,
     List<GroupItem>? itemList,
