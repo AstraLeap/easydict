@@ -27,10 +27,12 @@ class ToggleHiddenLanguageEvent {
 }
 
 class BatchToggleHiddenLanguagesEvent {
+  final String entryId;
   final List<String> pathsToHide;
   final List<String> pathsToShow;
 
   BatchToggleHiddenLanguagesEvent({
+    required this.entryId,
     required this.pathsToHide,
     required this.pathsToShow,
   });

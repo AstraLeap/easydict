@@ -528,20 +528,20 @@ List<Map<String, dynamic>> _parsePronunciations(dynamic value) {
   return [];
 }
 
-/// 解析 groups 字段，兼容 int / List<int> 两种形式
-List<int> _parseGroups(dynamic value) {
+/// 解析 groups 字段，兼容 String / List<String> 两种形式
+List<String> _parseGroups(dynamic value) {
   if (value == null) return [];
-  // 单个数字
-  if (value is int) return [value];
-  // 数字列表
+  // 单个字符串
+  if (value is String) return [value];
+  // 字符串列表
   if (value is List) {
     return value
         .map((e) {
-          if (e is int) return e;
-          if (e is String) return int.tryParse(e);
+          if (e is String) return e;
+          if (e is int) return e.toString();
           return null;
         })
-        .whereType<int>()
+        .whereType<String>()
         .toList();
   }
   return [];
@@ -647,7 +647,8 @@ class DictionaryEntry {
   final List<String> phrase;
   final List<Map<String, dynamic>> senseGroup;
   final List<String> hiddenLanguages;
-  final List<int> groups; // 所属分组ID列表
+  final List<String> groups; // 所属分组ID列表
+  final bool hasOriginalHeadword; // 原始 JSON 中是否存在 headword 字段
   final Map<String, dynamic> _rawJson;
 
   /// 匹配的 headword 及其对应的 anchor 列表
@@ -675,6 +676,7 @@ class DictionaryEntry {
     this.hiddenLanguages = const [],
     this.groups = const [],
     this.matchedAnchors = const [],
+    this.hasOriginalHeadword = true,
     Map<String, dynamic>? rawJson,
   }) : _rawJson = rawJson ?? {};
 
@@ -683,12 +685,26 @@ class DictionaryEntry {
     List<(String, String)>? matchedAnchors,
   }) {
     try {
+      // 检测原始 JSON 中是否存在 headword 字段
+      final hasOriginalHeadword = json.containsKey('headword') &&
+          json['headword']?.toString().isNotEmpty == true;
+
+      // 处理 headword：优先 headword，若为空则从 headline 提取纯文本
+      String headword = json['headword']?.toString() ?? '';
+      if (headword.isEmpty && json['headline'] != null) {
+        final headline = json['headline'].toString();
+        // 去除 [text](style) 格式化标记，只保留 text
+        headword = headline.replaceAllMapped(
+          RegExp(r'\[([^\]]*)\]\([^)]*\)'),
+          (match) => match.group(1) ?? '',
+        );
+      }
+
       return DictionaryEntry(
         id: json['entry_id']?.toString() ?? json['id']?.toString() ?? '',
         dictId: json['dict_id']?.toString(),
         version: json['version']?.toString(),
-        headword:
-            json['headword']?.toString() ?? json['word']?.toString() ?? '',
+        headword: headword,
         headline: json['headline']?.toString(),
         entryType: json['entry_type'] as String? ?? 'word',
         page: json['page']?.toString(),
@@ -750,6 +766,7 @@ class DictionaryEntry {
                   .toList()
             : [],
         matchedAnchors: matchedAnchors ?? [],
+        hasOriginalHeadword: hasOriginalHeadword,
         rawJson: json,
       );
     } catch (e) {
@@ -776,6 +793,9 @@ class DictionaryEntry {
     final pureId = _pureEntryId;
     return int.tryParse(pureId) ?? 0;
   }
+
+  /// 获取纯数字格式的 entry_id（公开访问）
+  int get entryIdAsInt => _pureEntryIdAsInt;
 
   /// 原始 JSON 中的 pronunciation 字段是否为单个对象（而非列表）
   bool get pronunciationIsSingleObject {
@@ -2136,7 +2156,7 @@ class DatabaseService {
   Future<void> _createCommitsTableIfNotExists(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS commits (
-        id TEXT PRIMARY KEY,
+        id INTEGER PRIMARY KEY,
         headword TEXT NOT NULL,
         update_time INTEGER NOT NULL,
         operation_type TEXT NOT NULL DEFAULT 'update'
@@ -2165,7 +2185,7 @@ class DatabaseService {
   /// 在 commits 表中记录操作（operationType: 'insert' | 'update' | 'delete'）
   Future<void> _recordUpdate(
     Database db,
-    String entryId,
+    int entryId,
     String headword, {
     String operationType = 'update',
   }) async {
@@ -2183,7 +2203,7 @@ class DatabaseService {
   }
 
   /// 获取指定条目在 commits 表中的当前操作类型，不存在返回 null。
-  Future<String?> _getExistingCommitType(Database db, String entryId) async {
+  Future<String?> _getExistingCommitType(Database db, int entryId) async {
     try {
       final tableExists = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='commits'",
@@ -2294,11 +2314,11 @@ class DatabaseService {
       // 如果更新成功，记录到 commits 表
       if (result > 0 && !skipCommit) {
         // 保留已有 insert 记录（不能把未进入服务器的 insert 覆盖为 update）
-        final existingType = await _getExistingCommitType(db, entry.id);
+        final existingType = await _getExistingCommitType(db, entry.entryIdAsInt);
         final operationType = existingType == 'insert' ? 'insert' : 'update';
         await _recordUpdate(
           db,
-          entry.id,
+          entry.entryIdAsInt,
           entry.headword,
           operationType: operationType,
         );
@@ -2406,13 +2426,13 @@ class DatabaseService {
       if (!skipCommit) {
         // 若已有 insert 记录（尚未推送）则保持 insert；
         // 若是全新条目，记为 insert；否则记为 update
-        final existingType = await _getExistingCommitType(db, entry.id);
+        final existingType = await _getExistingCommitType(db, entry.entryIdAsInt);
         final operationType = (isNewEntry || existingType == 'insert')
             ? 'insert'
             : 'update';
         await _recordUpdate(
           db,
-          entry.id,
+          entry.entryIdAsInt,
           entry.headword,
           operationType: operationType,
         );
@@ -2629,11 +2649,11 @@ class DatabaseService {
       // 处理 commits 记录：
       // - 若该条目的 commit 类型是 'insert'（尚未推送服务器），直接移除记录即可
       // - 否则记录为 'delete'，等待推送
-      final existingCommitType = await _getExistingCommitType(db, entryId);
+      final existingCommitType = await _getExistingCommitType(db, entryIdInt);
       if (existingCommitType == 'insert') {
-        await db.delete('commits', where: 'id = ?', whereArgs: [entryId]);
+        await db.delete('commits', where: 'id = ?', whereArgs: [entryIdInt]);
       } else {
-        await _recordUpdate(db, entryId, headword, operationType: 'delete');
+        await _recordUpdate(db, entryIdInt, headword, operationType: 'delete');
       }
 
       return true;

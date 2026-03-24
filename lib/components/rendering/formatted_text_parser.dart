@@ -817,7 +817,7 @@ class FormattedTextConfig {
   final void Function(String word, BuildContext context)? onLinkTap;
   final void Function(String target, BuildContext context)? onExactJump;
   final void Function(String path, BuildContext context)? onPathJump;
-  final void Function(int groupId, BuildContext context)? onGroupJump;
+  final void Function(String groupId, BuildContext context)? onGroupJump;
   final String? dictId;
   final Future<Uint8List?> Function(String dictId, String imageFile)?
   onLoadImage;
@@ -874,7 +874,7 @@ FormattedTextResult parseFormattedText(
   void Function(String word, BuildContext context)? onLinkTap,
   void Function(String target, BuildContext context)? onExactJump,
   void Function(String path, BuildContext context)? onPathJump,
-  void Function(int groupId, BuildContext context)? onGroupJump,
+  void Function(String groupId, BuildContext context)? onGroupJump,
   String? dictId,
   Future<Uint8List?> Function(String dictId, String imageFile)? onLoadImage,
 }) {
@@ -1302,8 +1302,7 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
   }
 
   void _addGroupJumpSpan(String text, StyleInfo styleInfo) {
-    final groupId = int.tryParse(styleInfo.groupJumpTarget!);
-    if (groupId == null) return;
+    final groupId = styleInfo.groupJumpTarget!;
 
     final style = styleInfo.style.copyWith(
       color: Theme.of(config.context!).colorScheme.primary,

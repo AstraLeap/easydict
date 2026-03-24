@@ -980,11 +980,11 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
     try {
       // 1. 获取每个更新的 entry 并合并为 jsonl 格式
-      final processedEntryIds = <String>{};
+      final processedEntryIds = <int>{};
       final jsonLines = <String>[];
 
       for (final record in _updateRecords) {
-        final entryId = record['id'] as String;
+        final entryId = record['id'] as int;  // 纯 int
         final opType = record['operation_type'] as String? ?? 'update';
         final isDelete = opType == 'delete';
 
@@ -996,22 +996,14 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
 
         if (isDelete) {
           // 删除记录：只需 {"entry_id": <int>, "_delete": true}
-          // 从 entryId 字符串中提取纯数字部分
-          int? numericId = int.tryParse(entryId);
-          if (numericId == null && entryId.contains('_')) {
-            final parts = entryId.split('_');
-            numericId = int.tryParse(parts.last);
-          }
-          if (numericId != null) {
-            jsonLines.add(jsonEncode({'entry_id': numericId, '_delete': true}));
-          }
+          jsonLines.add(jsonEncode({'entry_id': entryId, '_delete': true}));
           continue;
         }
 
         // 获取完整的 entry JSON
         final entryJson = await _databaseService.getEntryJsonById(
           widget.dictId,
-          entryId,
+          entryId.toString(),  // getEntryJsonById 接收 String
         );
 
         if (entryJson == null) {
@@ -1155,7 +1147,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
                   itemCount: _updateRecords.length,
                   itemBuilder: (context, index) {
                     final record = _updateRecords[index];
-                    final headword = record['headword'] as String;
+                    final headword = record['headword'] as String? ?? '';
                     final opType =
                         record['operation_type'] as String? ?? 'update';
                     final isDelete = opType == 'delete';

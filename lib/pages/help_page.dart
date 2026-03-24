@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
+import '../core/utils/toast_utils.dart';
 import '../services/font_loader_service.dart';
 import '../services/app_update_service.dart';
 import '../components/global_scale_wrapper.dart';
@@ -367,16 +368,7 @@ class _HelpPageState extends State<HelpPage> {
       trailing: Icon(Icons.copy, color: colorScheme.outline, size: 18),
       onTap: () {
         Clipboard.setData(ClipboardData(text: subtitle));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('路径已复制到剪贴板'),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
+        showToast(context, '路径已复制到剪贴板');
       },
     );
   }
@@ -391,6 +383,10 @@ class _HelpPageState extends State<HelpPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
 
+    // Android 等平台无法直接打开私有目录，改为复制路径
+    final bool canOpenFolder =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Icon(icon, color: effectiveIconColor, size: 24),
@@ -404,29 +400,35 @@ class _HelpPageState extends State<HelpPage> {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: Icon(Icons.open_in_new, color: colorScheme.outline, size: 18),
+      trailing: Icon(
+        canOpenFolder ? Icons.open_in_new : Icons.copy,
+        color: colorScheme.outline,
+        size: 18,
+      ),
       onTap: () async {
-        // 使用系统命令打开文件夹，避免 launchUrl 在 Windows 上卡住
-        try {
-          if (Platform.isWindows) {
-            await Process.run('explorer', [path]);
-          } else if (Platform.isMacOS) {
-            await Process.run('open', [path]);
-          } else if (Platform.isLinux) {
-            await Process.run('xdg-open', [path]);
-          } else {
-            // 其他平台回退到 url_launcher
+        if (canOpenFolder) {
+          // 桌面平台：使用系统命令打开文件夹
+          try {
+            if (Platform.isWindows) {
+              await Process.run('explorer', [path]);
+            } else if (Platform.isMacOS) {
+              await Process.run('open', [path]);
+            } else if (Platform.isLinux) {
+              await Process.run('xdg-open', [path]);
+            }
+          } catch (e) {
+            debugPrint('打开文件夹失败: $e');
+            // 回退到 url_launcher
             final uri = Uri.file(path);
             if (await canLaunchUrl(uri)) {
               await launchUrl(uri);
             }
           }
-        } catch (e) {
-          debugPrint('打开文件夹失败: $e');
-          // 回退到 url_launcher
-          final uri = Uri.file(path);
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri);
+        } else {
+          // 移动平台：复制路径到剪贴板
+          Clipboard.setData(ClipboardData(text: path));
+          if (context.mounted) {
+            showToast(context, '路径已复制到剪贴板');
           }
         }
       },

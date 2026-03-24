@@ -397,8 +397,8 @@ def build_database_from_jsonl(
     cursor.execute(
         """
         CREATE TABLE groups (
-            group_id INTEGER PRIMARY KEY,
-            parent_id INTEGER,
+            group_id TEXT PRIMARY KEY,
+            parent_id TEXT,
             name TEXT NOT NULL,
             description TEXT,
             item_list TEXT DEFAULT '[]',

@@ -34,8 +34,8 @@ class GroupService {
       final db = await _dictManager.openDictionaryDatabase(dictId);
       await db.execute('''
         CREATE TABLE IF NOT EXISTS groups (
-          group_id INTEGER PRIMARY KEY,
-          parent_id INTEGER,
+          group_id TEXT PRIMARY KEY,
+          parent_id TEXT,
           name TEXT NOT NULL,
           description TEXT,
           item_list TEXT DEFAULT '[]',
@@ -64,7 +64,7 @@ class GroupService {
       final results = await db.query(
         'groups',
         where: 'parent_id IS NULL',
-        orderBy: 'name ASC',
+        orderBy: 'group_id ASC',
       );
       return results.map((map) => DictionaryGroup.fromMap(map)).toList();
     } catch (e) {
@@ -76,7 +76,7 @@ class GroupService {
   /// 获取子组
   Future<List<DictionaryGroup>> getSubGroups(
     String dictId,
-    int parentId,
+    String parentId,
   ) async {
     try {
       final hasTable = await hasGroupsTable(dictId);
@@ -87,7 +87,7 @@ class GroupService {
         'groups',
         where: 'parent_id = ?',
         whereArgs: [parentId],
-        orderBy: 'name ASC',
+        orderBy: 'group_id ASC',
       );
       return results.map((map) => DictionaryGroup.fromMap(map)).toList();
     } catch (e) {
@@ -97,7 +97,7 @@ class GroupService {
   }
 
   /// 获取组详情
-  Future<DictionaryGroup?> getGroup(String dictId, int groupId) async {
+  Future<DictionaryGroup?> getGroup(String dictId, String groupId) async {
     Logger.d('getGroup: dictId=$dictId, groupId=$groupId', tag: 'GroupService');
     try {
       final hasTable = await hasGroupsTable(dictId);
@@ -121,14 +121,14 @@ class GroupService {
   }
 
   /// 获取组层级路径（用于面包屑导航）
-  Future<List<DictionaryGroup>> getGroupPath(String dictId, int groupId) async {
+  Future<List<DictionaryGroup>> getGroupPath(String dictId, String groupId) async {
     try {
       final hasTable = await hasGroupsTable(dictId);
       if (!hasTable) return [];
 
       final db = await _dictManager.openDictionaryDatabase(dictId);
       final path = <DictionaryGroup>[];
-      int? currentId = groupId;
+      String? currentId = groupId;
 
       while (currentId != null) {
         final results = await db.query(
@@ -152,17 +152,17 @@ class GroupService {
   }
 
   /// 批量获取多个组的层级路径（用于面包屑导航）
-  /// 返回 Map<int, GroupPath>，key 为 group_id
-  Future<Map<int, GroupPath>> getGroupPathsByGroupIds(
+  /// 返回 Map<String, GroupPath>，key 为 group_id
+  Future<Map<String, GroupPath>> getGroupPathsByGroupIds(
     String dictId,
-    List<int> groupIds,
+    List<String> groupIds,
   ) async {
     try {
       final hasTable = await hasGroupsTable(dictId);
       if (!hasTable) return {};
 
       final db = await _dictManager.openDictionaryDatabase(dictId);
-      final result = <int, GroupPath>{};
+      final result = <String, GroupPath>{};
 
       // 批量查询所有需要的组
       if (groupIds.isEmpty) return result;
@@ -175,7 +175,7 @@ class GroupService {
       );
 
       // 构建 group_id -> group 映射
-      final groupMap = <int, DictionaryGroup>{};
+      final groupMap = <String, DictionaryGroup>{};
       for (final map in groups) {
         final group = DictionaryGroup.fromMap(map);
         if (group.groupId != null) {
@@ -186,7 +186,7 @@ class GroupService {
       // 为每个 groupId 获取完整路径
       for (final groupId in groupIds) {
         final path = <DictionaryGroup>[];
-        int? currentId = groupId;
+        String? currentId = groupId;
 
         while (currentId != null) {
           final group = groupMap[currentId];
@@ -360,7 +360,7 @@ class GroupService {
   }
 
   /// 删除组
-  Future<void> deleteGroup(String dictId, int groupId) async {
+  Future<void> deleteGroup(String dictId, String groupId) async {
     try {
       final db = await _dictManager.openDictionaryDatabase(dictId);
 
@@ -386,7 +386,7 @@ class GroupService {
   /// 添加项目到组
   Future<void> addItemsToGroup(
     String dictId,
-    int groupId,
+    String groupId,
     List<GroupItem> items,
   ) async {
     try {
@@ -423,7 +423,7 @@ class GroupService {
   /// 从组中移除项目
   Future<void> removeItemsFromGroup(
     String dictId,
-    int groupId,
+    String groupId,
     List<GroupItem> items,
   ) async {
     try {
@@ -455,7 +455,7 @@ class GroupService {
   }
 
   /// 更新父组的 sub_group_count
-  Future<void> _updateParentSubGroupCount(Database db, int parentId) async {
+  Future<void> _updateParentSubGroupCount(Database db, String parentId) async {
     final count = Sqflite.firstIntValue(
       await db.rawQuery('SELECT COUNT(*) FROM groups WHERE parent_id = ?', [
         parentId,
@@ -524,7 +524,7 @@ class GroupService {
       final db = await _dictManager.openDictionaryDatabase(dictId);
       final results = await db.query(
         'groups',
-        orderBy: 'parent_id ASC, name ASC',
+        orderBy: 'parent_id ASC, group_id ASC',
       );
       return results.map((map) => DictionaryGroup.fromMap(map)).toList();
     } catch (e) {

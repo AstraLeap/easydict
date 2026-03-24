@@ -62,7 +62,7 @@ class _GroupManagePageState extends State<GroupManagePage> {
     }
   }
 
-  Future<void> _createGroup({int? parentId}) async {
+  Future<void> _createGroup({String? parentId}) async {
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
 
