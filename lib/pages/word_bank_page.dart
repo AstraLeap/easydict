@@ -7,13 +7,13 @@ import 'package:file_picker/file_picker.dart';
 import '../data/database_service.dart';
 import '../data/word_bank_service.dart';
 import '../data/models/dictionary_entry_group.dart';
+import '../models/browse_list.dart';
 import 'entry_detail_page.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
 import '../widgets/search_bar.dart';
 import '../services/advanced_search_settings_service.dart';
-import '../services/search_history_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/entry_event_bus.dart';
 import '../services/font_loader_service.dart';
@@ -1265,12 +1265,19 @@ class _WordBankPageState extends State<WordBankPage> {
     required Map<String, dynamic> wordData,
     required String language,
     required VoidCallback onRemove,
+    List<String>? browseWords,
+    int? browseIndex,
   }) {
     final word = wordData['word'] as String? ?? '';
     if (word.isEmpty) return const SizedBox.shrink();
 
     return InkWell(
-      onTap: () => _searchWord(word, language),
+      onTap: () => _searchWord(
+        word,
+        language,
+        browseWords: browseWords,
+        browseIndex: browseIndex,
+      ),
       onLongPress: () => _showEditWordListsDialog(word),
       onSecondaryTap: () => _showEditWordListsDialog(word),
       child: Padding(
@@ -1341,10 +1348,17 @@ class _WordBankPageState extends State<WordBankPage> {
             delegate: SliverChildBuilderDelegate((context, index) {
               final wordData = filteredWords[index];
               final word = wordData['word'] as String? ?? '';
+              // 构建浏览列表（当前筛选后的单词列表）
+              final browseWords = filteredWords
+                  .map((w) => w['word'] as String? ?? '')
+                  .where((w) => w.isNotEmpty)
+                  .toList();
 
               return _buildWordListItem(
                 wordData: wordData,
                 language: lang,
+                browseWords: browseWords,
+                browseIndex: index,
                 onRemove: () {
                   _wordBankService.removeWord(word, lang);
                   setState(() {
@@ -1388,10 +1402,17 @@ class _WordBankPageState extends State<WordBankPage> {
             delegate: SliverChildBuilderDelegate((context, index) {
               final wordData = filteredWords[index];
               final word = wordData['word'] as String? ?? '';
+              // 构建浏览列表（当前筛选后的单词列表）
+              final browseWords = filteredWords
+                  .map((w) => w['word'] as String? ?? '')
+                  .where((w) => w.isNotEmpty)
+                  .toList();
 
               return _buildWordListItem(
                 wordData: wordData,
                 language: _selectedLanguage!,
+                browseWords: browseWords,
+                browseIndex: index,
                 onRemove: () {
                   _wordBankService.removeWord(word, _selectedLanguage!);
                   setState(() {
@@ -1438,7 +1459,14 @@ class _WordBankPageState extends State<WordBankPage> {
   }
 
   /// 搜索单词
-  Future<void> _searchWord(String word, String language) async {
+  /// [browseWords] 浏览列表单词（可选，用于在详情页前进/后退）
+  /// [browseIndex] 当前单词在浏览列表中的索引
+  Future<void> _searchWord(
+    String word,
+    String language, {
+    List<String>? browseWords,
+    int? browseIndex,
+  }) async {
     // 获取当前语言的默认搜索选项
     final advancedSettingsService = AdvancedSearchSettingsService();
     final defaultOptions = advancedSettingsService.getDefaultOptionsForLanguage(
@@ -1456,8 +1484,6 @@ class _WordBankPageState extends State<WordBankPage> {
       final entryGroup = DictionaryEntryGroup.groupEntries(
         searchResult.entries,
       );
-      await SearchHistoryService().addSearchRecord(word);
-      EntryEventBus().emitSearchHistoryChanged();
       if (!mounted) return;
       Navigator.push(
         context,
@@ -1467,6 +1493,15 @@ class _WordBankPageState extends State<WordBankPage> {
             initialWord: word,
             searchRelations: searchResult.hasRelations
                 ? searchResult.relations
+                : null,
+            browseList: browseWords != null
+                ? BrowseList(
+                    source: BrowseListSource.wordBank,
+                    words: browseWords,
+                    initialIndex: browseIndex ?? 0,
+                    language: language,
+                    listName: _selectedList,
+                  )
                 : null,
           ),
         ),

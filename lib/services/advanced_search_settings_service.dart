@@ -23,8 +23,6 @@ class AdvancedSearchSettingsService {
   AdvancedSearchSettingsService._internal();
 
   static const String _exactMatchKey = 'advanced_search_exact_match';
-  static const String _biaoyiExactMatchKey =
-      'advanced_search_biaoyi_exact_match';
   static const String _lastSelectedGroupKey = 'last_selected_group';
   static const String _languageDefaultOptionsKey = 'language_default_options';
   static const String _languageOrderKey = 'language_display_order';
@@ -56,7 +54,6 @@ class AdvancedSearchSettingsService {
     final prefs = await SharedPreferences.getInstance();
     return {
       'exactMatch': prefs.getBool(_exactMatchKey) ?? false,
-      'biaoyiExactMatch': prefs.getBool(_biaoyiExactMatchKey) ?? false,
     };
   }
 
@@ -126,13 +123,6 @@ class AdvancedSearchSettingsService {
   Future<void> setExactMatch(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_exactMatchKey, value);
-  }
-
-  /// 保存简繁区分设置（已废弃，请使用 setExactMatchForLanguage）
-  @deprecated
-  Future<void> setBiaoyiExactMatch(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_biaoyiExactMatchKey, value);
   }
 
   /// 获取指定语言的精确搜索设置
