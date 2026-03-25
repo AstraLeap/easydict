@@ -35,7 +35,6 @@ import '../services/advanced_search_settings_service.dart';
 import '../services/entry_event_bus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../i18n/strings.g.dart';
-import 'group_manage_page.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
   const DictionaryManagerPage({super.key});
@@ -2056,8 +2055,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         _dictManager.clearMetadataCache(dict.id);
         // 关闭旧数据库连接，确保查词时重新打开新下载的文件
         await _dictManager.closeDatabase(dict.id);
+        // 启用词典
         await _dictManager.enableDictionary(dict.id);
+        // 刷新本地词典列表
         await _refreshLocalDictionaries();
+        // 更新在线词典列表中的下载状态
+        _updateOnlineDictionaryStatus(dict.id, isDownloaded: true);
       },
       onError: (error) async {
         if (!mounted) return;
@@ -2076,6 +2079,18 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       _allDictionaries = allDicts;
       _enabledDictionaryIds = enabledIds;
     });
+  }
+
+  /// 更新在线词典列表中指定词典的下载状态
+  void _updateOnlineDictionaryStatus(String dictId, {required bool isDownloaded}) {
+    final index = _onlineDictionaries.indexWhere((d) => d.id == dictId);
+    if (index != -1) {
+      setState(() {
+        _onlineDictionaries[index] = _onlineDictionaries[index].copyWith(
+          isDownloaded: isDownloaded,
+        );
+      });
+    }
   }
 
   void _scrollToBottomSheet() {
@@ -2680,20 +2695,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
 
                       _buildFilesSection(),
                       const SizedBox(height: 28),
-
-                      // 组管理按钮
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () => _navigateToGroupManage(metadata),
-                          icon: const Icon(Icons.folder_outlined),
-                          label: Text(context.t.groups.manageGroups),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
 
                       // 删除词典按鈕
                       SizedBox(
@@ -3354,16 +3355,6 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
       'hasAudios': await dictManager.hasAudiosZip(dictId),
       'hasImages': await dictManager.hasImagesZip(dictId),
     };
-  }
-
-  void _navigateToGroupManage(DictionaryMetadata metadata) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            GroupManagePage(dictId: metadata.id, dictName: metadata.name),
-      ),
-    );
   }
 
   Future<void> _deleteDictionary(DictionaryMetadata metadata) async {

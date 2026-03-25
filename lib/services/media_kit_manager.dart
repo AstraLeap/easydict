@@ -27,6 +27,12 @@ class MediaKitManager {
     );
   }
 
+  /// 安全地释放单个 Player
+  Future<void> safeDisposePlayer(Player player) async {
+    _activePlayers.remove(player);
+    await _safeDisposePlayer(player);
+  }
+
   Future<void> disposeAllPlayers() async {
     if (_isCleaningUp) return;
     _isCleaningUp = true;
@@ -36,14 +42,28 @@ class MediaKitManager {
     final playersToDispose = _activePlayers.toList();
     _activePlayers.clear();
 
-    final futures = <Future>[];
+    // 先停止所有播放
+    final stopFutures = <Future>[];
     for (final player in playersToDispose) {
-      futures.add(_safeDisposePlayer(player));
+      stopFutures.add(_safeStopPlayer(player));
+    }
+    await Future.wait(stopFutures).timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => [],
+    );
+
+    // 短暂延迟，让 native 端完成停止操作
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 然后释放所有 player
+    final disposeFutures = <Future>[];
+    for (final player in playersToDispose) {
+      disposeFutures.add(_safeDisposePlayer(player));
     }
 
-    await Future.wait(futures)
+    await Future.wait(disposeFutures)
         .timeout(
-          const Duration(seconds: 2),
+          const Duration(seconds: 3),
           onTimeout: () {
             Logger.w('清理 Player 超时', tag: 'MediaKitManager');
             return [];
@@ -54,27 +74,30 @@ class MediaKitManager {
           return [];
         });
 
-    Logger.i('所有 MediaKit Player 实例已清理', tag: 'MediaKitManager');
+    Logger.i('所有 MediaKit Player 实例已清理 (${playersToDispose.length} 个)', tag: 'MediaKitManager');
     _isCleaningUp = false;
   }
 
-  Future<void> _safeDisposePlayer(Player player) async {
+  Future<void> _safeStopPlayer(Player player) async {
     try {
       await player.stop().timeout(
-        const Duration(milliseconds: 200),
+        const Duration(milliseconds: 500),
         onTimeout: () {},
       );
     } catch (e) {
       // 忽略
     }
+  }
 
+  Future<void> _safeDisposePlayer(Player player) async {
     try {
       await player.dispose().timeout(
-        const Duration(milliseconds: 200),
+        const Duration(milliseconds: 500),
         onTimeout: () {},
       );
     } catch (e) {
-      // 忽略
+      // 忽略，native 资源可能已被释放
+      Logger.d('释放 Player 时出错: $e', tag: 'MediaKitManager');
     }
   }
 

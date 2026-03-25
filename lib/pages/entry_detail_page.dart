@@ -21,6 +21,7 @@ import '../core/utils/word_list_dialog.dart';
 import '../data/database_service.dart';
 import '../data/models/ai_chat_record.dart';
 import '../data/models/dictionary_entry_group.dart';
+import '../models/browse_list.dart';
 import '../data/services/ai_chat_database_service.dart';
 import '../data/word_bank_service.dart';
 import '../i18n/strings.g.dart';
@@ -125,11 +126,15 @@ class EntryDetailPage extends StatefulWidget {
   final String initialWord;
   final Map<String, List<SearchRelation>>? searchRelations;
 
+  /// 浏览列表数据（用于前进/后退功能）
+  final BrowseList? browseList;
+
   const EntryDetailPage({
     super.key,
     required this.entryGroup,
     required this.initialWord,
     this.searchRelations,
+    this.browseList,
   });
 
   @override
@@ -141,13 +146,27 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
+  final ScrollOffsetController _scrollOffsetController = ScrollOffsetController();
   final _preferencesService = PreferencesService();
+
+  /// 键盘事件焦点节点
+  late FocusNode _keyboardFocusNode;
 
   final WordBankService _wordBankService = WordBankService();
   final AIService _aiService = AIService();
   final AiChatDatabaseService _aiChatDatabaseService = AiChatDatabaseService();
   late DictionaryEntryGroup _entryGroup;
   bool _isFavorite = false;
+
+  /// 浏览列表相关状态
+  BrowseList? _browseList;
+  int _browseIndex = 0;
+
+  /// 是否可以前进（有下一个词）
+  bool get _canGoNext => _browseList?.canGoNext(_browseIndex) ?? false;
+
+  /// 是否可以后退（有上一个词）
+  bool get _canGoPrevious => _browseList?.canGoPrevious(_browseIndex) ?? false;
 
   /// 路径历史栈，用于撤回功能
   final List<List<String>> _pathHistory = [];
@@ -270,7 +289,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   @override
   void initState() {
     super.initState();
+    _keyboardFocusNode = FocusNode();
     _entryGroup = widget.entryGroup;
+    // 初始化浏览列表
+    _browseList = widget.browseList;
+    _browseIndex = widget.browseList?.initialIndex ?? 0;
     // 关键数据：导航栏位置（影响UI布局）
     _loadNavPanelPosition();
     // 初始化单词关系搜索（缓存 Future，所有词典共享）
@@ -320,6 +343,94 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       await _loadExpansionStates();
     });
     // AI聊天历史只在需要时加载，不在初始化时加载
+  }
+
+  /// 导航到下一个词（浏览列表）
+  Future<void> _goToNextWord() async {
+    if (!_canGoNext) return;
+    final nextWord = _browseList!.getNextWord(_browseIndex);
+    if (nextWord == null) return;
+    await _navigateToBrowseWord(nextWord);
+    if (mounted) {
+      setState(() {
+        _browseIndex++;
+      });
+    }
+  }
+
+  /// 导航到上一个词（浏览列表）
+  Future<void> _goToPreviousWord() async {
+    if (!_canGoPrevious) return;
+    final prevWord = _browseList!.getPreviousWord(_browseIndex);
+    if (prevWord == null) return;
+    await _navigateToBrowseWord(prevWord);
+    if (mounted) {
+      setState(() {
+        _browseIndex--;
+      });
+    }
+  }
+
+  /// 处理键盘事件
+  void _handleKeyEvent(LogicalKeyboardKey key) {
+    // 所有 browseList 都支持前进后退
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      if (_canGoPrevious) _goToPreviousWord();
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      if (_canGoNext) _goToNextWord();
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _scrollUpKeyboard();
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      _scrollDownKeyboard();
+    }
+  }
+
+  /// 键盘向上翻页
+  void _scrollUpKeyboard() {
+    // 固定距离滚动（300像素）
+    _scrollOffsetController.animateScroll(
+      offset: -300,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 键盘向下翻页
+  void _scrollDownKeyboard() {
+    // 固定距离滚动（300像素）
+    _scrollOffsetController.animateScroll(
+      offset: 300,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 导航到指定单词（在当前页面内切换内容）
+  Future<void> _navigateToBrowseWord(String word) async {
+    final dbService = DatabaseService();
+    final searchResult = await dbService.getAllEntries(word);
+
+    if (searchResult.entries.isNotEmpty && mounted) {
+      setState(() {
+        _entryGroup = DictionaryEntryGroup.groupEntries(searchResult.entries);
+        // 重置各种状态
+        _collapsedDicts.clear();
+        _entryNavStates.clear();
+        _tempReplacementEntries.clear();
+        _isFavorite = false;
+        // 更新单词关系搜索
+        _wordRelationsFuture = EnglishSearchService().searchWordRelations(word);
+      });
+
+      // 重新加载收藏状态
+      await _loadFavoriteStatus();
+
+      // 滚动到顶部
+      _itemScrollController.scrollTo(
+        index: 0,
+        duration: const Duration(milliseconds: 300),
+      );
+    }
   }
 
   /// 加载展开状态
@@ -454,6 +565,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
     _streamingNotifiers.clear();
     _pendingRequestsVersionNotifier.dispose();
+    _keyboardFocusNode.dispose();
     super.dispose();
   }
 
@@ -1519,6 +1631,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 child: ScrollablePositionedList.builder(
                   itemScrollController: _itemScrollController,
                   itemPositionsListener: _itemPositionsListener,
+                  scrollOffsetController: _scrollOffsetController,
                   padding: _getDynamicPadding(
                     context,
                   ).copyWith(top: 16, bottom: 100),
@@ -1639,6 +1752,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 桌面端返回按钮（与底部工具栏按钮样式相同）
   Widget _buildDesktopBackButton() {
+    // 前进后退按钮始终不显示
     return GestureDetector(
       // 阻止点击事件冒泡到外层
       onTap: () {},
@@ -1670,6 +1784,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // 返回按钮
                 Expanded(
                   child: _buildActionButton(
                     icon: Icons.arrow_back,
@@ -1783,7 +1898,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     if (searchResult.entries.isNotEmpty) {
       // 记录搜索历史（进入首页查词页的历史记录）
       final historyService = SearchHistoryService();
-      await historyService.addSearchRecord(word);
+
+      // 获取语言信息
+      String? group;
+      final dictId = searchResult.entries.first.dictId;
+      if (dictId != null) {
+        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        group = metadata?.sourceLanguage;
+      }
+      await historyService.addSearchRecord(word, group: group);
+
+      // 获取历史记录作为浏览列表
+      final records = await historyService.getSearchRecords();
+      final historyWords = records.map((r) => r.word).toList();
+      final currentIndex = historyWords.indexOf(word);
 
       // 搜索成功，跳转到新的词典内容页
       final entryGroup = DictionaryEntryGroup.groupEntries(
@@ -1792,8 +1920,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       if (mounted) {
         await Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) =>
-                EntryDetailPage(entryGroup: entryGroup, initialWord: word),
+            builder: (context) => EntryDetailPage(
+              entryGroup: entryGroup,
+              initialWord: word,
+              browseList: historyWords.isNotEmpty
+                  ? BrowseList(
+                      source: BrowseListSource.searchHistory,
+                      words: historyWords,
+                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                    )
+                  : null,
+            ),
           ),
         );
         // 返回后退出搜索模式
@@ -1824,7 +1961,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         )
         .toList();
 
-    return Container(
+    final content = Container(
       margin: EdgeInsets.zero,
       padding: EdgeInsets.zero,
       decoration: BoxDecoration(
@@ -1857,6 +1994,56 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           ),
         ),
       ),
+    );
+
+    // 手机端：添加手势处理（浏览列表导航）
+    if (!isDesktop && _browseList != null) {
+      return Focus(
+        focusNode: _keyboardFocusNode,
+        autofocus: true,
+        onKey: (node, event) {
+          if (event is RawKeyDownEvent) {
+            _handleKeyEvent(event.logicalKey);
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: GestureDetector(
+          onHorizontalDragEnd: (details) {
+            const double sensitivity = 200; // 滑动速度阈值
+
+            if (details.primaryVelocity! > sensitivity) {
+              // 向右滑：上一个词
+              _goToPreviousWord();
+            } else if (details.primaryVelocity! < -sensitivity) {
+              // 向左滑：下一个词
+              _goToNextWord();
+            }
+          },
+          onVerticalDragEnd: (details) {
+            // 上滑返回主页
+            const double sensitivity = 300;
+            if (details.primaryVelocity! < -sensitivity) {
+              clearAllToasts();
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            }
+          },
+          child: content,
+        ),
+      );
+    }
+
+    return Focus(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      onKey: (node, event) {
+        if (event is RawKeyDownEvent) {
+          _handleKeyEvent(event.logicalKey);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: content,
     );
   }
 
@@ -4038,13 +4225,35 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     if (result.entries.isNotEmpty) {
       final entryGroup = DictionaryEntryGroup.groupEntries(result.entries);
-      await historyService.addSearchRecord(word);
+
+      // 获取语言信息
+      String? group;
+      final dictId = result.entries.first.dictId;
+      if (dictId != null) {
+        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        group = metadata?.sourceLanguage;
+      }
+      await historyService.addSearchRecord(word, group: group);
+
+      // 获取历史记录构建浏览列表
+      final records = await historyService.getSearchRecords();
+      final historyWords = records.map((r) => r.word).toList();
+      final currentIndex = historyWords.indexOf(word);
 
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) =>
-                EntryDetailPage(entryGroup: entryGroup, initialWord: word),
+            builder: (context) => EntryDetailPage(
+              entryGroup: entryGroup,
+              initialWord: word,
+              browseList: historyWords.isNotEmpty
+                  ? BrowseList(
+                      source: BrowseListSource.searchHistory,
+                      words: historyWords,
+                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                    )
+                  : null,
+            ),
           ),
         );
       }

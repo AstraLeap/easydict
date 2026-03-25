@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/word_bank_service.dart';
+import '../models/browse_list.dart';
 import '../services/search_history_service.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../services/dictionary_manager.dart';
@@ -61,12 +62,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     if (_selectedGroup != 'auto') {
       _exactMatchByLanguage[_selectedGroup] = value;
     }
-  }
-
-  // 表意文字的精确匹配（简繁区分）也使用同一套逻辑
-  bool get _biaoyiExactMatch => _exactMatch;
-  set _biaoyiExactMatch(bool value) {
-    _exactMatch = value;
   }
 
   // 每日单词
@@ -324,19 +319,23 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         searchResult.entries,
       );
 
-      await _historyService.addSearchRecord(
-        word,
-        exactMatch: false,
-        biaoyiExactMatch: false,
-        group: language,
-      );
+      // 获取语言信息并记录搜索历史
+      String? group;
+      final dictId = searchResult.entries.first.dictId;
+      if (dictId != null) {
+        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        group = metadata?.sourceLanguage;
+      }
+      await _historyService.addSearchRecord(word, group: group);
 
+      // 重新获取历史记录以构建浏览列表
       final records = await _historyService.getSearchRecords();
-      setState(() {
-        _searchRecords = records;
-      });
 
       if (mounted) {
+        // 构建浏览列表（历史记录）
+        final historyWords = records.map((r) => r.word).toList();
+        final currentIndex = historyWords.indexOf(word);
+
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => EntryDetailPage(
@@ -344,6 +343,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               initialWord: word,
               searchRelations: searchResult.hasRelations
                   ? searchResult.relations
+                  : null,
+              browseList: historyWords.isNotEmpty
+                  ? BrowseList(
+                      source: BrowseListSource.searchHistory,
+                      words: historyWords,
+                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                    )
                   : null,
             ),
           ),
@@ -459,7 +465,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         text,
         sourceLanguage: _selectedGroup,
         exactMatch: _exactMatch,
-        biaoyiExactMatch: _biaoyiExactMatch,
+        biaoyiExactMatch: _exactMatch,
         limit: 8,
       );
       stopwatch.stop();
@@ -558,7 +564,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _searchController.text = record.word;
     setState(() {
       _exactMatch = record.exactMatch;
-      _biaoyiExactMatch = record.biaoyiExactMatch;
       if (record.group != null) {
         _selectedGroup = record.group!;
       }
@@ -619,7 +624,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     await _historyService.addSearchRecord(
       word,
       exactMatch: _exactMatch,
-      biaoyiExactMatch: _biaoyiExactMatch,
     );
 
     final searchResult = await _dbService.getAllEntries(
@@ -637,7 +641,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       await _historyService.addSearchRecord(
         word,
         exactMatch: _exactMatch,
-        biaoyiExactMatch: _biaoyiExactMatch,
         group: _selectedGroup,
       );
       // 更新历史记录
@@ -648,6 +651,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
       // 跳转到详情页面
       if (mounted) {
+        // 构建浏览列表（历史记录）
+        final historyWords = _searchRecords.map((r) => r.word).toList();
+        final currentIndex = historyWords.indexOf(word);
+
         final navResult = await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => EntryDetailPage(
@@ -655,6 +662,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               initialWord: word,
               searchRelations: searchResult.hasRelations
                   ? searchResult.relations
+                  : null,
+              browseList: historyWords.isNotEmpty
+                  ? BrowseList(
+                      source: BrowseListSource.searchHistory,
+                      words: historyWords,
+                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                    )
                   : null,
             ),
           ),
@@ -743,13 +757,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       if (value != null) {
                         setState(() {
                           _selectedGroup = value;
-                          // 表意文字（汉字、日文、韩文）：清除不适用的表音选项
-                          if (_isLogographicLang(value)) {
-                            _exactMatch = false;
-                          } else {
-                            // 表音文字：清除不适用的简繁区分选项
-                            _biaoyiExactMatch = false;
-                          }
                         });
                         await _advancedSettingsService.setLastSelectedGroup(
                           value,

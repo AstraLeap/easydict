@@ -33,6 +33,10 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
   late double _dy;
   double? _dragY;
 
+  // 导航栏高度限制相关状态
+  double _maxNavHeight = 0;
+  bool _isOverflow = false;
+
   @override
   void initState() {
     super.initState();
@@ -62,61 +66,93 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
     super.dispose();
   }
 
+  /// 处理溢出状态变化
+  void _onOverflowChanged(bool isOverflow) {
+    if (_isOverflow != isOverflow) {
+      setState(() {
+        _isOverflow = isOverflow;
+        if (isOverflow && _maxNavHeight == 0) {
+          final screenSize = MediaQuery.of(context).size;
+          _maxNavHeight = screenSize.height * 0.7;
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isMobile = screenSize.width < 600;
     final scale = FontLoaderService().getDictionaryContentScale();
-    double top;
 
-    if (_dragY != null) {
-      top = _dragY!;
+    // 计算最大高度
+    final maxNavHeight = screenSize.height * 0.7;
+    if (_maxNavHeight == 0) {
+      _maxNavHeight = maxNavHeight;
+    }
+
+    // 计算导航栏位置
+    double top;
+    if (_isOverflow) {
+      // 超过最大高度：固定居中
+      top = (screenSize.height - _maxNavHeight) / 2;
     } else {
-      top = screenSize.height * _dy / scale;
-      // 确保不超出屏幕底部
-      final maxTop = screenSize.height - 100 / scale;
-      if (top > maxTop) {
-        top = maxTop;
+      // 未超过：使用用户拖动位置
+      if (_dragY != null) {
+        top = _dragY!;
+      } else {
+        top = screenSize.height * _dy / scale;
+        // 确保不超出屏幕底部
+        final maxTop = screenSize.height - 100 / scale;
+        if (top > maxTop) {
+          top = maxTop;
+        }
       }
     }
 
     final rightPosition = (isMobile ? 4 : 16) / scale;
 
+    // 构建导航面板内容
+    final navPanel = DictionaryNavigationPanel(
+      key: widget.navPanelKey,
+      entryGroup: widget.entryGroup,
+      onDictionaryChanged: widget.onDictionaryChanged,
+      onPageChanged: widget.onPageChanged,
+      onSectionChanged: widget.onSectionChanged,
+      onNavigateToEntry: widget.onNavigateToEntry,
+      maxHeight: maxNavHeight,
+      onOverflowChanged: _onOverflowChanged,
+    );
+
     // 固定在右边缘，手机端更贴近边缘
     return Positioned(
       top: top,
       right: rightPosition,
-      child: GestureDetector(
-        onPanStart: (details) {
-          setState(() {
-            _dragY = screenSize.height * _dy / scale;
-          });
-        },
-        onPanUpdate: (details) {
-          setState(() {
-            _dragY = _dragY! + details.delta.dy;
-          });
-        },
-        onPanEnd: (details) {
-          // 只保存垂直位置，固定在右侧
-          // _dy 存储的是相对于原始屏幕高度的比例
-          final newDy = (_dragY! * scale / screenSize.height).clamp(0.1, 0.8);
+      child: _isOverflow
+          ? navPanel
+          : GestureDetector(
+              onPanStart: (details) {
+                setState(() {
+                  _dragY = screenSize.height * _dy / scale;
+                });
+              },
+              onPanUpdate: (details) {
+                setState(() {
+                  _dragY = _dragY! + details.delta.dy;
+                });
+              },
+              onPanEnd: (details) {
+                final newDy =
+                    (_dragY! * scale / screenSize.height).clamp(0.1, 0.8);
 
-          setState(() {
-            _dy = newDy;
-            _dragY = null;
-          });
-          PreferencesService().setNavPanelPosition(true, _dy);
-        },
-        child: DictionaryNavigationPanel(
-          key: widget.navPanelKey,
-          entryGroup: widget.entryGroup,
-          onDictionaryChanged: widget.onDictionaryChanged,
-          onPageChanged: widget.onPageChanged,
-          onSectionChanged: widget.onSectionChanged,
-          onNavigateToEntry: widget.onNavigateToEntry,
-        ),
-      ),
+                setState(() {
+                  _dy = newDy;
+                  _dragY = null;
+                });
+                PreferencesService().setNavPanelPosition(true, _dy);
+              },
+              child: navPanel,
+            ),
     );
   }
 }

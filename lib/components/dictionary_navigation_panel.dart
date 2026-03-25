@@ -3,7 +3,6 @@ import '../core/constants/entry_keys.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/database_service.dart';
 import 'dictionary_logo.dart';
-import '../core/constants/entry_keys.dart';
 import '../core/logger.dart';
 import 'rendering/formatted_text_parser.dart';
 import '../services/dictionary_manager.dart';
@@ -16,6 +15,8 @@ class DictionaryNavigationPanel extends StatefulWidget {
   final VoidCallback? onSectionChanged;
   final Function(DictionaryEntry entry, {String? targetPath})?
   onNavigateToEntry;
+  final double maxHeight; // 最大高度，传入屏幕高度的 70%
+  final void Function(bool isOverflow)? onOverflowChanged; // 溢出状态变化回调
 
   const DictionaryNavigationPanel({
     super.key,
@@ -24,6 +25,8 @@ class DictionaryNavigationPanel extends StatefulWidget {
     this.onPageChanged,
     this.onSectionChanged,
     this.onNavigateToEntry,
+    this.maxHeight = double.infinity,
+    this.onOverflowChanged,
   });
 
   @override
@@ -79,6 +82,9 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   final LayerLink _directoryLayerLink = LayerLink();
   OverlayEntry? _overlayEntry;
   OverlayEntry? _directoryOverlayEntry;
+
+  // 暴露 ScrollController 给父组件
+  ScrollController get mainScrollController => _mainScrollController;
 
   @override
   void dispose() {
@@ -433,18 +439,93 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     }
 
     // 构建主导航栏
-    return SizedBox(
+    Widget content = SizedBox(
       key: _navPanelKey,
       width: 52,
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: ListView(
-          controller: _mainScrollController,
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          children: mixedItems,
+      child: _buildFadeWrapper(
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: ListView(
+            controller: _mainScrollController,
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            children: mixedItems,
+          ),
         ),
       ),
+    );
+
+    // 如果有最大高度限制，需要用 LayoutBuilder 判断是否需要限制
+    if (widget.maxHeight != double.infinity) {
+      content = ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: widget.maxHeight),
+        child: content,
+      );
+    }
+
+    return content;
+  }
+
+  /// 构建渐隐效果包裹层
+  Widget _buildFadeWrapper({required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 获取 ListView 的实际内容高度（通过 ScrollController）
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_mainScrollController.hasClients) {
+            final contentHeight = _mainScrollController.position.maxScrollExtent +
+                _mainScrollController.position.viewportDimension;
+            final isOverflow = contentHeight > widget.maxHeight;
+
+            // 通知父组件溢出状态
+            if (widget.onOverflowChanged != null) {
+              widget.onOverflowChanged!(isOverflow);
+            }
+          }
+        });
+
+        // 判断是否需要限制高度和渐隐
+        final needsConstraint = widget.maxHeight != double.infinity;
+        if (!needsConstraint) {
+          return child;
+        }
+
+        // 获取内容高度
+        double contentHeight = constraints.maxHeight;
+        if (_mainScrollController.hasClients) {
+          contentHeight = _mainScrollController.position.maxScrollExtent +
+              _mainScrollController.position.viewportDimension;
+        }
+
+        final isOverflow = contentHeight > widget.maxHeight;
+
+        // 如果内容未超过最大高度，不添加渐隐
+        if (!isOverflow) {
+          return child;
+        }
+
+        // 添加渐隐效果
+        const fadeHeight = 20.0;
+        final fadeRatio = (fadeHeight / widget.maxHeight).clamp(0.0, 0.15);
+
+        return ShaderMask(
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: const [
+                Colors.transparent,
+                Colors.white,
+                Colors.white,
+                Colors.transparent,
+              ],
+              stops: [0.0, fadeRatio, 1.0 - fadeRatio, 1.0],
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.dstIn,
+          child: child,
+        );
+      },
     );
   }
 

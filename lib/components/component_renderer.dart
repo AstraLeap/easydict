@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' show max;
+import 'dart:ui' show instantiateImageCodec;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -16,11 +17,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 import '../core/constants/entry_keys.dart' show kExcludedEntryKeys;
 import '../core/logger.dart';
 import 'rendering/formatted_text_parser.dart'
-    show
-        parseFormattedText,
-        FormattedTextResult,
-        kRubySpacingRatio,
-        TypeParser;
+    show parseFormattedText, FormattedTextResult, kRubySpacingRatio, TypeParser;
 import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
@@ -37,6 +34,7 @@ import '../services/font_loader_service.dart';
 import '../services/media_kit_manager.dart';
 import '../services/preferences_service.dart';
 import '../services/search_history_service.dart';
+import '../models/browse_list.dart';
 import '../services/tts_cache_service.dart';
 import 'board_widget.dart';
 import 'dictionary_interaction_scope.dart';
@@ -1059,13 +1057,35 @@ Future<void> _handleLinkTap(BuildContext context, String word) async {
 
   if (result.entries.isNotEmpty) {
     final entryGroup = DictionaryEntryGroup.groupEntries(result.entries);
-    await historyService.addSearchRecord(word);
+
+    // 获取语言信息
+    String? group;
+    final dictId = result.entries.first.dictId;
+    if (dictId != null) {
+      final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+      group = metadata?.sourceLanguage;
+    }
+    await historyService.addSearchRecord(word, group: group);
+
+    // 获取历史记录构建浏览列表
+    final records = await historyService.getSearchRecords();
+    final historyWords = records.map((r) => r.word).toList();
+    final currentIndex = historyWords.indexOf(word);
 
     if (context.mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) =>
-              EntryDetailPage(entryGroup: entryGroup, initialWord: word),
+          builder: (context) => EntryDetailPage(
+            entryGroup: entryGroup,
+            initialWord: word,
+            browseList: historyWords.isNotEmpty
+                ? BrowseList(
+                    source: BrowseListSource.searchHistory,
+                    words: historyWords,
+                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                  )
+                : null,
+          ),
         ),
       );
     }
@@ -1137,11 +1157,35 @@ Future<void> _handleExactJump(
   if (targetEntry != null) {
     if (context.mounted) {
       final entryGroup = DictionaryEntryGroup.groupEntries([targetEntry]);
+      final word = targetEntry.headword;
+
+      // 获取语言信息并记录搜索历史
+      String? group;
+      final dictId = targetEntry.dictId;
+      if (dictId != null) {
+        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        group = metadata?.sourceLanguage;
+      }
+      final historyService = SearchHistoryService();
+      await historyService.addSearchRecord(word, group: group);
+
+      // 获取历史记录构建浏览列表
+      final records = await historyService.getSearchRecords();
+      final historyWords = records.map((r) => r.word).toList();
+      final currentIndex = historyWords.indexOf(word);
+
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => EntryDetailPage(
             entryGroup: entryGroup,
-            initialWord: targetEntry!.headword,
+            initialWord: word,
+            browseList: historyWords.isNotEmpty
+                ? BrowseList(
+                    source: BrowseListSource.searchHistory,
+                    words: historyWords,
+                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                  )
+                : null,
           ),
         ),
       );
@@ -1885,6 +1929,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
         searchResult.entries,
       );
 
+      // 获取语言信息并记录搜索历史
+      String? group;
+      final dictId = searchResult.entries.first.dictId;
+      if (dictId != null) {
+        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        group = metadata?.sourceLanguage;
+      }
+      final historyService = SearchHistoryService();
+      await historyService.addSearchRecord(word, group: group);
+
+      // 获取历史记录构建浏览列表
+      final records = await historyService.getSearchRecords();
+      final historyWords = records.map((r) => r.word).toList();
+      final currentIndex = historyWords.indexOf(word);
+
       if (context.mounted) {
         Navigator.push(
           context,
@@ -1894,6 +1953,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
               initialWord: word,
               searchRelations: searchResult.hasRelations
                   ? searchResult.relations
+                  : null,
+              browseList: historyWords.isNotEmpty
+                  ? BrowseList(
+                      source: BrowseListSource.searchHistory,
+                      words: historyWords,
+                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                    )
                   : null,
             ),
           ),
@@ -2447,11 +2513,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final effectiveOnLinkTap =
         onLinkTap ?? ((word, ctx) => _handleLinkTap(ctx, word));
-    final effectiveOnExactJump = onExactJump ??
+    final effectiveOnExactJump =
+        onExactJump ??
         widget.onExactJump ??
         ((target, ctx) =>
             _handleExactJump(ctx, target, currentDictId: _localEntry.dictId));
-    final effectiveOnPathJump = onPathJump ??
+    final effectiveOnPathJump =
+        onPathJump ??
         widget.onPathJump ??
         ((path, ctx) => _handlePathJump(ctx, path));
     final effectiveOnGroupJump = onGroupJump ?? widget.onGroupJump;
@@ -3996,19 +4064,36 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                   final phraseEntry = e.value;
 
                                   // 当短语弹窗中需要对 AI 翻译、编辑或询问AI时，导航到该短语词条的全屏详情页
-                                  void navigateToPhraseDetail() {
+                                  void navigateToPhraseDetail() async {
                                     _removePhraseOverlay();
                                     if (mounted) {
                                       final entryGroup =
                                           DictionaryEntryGroup.groupEntries(
                                             entries,
                                           );
+
+                                      // 记录搜索历史
+                                      final historyService = SearchHistoryService();
+                                      await historyService.addSearchRecord(phrase);
+
+                                      // 获取历史记录构建浏览列表
+                                      final records = await historyService.getSearchRecords();
+                                      final historyWords = records.map((r) => r.word).toList();
+                                      final currentIndex = historyWords.indexOf(phrase);
+
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
                                           builder: (context) => EntryDetailPage(
                                             entryGroup: entryGroup,
                                             initialWord: phrase,
+                                            browseList: historyWords.isNotEmpty
+                                                ? BrowseList(
+                                                    source: BrowseListSource.searchHistory,
+                                                    words: historyWords,
+                                                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                                                  )
+                                                : null,
                                           ),
                                         ),
                                       );
@@ -4074,12 +4159,29 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                     allResult.entries,
                                   )
                                 : DictionaryEntryGroup.groupEntries(entries);
+
+                            // 记录搜索历史
+                            final historyService = SearchHistoryService();
+                            await historyService.addSearchRecord(phrase);
+
+                            // 获取历史记录构建浏览列表
+                            final records = await historyService.getSearchRecords();
+                            final historyWords = records.map((r) => r.word).toList();
+                            final currentIndex = historyWords.indexOf(phrase);
+
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => EntryDetailPage(
                                   entryGroup: allEntryGroup,
                                   initialWord: phrase,
+                                  browseList: historyWords.isNotEmpty
+                                      ? BrowseList(
+                                          source: BrowseListSource.searchHistory,
+                                          words: historyWords,
+                                          initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                                        )
+                                      : null,
                                 ),
                               ),
                             );
@@ -4147,7 +4249,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     super.dispose();
   }
 
-  /// 安全清理音频播放器（只停止，不销毁，以便复用）
+  /// 安全清理音频播放器
   Future<void> _cleanupPlayer() async {
     try {
       _playbackCompletionSub?.cancel();
@@ -4155,12 +4257,23 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final player = _currentPlayer;
       if (player != null) {
-        // 只停止播放，不销毁 player，以便复用
-        await player.stop();
-        // 注意：不再 dispose 和置 null，保持 player 实例以便复用
+        _currentPlayer = null;
+        // 从管理器注销
+        MediaKitManager().unregisterPlayer(player);
+
+        // 先停止再释放
+        try {
+          await player.stop().timeout(const Duration(milliseconds: 300));
+        } catch (_) {}
+
+        // 释放 native 资源
+        try {
+          await player.dispose().timeout(const Duration(milliseconds: 300));
+        } catch (_) {}
+
+        Logger.d('播放器已释放', tag: 'ComponentRenderer');
       }
     } catch (e) {
-      // 忽略清理过程中的错误
       Logger.d('清理播放器时出错: $e', tag: 'ComponentRenderer');
     }
   }
@@ -6885,10 +6998,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 创建路径数据用于菜单
     final pathData = _PathData(path.split('.'), text);
 
-    Logger.d(
-      '_buildTappableGroupName: text=$text, path=$path, label=$label',
-      tag: 'GroupName',
-    );
+    // Logger.d(
+    //   '_buildTappableGroupName: text=$text, path=$path, label=$label',
+    //   tag: 'GroupName',
+    // );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -8194,8 +8307,40 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  // 小图尺寸
-  static const double _thumbnailSize = 100;
+  // 缩略图尺寸常量
+  static const double _thumbnailBaseSize = 100.0;
+  static const double _thumbnailMaxSize = 200.0; // 最大为原始的2倍
+
+  // 图片尺寸缓存
+  static final Map<String, Size> _dimensionCache = {};
+
+  // 计算响应式缩略图高度
+  static double _calculateThumbnailHeight(double containerWidth) {
+    // 基础：400px 窗口宽度 = 100px 缩略图
+    // 每增加 100px 窗口宽度，缩略图增大 25px
+    // 最大：200px
+    const baseWidth = 400.0;
+    final size = _thumbnailBaseSize + (containerWidth - baseWidth) * 0.25;
+    return size.clamp(_thumbnailBaseSize, _thumbnailMaxSize);
+  }
+
+  // 获取图片真实尺寸
+  static Future<Size?> _getImageDimensions(Uint8List bytes, String cacheKey) async {
+    if (_dimensionCache.containsKey(cacheKey)) {
+      return _dimensionCache[cacheKey];
+    }
+    try {
+      final codec = await instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final size = Size(image.width.toDouble(), image.height.toDouble());
+      image.dispose();
+      _dimensionCache[cacheKey] = size;
+      return size;
+    } catch (e) {
+      return null;
+    }
+  }
 
   String _cleanSvgString(String svgString) {
     return svgString;
@@ -8226,6 +8371,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     bool isSvg,
     String imageFile,
   ) {
+    // 使用 MediaQuery 获取窗口宽度，确保响应式调整
+    final windowWidth = MediaQuery.of(context).size.width;
+    final thumbnailHeight = _calculateThumbnailHeight(windowWidth);
+
     if (isSvg) {
       final svgString = String.fromCharCodes(imageBytes);
       final cleanedSvg = _cleanSvgString(svgString);
@@ -8233,53 +8382,29 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final base64Image = _extractBase64Image(cleanedSvg);
       if (base64Image != null) {
-        return GestureDetector(
-          onTap: () =>
-              _showImageDialog(context, imageFile, cleanedBytes, isSvg),
-          child: Container(
-            margin: const EdgeInsets.only(left: 8),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outline.withValues(alpha: 0.3),
-              ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: Image.memory(
-                base64Image,
-                height: _thumbnailSize,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    Icons.broken_image,
-                    color: Theme.of(context).colorScheme.outline,
-                    size: 24,
-                  );
-                },
-              ),
-            ),
-          ),
+        // SVG 内嵌 base64 图片，获取真实尺寸按比例显示
+        return _buildResponsiveImageThumbnail(
+          context: context,
+          imageBytes: base64Image,
+          thumbnailHeight: thumbnailHeight,
+          onTap: () => _showImageDialog(context, imageFile, cleanedBytes, isSvg),
         );
       }
 
+      // 纯 SVG，保持正方形
       return GestureDetector(
         onTap: () => _showImageDialog(context, imageFile, cleanedBytes, isSvg),
         child: Container(
           margin: const EdgeInsets.only(left: 8),
           decoration: BoxDecoration(
             border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.outline.withValues(alpha: 0.3),
+              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             ),
             borderRadius: BorderRadius.circular(4),
           ),
           child: SizedBox(
-            width: _thumbnailSize,
-            height: _thumbnailSize,
+            width: thumbnailHeight,
+            height: thumbnailHeight,
             child: SvgPicture.string(
               cleanedSvg,
               fit: BoxFit.contain,
@@ -8303,33 +8428,67 @@ class ComponentRendererState extends State<ComponentRenderer> {
       );
     }
 
-    return GestureDetector(
+    // 普通图片，按真实比例显示
+    return _buildResponsiveImageThumbnail(
+      context: context,
+      imageBytes: imageBytes,
+      thumbnailHeight: thumbnailHeight,
       onTap: () => _showImageDialog(context, imageFile, imageBytes, isSvg),
-      child: Container(
-        margin: const EdgeInsets.only(left: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+    );
+  }
+
+  // 构建响应式图片缩略图，根据真实比例显示
+  Widget _buildResponsiveImageThumbnail({
+    required BuildContext context,
+    required Uint8List imageBytes,
+    required double thumbnailHeight,
+    required VoidCallback onTap,
+  }) {
+    final cacheKey = imageBytes.hashCode.toString();
+
+    return FutureBuilder<Size?>(
+      future: _getImageDimensions(imageBytes, cacheKey),
+      builder: (context, snapshot) {
+        double displayWidth = thumbnailHeight;
+        double displayHeight = thumbnailHeight;
+
+        if (snapshot.hasData && snapshot.data != null) {
+          final imageSize = snapshot.data!;
+          final aspectRatio = imageSize.width / imageSize.height;
+          // 以高度为基准，根据宽高比计算宽度
+          displayWidth = thumbnailHeight * aspectRatio;
+          displayHeight = thumbnailHeight;
+        }
+
+        return GestureDetector(
+          onTap: onTap,
+          child: Container(
+            margin: const EdgeInsets.only(left: 8),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: Image.memory(
+                imageBytes,
+                width: displayWidth,
+                height: displayHeight,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.broken_image,
+                    color: Theme.of(context).colorScheme.outline,
+                    size: 24,
+                  );
+                },
+              ),
+            ),
           ),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: Image.memory(
-            imageBytes,
-            width: _thumbnailSize,
-            height: _thumbnailSize,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                Icons.broken_image,
-                color: Theme.of(context).colorScheme.outline,
-                size: 24,
-              );
-            },
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 

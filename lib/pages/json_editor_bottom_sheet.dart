@@ -547,7 +547,6 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _displayCtrl.addListener(_onDisplayChanged);
     _recomputeFoldRanges();
     widget.controller.addListener(_onParentChanged);
-    _textScrollCtrl.addListener(_onScrollChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _cursorLine = 0;
       _displayCtrl.selection = const TextSelection.collapsed(offset: 0);
@@ -560,7 +559,6 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     widget.controller.removeListener(_onParentChanged);
     _displayCtrl.removeListener(_onDisplayChanged);
     _displayCtrl.dispose();
-    _textScrollCtrl.removeListener(_onScrollChanged);
     _textScrollCtrl.dispose();
     _horizontalScrollCtrl.dispose();
     super.dispose();
@@ -660,10 +658,10 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _nodes.replaceRange(start, oldEnd + 1, replacement);
   }
 
-  void _onScrollChanged() {
+  void _onTextFieldScrollNotification(ScrollNotification notification) {
     if (!mounted) return;
     _updateCurrentPath();
-    _keepCursorInView();
+    setState(() {}); // 触发重绘以更新行号位置
   }
 
   void _onSelectionChanged() {
@@ -680,39 +678,6 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     } else if (_cursorLine != -1) {
       _cursorLine = -1;
       _updateCurrentPath();
-    }
-  }
-
-  void _keepCursorInView() {
-    if (!_textScrollCtrl.hasClients ||
-        _cursorLine < 0 ||
-        _nodes.isEmpty ||
-        _isProgrammaticScrolling) {
-      return;
-    }
-
-    final viewportHeight = _textScrollCtrl.position.viewportDimension;
-    final currentOffset = _textScrollCtrl.offset;
-    const topPadding = 8.0;
-
-    final firstFullyVisibleLine =
-        ((currentOffset - topPadding + _lineHeight - 0.1) / _lineHeight)
-            .ceil()
-            .clamp(0, _nodes.length - 1);
-    final lastFullyVisibleLine =
-        ((currentOffset + viewportHeight - topPadding - _lineHeight) /
-                _lineHeight)
-            .floor()
-            .clamp(0, _nodes.length - 1);
-
-    if (firstFullyVisibleLine > lastFullyVisibleLine) {
-      return;
-    }
-
-    if (_cursorLine < firstFullyVisibleLine) {
-      _setCursorToLineStart(firstFullyVisibleLine);
-    } else if (_cursorLine > lastFullyVisibleLine) {
-      _setCursorToLineStart(lastFullyVisibleLine);
     }
   }
 
@@ -1097,7 +1062,7 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
     _recomputeFoldRanges();
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _onScrollChanged();
+      if (mounted) _updateCurrentPath();
     });
   }
 
@@ -1249,62 +1214,94 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child: SingleChildScrollView(
-                  controller: _textScrollCtrl,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    _onTextFieldScrollNotification(notification);
+                    return false;
+                  },
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Column(
-                          children: [
-                            for (int i = 0; i < _nodes.length; i++)
-                              _buildGutterCell(i, colorScheme),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: _horizontalScrollCtrl,
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: 5000,
-                            child: Stack(
-                              children: [
-                                if (_cursorLine >= 0 &&
-                                    _cursorLine < _nodes.length)
-                                  Positioned(
-                                    top: _cursorLine * _lineHeight + 5.0,
-                                    left: 0,
-                                    right: 0,
-                                    height: _lineHeight,
-                                    child: Container(
-                                      color: colorScheme.primaryContainer
-                                          .withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                TextField(
-                                  controller: _displayCtrl,
-                                  style: _lineStyle,
-                                  maxLines: null,
-                                  keyboardType: TextInputType.multiline,
-                                  onTap: () {
-                                    widget.onTap?.call();
-                                    WidgetsBinding.instance
-                                        .addPostFrameCallback((_) {
-                                          _onSelectionChanged();
-                                        });
-                                  },
-                                  decoration: const InputDecoration(
-                                    border: InputBorder.none,
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 8,
-                                    ),
-                                    isDense: true,
+                      // 行号列 - 使用 Transform 跟随滚动
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final scrollOffset = _textScrollCtrl.hasClients
+                              ? _textScrollCtrl.offset
+                              : 0.0;
+                          return SizedBox(
+                            width: 48,
+                            height: constraints.maxHeight,
+                            child: ClipRect(
+                              child: Transform.translate(
+                                offset: Offset(0, -scrollOffset),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      for (int i = 0; i < _nodes.length; i++)
+                                        _buildGutterCell(i, colorScheme),
+                                    ],
                                   ),
                                 ),
-                              ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // TextField 区域
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          controller: _horizontalScrollCtrl,
+                          child: SizedBox(
+                            width: 5000,
+                            child: Builder(
+                              builder: (context) {
+                                final scrollOffset = _textScrollCtrl.hasClients
+                                    ? _textScrollCtrl.offset
+                                    : 0.0;
+                                return Stack(
+                                  clipBehavior: Clip.hardEdge,
+                                  children: [
+                                    if (_cursorLine >= 0 &&
+                                        _cursorLine < _nodes.length)
+                                      Positioned(
+                                        top: _cursorLine * _lineHeight + 5.0 - scrollOffset,
+                                        left: 0,
+                                        right: 0,
+                                        height: _lineHeight,
+                                        child: Container(
+                                          color: colorScheme.primaryContainer
+                                              .withValues(alpha: 0.3),
+                                        ),
+                                      ),
+                                    TextField(
+                                      controller: _displayCtrl,
+                                      scrollController: _textScrollCtrl,
+                                      style: _lineStyle,
+                                      maxLines: null,
+                                      keyboardType: TextInputType.multiline,
+                                      onTap: () {
+                                        widget.onTap?.call();
+                                        WidgetsBinding.instance
+                                            .addPostFrameCallback((_) {
+                                              _onSelectionChanged();
+                                            });
+                                      },
+                                      decoration: const InputDecoration(
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                          vertical: 8,
+                                        ),
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
                         ),
