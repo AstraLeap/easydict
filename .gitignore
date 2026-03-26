@@ -51,3 +51,6 @@ android/.kotlin/sessions/*
 *.keystore
 android/app/local.properties
 android/local.properties
+
+# Claude Code
+.claude/

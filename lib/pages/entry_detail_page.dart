@@ -143,7 +143,7 @@ class EntryDetailPage extends StatefulWidget {
 }
 
 class _EntryDetailPageState extends State<EntryDetailPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
@@ -297,6 +297,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _keyboardFocusNode = FocusNode();
     _entryGroup = widget.entryGroup;
     // 初始化浏览列表
@@ -390,18 +391,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       if (_canGoPrevious) _goToPreviousWord();
     } else if (key == LogicalKeyboardKey.arrowRight) {
       if (_canGoNext) _goToNextWord();
-    } else if (key == LogicalKeyboardKey.arrowUp) {
+    } else if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.pageUp) {
       _scrollUpKeyboard();
-    } else if (key == LogicalKeyboardKey.arrowDown) {
+    } else if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.pageDown) {
       _scrollDownKeyboard();
     }
   }
 
   /// 键盘向上翻页
   void _scrollUpKeyboard() {
-    // 固定距离滚动（300像素）
+    final scrollDistance = _getScrollDistance();
     _scrollOffsetController.animateScroll(
-      offset: -300,
+      offset: -scrollDistance,
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
@@ -409,12 +412,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 键盘向下翻页
   void _scrollDownKeyboard() {
-    // 固定距离滚动（300像素）
+    final scrollDistance = _getScrollDistance();
     _scrollOffsetController.animateScroll(
-      offset: 300,
+      offset: scrollDistance,
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
+  }
+
+  /// 计算翻页滚动距离：窗口高度 - 底部工具栏占用的高度 - 额外留白
+  double _getScrollDistance() {
+    final mediaQuery = MediaQuery.of(context);
+    final windowHeight = mediaQuery.size.height;
+    // 底部工具栏占用高度：工具栏高度(约56) + 底部安全区 + 键盘高度 + padding(16)
+    final bottomInset = mediaQuery.viewInsets.bottom; // 键盘高度
+    final bottomPadding = mediaQuery.padding.bottom; // 安全区
+    const toolbarHeight = 56.0;
+    const minBottomPadding = 16.0;
+    const extraMargin = 50.0; // 额外留白，保留部分上下文
+    final toolbarSpace = toolbarHeight + bottomPadding + bottomInset + minBottomPadding + extraMargin;
+    return windowHeight - toolbarSpace;
   }
 
   /// 导航到指定单词（在当前页面内切换内容）
@@ -589,7 +606,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _streamingNotifiers.clear();
     _pendingRequestsVersionNotifier.dispose();
     _keyboardFocusNode.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 当应用恢复到前台时，重新请求焦点以确保键盘事件正常工作
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_keyboardFocusNode.hasFocus) {
+          _keyboardFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   void _onScrollPositionChanged() {
@@ -1750,14 +1780,25 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         ? content
         : PageScaleWrapper(scale: scale, child: content);
 
-    return Listener(
-      onPointerDown: (event) {
-        // 鼠标侧边后退键 (button 8 = kBackMouseButton)
-        if (event.buttons == 8) {
-          Navigator.of(context).pop();
+    return Focus(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      onKey: (node, event) {
+        if (event is RawKeyDownEvent) {
+          _handleKeyEvent(event.logicalKey);
+          return KeyEventResult.handled;
         }
+        return KeyEventResult.ignored;
       },
-      child: scaledContent,
+      child: Listener(
+        onPointerDown: (event) {
+          // 鼠标侧边后退键 (button 8 = kBackMouseButton)
+          if (event.buttons == 8) {
+            Navigator.of(context).pop();
+          }
+        },
+        child: scaledContent,
+      ),
     );
   }
 
@@ -2040,53 +2081,31 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     // 手机端：添加手势处理（浏览列表导航）
     if (!isDesktop && _browseList != null) {
-      return Focus(
-        focusNode: _keyboardFocusNode,
-        autofocus: true,
-        onKey: (node, event) {
-          if (event is RawKeyDownEvent) {
-            _handleKeyEvent(event.logicalKey);
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
-        child: GestureDetector(
-          onHorizontalDragEnd: (details) {
-            const double sensitivity = 200; // 滑动速度阈值
+      return GestureDetector(
+        onHorizontalDragEnd: (details) {
+          const double sensitivity = 200; // 滑动速度阈值
 
-            if (details.primaryVelocity! > sensitivity) {
-              // 向右滑：上一个词
-              _goToPreviousWord();
-            } else if (details.primaryVelocity! < -sensitivity) {
-              // 向左滑：下一个词
-              _goToNextWord();
-            }
-          },
-          onVerticalDragEnd: (details) {
-            // 上滑返回主页
-            const double sensitivity = 300;
-            if (details.primaryVelocity! < -sensitivity) {
-              clearAllToasts();
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            }
-          },
-          child: content,
-        ),
+          if (details.primaryVelocity! > sensitivity) {
+            // 向右滑：上一个词
+            _goToPreviousWord();
+          } else if (details.primaryVelocity! < -sensitivity) {
+            // 向左滑：下一个词
+            _goToNextWord();
+          }
+        },
+        onVerticalDragEnd: (details) {
+          // 上滑返回主页
+          const double sensitivity = 300;
+          if (details.primaryVelocity! < -sensitivity) {
+            clearAllToasts();
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          }
+        },
+        child: content,
       );
     }
 
-    return Focus(
-      focusNode: _keyboardFocusNode,
-      autofocus: true,
-      onKey: (node, event) {
-        if (event is RawKeyDownEvent) {
-          _handleKeyEvent(event.logicalKey);
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
-      child: content,
-    );
+    return content;
   }
 
   Widget _buildToolbarAction(
