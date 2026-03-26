@@ -54,3 +54,23 @@ android/local.properties
 
 # Claude Code
 .claude/
+
+# Local development tools
+.kilo/
+
+# Development plans and troubleshooting docs
+plans/
+diagnose_mac.dart
+MACOS_FIX_SUMMARY.md
+MACOS_TROUBLESHOOTING.md
+build_output.log
+fix_component.py
+
+# Python
+__pycache__/
+venv/
+.env
+
+# Third party dictionaries build tools (auxiliary)
+auxi_tools/venv/
+auxi_tools/__pycache__/
