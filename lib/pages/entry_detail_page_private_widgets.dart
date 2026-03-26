@@ -37,6 +37,14 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
   double _maxNavHeight = 0;
   bool _isOverflow = false;
 
+  // 导航面板实际高度
+  double _navPanelActualHeight = 0;
+  final GlobalKey _navPanelContentKey = GlobalKey();
+
+  // 导航栏位置边界约束
+  static const double _topMargin = 0.0; // 上界距离屏幕顶部的距离
+  static const double _bottomMargin = 72.0; // 下界距离底部工具栏顶部的距离（底部工具栏高度）
+
   @override
   void initState() {
     super.initState();
@@ -79,11 +87,32 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
     }
   }
 
+  /// 计算导航栏的允许范围
+  /// 返回 (minTop, maxTop)
+  (double, double) _getNavPanelBounds(double screenHeight, double navPanelHeight, double topPadding) {
+    // 上界：导航栏顶部距离屏幕顶部至少 _topMargin + 状态栏高度
+    final minTop = _topMargin + topPadding;
+
+    // 下界：导航栏底部距离底部工具栏顶部至少 _bottomMargin
+    // 即：top + navPanelHeight <= screenHeight - _bottomMargin
+    // 所以：top <= screenHeight - _bottomMargin - navPanelHeight
+    final maxTop = (screenHeight - _bottomMargin - navPanelHeight).clamp(minTop, double.infinity);
+
+    return (minTop, maxTop);
+  }
+
+  /// 将 top 位置约束在允许范围内
+  double _clampTop(double top, double screenHeight, double navPanelHeight, double topPadding) {
+    final (minTop, maxTop) = _getNavPanelBounds(screenHeight, navPanelHeight, topPadding);
+    return top.clamp(minTop, maxTop);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isMobile = screenSize.width < 600;
     final scale = FontLoaderService().getDictionaryContentScale();
+    final topPadding = MediaQuery.of(context).padding.top; // 状态栏高度
 
     // 计算最大高度
     final maxNavHeight = screenSize.height * 0.7;
@@ -91,23 +120,21 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
       _maxNavHeight = maxNavHeight;
     }
 
+    // 导航面板高度（用于计算边界）
+    final navPanelHeight = _navPanelActualHeight > 0 ? _navPanelActualHeight : 200.0;
+
     // 计算导航栏位置
     double top;
     if (_isOverflow) {
-      // 超过最大高度：固定居中
+      // 溢出模式：固定居中
       top = (screenSize.height - _maxNavHeight) / 2;
+    } else if (_dragY != null) {
+      // 拖动中：不限制位置，允许自由拖动
+      top = _dragY!;
     } else {
-      // 未超过：使用用户拖动位置
-      if (_dragY != null) {
-        top = _dragY!;
-      } else {
-        top = screenSize.height * _dy / scale;
-        // 确保不超出屏幕底部
-        final maxTop = screenSize.height - 100 / scale;
-        if (top > maxTop) {
-          top = maxTop;
-        }
-      }
+      // 非拖动状态：使用存储的位置，并约束在边界内
+      top = screenSize.height * _dy / scale;
+      top = _clampTop(top, screenSize.height, navPanelHeight, topPadding);
     }
 
     final rightPosition = (isMobile ? 4 : 16) / scale;
@@ -138,12 +165,16 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
               },
               onPanUpdate: (details) {
                 setState(() {
+                  // 拖动时不限制位置，允许拖到任意位置
                   _dragY = _dragY! + details.delta.dy;
                 });
               },
               onPanEnd: (details) {
-                final newDy =
-                    (_dragY! * scale / screenSize.height).clamp(0.1, 0.8);
+                // 拖动结束后，回弹到边界范围内
+                final clampedTop = _clampTop(_dragY!, screenSize.height, navPanelHeight, topPadding);
+
+                // 将位置转换为比例并保存
+                final newDy = clampedTop / screenSize.height;
 
                 setState(() {
                   _dy = newDy;
@@ -151,9 +182,57 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
                 });
                 PreferencesService().setNavPanelPosition(true, _dy);
               },
-              child: navPanel,
+              child: MeasuredSize(
+                key: _navPanelContentKey,
+                onChange: (size) {
+                  if (size.height != _navPanelActualHeight) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        setState(() {
+                          _navPanelActualHeight = size.height;
+                        });
+                      }
+                    });
+                  }
+                },
+                child: navPanel,
+              ),
             ),
     );
+  }
+}
+
+/// 测量子组件尺寸的 Widget
+class MeasuredSize extends StatefulWidget {
+  final Widget child;
+  final void Function(Size size) onChange;
+
+  const MeasuredSize({
+    super.key,
+    required this.child,
+    required this.onChange,
+  });
+
+  @override
+  State<MeasuredSize> createState() => _MeasuredSizeState();
+}
+
+class _MeasuredSizeState extends State<MeasuredSize> {
+  Size? _oldSize;
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final renderBox = context.findRenderObject() as RenderBox?;
+      if (renderBox != null && renderBox.hasSize) {
+        final newSize = renderBox.size;
+        if (_oldSize != newSize) {
+          _oldSize = newSize;
+          widget.onChange(newSize);
+        }
+      }
+    });
+    return widget.child;
   }
 }
 

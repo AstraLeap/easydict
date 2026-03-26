@@ -53,15 +53,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   // 获取当前语言的精确匹配设置
   bool get _exactMatch {
-    if (_selectedGroup == 'auto') return false;
     return _exactMatchByLanguage[_selectedGroup] ?? false;
   }
 
   // 设置当前语言的精确匹配设置
   set _exactMatch(bool value) {
-    if (_selectedGroup != 'auto') {
-      _exactMatchByLanguage[_selectedGroup] = value;
-    }
+    _exactMatchByLanguage[_selectedGroup] = value;
   }
 
   // 每日单词
@@ -341,8 +338,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             builder: (context) => EntryDetailPage(
               entryGroup: entryGroup,
               initialWord: word,
-              searchRelations: searchResult.hasRelations
-                  ? searchResult.relations
+              dictResults: searchResult.dictResults.isNotEmpty
+                  ? searchResult.dictResults
                   : null,
               browseList: historyWords.isNotEmpty
                   ? BrowseList(
@@ -660,8 +657,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             builder: (context) => EntryDetailPage(
               entryGroup: entryGroup,
               initialWord: word,
-              searchRelations: searchResult.hasRelations
-                  ? searchResult.relations
+              dictResults: searchResult.dictResults.isNotEmpty
+                  ? searchResult.dictResults
                   : null,
               browseList: historyWords.isNotEmpty
                   ? BrowseList(
@@ -778,40 +775,39 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       _wasFocused = true;
                     },
                     extraSuffixIcons: [
-                      // 精确匹配状态图标按钮，在 auto 模式下隐藏
-                      if (_selectedGroup != 'auto')
-                        IconButton(
-                          icon: Icon(
-                            _exactMatch
-                                ? Icons.filter_alt
-                                : Icons.filter_alt_off,
-                            size: 20,
-                            color: _exactMatch
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _exactMatch = !_exactMatch;
-                              _advancedSettingsService.setExactMatchForLanguage(
-                                _selectedGroup,
-                                _exactMatch,
-                              );
-                            });
-                            _onSearchTextChanged(_searchController.text);
-                          },
-                          tooltip: _isLogographicLang(_selectedGroup)
-                              ? context.t.search.toneExact
-                              : context.t.search.exactMatch,
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 40,
-                            minHeight: 40,
-                          ),
+                      // 精确匹配状态图标按钮
+                      IconButton(
+                        icon: Icon(
+                          _exactMatch
+                              ? Icons.filter_alt
+                              : Icons.filter_alt_off,
+                          size: 20,
+                          color: _exactMatch
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                         ),
+                        onPressed: () {
+                          setState(() {
+                            _exactMatch = !_exactMatch;
+                            _advancedSettingsService.setExactMatchForLanguage(
+                              _selectedGroup,
+                              _exactMatch,
+                            );
+                          });
+                          _onSearchTextChanged(_searchController.text);
+                        },
+                        tooltip: _isLogographicLang(_selectedGroup)
+                            ? context.t.search.toneExact
+                            : context.t.search.exactMatch,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 40,
+                          minHeight: 40,
+                        ),
+                      ),
                       IconButton(
                         icon: Icon(
                           Icons.arrow_forward,

@@ -124,7 +124,8 @@ class EntryNavState {
 class EntryDetailPage extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
   final String initialWord;
-  final Map<String, List<SearchRelation>>? searchRelations;
+  /// 按词典分组的结果（包含每个词典的关系词信息）
+  final List<DictSearchResult>? dictResults;
 
   /// 浏览列表数据（用于前进/后退功能）
   final BrowseList? browseList;
@@ -133,7 +134,7 @@ class EntryDetailPage extends StatefulWidget {
     super.key,
     required this.entryGroup,
     required this.initialWord,
-    this.searchRelations,
+    this.dictResults,
     this.browseList,
   });
 
@@ -161,6 +162,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 浏览列表相关状态
   BrowseList? _browseList;
   int _browseIndex = 0;
+
+  /// 当前查看的单词（browseList 切换时会更新）
+  String _currentWord = '';
+
+  /// 按词典存储的搜索关系
+  /// key: dictId, value: 该词典的关系信息 {相关词 -> 关系列表}
+  Map<String, Map<String, List<SearchRelation>>> _dictSearchRelations = {};
 
   /// 是否可以前进（有下一个词）
   bool get _canGoNext => _browseList?.canGoNext(_browseIndex) ?? false;
@@ -294,6 +302,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     // 初始化浏览列表
     _browseList = widget.browseList;
     _browseIndex = widget.browseList?.initialIndex ?? 0;
+    // 初始化当前单词
+    _currentWord = widget.initialWord;
+    // 初始化按词典的搜索关系
+    _dictSearchRelations = _buildDictRelations(widget.dictResults ?? []);
     // 关键数据：导航栏位置（影响UI布局）
     _loadNavPanelPosition();
     // 初始化单词关系搜索（缓存 Future，所有词典共享）
@@ -418,6 +430,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         _entryNavStates.clear();
         _tempReplacementEntries.clear();
         _isFavorite = false;
+        // 更新当前单词
+        _currentWord = word;
+        // 更新按词典的搜索关系
+        _dictSearchRelations = _buildDictRelations(searchResult.dictResults);
         // 更新单词关系搜索
         _wordRelationsFuture = EnglishSearchService().searchWordRelations(word);
       });
@@ -426,10 +442,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       await _loadFavoriteStatus();
 
       // 滚动到顶部
+      _isProgrammaticScroll = true;
       _itemScrollController.scrollTo(
         index: 0,
         duration: const Duration(milliseconds: 300),
-      );
+      ).then((_) {
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (mounted) {
+            _isProgrammaticScroll = false;
+          }
+        });
+      });
     }
   }
 
@@ -876,6 +899,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
   }
 
+  /// 从 dictResults 构建按词典的搜索关系映射
+  Map<String, Map<String, List<SearchRelation>>> _buildDictRelations(
+    List<DictSearchResult> dictResults,
+  ) {
+    final result = <String, Map<String, List<SearchRelation>>>{};
+    for (final dr in dictResults) {
+      if (dr.hasRelations) {
+        result[dr.dictId] = dr.relations;
+      }
+    }
+    return result;
+  }
+
   /// 获取当前词典的语言
   Future<String> _getCurrentLanguage() async {
     final currentDictId = _entryGroup.currentDictionaryId;
@@ -950,7 +986,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    widget.initialWord,
+                    _currentWord,
                     style: TextStyle(
                       fontSize: 14,
                       color: colorScheme.onSurface.withOpacity(0.55),
@@ -1634,12 +1670,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   scrollOffsetController: _scrollOffsetController,
                   padding: _getDynamicPadding(
                     context,
-                  ).copyWith(top: 16, bottom: 100),
+                  ).copyWith(top: 0, bottom: 100),
                   itemCount: totalCount,
                   minCacheExtent: 1500,
                   itemBuilder: (context, index) {
                     // 索引 0: 单词形态关系横幅
-                    if (index == 0) return _buildWordRelationsBanner();
+                    if (index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: _buildWordRelationsBanner(),
+                      );
+                    }
 
                     final entryIndex = index - wordRelationsOffset;
                     final entry = entries[entryIndex];
@@ -1651,13 +1692,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
                     // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
                     List<SearchRelation>? entryRelations;
-                    if (showDictHeader && widget.searchRelations != null) {
-                      final headword = entry.headword.toLowerCase();
-                      for (final rel in widget.searchRelations!.entries) {
-                        if (rel.key.toLowerCase() == headword) {
-                          entryRelations = rel.value;
-                          break;
-                        }
+                    if (showDictHeader) {
+                      final dictRelations = _dictSearchRelations[entry.dictId];
+                      if (dictRelations != null) {
+                        final headword = entry.headword.toLowerCase();
+                        entryRelations = dictRelations[headword];
                       }
                     }
 
@@ -1923,6 +1962,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             builder: (context) => EntryDetailPage(
               entryGroup: entryGroup,
               initialWord: word,
+              dictResults: searchResult.dictResults.isNotEmpty
+                  ? searchResult.dictResults
+                  : null,
               browseList: historyWords.isNotEmpty
                   ? BrowseList(
                       source: BrowseListSource.searchHistory,
@@ -3938,7 +3980,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                               .any(
                                 (v) =>
                                     v.toLowerCase() ==
-                                    widget.initialWord.toLowerCase(),
+                                    _currentWord.toLowerCase(),
                               );
 
                           // 将词值按 ", " 拆分，分别渲染（支持单词点击查词，"不可数"不可点击且字体更小）
@@ -3949,7 +3991,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                             final isNotCount = token == '不可数';
                             final isTokenCurrentWord =
                                 token.toLowerCase() ==
-                                widget.initialWord.toLowerCase();
+                                _currentWord.toLowerCase();
                             if (ti > 0) {
                               tokenWidgets.add(
                                 Text(
@@ -4216,7 +4258,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 导航到指定单词的详情页
   void _navigateToWord(String word) async {
     if (word.isEmpty) return;
-    if (word.toLowerCase() == widget.initialWord.toLowerCase()) return;
+    if (word.toLowerCase() == _currentWord.toLowerCase()) return;
 
     final dbService = DatabaseService();
     final historyService = SearchHistoryService();
@@ -4246,6 +4288,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             builder: (context) => EntryDetailPage(
               entryGroup: entryGroup,
               initialWord: word,
+              dictResults: result.dictResults.isNotEmpty
+                  ? result.dictResults
+                  : null,
               browseList: historyWords.isNotEmpty
                   ? BrowseList(
                       source: BrowseListSource.searchHistory,
@@ -6660,7 +6705,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final actualConversationId = conversationId ?? requestId;
 
     // 构建当前单词上下文
-    final currentWord = widget.initialWord;
+    final currentWord = _currentWord;
     final String context = 'Current word: $currentWord';
 
     // 创建记录
