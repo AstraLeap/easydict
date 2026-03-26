@@ -1491,8 +1491,8 @@ class _WordBankPageState extends State<WordBankPage> {
           builder: (context) => EntryDetailPage(
             entryGroup: entryGroup,
             initialWord: word,
-            searchRelations: searchResult.hasRelations
-                ? searchResult.relations
+            dictResults: searchResult.dictResults.isNotEmpty
+                ? searchResult.dictResults
                 : null,
             browseList: browseWords != null
                 ? BrowseList(

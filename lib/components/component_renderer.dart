@@ -1951,8 +1951,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
             builder: (context) => EntryDetailPage(
               entryGroup: entryGroup,
               initialWord: word,
-              searchRelations: searchResult.hasRelations
-                  ? searchResult.relations
+              dictResults: searchResult.dictResults.isNotEmpty
+                  ? searchResult.dictResults
                   : null,
               browseList: historyWords.isNotEmpty
                   ? BrowseList(
@@ -3055,137 +3055,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 如果有选中文本，在最前面显示"查词"菜单项
-                    if (hasSelection) ...[
-                      ListTile(
-                        leading: const Icon(Icons.search, size: 20),
-                        title: Text(
-                          '${context.t.settings.actionLabel.search}："${selectedText.length > 10 ? '${selectedText.substring(0, 10)}...' : selectedText}"',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        dense: true,
-                        onTap: () {
-                          _removeCurrentOverlay();
-                          _handleTextSelectionSearch(selectedText);
-                        },
-                      ),
-                      if (order.isNotEmpty)
-                        Divider(
-                          height: 1,
-                          thickness: 0.5,
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.5,
-                          ),
-                        ),
-                    ],
-                    for (int i = 0; i < order.length; i++) ...[
-                      Builder(
-                        builder: (context) {
-                          final action = order[i];
-                          switch (action) {
-                            case PreferencesService.actionAiTranslate:
-                              return ListTile(
-                                leading: const Icon(Icons.translate, size: 20),
-                                title: Text(
-                                  context.t.settings.actionLabel.aiTranslate,
-                                ),
-                                dense: true,
-                                onTap: () {
-                                  _removeCurrentOverlay();
-                                  if (pathData != null) {
-                                    _performAiTranslate(
-                                      pathData.path.join('.'),
-                                      pathData.label,
-                                    );
-                                  }
-                                },
-                              );
-                            case PreferencesService.actionEdit:
-                              return ListTile(
-                                leading: const Icon(Icons.edit, size: 20),
-                                title: Text(
-                                  context.t.settings.actionLabel.edit,
-                                ),
-                                dense: true,
-                                onTap: () {
-                                  _removeCurrentOverlay();
-                                  if (pathData != null) {
-                                    widget.onEditElement?.call(
-                                      pathData.path.join('.'),
-                                      pathData.label,
-                                    );
-                                  }
-                                },
-                              );
-                            case PreferencesService.actionAskAi:
-                              return ListTile(
-                                leading: const Icon(
-                                  Icons.auto_awesome,
-                                  size: 20,
-                                ),
-                                title: Text(
-                                  context.t.settings.actionLabel.askAi,
-                                ),
-                                dense: true,
-                                onTap: () {
-                                  _removeCurrentOverlay();
-                                  if (pathData != null) {
-                                    widget.onAiAsk?.call(
-                                      pathData.path.join('.'),
-                                      pathData.label,
-                                    );
-                                  }
-                                },
-                              );
-                            case PreferencesService.actionCopy:
-                              // 如果有选中文本，复制选中的文本
-                              return ListTile(
-                                leading: const Icon(Icons.copy, size: 20),
-                                title: Text(
-                                  context.t.settings.actionLabel.copy,
-                                ),
-                                dense: true,
-                                onTap: () {
-                                  _removeCurrentOverlay();
-                                  if (hasSelection) {
-                                    // 复制选中的文本
-                                    Clipboard.setData(
-                                      ClipboardData(text: selectedText),
-                                    );
-                                  } else if (pathData != null) {
-                                    // 没有选中文本时，复制元素内容
-                                    _performCopy(
-                                      pathData.path.join('.'),
-                                      pathData.label,
-                                    );
-                                  }
-                                },
-                              );
-                            case PreferencesService.actionSpeak:
-                              return ListTile(
-                                leading: const Icon(Icons.volume_up, size: 20),
-                                title: Text(
-                                  context.t.settings.actionLabel.speak,
-                                ),
-                                dense: true,
-                                onTap: () {
-                                  _removeCurrentOverlay();
-                                  if (pathData != null) {
-                                    _performSpeak(
-                                      pathData.path.join('.'),
-                                      pathData.label,
-                                    );
-                                  }
-                                },
-                              );
-                            default:
-                              return const SizedBox.shrink();
-                          }
-                        },
-                      ),
-                    ],
-                  ],
+                  children: _buildContextMenuItems(
+                    context: context,
+                    order: order,
+                    selectedText: hasSelection ? selectedText : null,
+                    pathData: pathData,
+                    closeMenu: _removeCurrentOverlay,
+                    selectableState: null,
+                  ),
                 ),
               ),
             ),
@@ -3459,351 +3336,191 @@ class ComponentRendererState extends State<ComponentRenderer> {
       tag: 'ContextMenu',
     );
 
-    // 构建菜单项列表
-    final colorScheme = Theme.of(context).colorScheme;
-    final menuItems = _buildSelectionMenuItems(
-      context: context,
-      selectedText: selectedText,
-      pathData: pathData,
-      colorScheme: colorScheme,
-      state: state,
-    );
-
-    // 获取屏幕尺寸和安全区域
-    final screenSize = MediaQuery.of(context).size;
-    final topPadding = MediaQuery.of(context).padding.top;
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-
-    // 计算菜单尺寸
-    const menuWidth = 200.0;
-    // 计算实际菜单高度：ListTile (dense: true) 高度约 48，分隔线高度约 1
-    // Material 容器无额外内边距
-    int normalItemCount = 0;
-    int dividerCount = 0;
-    for (final item in menuItems) {
-      if (item is Divider) {
-        dividerCount++;
-      } else {
-        normalItemCount++;
-      }
-    }
-    final menuHeight = _calculateMenuHeight(normalItemCount, dividerCount);
-
-    double dx;
-    double dy;
-
-    // 均衡的间距：菜单与选区的距离
-    const gap = 12.0;
-
-    // 获取选择区域的位置信息
-    double? selectionTop;
-    double? selectionBottom;
-    try {
-      final endpoints = state.selectionEndpoints;
-      if (endpoints.isNotEmpty) {
-        // selectionEndpoints 返回的坐标已经按照 Y 坐标排序
-        // endpoints.first 是上面的点，endpoints.last 是下面的点
-        final topPoint = endpoints.first;
-        final bottomPoint = endpoints.last;
-
-        // 使用 SelectableRegionState 的 context 来获取正确的 RenderBox
-        // selectionEndpoints 返回的是相对于 SelectionArea 的本地坐标
-        final stateRenderBox = state.context.findRenderObject() as RenderBox?;
-        if (stateRenderBox != null) {
-          // 将本地坐标转换为全局坐标
-          final topGlobal = stateRenderBox.localToGlobal(topPoint.point);
-          final bottomGlobal = stateRenderBox.localToGlobal(bottomPoint.point);
-
-          // 获取行高
-          // startGlyphHeight 是选择起点的行高，endGlyphHeight 是选择终点的行高
-          // 由于 endpoints 已经按 Y 坐标排序，我们需要确定哪个行高对应哪个端点
-          // 使用较大的行高来确保菜单不会覆盖选择区域
-          final startLineHeight = state.startGlyphHeight;
-          final endLineHeight = state.endGlyphHeight;
-          final maxLineHeight = max(startLineHeight, endLineHeight);
-
-          // 选择区域的上边界是上面那行的顶部
-          selectionTop = topGlobal.dy;
-          // 选择区域的下边界是下面那行的底部
-          // 使用 maxLineHeight 确保包含所有可能的行高
-          selectionBottom = bottomGlobal.dy + maxLineHeight;
-
-          Logger.d(
-            '_buildSelectionContextMenu: topGlobal=$topGlobal, bottomGlobal=$bottomGlobal, selectionTop=$selectionTop, selectionBottom=$selectionBottom, startLineHeight=$startLineHeight, endLineHeight=$endLineHeight',
-            tag: 'ContextMenu',
-          );
-        } else {
-          Logger.d(
-            '_buildSelectionContextMenu: stateRenderBox is null',
-            tag: 'ContextMenu',
-          );
+    return FutureBuilder<List<String>>(
+      future: PreferencesService().getClickActionOrder(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink();
         }
-      } else {
-        Logger.d(
-          '_buildSelectionContextMenu: endpoints is empty',
-          tag: 'ContextMenu',
-        );
-      }
-    } catch (e, stackTrace) {
-      Logger.d(
-        '_buildSelectionContextMenu: failed to get selection endpoints: $e\n$stackTrace',
-        tag: 'ContextMenu',
-      );
-    }
+        final order = snapshot.data!;
 
-    Logger.d(
-      '_buildSelectionContextMenu: _selectionStartPosition=$_selectionStartPosition, menuHeight=$menuHeight, gap=$gap',
-      tag: 'ContextMenu',
-    );
-
-    // 优先使用选择区域的位置来计算菜单位置
-    if (selectionTop != null && selectionBottom != null) {
-      // 使用选择区域的水平中心
-      dx = screenSize.width / 2 - menuWidth / 2;
-      dy = _calculateMenuVerticalPosition(
-        touchY: _selectionStartPosition?.dy ?? selectionTop,
-        menuHeight: menuHeight,
-        screenSize: screenSize,
-        topPadding: topPadding,
-        bottomPadding: bottomPadding,
-        selectionTop: selectionTop,
-        selectionBottom: selectionBottom,
-      );
-    } else if (_selectionStartPosition != null) {
-      // 没有选择区域信息时，使用触摸位置计算菜单位置
-      dx = _selectionStartPosition!.dx - menuWidth / 2;
-      dy = _calculateMenuVerticalPosition(
-        touchY: _selectionStartPosition!.dy,
-        menuHeight: menuHeight,
-        screenSize: screenSize,
-        topPadding: topPadding,
-        bottomPadding: bottomPadding,
-      );
-    } else {
-      // 没有任何位置信息，使用屏幕底部居中
-      dy = screenSize.height - bottomPadding - menuHeight - 16.0;
-      dx = (screenSize.width - menuWidth) / 2;
-    }
-
-    // 确保菜单在屏幕范围内
-    dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
-    dy = dy.clamp(
-      topPadding + 8.0,
-      screenSize.height - bottomPadding - menuHeight - 8.0,
-    );
-
-    // 计算菜单区域矩形，用于判断点击是否在菜单内
-    final menuRect = Rect.fromLTWH(dx, dy, menuWidth, menuHeight);
-
-    // 返回自定义菜单
-    // 使用 Listener 监听指针事件，区分点击和拖动
-    // 点击外部关闭菜单，拖动事件穿透到底层支持滚动和光标拖动
-    return Stack(
-      children: [
-        // 全屏透明遮罩层，检测点击关闭菜单
-        // 使用 Listener 而不是 GestureDetector，更精确地控制事件处理
-        Positioned.fill(
-          child: _SelectionDismissOverlay(
-            menuRect: menuRect,
-            onDismiss: () {
-              Logger.d(
-                '_buildSelectionContextMenu: tap outside menu, clearing selection',
-                tag: 'ContextMenu',
-              );
-              state.clearSelection();
-            },
-          ),
-        ),
-        // 菜单本体
-        Positioned(
-          left: dx,
-          top: dy,
-          child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(8),
-            color: colorScheme.surface,
-            child: SizedBox(
-              width: menuWidth,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: menuItems,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 构建选择菜单项列表（统一使用 ListTile）
-  List<Widget> _buildSelectionMenuItems({
-    required BuildContext context,
-    required String selectedText,
-    required _PathData pathData,
-    required ColorScheme colorScheme,
-    required SelectableRegionState state,
-  }) {
-    // 使用统一的菜单项构建方法
-    return _buildContextMenuItems(
-      context: context,
-      order: PreferencesService.defaultActionOrder,
-      selectedText: selectedText,
-      pathData: pathData,
-      closeMenu: () => state.clearSelection(),
-      selectableState: state,
-    );
-  }
-
-  /// 显示文本选择的软件菜单（和电脑端右键菜单一样）
-  /// 菜单显示在选择区域下方，不与光标区域重合
-  void _showContextMenuForSelection(
-    BuildContext context,
-    Offset position,
-    String selectedText,
-  ) async {
-    Logger.d(
-      '_showContextMenuForSelection: position=$position, selectedText="$selectedText"',
-      tag: 'ContextMenu',
-    );
-    // 关闭之前的菜单
-    _removeCurrentOverlay();
-
-    _isShowingContextMenu = true;
-
-    final colorScheme = Theme.of(context).colorScheme;
-    final overlay = Overlay.of(context);
-    late OverlayEntry overlayEntry;
-
-    // 获取屏幕尺寸和安全区域
-    final screenSize = MediaQuery.of(context).size;
-    final topPadding = MediaQuery.of(context).padding.top;
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-
-    // 菜单宽度
-    const menuWidth = 200.0;
-
-    // 水平居中显示菜单
-    double dx = (screenSize.width - menuWidth) / 2;
-
-    // 菜单显示在屏幕底部，留出安全区域
-    // 这样不会与光标选择区域重合
-    final order = await PreferencesService().getClickActionOrder();
-
-    // 计算实际菜单高度：ListTile (dense: true) 高度约 48，分隔线高度约 1
-    // order 中的 actionSearch 会被跳过，所以实际菜单项数量需要计算
-    int normalItemCount = 1; // +1 for search item
-    for (final action in order) {
-      if (action != PreferencesService.actionSearch) {
-        normalItemCount++;
-      }
-    }
-    // 分隔线数量：如果有其他菜单项，则有 1 个分隔线
-    final dividerCount = order.isNotEmpty ? 1 : 0;
-    final menuHeight = _calculateMenuHeight(normalItemCount, dividerCount);
-    double dy = screenSize.height - bottomPadding - menuHeight - 16.0;
-
-    // 确保菜单在安全区域内
-    dy = dy.clamp(
-      topPadding + 8.0,
-      screenSize.height - bottomPadding - menuHeight - 8.0,
-    );
-    dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
-
-    // 使用记录的路径数据，如果没有则使用默认值
-    final pathData =
-        _currentSelectionPathData ?? _PathData(['selection'], selectedText);
-    Logger.d(
-      '_showContextMenuForSelection: using pathData=${pathData.path.join('.')}, label=${pathData.label}',
-      tag: 'ContextMenu',
-    );
-
-    // 使用单个 OverlayEntry，包含遮罩层和菜单
-    // 使用 Listener 而不是 GestureDetector，避免吞掉事件
-    overlayEntry = OverlayEntry(
-      builder: (context) {
-        // 使用统一的菜单项构建方法
+        // 构建菜单项列表
+        final colorScheme = Theme.of(context).colorScheme;
         final menuItems = _buildContextMenuItems(
           context: context,
           order: order,
           selectedText: selectedText,
           pathData: pathData,
-          closeMenu: _removeCurrentOverlay,
-          selectableState: null,
+          closeMenu: () => state.clearSelection(),
+          selectableState: state,
         );
 
-        return Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (event) {
-            Logger.d(
-              'ContextMenu Overlay onPointerDown: position=${event.position}',
-              tag: 'ContextMenu',
-            );
-            // 检查点击是否在菜单区域内
-            final menuRect = Rect.fromLTWH(dx, dy, 200, menuHeight);
-            Logger.d(
-              'ContextMenu menuRect=$menuRect, contains=${menuRect.contains(event.position)}',
-              tag: 'ContextMenu',
-            );
-            if (!menuRect.contains(event.position)) {
-              // 点击在菜单外部，关闭菜单
+        // 获取屏幕尺寸和安全区域
+        final screenSize = MediaQuery.of(context).size;
+        final topPadding = MediaQuery.of(context).padding.top;
+        final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+        // 计算菜单尺寸
+        const menuWidth = 200.0;
+        // 计算实际菜单高度：ListTile (dense: true) 高度约 48，分隔线高度约 1
+        // Material 容器无额外内边距
+        int normalItemCount = 0;
+        int dividerCount = 0;
+        for (final item in menuItems) {
+          if (item is Divider) {
+            dividerCount++;
+          } else {
+            normalItemCount++;
+          }
+        }
+        final menuHeight = _calculateMenuHeight(normalItemCount, dividerCount);
+
+        double dx;
+        double dy;
+
+        // 均衡的间距：菜单与选区的距离
+        const gap = 12.0;
+
+        // 获取选择区域的位置信息
+        double? selectionTop;
+        double? selectionBottom;
+        try {
+          final endpoints = state.selectionEndpoints;
+          if (endpoints.isNotEmpty) {
+            // selectionEndpoints 返回的坐标已经按照 Y 坐标排序
+            // endpoints.first 是上面的点，endpoints.last 是下面的点
+            final topPoint = endpoints.first;
+            final bottomPoint = endpoints.last;
+
+            // 使用 SelectableRegionState 的 context 来获取正确的 RenderBox
+            // selectionEndpoints 返回的是相对于 SelectionArea 的本地坐标
+            final stateRenderBox = state.context.findRenderObject() as RenderBox?;
+            if (stateRenderBox != null) {
+              // 将本地坐标转换为全局坐标
+              final topGlobal = stateRenderBox.localToGlobal(topPoint.point);
+              final bottomGlobal = stateRenderBox.localToGlobal(bottomPoint.point);
+
+              // 获取行高
+              // startGlyphHeight 是选择起点的行高，endGlyphHeight 是选择终点的行高
+              // 由于 endpoints 已经按 Y 坐标排序，我们需要确定哪个行高对应哪个端点
+              // 使用较大的行高来确保菜单不会覆盖选择区域
+              final startLineHeight = state.startGlyphHeight;
+              final endLineHeight = state.endGlyphHeight;
+              final maxLineHeight = max(startLineHeight, endLineHeight);
+
+              // 选择区域的上边界是上面那行的顶部
+              selectionTop = topGlobal.dy;
+              // 选择区域的下边界是下面那行的底部
+              // 使用 maxLineHeight 确保包含所有可能的行高
+              selectionBottom = bottomGlobal.dy + maxLineHeight;
+
               Logger.d(
-                'ContextMenu: tap outside menu, closing',
+                '_buildSelectionContextMenu: topGlobal=$topGlobal, bottomGlobal=$bottomGlobal, selectionTop=$selectionTop, selectionBottom=$selectionBottom, startLineHeight=$startLineHeight, endLineHeight=$endLineHeight',
                 tag: 'ContextMenu',
               );
-              _removeCurrentOverlay();
+            } else {
+              Logger.d(
+                '_buildSelectionContextMenu: stateRenderBox is null',
+                tag: 'ContextMenu',
+              );
             }
-          },
-          onPointerUp: (event) {
+          } else {
             Logger.d(
-              'ContextMenu Overlay onPointerUp: position=${event.position}',
+              '_buildSelectionContextMenu: endpoints is empty',
               tag: 'ContextMenu',
             );
-          },
-          child: Stack(
-            children: [
-              // 菜单
-              Positioned(
-                left: dx,
-                top: dy,
-                child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (event) {
-                    Logger.d(
-                      'ContextMenu Menu onPointerDown: position=${event.position}',
-                      tag: 'ContextMenu',
-                    );
-                  },
-                  onPointerUp: (event) {
-                    Logger.d(
-                      'ContextMenu Menu onPointerUp: position=${event.position}',
-                      tag: 'ContextMenu',
-                    );
-                  },
-                  child: Material(
-                    elevation: 8,
-                    borderRadius: BorderRadius.circular(8),
-                    color: colorScheme.surface,
-                    child: SizedBox(
-                      width: 200,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: menuItems,
-                      ),
-                    ),
+          }
+        } catch (e, stackTrace) {
+          Logger.d(
+            '_buildSelectionContextMenu: failed to get selection endpoints: $e\n$stackTrace',
+            tag: 'ContextMenu',
+          );
+        }
+
+        Logger.d(
+          '_buildSelectionContextMenu: _selectionStartPosition=$_selectionStartPosition, menuHeight=$menuHeight, gap=$gap',
+          tag: 'ContextMenu',
+        );
+
+        // 优先使用选择区域的位置来计算菜单位置
+        if (selectionTop != null && selectionBottom != null) {
+          // 使用选择区域的水平中心
+          dx = screenSize.width / 2 - menuWidth / 2;
+          dy = _calculateMenuVerticalPosition(
+            touchY: _selectionStartPosition?.dy ?? selectionTop,
+            menuHeight: menuHeight,
+            screenSize: screenSize,
+            topPadding: topPadding,
+            bottomPadding: bottomPadding,
+            selectionTop: selectionTop,
+            selectionBottom: selectionBottom,
+          );
+        } else if (_selectionStartPosition != null) {
+          // 没有选择区域信息时，使用触摸位置计算菜单位置
+          dx = _selectionStartPosition!.dx - menuWidth / 2;
+          dy = _calculateMenuVerticalPosition(
+            touchY: _selectionStartPosition!.dy,
+            menuHeight: menuHeight,
+            screenSize: screenSize,
+            topPadding: topPadding,
+            bottomPadding: bottomPadding,
+          );
+        } else {
+          // 没有任何位置信息，使用屏幕底部居中
+          dy = screenSize.height - bottomPadding - menuHeight - 16.0;
+          dx = (screenSize.width - menuWidth) / 2;
+        }
+
+        // 确保菜单在屏幕范围内
+        dx = dx.clamp(8.0, screenSize.width - menuWidth - 8.0);
+        dy = dy.clamp(
+          topPadding + 8.0,
+          screenSize.height - bottomPadding - menuHeight - 8.0,
+        );
+
+        // 计算菜单区域矩形，用于判断点击是否在菜单内
+        final menuRect = Rect.fromLTWH(dx, dy, menuWidth, menuHeight);
+
+        // 返回自定义菜单
+        // 使用 Listener 监听指针事件，区分点击和拖动
+        // 点击外部关闭菜单，拖动事件穿透到底层支持滚动和光标拖动
+        return Stack(
+          children: [
+            // 全屏透明遮罩层，检测点击关闭菜单
+            // 使用 Listener 而不是 GestureDetector，更精确地控制事件处理
+            Positioned.fill(
+              child: _SelectionDismissOverlay(
+                menuRect: menuRect,
+                onDismiss: () {
+                  Logger.d(
+                    '_buildSelectionContextMenu: tap outside menu, clearing selection',
+                    tag: 'ContextMenu',
+                  );
+                  state.clearSelection();
+                },
+              ),
+            ),
+            // 菜单本体
+            Positioned(
+              left: dx,
+              top: dy,
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(8),
+                color: colorScheme.surface,
+                child: SizedBox(
+                  width: menuWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: menuItems,
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
-
-    overlay.insert(overlayEntry);
-    _currentOverlayEntry = overlayEntry;
-    // 不再需要单独的 barrierEntry，因为遮罩层已经包含在 overlayEntry 中
-
-    _isShowingContextMenu = false;
   }
 
   /// 构建菜单项

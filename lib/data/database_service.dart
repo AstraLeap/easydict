@@ -614,16 +614,36 @@ DictionaryEntry? _parseEntryInIsolate(JsonParseParams params) {
   );
 }
 
+/// 单个词典的搜索结果（包含关系词信息）
+class DictSearchResult {
+  final String dictId;
+  final List<DictionaryEntry> entries;
+  /// 该词典通过关系词找到时，记录关系信息
+  /// key: 相关词（如 "sleep"）, value: 关系类型列表
+  final Map<String, List<SearchRelation>> relations;
+
+  DictSearchResult({
+    required this.dictId,
+    required this.entries,
+    this.relations = const {},
+  });
+
+  bool get hasRelations => relations.isNotEmpty;
+}
+
 /// 搜索结果，包含 entries 和关系信息
 class SearchResult {
   final List<DictionaryEntry> entries;
   final String originalWord;
   final Map<String, List<SearchRelation>> relations;
+  /// 按词典分组的结果
+  final List<DictSearchResult> dictResults;
 
   SearchResult({
     required this.entries,
     required this.originalWord,
     this.relations = const {},
+    this.dictResults = const [],
   });
 
   bool get hasRelations => relations.isNotEmpty;
@@ -1196,89 +1216,134 @@ class DatabaseService {
     String? sourceLanguage,
     String? dictId,
   }) async {
-    var entries = <DictionaryEntry>[];
-    var relations = <String, List<SearchRelation>>{};
+    final dictManager = DictionaryManager();
+    final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
 
-    entries = await _searchEntriesInternal(
-      word,
-      exactMatch: exactMatch,
-      sourceLanguage: sourceLanguage,
-      dictId: dictId,
-    );
+    // 如果指定了 dictId，使用旧逻辑（单词典搜索）
+    if (dictId != null && dictId.isNotEmpty) {
+      final entries = await _searchEntriesInternal(
+        word,
+        exactMatch: exactMatch,
+        sourceLanguage: sourceLanguage,
+        dictId: dictId,
+      );
+      return SearchResult(
+        entries: entries,
+        originalWord: word,
+        dictResults: [DictSearchResult(dictId: dictId, entries: entries)],
+      );
+    }
 
-    if (entries.isEmpty && _detectQueryMode(word) == _QueryMode.normal) {
-      // 判断是否需要调用英语关系词搜索
-      bool shouldSearchEnglish;
+    // 按词典粒度搜索
+    final dictResults = <DictSearchResult>[];
+
+    // 过滤要搜索的词典
+    final filteredDicts = enabledDicts.where((metadata) {
+      if (sourceLanguage == 'auto') {
+        return true;
+      } else if (sourceLanguage != null &&
+          LanguageUtils.normalizeSourceLanguage(sourceLanguage) !=
+              LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // 预计算所有涉及语言的标准化结果
+    final languageCodes = filteredDicts
+        .map((m) => LanguageUtils.normalizeSourceLanguage(m.sourceLanguage))
+        .toSet();
+    final normQueries = _precomputeNormalizedQueries(word, languageCodes);
+
+    // 判断是否需要搜索英语关系词（至少有一个英语词典且查不到词时）
+    bool shouldPrepareEnglishRelations = false;
+    if (_detectQueryMode(word) == _QueryMode.normal) {
       if (sourceLanguage == 'auto') {
         final possibleLangs = _detectPossibleLanguages(word);
-        // possibleLangs == null 表示表音文字（可能含英语）；包含 'en' 则明确含英语
-        shouldSearchEnglish = possibleLangs == null;
+        shouldPrepareEnglishRelations = possibleLangs == null;
       } else {
-        shouldSearchEnglish =
+        shouldPrepareEnglishRelations =
             sourceLanguage == null ||
             LanguageUtils.normalizeSourceLanguage(sourceLanguage) == 'en';
       }
+    }
 
-      if (shouldSearchEnglish) {
-        Logger.d(
-          'DatabaseService: 检测到英语，调用 EnglishSearchService',
-          tag: 'EnglishDB',
-        );
-        final englishService = EnglishSearchService();
-
-        try {
-          Logger.d('DatabaseService: 开始搜索关系: $word', tag: 'EnglishDB');
-          relations = await englishService
-              .searchWithRelations(
-                word,
-                maxRelatedWords: 10,
-                maxRelationsPerWord: 3,
-              )
-              .timeout(
-                const Duration(seconds: 3),
-                onTimeout: () {
-                  Logger.w('DatabaseService: 关系词搜索超时', tag: 'EnglishDB');
-                  return <String, List<SearchRelation>>{};
-                },
-              );
-          Logger.d('DatabaseService: 搜索结果: $relations', tag: 'EnglishDB');
-
-          final relatedWords = relations.keys.toList();
-          final limitedWords = relatedWords.take(10).toList();
-          final futures = limitedWords.map((relatedWord) {
-            return _searchEntriesInternal(
-              relatedWord,
-              exactMatch: exactMatch,
-              sourceLanguage: sourceLanguage,
-            ).timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => <DictionaryEntry>[],
+    // 预先搜索英语关系词（如果需要）
+    Map<String, List<SearchRelation>>? englishRelations;
+    if (shouldPrepareEnglishRelations) {
+      try {
+        englishRelations = await EnglishSearchService()
+            .searchWithRelations(word, maxRelatedWords: 10, maxRelationsPerWord: 3)
+            .timeout(
+              const Duration(seconds: 3),
+              onTimeout: () => <String, List<SearchRelation>>{},
             );
-          }).toList();
+      } catch (e) {
+        Logger.e('DatabaseService: 搜索关系词错误: $e', tag: 'EnglishDB');
+        englishRelations = {};
+      }
+    }
 
-          final results = await Future.wait(futures).timeout(
-            const Duration(seconds: 5),
-            onTimeout: () {
-              Logger.w('DatabaseService: 关联词查询超时', tag: 'EnglishDB');
-              return <List<DictionaryEntry>>[];
-            },
+    // 遍历每个词典搜索
+    for (final metadata in filteredDicts) {
+      final langCode = LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
+      final normQuery = normQueries[langCode]!;
+
+      // 先直接搜索单词
+      var entries = await _searchInDictionary(
+        metadata.id,
+        word,
+        normQuery,
+        exactMatch: exactMatch,
+      );
+
+      if (entries.isNotEmpty) {
+        // 直接查到了
+        dictResults.add(DictSearchResult(
+          dictId: metadata.id,
+          entries: entries,
+        ));
+      } else if (englishRelations != null && langCode == 'en') {
+        // 查不到，且是英语词典，尝试搜索关系词
+        final validRelations = <String, List<SearchRelation>>{};
+        final relatedEntries = <DictionaryEntry>[];
+
+        for (final relatedWord in englishRelations.keys) {
+          final relatedNormQuery = _precomputeNormalizedQueries(relatedWord, {langCode});
+          final relEntries = await _searchInDictionary(
+            metadata.id,
+            relatedWord,
+            relatedNormQuery[langCode]!,
+            exactMatch: exactMatch,
           );
-          for (final result in results) {
-            entries.addAll(result);
+          if (relEntries.isNotEmpty) {
+            validRelations[relatedWord] = englishRelations[relatedWord]!;
+            relatedEntries.addAll(relEntries);
           }
-        } catch (e) {
-          Logger.e(
-            'DatabaseService: EnglishSearchService 错误: $e',
-            tag: 'EnglishDB',
-          );
+        }
+
+        if (relatedEntries.isNotEmpty) {
+          dictResults.add(DictSearchResult(
+            dictId: metadata.id,
+            entries: relatedEntries,
+            relations: validRelations,
+          ));
         }
       }
     }
 
+    // 合并所有 entries 和 relations
+    final allEntries = dictResults.expand((r) => r.entries).toList();
+    final allRelations = <String, List<SearchRelation>>{};
+    for (final r in dictResults) {
+      allRelations.addAll(r.relations);
+    }
+
     return SearchResult(
-      entries: entries,
+      entries: allEntries,
       originalWord: word,
-      relations: relations,
+      relations: allRelations,
+      dictResults: dictResults,
     );
   }
 
