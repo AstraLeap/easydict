@@ -1,7 +1,3 @@
-# 给普通用户
-
-使用说明及反馈渠道：https://forum.freemdict.com/t/topic/43251
-
 # 词典文件结构
 
 ## 词典文件组织结构

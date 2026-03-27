@@ -177,6 +177,9 @@ class DictionaryManager {
     _enabledDictionariesMetadataCache = null;
     await closeAllDatabases();
 
+    // 确保 Android 平台词典目录存在 .nomedia 文件
+    await ensureNoMediaFile();
+
     // 目录设置后自动启用目录中所有已有词典
     final available = await getAvailableDictionaries();
     if (available.isNotEmpty) {
@@ -1316,6 +1319,24 @@ class DictionaryManager {
       return await mediaDbFile.exists();
     } catch (e) {
       return false;
+    }
+  }
+
+  /// 确保 Android 平台的词典目录中存在 .nomedia 文件
+  /// 防止词典封面图片出现在相册应用中
+  Future<void> ensureNoMediaFile() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      final dictDir = await baseDirectory;
+      final nomediaFile = File(path.join(dictDir, '.nomedia'));
+
+      if (!nomediaFile.existsSync()) {
+        await nomediaFile.create(recursive: true);
+        Logger.i('已创建 .nomedia 文件', tag: 'DictionaryManager');
+      }
+    } catch (e) {
+      Logger.w('创建 .nomedia 文件失败: $e', tag: 'DictionaryManager');
     }
   }
 }
