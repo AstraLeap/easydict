@@ -293,8 +293,6 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get forumTitle => 'Feedback';
 	@override String get forumSubtitle => 'Suggestions and feedback welcome';
 	@override String get githubSubtitle => 'View source code, file issues';
-	@override String get REMOVEDTitle => 'REMOVED';
-	@override String get REMOVEDSubtitle => 'Support the developer';
 	@override String get checkUpdate => 'Check for Updates';
 	@override String get checking => 'Checking…';
 	@override String updateAvailable({required Object version}) => 'New version ${version} found · Click to download from GitHub';
@@ -1257,8 +1255,6 @@ extension on TranslationsEn {
 			'help.forumTitle' => 'Feedback',
 			'help.forumSubtitle' => 'Suggestions and feedback welcome',
 			'help.githubSubtitle' => 'View source code, file issues',
-			'help.REMOVEDTitle' => 'REMOVED',
-			'help.REMOVEDSubtitle' => 'Support the developer',
 			'help.checkUpdate' => 'Check for Updates',
 			'help.checking' => 'Checking…',
 			'help.updateAvailable' => ({required Object version}) => 'New version ${version} found · Click to download from GitHub',
@@ -1536,10 +1532,10 @@ extension on TranslationsEn {
 			'dict.tooltipReplaceFile' => 'Replace File',
 			'dict.tooltipPushUpdate' => 'Push Update',
 			'dict.tooltipDelete' => 'Delete',
-			_ => null,
-		} ?? switch (path) {
 			'dict.tooltipUpdate' => 'Update dictionary',
 			'dict.tooltipDownload' => 'Download dictionary',
+			_ => null,
+		} ?? switch (path) {
 			'dict.daysAgo' => ({required Object n}) => '${n} days ago',
 			'dict.monthsAgo' => ({required Object n}) => '${n} months ago',
 			'dict.yearsAgo' => ({required Object n}) => '${n} years ago',

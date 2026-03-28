@@ -184,23 +184,6 @@ class _HelpPageState extends State<HelpPage> {
                     }
                   },
                 ),
-                _buildSettingsTile(
-                  context,
-                  title: context.t.help.REMOVEDTitle,
-                  subtitle: context.t.help.REMOVEDSubtitle,
-                  icon: Icons.favorite_border,
-                  iconColor: colorScheme.primary,
-                  isExternal: true,
-                  onTap: () async {
-                    final url = Uri.parse('https://REMOVED.com/a/karx_');
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(
-                        url,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                ),
               ],
             ),
 

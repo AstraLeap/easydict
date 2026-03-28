@@ -623,12 +623,6 @@ class TranslationsHelpZh {
 	/// zh: '查看源码、提交 Issue'
 	String get githubSubtitle => '查看源码、提交 Issue';
 
-	/// zh: 'REMOVED'
-	String get REMOVEDTitle => 'REMOVED';
-
-	/// zh: '支持开发者'
-	String get REMOVEDSubtitle => '支持开发者';
-
 	/// zh: '检查更新'
 	String get checkUpdate => '检查更新';
 
@@ -2778,8 +2772,6 @@ extension on Translations {
 			'help.forumTitle' => '词典反馈',
 			'help.forumSubtitle' => '欢迎提出改进建议',
 			'help.githubSubtitle' => '查看源码、提交 Issue',
-			'help.REMOVEDTitle' => 'REMOVED',
-			'help.REMOVEDSubtitle' => '支持开发者',
 			'help.checkUpdate' => '检查更新',
 			'help.checking' => '正在检查…',
 			'help.updateAvailable' => ({required Object version}) => '发现新版本 ${version} · 点击前往 GitHub 下载',
@@ -3055,10 +3047,10 @@ extension on Translations {
 			'dict.downloadFailed' => '下载失败',
 			'dict.tooltipUpdateJson' => '更新JSON',
 			'dict.tooltipReplaceFile' => '替换文件',
-			_ => null,
-		} ?? switch (path) {
 			'dict.tooltipPushUpdate' => '推送更新',
 			'dict.tooltipDelete' => '删除',
+			_ => null,
+		} ?? switch (path) {
 			'dict.tooltipUpdate' => '更新词典',
 			'dict.tooltipDownload' => '下载词典',
 			'dict.daysAgo' => ({required Object n}) => '${n}天前',
