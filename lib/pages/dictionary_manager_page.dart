@@ -522,6 +522,11 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   }
 
   void _onReorder(int oldIndex, int newIndex, String language) {
+    Logger.d(
+      '_onReorder called: oldIndex=$oldIndex, newIndex=$newIndex, language=$language',
+      tag: 'DictionaryManagerPage',
+    );
+
     // 获取当前语言分组内的已启用词典
     final langDicts = _allDictionaries
         .where(
@@ -539,31 +544,64 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       return indexA.compareTo(indexB);
     });
 
+    Logger.d(
+      'langDicts: ${langDicts.map((d) => d.id).toList()}, length=${langDicts.length}',
+      tag: 'DictionaryManagerPage',
+    );
+    Logger.d(
+      '_enabledDictionaryIds before: $_enabledDictionaryIds',
+      tag: 'DictionaryManagerPage',
+    );
+
     if (oldIndex < 0 || oldIndex >= langDicts.length) return;
+    // newIndex 可以等于 langDicts.length（表示拖到最后）
     if (newIndex < 0) newIndex = 0;
     if (newIndex > langDicts.length) newIndex = langDicts.length;
 
     // 在语言分组内移动
     final movedDictId = langDicts[oldIndex].id;
+    // 计算目标位置（newIndex 已经是调整后的位置）
+    // 当 newIndex > oldIndex 时，由于移除了 oldIndex 元素，需要 -1
     final targetIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+
+    Logger.d(
+      'movedDictId=$movedDictId, targetIndex=$targetIndex',
+      tag: 'DictionaryManagerPage',
+    );
 
     // 从全局列表中移除该词典
     _enabledDictionaryIds.remove(movedDictId);
 
-    // 计算在全局列表中的插入位置
-    if (targetIndex == 0) {
-      // 插入到该语言分组的最前面
+    Logger.d(
+      '_enabledDictionaryIds after remove: $_enabledDictionaryIds',
+      tag: 'DictionaryManagerPage',
+    );
+
+    // 判断是否拖到列表最后面
+    // 条件1：newIndex == langDicts.length（拖到末尾空位）
+    // 条件2：拖到最后一个元素位置且是向后拖（oldIndex < langDicts.length - 1 && newIndex == langDicts.length - 1 且 oldIndex < newIndex）
+    // 条件3：targetIndex 指向的元素在移除后变成了被移动元素本身的位置（targetGlobalIndex == -1）
+    final isDraggingToEnd = newIndex == langDicts.length ||
+        (oldIndex < langDicts.length - 1 && newIndex == langDicts.length - 1);
+
+    // 边界情况：拖到列表最前面
+    if (targetIndex == 0 && oldIndex > 0) {
       // 找到该语言分组在全局列表中的第一个词典的位置
       final firstLangDictIndex = _enabledDictionaryIds.indexWhere(
         (id) => langDicts.any((d) => d.id == id),
+      );
+      Logger.d(
+        '拖到最前面: firstLangDictIndex=$firstLangDictIndex',
+        tag: 'DictionaryManagerPage',
       );
       if (firstLangDictIndex == -1) {
         _enabledDictionaryIds.insert(0, movedDictId);
       } else {
         _enabledDictionaryIds.insert(firstLangDictIndex, movedDictId);
       }
-    } else if (targetIndex >= langDicts.length - 1) {
-      // 插入到该语言分组的最后面
+    }
+    // 边界情况：拖到列表最后面
+    else if (isDraggingToEnd) {
       // 找到该语言分组在全局列表中的最后一个词典的位置
       int lastLangDictIndex = -1;
       for (int i = _enabledDictionaryIds.length - 1; i >= 0; i--) {
@@ -572,22 +610,37 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
           break;
         }
       }
+      Logger.d(
+        '拖到最后面: lastLangDictIndex=$lastLangDictIndex',
+        tag: 'DictionaryManagerPage',
+      );
       if (lastLangDictIndex == -1) {
         _enabledDictionaryIds.add(movedDictId);
       } else {
         _enabledDictionaryIds.insert(lastLangDictIndex + 1, movedDictId);
       }
-    } else {
-      // 插入到目标位置
+    }
+    // 正常情况：插入到目标位置
+    else {
       // 获取目标位置的词典ID（在移动前的列表中）
       final targetDictId = langDicts[targetIndex].id;
       final targetGlobalIndex = _enabledDictionaryIds.indexOf(targetDictId);
+      Logger.d(
+        '正常情况: targetDictId=$targetDictId, targetGlobalIndex=$targetGlobalIndex',
+        tag: 'DictionaryManagerPage',
+      );
       if (targetGlobalIndex == -1) {
+        // 目标词典不在列表中（可能已被移除），插入到最后
         _enabledDictionaryIds.add(movedDictId);
       } else {
         _enabledDictionaryIds.insert(targetGlobalIndex, movedDictId);
       }
     }
+
+    Logger.d(
+      '_enabledDictionaryIds after insert: $_enabledDictionaryIds',
+      tag: 'DictionaryManagerPage',
+    );
 
     setState(() {});
     _dictManager.reorderDictionaries(_enabledDictionaryIds);

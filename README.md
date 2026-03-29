@@ -28,8 +28,7 @@
     "maintainer": "example_user",
     "encode": "utf-8",
     "contact_maintainer": "example@example.com",
-    "version": 13, //一定要是整型！！！
-    "updatedAt": "2026-02-23T01:54:36.679419+00:00" //唯一指定的标准时间格式
+    "version": 13 //一定要是整型！！！
 }
 ```
 
@@ -189,13 +188,14 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
             "region": "US",
             "notation": "/fɔːɡ/",
             "audio_file": "fog_us.mp3",
+            "note": "something to add",
         },
         {
             "region": "UK",
             "notation": "/fɒɡ/",
             "audio_file": "fog_uk.opus",
         },
-    ], //可选，发音部分
+    ], //可选，可以是map，也可以是list of map
     "phrases": ["fog in", "fog of"], // 可选，短语部分
     "data": {
         "key1": {},
@@ -241,11 +241,19 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
                     "en": "He was walking around in a mental fog after the accident.",
                     "zh": "事故发生后，他整个人都陷入了意识模糊的状态中。",
                     "source": {
-                        "author": "Robert Louis",
-                        "title": "Mental States and Trauma",
-                        "date": "2025-01",
-                        "publisher": "Health Press",
-                    }, //可选，例句来源
+                        "cited_in": {
+                            "title": "《太平广记》",
+                            "volume": "卷九",
+                        },
+                        "year": 2025, // 可选：年份（中文词典表示朝代）
+                        "author": "Robert Louis", // 可选：作者
+                        "title": "Mental States and Trauma", // 可选：书名
+                        "publisher": "Health Press", // 可选：出版社
+                        "page": "45-47", // 可选：页码
+                        "edition": "2nd", // 可选：版次
+                    }, //可选，例句来源。渲染格式：非中文 (年份) 作者. 书名. 出版社, 页码.；中文 朝代 · 作者 · 书名
+                    "note": { "en": "" },
+                    "comment": {}, //结构和example相同
                     "audios": [
                         {
                             "region": "UK", // 可选，例句音频地区
@@ -316,6 +324,7 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
 | `strike`           | 删除线                     |
 | `underline`        | 下划线                     |
 | `double_underline` | 双下划线                   |
+| `dashed`           | 虚线                       |
 | `wavy`             | 波浪线                     |
 | `bold`             | 加粗                       |
 | `italic`           | 斜体                       |

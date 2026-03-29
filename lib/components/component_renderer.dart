@@ -16,8 +16,9 @@ import 'package:visibility_detector/visibility_detector.dart';
 
 import '../core/constants/entry_keys.dart' show kExcludedEntryKeys;
 import '../core/logger.dart';
+import 'rendering/custom_text_decoration.dart';
 import 'rendering/formatted_text_parser.dart'
-    show parseFormattedText, FormattedTextResult, kRubySpacingRatio, TypeParser;
+    show parseFormattedText, FormattedTextResult, kRubySpacingRatio, TypeParser, CustomDecoration;
 import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
@@ -621,6 +622,7 @@ class _StyleInfo {
   Color? customColor;
   String? linkTarget;
   String? exactJumpTarget;
+  List<CustomDecoration> customDecorations;
 
   _StyleInfo({
     required this.style,
@@ -633,7 +635,10 @@ class _StyleInfo {
     this.customColor,
     this.linkTarget,
     this.exactJumpTarget,
+    this.customDecorations = const [],
   });
+
+  bool get hasCustomDecorations => customDecorations.isNotEmpty;
 }
 
 _StyleInfo _parseTypes(
@@ -645,6 +650,7 @@ _StyleInfo _parseTypes(
 
   TextStyle style = baseStyle;
   List<TextDecoration> decorations = [];
+  List<CustomDecoration> customDecorations = [];
   bool isSup = false;
   bool isSub = false;
   bool aiTextMark = false;
@@ -674,23 +680,16 @@ _StyleInfo _parseTypes(
         decorations.add(TextDecoration.lineThrough);
         break;
       case 'underline':
-        decorations.add(TextDecoration.underline);
+        customDecorations.add(CustomDecoration.underline);
         break;
       case 'double_underline':
-        style = style.copyWith(
-          decoration: TextDecoration.combine([
-            TextDecoration.underline,
-            TextDecoration.underline,
-          ]),
-          decorationColor: baseStyle.color,
-        );
+        customDecorations.add(CustomDecoration.doubleUnderline);
         break;
       case 'wavy':
-        style = style.copyWith(
-          decoration: TextDecoration.underline,
-          decorationStyle: TextDecorationStyle.wavy,
-          decorationColor: baseStyle.color,
-        );
+        customDecorations.add(CustomDecoration.wavy);
+        break;
+      case 'dashed':
+        customDecorations.add(CustomDecoration.dashed);
         break;
       case 'bold':
         style = style.copyWith(
@@ -752,6 +751,7 @@ _StyleInfo _parseTypes(
     customColor: customColor,
     linkTarget: linkTarget,
     exactJumpTarget: exactJumpTarget,
+    customDecorations: customDecorations,
   );
 }
 
@@ -765,6 +765,8 @@ void _processSegments({
   required List<InlineSpan> spans,
   required List<String> plainTexts,
   void Function(Offset position, String text)? onShowMenu,
+  GlobalKey? textKey,
+  void Function(String word, Offset position)? onDoubleTapWord,
 }) {
   for (final segment in segments) {
     if (segment.isPlain) {
@@ -801,6 +803,8 @@ void _processSegments({
         spans: spans,
         plainTexts: plainTexts,
         onShowMenu: onShowMenu,
+        textKey: textKey,
+        onDoubleTapWord: onDoubleTapWord,
       );
     }
   }
@@ -903,6 +907,8 @@ void _processFormattedSegment({
   required List<InlineSpan> spans,
   required List<String> plainTexts,
   void Function(Offset position, String text)? onShowMenu,
+  GlobalKey? textKey,
+  void Function(String word, Offset position)? onDoubleTapWord,
 }) {
   final typesStr = segment.typesStr ?? '';
   final styleInfo = _parseTypes(typesStr, baseStyle, context);
@@ -921,6 +927,7 @@ void _processFormattedSegment({
       spans: childSpans,
       plainTexts: childPlainTexts,
       onShowMenu: onShowMenu,
+      onDoubleTapWord: onDoubleTapWord,
     );
 
     spans.add(
@@ -1035,14 +1042,52 @@ void _processFormattedSegment({
       final bgColor = Theme.of(context).colorScheme.primaryContainer;
       style = style.copyWith(backgroundColor: bgColor.withAlpha(115));
     }
-    spans.add(
-      TextSpan(
-        text: formattedText,
-        style: style,
-        recognizer: recognizer,
-        mouseCursor: mouseCursor,
-      ),
-    );
+
+    // 如果有自定义装饰，使用 CustomDecoratedText
+    if (styleInfo.hasCustomDecorations) {
+      final customDec = styleInfo.customDecorations.first;
+      CustomDecorationType decType;
+      switch (customDec) {
+        case CustomDecoration.underline:
+          decType = CustomDecorationType.underline;
+          break;
+        case CustomDecoration.doubleUnderline:
+          decType = CustomDecorationType.doubleUnderline;
+          break;
+        case CustomDecoration.wavy:
+          decType = CustomDecorationType.wavy;
+          break;
+        case CustomDecoration.dashed:
+          decType = CustomDecorationType.dashed;
+          break;
+      }
+
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: CustomDecoratedText(
+            text: formattedText,
+            style: style,
+            decorationType: decType,
+            decorationColor: style.color,
+            recognizer: recognizer,
+            mouseCursor: mouseCursor,
+            onShowMenu: onShowMenu,
+            onDoubleTapWord: onDoubleTapWord,
+          ),
+        ),
+      );
+    } else {
+      spans.add(
+        TextSpan(
+          text: formattedText,
+          style: style,
+          recognizer: recognizer,
+          mouseCursor: mouseCursor,
+        ),
+      );
+    }
   }
   plainTexts.add(formattedText);
 }
@@ -2207,6 +2252,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     final exampleTextKey = GlobalKey();
 
+    // 记录是否有 CJK 语言的例句文本（用于决定 source 的字体样式）
+    bool hasCJKText = false;
+
     for (int i = 0; i < texts.length; i++) {
       final textEntry = texts[i];
       final text = textEntry.value;
@@ -2231,12 +2279,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 使用 notifier 的当前值，这样当状态变化时会重建
       final hidden = _hiddenLanguagesNotifier.value.contains(hiddenPath);
 
-      // 判断是否为 CJK（日小或汉字）
+      // 判断是否为 CJK（日语或中文）
       final isCJK =
           key == 'jp' ||
           key == 'zh' ||
           key.startsWith('zh_') ||
-          key.startsWith('jp_');
+          key.startsWith('zh-') ||
+          key.startsWith('jp_') ||
+          key.startsWith('jp-');
+
+      // 记录是否有 CJK 文本
+      if (isCJK) {
+        hasCJKText = true;
+      }
 
       // 使用 DictTypography 获取 example 基础样式（字体族和缩放由 _parseFormattedText 处理）
       final exampleTextStyle = DictTypography.getBaseStyle(
@@ -2319,6 +2374,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
         hidden: hidden,
         elementType: DictElementType.example,
         mouseCursor: SystemMouseCursors.text,
+        onShowMenu: (position, text) {
+          _handleElementSecondaryTap(
+            _convertPathToString(path),
+            pathData.label,
+            context,
+            position,
+          );
+        },
+        onDoubleTapWord: (word, position) {
+          _performDoubleTapSearch(word, context);
+        },
       );
 
       // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
@@ -2373,7 +2439,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                fontStyle: FontStyle.italic,
+                // CJK 语言的 source 不使用斜体
+                fontStyle: hasCJKText ? FontStyle.normal : FontStyle.italic,
                 fontFamily: 'SourceSans3',
               ),
             ),
@@ -2510,6 +2577,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     void Function(String target, BuildContext context)? onExactJump,
     void Function(String path, BuildContext context)? onPathJump,
     void Function(String groupId, BuildContext context)? onGroupJump,
+    void Function(String word, Offset position)? onDoubleTapWord,
   }) {
     final effectiveOnLinkTap =
         onLinkTap ?? ((word, ctx) => _handleLinkTap(ctx, word));
@@ -2523,6 +2591,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         widget.onPathJump ??
         ((path, ctx) => _handlePathJump(ctx, path));
     final effectiveOnGroupJump = onGroupJump ?? widget.onGroupJump;
+    final effectiveOnDoubleTapWord =
+        onDoubleTapWord ?? ((word, position) => _performDoubleTapSearch(word, context!));
 
     return parseFormattedText(
       text,
@@ -2549,6 +2619,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       onGroupJump: effectiveOnGroupJump,
       dictId: _localEntry.dictId,
       onLoadImage: _loadInlineImage,
+      onDoubleTapWord: effectiveOnDoubleTapWord,
     );
   }
 
@@ -5003,6 +5074,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               final region = pronunciation['region'] as String? ?? '';
               final notation = pronunciation['notation'] as String? ?? '';
               final audioFile = pronunciation['audio_file'] as String? ?? '';
+              final note = pronunciation['note'] as String? ?? '';
 
               if (notation.isEmpty && audioFile.isEmpty) {
                 return const SizedBox.shrink();
@@ -5022,101 +5094,139 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         : rawPath;
                     final pathData = _PathData(path, 'Pronunciation');
 
-                    return Material(
-                      color: Colors.transparent,
-                      child: GestureDetector(
-                        onSecondaryTapUp: (details) {
-                          _lastTapPosition = details.globalPosition;
-                          _handleElementSecondaryTap(
-                            _convertPathToString(path),
-                            pathData.label,
-                            context,
-                            details.globalPosition,
-                          );
-                        },
-                        child: InkWell(
-                          onTap: audioFile.isNotEmpty
-                              ? () {
-                                  _playAudio(entry.dictId ?? '', audioFile);
-                                }
-                              : null,
-                          onLongPress: () {
-                            _handleElementSecondaryTap(
-                              _convertPathToString(path),
-                              pathData.label,
-                              context,
-                              Offset.zero,
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(12),
-                          splashColor: audioFile.isNotEmpty
-                              ? colorScheme.primary.withValues(alpha: 0.1)
-                              : null,
-                          mouseCursor: audioFile.isNotEmpty
-                              ? SystemMouseCursors.click
-                              : SystemMouseCursors.basic,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: audioFile.isNotEmpty
-                                  ? colorScheme.surfaceContainerHighest
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Material(
+                          color: Colors.transparent,
+                          child: GestureDetector(
+                            onSecondaryTapUp: (details) {
+                              _lastTapPosition = details.globalPosition;
+                              _handleElementSecondaryTap(
+                                _convertPathToString(path),
+                                pathData.label,
+                                context,
+                                details.globalPosition,
+                              );
+                            },
+                            child: InkWell(
+                              onTap: audioFile.isNotEmpty
+                                  ? () {
+                                      _playAudio(entry.dictId ?? '', audioFile);
+                                    }
                                   : null,
+                              onLongPress: () {
+                                _handleElementSecondaryTap(
+                                  _convertPathToString(path),
+                                  pathData.label,
+                                  context,
+                                  Offset.zero,
+                                );
+                              },
                               borderRadius: BorderRadius.circular(12),
-                              border: audioFile.isNotEmpty
-                                  ? null
-                                  : Border.all(
-                                      color: colorScheme.outlineVariant,
-                                      width: 1,
-                                    ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                if (region.isNotEmpty)
-                                  PathScope.append(
-                                    context,
-                                    key: 'region',
-                                    child: Builder(
-                                      builder: (context) {
-                                        return _buildPronunciationRegionElement(
-                                          context,
-                                          region,
-                                          hasAudio: audioFile.isNotEmpty,
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                if (notation.isNotEmpty)
-                                  PathScope.append(
-                                    context,
-                                    key: 'notation',
-                                    child: Builder(
-                                      builder: (context) {
-                                        return _buildPronunciationPhoneticElement(
-                                          context,
-                                          notation,
-                                          hasAudio: audioFile.isNotEmpty,
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                if (audioFile.isNotEmpty) ...[
-                                  const SizedBox(width: 5),
-                                  Icon(
-                                    Icons.volume_up,
-                                    size: 13,
-                                    color: colorScheme.primary,
-                                  ),
-                                ],
-                              ],
+                              splashColor: audioFile.isNotEmpty
+                                  ? colorScheme.primary.withValues(alpha: 0.1)
+                                  : null,
+                              mouseCursor: audioFile.isNotEmpty
+                                  ? SystemMouseCursors.click
+                                  : SystemMouseCursors.basic,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: audioFile.isNotEmpty
+                                      ? colorScheme.surfaceContainerHighest
+                                      : null,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: audioFile.isNotEmpty
+                                      ? null
+                                      : Border.all(
+                                          color: colorScheme.outlineVariant,
+                                          width: 1,
+                                        ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    if (region.isNotEmpty)
+                                      PathScope.append(
+                                        context,
+                                        key: 'region',
+                                        child: Builder(
+                                          builder: (context) {
+                                            return _buildPronunciationRegionElement(
+                                              context,
+                                              region,
+                                              hasAudio: audioFile.isNotEmpty,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    if (notation.isNotEmpty)
+                                      PathScope.append(
+                                        context,
+                                        key: 'notation',
+                                        child: Builder(
+                                          builder: (context) {
+                                            return _buildPronunciationPhoneticElement(
+                                              context,
+                                              notation,
+                                              hasAudio: audioFile.isNotEmpty,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    if (audioFile.isNotEmpty) ...[
+                                      const SizedBox(width: 5),
+                                      Icon(
+                                        Icons.volume_up,
+                                        size: 13,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                        if (note.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          PathScope.append(
+                            context,
+                            key: 'note',
+                            child: Builder(
+                              builder: (context) {
+                                final notePath = PathScope.of(context);
+                                final notePathData =
+                                    _PathData(notePath, 'Pronunciation Note');
+                                return _buildTappableWidget(
+                                  context: context,
+                                  pathData: notePathData,
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: _parseFormattedText(
+                                        note,
+                                        DictTypography.getBaseStyle(
+                                          DictElementType.example,
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        context: context,
+                                        path: notePath,
+                                        elementType: DictElementType.example,
+                                      ).spans,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
                     );
                   },
                 ),
@@ -5517,6 +5627,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 position,
               );
             },
+            onDoubleTapWord: (word, position) {
+              _performDoubleTapSearch(word, context);
+            },
           );
           // 直接使用 TextSpan 而不是 WidgetSpan，以实现文本接着换行的效果
           spans.addAll(result.spans);
@@ -5633,10 +5746,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
         DictTypography.getBaseStyle(
           DictElementType.definition,
           color: colorScheme.onSurface,
-        ).copyWith(
-          decoration: TextDecoration.underline,
-          decorationStyle: TextDecorationStyle.dashed,
-          decorationColor: color,
         );
 
     final spans = <InlineSpan>[];
@@ -5672,7 +5781,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ? [...basePath, labelPrefix, fieldName]
         : [...basePath, fieldName];
 
-    // 渲染值部分
+    // 渲染值部分 - 使用 CustomDecoratedText 包装以支持自定义虚线装饰
     if (value is List) {
       // 数组：逐个元素渲染，每个元素有独立的 Text.rich 以支持双击查词
       for (int i = 0; i < value.length; i++) {
@@ -5714,19 +5823,33 @@ class ComponentRendererState extends State<ComponentRenderer> {
           doubleTapRecognizer: null,
         );
 
-        final formattedResult = _parseFormattedText(
-          itemText,
-          textStyle,
-          context: context,
-          recognizer: recognizer,
-          mouseCursor: SystemMouseCursors.click,
-        );
-
+        // 使用 CustomDecoratedText 包装以支持自定义虚线装饰
         spans.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.baseline,
             baseline: TextBaseline.alphabetic,
-            child: Text.rich(TextSpan(children: formattedResult.spans)),
+            child: CustomDecoratedText(
+              text: itemText,
+              style: textStyle,
+              decorationType: CustomDecorationType.dashed,
+              decorationColor: color,
+              recognizer: recognizer,
+              mouseCursor: SystemMouseCursors.click,
+              onTap: () {
+                widget.onElementTap?.call('lookup:$itemText', itemText);
+              },
+              onShowMenu: (position, text) {
+                _handleElementSecondaryTap(
+                  _convertPathToString(itemPath),
+                  text,
+                  context,
+                  position,
+                );
+              },
+              onDoubleTapWord: (word, position) {
+                _performDoubleTapSearch(word, context);
+              },
+            ),
           ),
         );
       }
@@ -5764,19 +5887,33 @@ class ComponentRendererState extends State<ComponentRenderer> {
         doubleTapRecognizer: null,
       );
 
-      final formattedResult = _parseFormattedText(
-        itemText,
-        textStyle,
-        context: context,
-        recognizer: recognizer,
-        mouseCursor: SystemMouseCursors.click,
-      );
-
+      // 使用 CustomDecoratedText 包装以支持自定义虚线装饰
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
-          child: Text.rich(TextSpan(children: formattedResult.spans)),
+          child: CustomDecoratedText(
+            text: itemText,
+            style: textStyle,
+            decorationType: CustomDecorationType.dashed,
+            decorationColor: color,
+            recognizer: recognizer,
+            mouseCursor: SystemMouseCursors.click,
+            onTap: () {
+              widget.onElementTap?.call('lookup:$itemText', itemText);
+            },
+            onShowMenu: (position, text) {
+              _handleElementSecondaryTap(
+                _convertPathToString(fieldPath),
+                text,
+                context,
+                position,
+              );
+            },
+            onDoubleTapWord: (word, position) {
+              _performDoubleTapSearch(word, context);
+            },
+          ),
         ),
       );
     }

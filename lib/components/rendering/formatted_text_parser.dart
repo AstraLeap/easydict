@@ -9,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/logger.dart';
 import '../../core/utils/dict_typography.dart';
 import '../../services/font_loader_service.dart';
+import 'custom_text_decoration.dart';
 import 'ruby_layout.dart';
 
 /// Result of parsing formatted text containing spans and plain text.
@@ -241,6 +242,14 @@ abstract class _SegmentVisitor<R> {
 // Style Information
 // ============================================================================
 
+/// 自定义文本装饰类型
+enum CustomDecoration {
+  underline,
+  doubleUnderline,
+  wavy,
+  dashed,
+}
+
 /// Style information extracted from type annotations.
 class StyleInfo {
   final TextStyle style;
@@ -255,6 +264,8 @@ class StyleInfo {
   final String? exactJumpTarget;
   final String? pathJumpTarget;
   final String? groupJumpTarget;
+  /// 自定义装饰类型（需要使用 CustomPaint 绘制以调整位置）
+  final List<CustomDecoration> customDecorations;
 
   const StyleInfo({
     required this.style,
@@ -269,6 +280,7 @@ class StyleInfo {
     this.exactJumpTarget,
     this.pathJumpTarget,
     this.groupJumpTarget,
+    this.customDecorations = const [],
   });
 
   /// Returns true if this style has a link target.
@@ -285,6 +297,9 @@ class StyleInfo {
 
   /// Returns true if this style requires special rendering (sup/sub/label).
   bool get requiresSpecialRendering => isSup || isSub || isLabelType;
+
+  /// Returns true if this style has custom decorations that need special rendering.
+  bool get hasCustomDecorations => customDecorations.isNotEmpty;
 }
 
 // ============================================================================
@@ -305,6 +320,7 @@ class TypeParser {
 
     TextStyle style = baseStyle;
     final decorations = <TextDecoration>[];
+    final customDecorations = <CustomDecoration>[];
     bool isSup = false;
     bool isSub = false;
     bool aiTextMark = false;
@@ -371,6 +387,11 @@ class TypeParser {
       if (result.aiTextMark) aiTextMark = true;
       if (result.isWordLabel) isWordLabel = true;
       if (result.isLabelType) isLabelType = true;
+
+      // Track custom decorations
+      if (result.customDecoration != null) {
+        customDecorations.add(result.customDecoration!);
+      }
     }
 
     // Apply decorations
@@ -399,6 +420,7 @@ class TypeParser {
       exactJumpTarget: exactJumpTarget,
       pathJumpTarget: pathJumpTarget,
       groupJumpTarget: groupJumpTarget,
+      customDecorations: customDecorations,
     );
   }
 
@@ -476,29 +498,23 @@ class TypeParser {
     bool aiTextMark = false;
     bool isWordLabel = false;
     bool isLabelType = false;
+    CustomDecoration? customDecoration;
 
     switch (type) {
       case 'strike':
         decorations.add(TextDecoration.lineThrough);
         break;
       case 'underline':
-        decorations.add(TextDecoration.underline);
+        customDecoration = CustomDecoration.underline;
         break;
       case 'double_underline':
-        newStyle = style.copyWith(
-          decoration: TextDecoration.combine([
-            TextDecoration.underline,
-            TextDecoration.underline,
-          ]),
-          decorationColor: baseStyle.color,
-        );
+        customDecoration = CustomDecoration.doubleUnderline;
         break;
       case 'wavy':
-        newStyle = style.copyWith(
-          decoration: TextDecoration.underline,
-          decorationStyle: TextDecorationStyle.wavy,
-          decorationColor: baseStyle.color,
-        );
+        customDecoration = CustomDecoration.wavy;
+        break;
+      case 'dashed':
+        customDecoration = CustomDecoration.dashed;
         break;
       case 'bold':
         newStyle = style.copyWith(
@@ -543,6 +559,7 @@ class TypeParser {
       aiTextMark: aiTextMark,
       isWordLabel: isWordLabel,
       isLabelType: isLabelType,
+      customDecoration: customDecoration,
     );
   }
 }
@@ -555,6 +572,7 @@ class _StyleParseResult {
   final bool aiTextMark;
   final bool isWordLabel;
   final bool isLabelType;
+  final CustomDecoration? customDecoration;
 
   const _StyleParseResult({
     required this.style,
@@ -563,6 +581,7 @@ class _StyleParseResult {
     this.aiTextMark = false,
     this.isWordLabel = false,
     this.isLabelType = false,
+    this.customDecoration,
   });
 }
 
@@ -821,6 +840,8 @@ class FormattedTextConfig {
   final String? dictId;
   final Future<Uint8List?> Function(String dictId, String imageFile)?
   onLoadImage;
+  /// 双击查词回调
+  final void Function(String word, Offset position)? onDoubleTapWord;
 
   const FormattedTextConfig({
     this.context,
@@ -844,6 +865,7 @@ class FormattedTextConfig {
     this.onGroupJump,
     this.dictId,
     this.onLoadImage,
+    this.onDoubleTapWord,
   });
 
   /// Returns effective isSerif value based on element type.
@@ -877,6 +899,7 @@ FormattedTextResult parseFormattedText(
   void Function(String groupId, BuildContext context)? onGroupJump,
   String? dictId,
   Future<Uint8List?> Function(String dictId, String imageFile)? onLoadImage,
+  void Function(String word, Offset position)? onDoubleTapWord,
 }) {
   final config = FormattedTextConfig(
     context: context,
@@ -900,6 +923,7 @@ FormattedTextResult parseFormattedText(
     onGroupJump: onGroupJump,
     dictId: dictId,
     onLoadImage: onLoadImage,
+    onDoubleTapWord: onDoubleTapWord,
   );
 
   return _FormattedTextParser.parse(text, baseStyle, config, hidden);
@@ -1421,14 +1445,52 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
         backgroundColor: bgColor.withAlpha(kAiTextMarkBackgroundAlpha),
       );
     }
-    spans.add(
-      TextSpan(
-        text: text,
-        style: style,
-        recognizer: config.recognizer,
-        mouseCursor: config.mouseCursor,
-      ),
-    );
+
+    // 如果有自定义装饰，使用 CustomDecoratedText
+    if (styleInfo.hasCustomDecorations) {
+      final customDec = styleInfo.customDecorations.first;
+      CustomDecorationType decType;
+      switch (customDec) {
+        case CustomDecoration.underline:
+          decType = CustomDecorationType.underline;
+          break;
+        case CustomDecoration.doubleUnderline:
+          decType = CustomDecorationType.doubleUnderline;
+          break;
+        case CustomDecoration.wavy:
+          decType = CustomDecorationType.wavy;
+          break;
+        case CustomDecoration.dashed:
+          decType = CustomDecorationType.dashed;
+          break;
+      }
+
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: CustomDecoratedText(
+            text: text,
+            style: style,
+            decorationType: decType,
+            decorationColor: style.color,
+            recognizer: config.recognizer,
+            mouseCursor: config.mouseCursor,
+            onShowMenu: config.onShowMenu,
+            onDoubleTapWord: config.onDoubleTapWord,
+          ),
+        ),
+      );
+    } else {
+      spans.add(
+        TextSpan(
+          text: text,
+          style: style,
+          recognizer: config.recognizer,
+          mouseCursor: config.mouseCursor,
+        ),
+      );
+    }
   }
 }
 
