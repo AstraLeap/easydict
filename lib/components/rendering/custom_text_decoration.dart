@@ -3,6 +3,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../../core/logger.dart';
+
 /// 自定义文本装饰类型
 enum CustomDecorationType { underline, doubleUnderline, wavy, dashed }
 
@@ -98,6 +100,7 @@ class _CustomDecoratedTextState extends State<CustomDecoratedText> {
     content = GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapDown: (details) {
+        Logger.d('CustomDecoratedText onTapDown: text=${widget.text}, position=${details.globalPosition}', tag: 'NoteDebug');
         _lastTapPosition = details.globalPosition;
         // 同时通知外层的 recognizer
         if (widget.recognizer != null) {
@@ -106,12 +109,16 @@ class _CustomDecoratedTextState extends State<CustomDecoratedText> {
         }
       },
       onTap: () {
+        Logger.d('CustomDecoratedText onTap: text=${widget.text}, onDoubleTapWord=${widget.onDoubleTapWord != null}', tag: 'NoteDebug');
         // 检测双击
         final now = DateTime.now();
         final isDoubleTap = _lastTapTime != null &&
             now.difference(_lastTapTime!) < const Duration(milliseconds: 300);
 
+        Logger.d('CustomDecoratedText onTap: isDoubleTap=$isDoubleTap, _lastTapTime=$_lastTapTime', tag: 'NoteDebug');
+
         if (isDoubleTap && _lastTapPosition != null) {
+          Logger.d('CustomDecoratedText 双击检测到，调用 _handleDoubleTap', tag: 'NoteDebug');
           _handleDoubleTap(_lastTapPosition!);
           _lastTapTime = null;
         } else {
@@ -121,11 +128,13 @@ class _CustomDecoratedTextState extends State<CustomDecoratedText> {
         }
       },
       onSecondaryTapDown: (details) {
+        Logger.d('CustomDecoratedText onSecondaryTapDown: text=${widget.text}, onShowMenu=${widget.onShowMenu != null}', tag: 'NoteDebug');
         if (widget.onShowMenu != null) {
           widget.onShowMenu!(details.globalPosition, widget.text);
         }
       },
       onLongPress: () {
+        Logger.d('CustomDecoratedText onLongPress: text=${widget.text}, onShowMenu=${widget.onShowMenu != null}', tag: 'NoteDebug');
         if (widget.onShowMenu != null && _lastTapPosition != null) {
           widget.onShowMenu!(_lastTapPosition!, widget.text);
         }
@@ -137,9 +146,11 @@ class _CustomDecoratedTextState extends State<CustomDecoratedText> {
   }
 
   void _handleDoubleTap(Offset globalPosition) {
+    Logger.d('_handleDoubleTap: onDoubleTapWord=${widget.onDoubleTapWord != null}', tag: 'NoteDebug');
     if (widget.onDoubleTapWord == null) return;
 
     final renderObject = _textKey.currentContext?.findRenderObject();
+    Logger.d('_handleDoubleTap: renderObject=$renderObject', tag: 'NoteDebug');
     if (renderObject == null) {
       return;
     }
@@ -159,6 +170,7 @@ class _CustomDecoratedTextState extends State<CustomDecoratedText> {
       renderObject.visitChildren(visitChild);
     }
 
+    Logger.d('_handleDoubleTap: renderParagraph=$renderParagraph', tag: 'NoteDebug');
     if (renderParagraph == null) {
       return;
     }
@@ -169,8 +181,11 @@ class _CustomDecoratedTextState extends State<CustomDecoratedText> {
     final textPosition = rp.getPositionForOffset(localPosition);
     final offset = textPosition.offset;
 
+    Logger.d('_handleDoubleTap: offset=$offset, text=${widget.text}', tag: 'NoteDebug');
+
     // 提取点击位置的单词
     final word = _extractWordAtOffset(widget.text, offset);
+    Logger.d('_handleDoubleTap: extracted word=$word', tag: 'NoteDebug');
     if (word.isNotEmpty) {
       widget.onDoubleTapWord!(word, globalPosition);
     }

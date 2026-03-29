@@ -245,12 +245,14 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
                             "title": "《太平广记》",
                             "volume": "卷九",
                         },
+                        "head": "some",
                         "year": 2025, // 可选：年份（中文词典表示朝代）
                         "author": "Robert Louis", // 可选：作者
                         "title": "Mental States and Trauma", // 可选：书名
                         "publisher": "Health Press", // 可选：出版社
                         "page": "45-47", // 可选：页码
                         "edition": "2nd", // 可选：版次
+                        "tail": "some",
                     }, //可选，例句来源。渲染格式：非中文 (年份) 作者. 书名. 出版社, 页码.；中文 朝代 · 作者 · 书名
                     "note": { "en": "" },
                     "comment": {}, //结构和example相同

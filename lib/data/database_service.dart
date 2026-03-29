@@ -1165,25 +1165,41 @@ class DatabaseService {
   /// 预计算各语言的标准化查询结果。
   /// 对于每种语言，计算 headword 标准化结果；
   /// 对于表意语言（中/日/韩），额外计算 phonetic 标准化结果。
+  ///
+  /// [languageCodes] 为已标准化的语言代码集合（如 "zh", "jp"）。
+  /// [originalLanguageCodes] 为原始语言代码集合（如 "zh-hant", "zh-tw"），
+  /// 用于正确判断是否需要进行繁简转换。
   Map<String, _NormalizedQuery> _precomputeNormalizedQueries(
     String word,
     Set<String> languageCodes,
+    Set<String> originalLanguageCodes,
   ) {
     final result = <String, _NormalizedQuery>{};
     const logographic = {'zh', 'jp', 'ko'};
 
-    for (final langCode in languageCodes) {
-      final normalizedLang = LanguageUtils.normalizeSourceLanguage(langCode);
+    // 构建标准化语言代码到原始语言代码的映射
+    // 注意：可能有多个原始代码映射到同一个标准化代码（如 zh-hant, zh-tw -> zh）
+    // 我们需要保留原始代码用于繁简转换判断
+    final normalizedToOriginal = <String, String>{};
+    final originalList = originalLanguageCodes.toList();
+    final normalizedList = languageCodes.toList();
+    for (var i = 0; i < normalizedList.length && i < originalList.length; i++) {
+      normalizedToOriginal[normalizedList[i]] = originalList[i];
+    }
+
+    for (final normalizedLang in languageCodes) {
+      // 使用原始语言代码进行繁简转换判断
+      final originalLang = normalizedToOriginal[normalizedLang] ?? normalizedLang;
 
       // 计算 headword 标准化结果
-      final headwordNorm = _normalizeSearchWord(word, langCode: normalizedLang);
+      final headwordNorm = _normalizeSearchWord(word, langCode: originalLang);
 
       // 表意语言额外计算 phonetic 标准化结果
       String? phoneticNorm;
       if (logographic.contains(normalizedLang)) {
         phoneticNorm = _normalizeSearchWord(
           word,
-          langCode: normalizedLang,
+          langCode: originalLang,
           isPhonetic: true,
         );
       }
@@ -1253,7 +1269,14 @@ class DatabaseService {
     final languageCodes = filteredDicts
         .map((m) => LanguageUtils.normalizeSourceLanguage(m.sourceLanguage))
         .toSet();
-    final normQueries = _precomputeNormalizedQueries(word, languageCodes);
+    final originalLanguageCodes = filteredDicts
+        .map((m) => m.sourceLanguage.toLowerCase())
+        .toSet();
+    final normQueries = _precomputeNormalizedQueries(
+      word,
+      languageCodes,
+      originalLanguageCodes,
+    );
 
     // 判断是否需要搜索英语关系词（至少有一个英语词典且查不到词时）
     bool shouldPrepareEnglishRelations = false;
@@ -1309,7 +1332,11 @@ class DatabaseService {
         final relatedEntries = <DictionaryEntry>[];
 
         for (final relatedWord in englishRelations.keys) {
-          final relatedNormQuery = _precomputeNormalizedQueries(relatedWord, {langCode});
+          final relatedNormQuery = _precomputeNormalizedQueries(
+            relatedWord,
+            {langCode},
+            {langCode},
+          );
           final relEntries = await _searchInDictionary(
             metadata.id,
             relatedWord,
@@ -1374,9 +1401,11 @@ class DatabaseService {
       final langCode = LanguageUtils.normalizeSourceLanguage(
         targetDict.sourceLanguage,
       );
-      final normQuery = _precomputeNormalizedQueries(word, {
-        langCode,
-      })[langCode]!;
+      final normQuery = _precomputeNormalizedQueries(
+        word,
+        {langCode},
+        {targetDict.sourceLanguage.toLowerCase()},
+      )[langCode]!;
       final result = await _searchInDictionary(
         dictId,
         word,
@@ -1432,7 +1461,14 @@ class DatabaseService {
     final languageCodes = filteredDicts
         .map((m) => LanguageUtils.normalizeSourceLanguage(m.sourceLanguage))
         .toSet();
-    final normQueries = _precomputeNormalizedQueries(word, languageCodes);
+    final originalLanguageCodes = filteredDicts
+        .map((m) => m.sourceLanguage.toLowerCase())
+        .toSet();
+    final normQueries = _precomputeNormalizedQueries(
+      word,
+      languageCodes,
+      originalLanguageCodes,
+    );
 
     final futures = filteredDicts.map((metadata) async {
       final langCode = LanguageUtils.normalizeSourceLanguage(
@@ -1755,7 +1791,14 @@ class DatabaseService {
     final languageCodes = filteredDicts
         .map((m) => LanguageUtils.normalizeSourceLanguage(m.sourceLanguage))
         .toSet();
-    final normQueries = _precomputeNormalizedQueries(query, languageCodes);
+    final originalLanguageCodes = filteredDicts
+        .map((m) => m.sourceLanguage.toLowerCase())
+        .toSet();
+    final normQueries = _precomputeNormalizedQueries(
+      query,
+      languageCodes,
+      originalLanguageCodes,
+    );
 
     Logger.d(
       'getPreSearchCandidates: 预计算 ${languageCodes.length} 种语言的标准化结果',

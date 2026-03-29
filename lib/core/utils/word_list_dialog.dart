@@ -23,6 +23,7 @@ class WordListDialog {
     return await showDialog<List<String>>(
       context: context,
       builder: (context) {
+        final controller = TextEditingController();
         return StatefulBuilder(
           builder: (context, setState) {
             return Dialog(
@@ -75,6 +76,7 @@ class WordListDialog {
                         children: [
                           Expanded(
                             child: TextField(
+                              controller: controller,
                               decoration: InputDecoration(
                                 hintText: context.t.wordBank.newListHint,
                                 contentPadding: EdgeInsets.symmetric(
@@ -82,6 +84,9 @@ class WordListDialog {
                                   vertical: 8,
                                 ),
                               ),
+                              onChanged: (value) {
+                                setState(() {});
+                              },
                               onSubmitted: (value) async {
                                 final newListName = value.trim();
                                 if (newListName.isNotEmpty) {
@@ -135,12 +140,30 @@ class WordListDialog {
                           ),
                           const SizedBox(width: 8),
                           TextButton(
-                            onPressed: selectedLists.isEmpty
+                            onPressed: selectedLists.isEmpty && controller.text.trim().isEmpty
                                 ? null
-                                : () => Navigator.pop(
-                                    context,
-                                    selectedLists.toList(),
-                                  ),
+                                : () async {
+                                    final newListName = controller.text.trim();
+                                    if (newListName.isNotEmpty) {
+                                      try {
+                                        await wordBankService.addWordList(
+                                          language,
+                                          newListName,
+                                        );
+                                        selectedLists.add(newListName);
+                                      } catch (e) {
+                                        if (e.toString().contains('已存在')) {
+                                          selectedLists.add(newListName);
+                                        }
+                                      }
+                                    }
+                                    if (selectedLists.isNotEmpty) {
+                                      Navigator.pop(
+                                        context,
+                                        selectedLists.toList(),
+                                      );
+                                    }
+                                  },
                             child: Text(context.t.common.ok),
                           ),
                         ],

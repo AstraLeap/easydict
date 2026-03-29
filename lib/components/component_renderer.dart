@@ -18,7 +18,12 @@ import '../core/constants/entry_keys.dart' show kExcludedEntryKeys;
 import '../core/logger.dart';
 import 'rendering/custom_text_decoration.dart';
 import 'rendering/formatted_text_parser.dart'
-    show parseFormattedText, FormattedTextResult, kRubySpacingRatio, TypeParser, CustomDecoration;
+    show
+        parseFormattedText,
+        FormattedTextResult,
+        kRubySpacingRatio,
+        TypeParser,
+        CustomDecoration;
 import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
@@ -1208,7 +1213,9 @@ Future<void> _handleExactJump(
       String? group;
       final dictId = targetEntry.dictId;
       if (dictId != null) {
-        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        final metadata = await DictionaryManager().getDictionaryMetadata(
+          dictId,
+        );
         group = metadata?.sourceLanguage;
       }
       final historyService = SearchHistoryService();
@@ -1298,6 +1305,24 @@ Future<DictionaryEntry?> _findEntryInDict(
   return null;
 }
 
+/// Intent for copying selected text (Ctrl+C / Cmd+C)
+class _CopySelectionIntent extends Intent {
+  const _CopySelectionIntent();
+}
+
+/// Action for copying selected text
+class _CopySelectionAction extends Action<_CopySelectionIntent> {
+  final VoidCallback onCopy;
+
+  _CopySelectionAction({required this.onCopy});
+
+  @override
+  Object? invoke(_CopySelectionIntent intent) {
+    onCopy();
+    return null;
+  }
+}
+
 /// 用于管理隐藏语言状态的通知器
 
 class ComponentRenderer extends StatefulWidget {
@@ -1375,6 +1400,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   // 长按/选择开始时的触摸位置（用于定位菜单）
   Offset? _selectionStartPosition;
+
+  // 展开的 example comment 路径集合
+  Set<String> _expandedCommentPaths = {};
 
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
@@ -1978,7 +2006,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
       String? group;
       final dictId = searchResult.entries.first.dictId;
       if (dictId != null) {
-        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        final metadata = await DictionaryManager().getDictionaryMetadata(
+          dictId,
+        );
         group = metadata?.sourceLanguage;
       }
       final historyService = SearchHistoryService();
@@ -2108,6 +2138,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<Map<String, dynamic>> audios = const [],
     Map<String, dynamic>? source,
     String? dictId,
+    dynamic comment,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -2394,19 +2425,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 构建来源引用组件（右对齐）
     Widget? sourceWidget;
     if (source != null && source.isNotEmpty) {
-      final author = source['author'] as String? ?? '';
-      final title = source['title'] as String? ?? '';
-      final date = source['date'] as String? ?? '';
-      final publisher = source['publisher'] as String? ?? '';
+      final (sourceText, isChinese) = _buildSourceText(source);
 
-      final sourceParts = <String>[];
-      if (author.isNotEmpty) sourceParts.add(author);
-      if (title.isNotEmpty) sourceParts.add(title);
-      if (date.isNotEmpty) sourceParts.add(date);
-      if (publisher.isNotEmpty) sourceParts.add(publisher);
-
-      if (sourceParts.isNotEmpty) {
-        final sourceText = '— ${sourceParts.join(', ')}';
+      if (sourceText.isNotEmpty) {
+        final displayText = '— $sourceText';
         final sourcePath = [...basePath, 'source'];
         final sourcePathData = _PathData(sourcePath, 'Example Source');
 
@@ -2435,12 +2457,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
             },
             mouseCursor: SystemMouseCursors.click,
             child: Text(
-              sourceText,
+              displayText,
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                // CJK 语言的 source 不使用斜体
-                fontStyle: hasCJKText ? FontStyle.normal : FontStyle.italic,
+                // 中文 source 不使用斜体
+                fontStyle: isChinese ? FontStyle.normal : FontStyle.italic,
                 fontFamily: 'SourceSans3',
               ),
             ),
@@ -2449,16 +2471,93 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    // 如果有来源引用，使用 Column 布局让引用右对齐
-    if (sourceWidget != null) {
+    // 检查是否有 comment
+    final hasComment = comment != null &&
+        ((comment is String && comment.isNotEmpty) ||
+            (comment is Map<String, dynamic> && comment.isNotEmpty) ||
+            (comment is List && comment.isNotEmpty));
+
+    // 如果有 comment，在句尾添加圆形的 i 折叠符号
+    if (hasComment) {
+      final commentPath = basePath.join('.');
+      final isExpanded = _expandedCommentPaths.contains(commentPath);
+
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedCommentPaths.remove(commentPath);
+                  } else {
+                    _expandedCommentPaths.add(commentPath);
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Icon(
+                  isExpanded ? Icons.expand_less : Icons.info_outline,
+                  size: 15,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 构建 comment 内容 Widget
+    Widget? commentWidget;
+    if (hasComment && _expandedCommentPaths.contains(basePath.join('.'))) {
+      final commentPath = [...basePath, 'comment'];
+
+      // comment 可以是 map 或 list of map
+      Widget commentContent;
+      if (comment is List) {
+        // list of map：每个元素单独渲染
+        commentContent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (int i = 0; i < comment.length; i++)
+              _buildExample(context, comment[i], leftMargin: 0, path: [...commentPath, i.toString()]),
+          ],
+        );
+      } else {
+        // map：直接渲染
+        commentContent = _buildExample(context, comment, leftMargin: 0, path: commentPath);
+      }
+
+      // 整行宽度的 comment 容器
+      commentWidget = Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: commentContent,
+      );
+    }
+
+    // 如果有来源引用或 comment，使用 Column 布局
+    if (sourceWidget != null || commentWidget != null) {
       return Container(
         margin: EdgeInsets.only(bottom: 6, left: leftMargin),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text.rich(TextSpan(children: spans), key: exampleTextKey),
-            const SizedBox(height: 2),
-            Align(alignment: Alignment.centerRight, child: sourceWidget),
+            if (sourceWidget != null) ...[
+              const SizedBox(height: 2),
+              Align(alignment: Alignment.centerRight, child: sourceWidget),
+            ],
+            if (commentWidget != null) commentWidget,
           ],
         ),
       );
@@ -2468,6 +2567,90 @@ class ComponentRendererState extends State<ComponentRenderer> {
       margin: EdgeInsets.only(bottom: 6, left: leftMargin),
       child: Text.rich(TextSpan(children: spans), key: exampleTextKey),
     );
+  }
+
+  /// Check if the source contains Chinese characters
+  bool _containsChinese(Map<String, dynamic> source) {
+    final chineseRegex = RegExp(r'[\u4e00-\u9fff]');
+    for (final value in source.values) {
+      if (value is String && chineseRegex.hasMatch(value)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Build source text with recursive support for cited_in
+  /// Returns (formattedText, isChinese)
+  (String, bool) _buildSourceText(Map<String, dynamic> source) {
+    // Check if Chinese content (contains Chinese characters in any field)
+    final isChinese = _containsChinese(source);
+
+    final parts = <String>[];
+
+    // 1. cited_in - recursively render using same logic (all fields)
+    if (source['cited_in'] != null) {
+      final citedIn = source['cited_in'] as Map<String, dynamic>;
+      final (citedText, _) = _buildSourceText(citedIn);
+      parts.add(citedText);
+    }
+
+    // 2. head (放在 cited_in 右边)
+    if (source['head'] != null) {
+      parts.add(source['head'].toString());
+    }
+
+    // 收集中间字段
+    final middleParts = <String>[];
+
+    // 3. year (already Chinese text like '清', '唐')
+    if (source['year'] != null) {
+      middleParts.add(source['year'].toString());
+    }
+
+    // 4. author
+    if (source['author'] != null) {
+      middleParts.add(source['author'].toString());
+    }
+
+    // 5. title (don't add extra 《》, title may already contain it)
+    if (source['title'] != null) {
+      middleParts.add(source['title'].toString());
+    }
+
+    // 6. publisher
+    if (source['publisher'] != null) {
+      middleParts.add(source['publisher'].toString());
+    }
+
+    // 7. page
+    if (source['page'] != null) {
+      middleParts.add(isChinese ? '第${source['page']}页' : 'p.${source['page']}');
+    }
+
+    // 8. edition
+    if (source['edition'] != null) {
+      middleParts.add(
+        isChinese ? '${source['edition']}版' : '${source['edition']} ed.',
+      );
+    }
+
+    // 9. tail (放在最尾端)
+    if (source['tail'] != null) {
+      middleParts.add(source['tail'].toString());
+    }
+
+    final separator = isChinese ? ' · ' : ', ';
+    final middleText = middleParts.join(separator);
+
+    // 如果有 cited_in/head 且有其他字段，用连接符 ∷ 连接
+    if (parts.isNotEmpty && middleText.isNotEmpty) {
+      return ('${parts.join(separator)} ∷ $middleText', isChinese);
+    } else if (parts.isNotEmpty) {
+      return (parts.join(separator), isChinese);
+    } else {
+      return (middleText, isChinese);
+    }
   }
 
   final Map<int, GlobalKey> _sectionKeys = {};
@@ -2592,7 +2775,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ((path, ctx) => _handlePathJump(ctx, path));
     final effectiveOnGroupJump = onGroupJump ?? widget.onGroupJump;
     final effectiveOnDoubleTapWord =
-        onDoubleTapWord ?? ((word, position) => _performDoubleTapSearch(word, context!));
+        onDoubleTapWord ??
+        ((word, position) => _performDoubleTapSearch(word, context!));
 
     return parseFormattedText(
       text,
@@ -3465,11 +3649,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
             // 使用 SelectableRegionState 的 context 来获取正确的 RenderBox
             // selectionEndpoints 返回的是相对于 SelectionArea 的本地坐标
-            final stateRenderBox = state.context.findRenderObject() as RenderBox?;
+            final stateRenderBox =
+                state.context.findRenderObject() as RenderBox?;
             if (stateRenderBox != null) {
               // 将本地坐标转换为全局坐标
               final topGlobal = stateRenderBox.localToGlobal(topPoint.point);
-              final bottomGlobal = stateRenderBox.localToGlobal(bottomPoint.point);
+              final bottomGlobal = stateRenderBox.localToGlobal(
+                bottomPoint.point,
+              );
 
               // 获取行高
               // startGlyphHeight 是选择起点的行高，endGlyphHeight 是选择终点的行高
@@ -3861,13 +4048,21 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                           );
 
                                       // 记录搜索历史
-                                      final historyService = SearchHistoryService();
-                                      await historyService.addSearchRecord(phrase);
+                                      final historyService =
+                                          SearchHistoryService();
+                                      await historyService.addSearchRecord(
+                                        phrase,
+                                      );
 
                                       // 获取历史记录构建浏览列表
-                                      final records = await historyService.getSearchRecords();
-                                      final historyWords = records.map((r) => r.word).toList();
-                                      final currentIndex = historyWords.indexOf(phrase);
+                                      final records = await historyService
+                                          .getSearchRecords();
+                                      final historyWords = records
+                                          .map((r) => r.word)
+                                          .toList();
+                                      final currentIndex = historyWords.indexOf(
+                                        phrase,
+                                      );
 
                                       Navigator.push(
                                         context,
@@ -3877,9 +4072,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                             initialWord: phrase,
                                             browseList: historyWords.isNotEmpty
                                                 ? BrowseList(
-                                                    source: BrowseListSource.searchHistory,
+                                                    source: BrowseListSource
+                                                        .searchHistory,
                                                     words: historyWords,
-                                                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                                                    initialIndex:
+                                                        currentIndex >= 0
+                                                        ? currentIndex
+                                                        : 0,
                                                   )
                                                 : null,
                                           ),
@@ -3953,8 +4152,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
                             await historyService.addSearchRecord(phrase);
 
                             // 获取历史记录构建浏览列表
-                            final records = await historyService.getSearchRecords();
-                            final historyWords = records.map((r) => r.word).toList();
+                            final records = await historyService
+                                .getSearchRecords();
+                            final historyWords = records
+                                .map((r) => r.word)
+                                .toList();
                             final currentIndex = historyWords.indexOf(phrase);
 
                             Navigator.push(
@@ -3965,9 +4167,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                   initialWord: phrase,
                                   browseList: historyWords.isNotEmpty
                                       ? BrowseList(
-                                          source: BrowseListSource.searchHistory,
+                                          source:
+                                              BrowseListSource.searchHistory,
                                           words: historyWords,
-                                          initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                                          initialIndex: currentIndex >= 0
+                                              ? currentIndex
+                                              : 0,
                                         )
                                       : null,
                                 ),
@@ -4326,15 +4531,40 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     if (!isDesktop) return visibilityWidget;
-    return Listener(
-      onPointerSignal: _onPointerSignal,
-      // 始终保持 ScaleLayoutWrapper 在树中，避免 scale 在 1.0/非1.0 间切换时
-      // 因子节点类型变化导致子树（包括 _LazyImageLoader）被销毁重建
-      child: ScaleLayoutWrapper(
-        scale: _tempContentScale,
-        child: visibilityWidget,
+    return Shortcuts(
+      shortcuts: {
+        // Ctrl+C 或 Cmd+C 复制选中文本
+        LogicalKeySet(
+          Platform.isMacOS
+              ? LogicalKeyboardKey.meta
+              : LogicalKeyboardKey.control,
+          LogicalKeyboardKey.keyC,
+        ): const _CopySelectionIntent(),
+      },
+      child: Actions(
+        actions: {
+          _CopySelectionIntent: _CopySelectionAction(onCopy: _copySelectedText),
+        },
+        child: Listener(
+          onPointerSignal: _onPointerSignal,
+          // 始终保持 ScaleLayoutWrapper 在树中，避免 scale 在 1.0/非1.0 间切换时
+          // 因子节点类型变化导致子树（包括 _LazyImageLoader）被销毁重建
+          child: ScaleLayoutWrapper(
+            scale: _tempContentScale,
+            child: visibilityWidget,
+          ),
+        ),
       ),
     );
+  }
+
+  /// 复制当前选中的文本
+  void _copySelectedText() {
+    final selectedText = _currentSelection?.plainText ?? '';
+    if (selectedText.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: selectedText));
+      showToast(context, context.t.entry.copiedToClipboard);
+    }
   }
 
   /// 构建内容列，提取为单独方法以便在 enableSelection 为 true/false 时复用
@@ -4604,6 +4834,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     List<MapEntry<String, String>> texts = [];
     Map<String, dynamic>? source;
     List<Map<String, dynamic>> audios = [];
+    dynamic comment;
 
     if (value is String) {
       texts.add(MapEntry('', value));
@@ -4623,11 +4854,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
         audios = audiosValue.whereType<Map<String, dynamic>>().toList();
       }
 
+      // 解析 comment 字段
+      comment = value['comment'];
+
       for (final entry in value.entries) {
         final key = entry.key;
         final val = entry.value;
 
-        if (key == 'usage' || key == 'source' || key == 'audios') continue;
+        if (key == 'usage' || key == 'source' || key == 'audios' || key == 'comment') continue;
 
         if (val is String && val.isNotEmpty) {
           texts.add(MapEntry(key, val));
@@ -4681,6 +4915,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           audios: audios,
           source: source,
           dictId: _localEntry.dictId,
+          comment: comment,
         );
       },
     );
@@ -4862,6 +5097,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final spans = <InlineSpan>[];
     final noteTextKey = GlobalKey();
     final sourceLang = sourceLanguage ?? 'en';
+    int currentTextOffset = 0;
 
     for (int i = 0; i < texts.length; i++) {
       final textEntry = texts[i];
@@ -4876,16 +5112,24 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       if (i > 0 && spans.isNotEmpty) {
         spans.add(WidgetSpan(child: SizedBox(width: 12)));
+        currentTextOffset += 1;
       }
+
+      final startOffset = currentTextOffset;
+      currentTextOffset += text.length;
 
       final pathData = _PathData(textPath, 'Note ($langKey)');
 
+      Logger.d('Note: 创建 tapRecognizer, text=$text, langKey=$langKey', tag: 'NoteDebug');
+
       final tapRecognizer = TapGestureRecognizer()
         ..onTapDown = (details) {
+          Logger.d('Note onTapDown: position=${details.globalPosition}', tag: 'NoteDebug');
           _lastTapPosition = details.globalPosition;
           _currentSelectionPathData = pathData;
         }
         ..onTap = () {
+          Logger.d('Note onTap 触发', tag: 'NoteDebug');
           _handleElementTap(_convertPathToString(textPath), pathData.label);
 
           final now = DateTime.now();
@@ -4895,7 +5139,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   const Duration(milliseconds: 300) &&
               _lastTapButton == 0;
 
+          Logger.d('Note onTap: isDoubleTap=$isDoubleTap, _lastTapTime=$_lastTapTime, _lastTapButton=$_lastTapButton', tag: 'NoteDebug');
+
           if (isDoubleTap && _lastTapPosition != null) {
+            Logger.d('Note 双击触发, 准备调用 _handleDoubleTapOnText', tag: 'NoteDebug');
+            _handleDoubleTapOnText(
+              _lastTapPosition!,
+              text,
+              noteStyle,
+              noteTextKey,
+              context,
+              startOffset: startOffset,
+            );
             _lastTapTime = null;
             _lastTapButton = null;
             _lastTapPosition = null;
@@ -4907,6 +5162,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
         ..onSecondaryTapUp = (details) {
+          Logger.d('Note onSecondaryTapUp: position=${details.globalPosition}', tag: 'NoteDebug');
           _lastTapPosition = details.globalPosition;
           _handleElementSecondaryTap(
             _convertPathToString(textPath),
@@ -4934,7 +5190,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
         label: 'Note ($langKey)',
         recognizer: recognizer,
         elementType: DictElementType.note,
-        mouseCursor: SystemMouseCursors.click,
+        mouseCursor: SystemMouseCursors.text,
+        onShowMenu: (position, menuText) {
+          Logger.d('Note onShowMenu: position=$position, text=$menuText', tag: 'NoteDebug');
+          _handleElementSecondaryTap(
+            _convertPathToString(textPath),
+            pathData.label,
+            context,
+            position,
+          );
+        },
+        onDoubleTapWord: (word, position) {
+          Logger.d('Note onDoubleTapWord: word=$word, position=$position', tag: 'NoteDebug');
+          _performDoubleTapSearch(word, context);
+        },
       );
 
       spans.addAll(result.spans);
@@ -4947,6 +5216,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _buildTappableWidget(
       context: context,
       pathData: _PathData(basePath, 'Note'),
+      customTextKey: noteTextKey,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
@@ -5196,36 +5466,118 @@ class ComponentRendererState extends State<ComponentRenderer> {
                         ),
                         if (note.isNotEmpty) ...[
                           const SizedBox(width: 6),
-                          PathScope.append(
-                            context,
-                            key: 'note',
-                            child: Builder(
-                              builder: (context) {
-                                final notePath = PathScope.of(context);
-                                final notePathData =
-                                    _PathData(notePath, 'Pronunciation Note');
-                                return _buildTappableWidget(
-                                  context: context,
-                                  pathData: notePathData,
-                                  child: Text.rich(
-                                    TextSpan(
-                                      children: _parseFormattedText(
+                          Builder(
+                            builder: (context) {
+                              // 使用已修正的 path 作为基础，添加 'note' 键
+                              final notePath = [...path, 'note'];
+                              final notePathData = _PathData(
+                                notePath,
+                                'Pronunciation Note',
+                              );
+
+                                // 创建手势识别器以支持双击查词和右键菜单
+                                final noteStyle = DictTypography.getBaseStyle(
+                                  DictElementType.example,
+                                  color: colorScheme.onSurfaceVariant,
+                                );
+
+                                final tapRecognizer = TapGestureRecognizer()
+                                  ..onTapDown = (details) {
+                                    _lastTapPosition = details.globalPosition;
+                                    _currentSelectionPathData = notePathData;
+                                  }
+                                  ..onTap = () {
+                                    _handleElementTap(
+                                      _convertPathToString(notePath),
+                                      notePathData.label,
+                                    );
+                                    // 检测双击
+                                    final now = DateTime.now();
+                                    final isDoubleTap = _lastTapTime != null &&
+                                        now.difference(_lastTapTime!) <
+                                            const Duration(milliseconds: 300) &&
+                                        _lastTapButton == 0;
+                                    if (isDoubleTap && _lastTapPosition != null) {
+                                      Logger.d('双击触发', tag: 'DoubleTapWord');
+                                      _handleDoubleTapOnText(
+                                        _lastTapPosition!,
                                         note,
-                                        DictTypography.getBaseStyle(
-                                          DictElementType.example,
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
-                                        context: context,
-                                        path: notePath,
-                                        elementType: DictElementType.example,
-                                      ).spans,
+                                        noteStyle,
+                                        GlobalKey(),
+                                        context,
+                                      );
+                                      _lastTapTime = null;
+                                      _lastTapButton = null;
+                                      _lastTapPosition = null;
+                                    } else {
+                                      _lastTapTime = now;
+                                      _lastTapButton = 0;
+                                    }
+                                  };
+
+                                final secondaryTapRecognizer =
+                                    _SecondaryTapGestureRecognizer()
+                                      ..onSecondaryTapUp = (details) {
+                                        Logger.d(
+                                          'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
+                                          tag: 'ComponentRenderer._buildPronunciations',
+                                        );
+                                        _lastTapPosition = details.globalPosition;
+                                        _handleElementSecondaryTap(
+                                          _convertPathToString(notePath),
+                                          notePathData.label,
+                                          context,
+                                          details.globalPosition,
+                                        );
+                                      };
+
+                                _recognizers.addAll([
+                                  tapRecognizer,
+                                  secondaryTapRecognizer,
+                                ]);
+
+                                final recognizer = _MultiGestureRecognizer(
+                                  tapRecognizer: tapRecognizer,
+                                  secondaryTapRecognizer: secondaryTapRecognizer,
+                                  longPressRecognizer: null,
+                                  doubleTapRecognizer: null,
+                                );
+
+                                final result = _parseFormattedText(
+                                  note,
+                                  noteStyle,
+                                  context: context,
+                                  path: notePath,
+                                  elementType: DictElementType.example,
+                                  recognizer: recognizer,
+                                  mouseCursor: SystemMouseCursors.text,
+                                  onShowMenu: (position, text) {
+                                    _handleElementSecondaryTap(
+                                      _convertPathToString(notePath),
+                                      notePathData.label,
+                                      context,
+                                      position,
+                                    );
+                                  },
+                                  onDoubleTapWord: (word, position) {
+                                    _performDoubleTapSearch(word, context);
+                                  },
+                                );
+
+                                return _HighlightWrapper(
+                                  isHighlighting: _isHighlighting(
+                                    _convertPathToString(notePath),
+                                  ),
+                                  child: _TappableWrapper(
+                                    pathData: notePathData,
+                                    child: Text.rich(
+                                      TextSpan(children: result.spans),
                                     ),
                                   ),
                                 );
                               },
                             ),
-                          ),
-                        ],
+                          ],
                       ],
                     );
                   },
@@ -5742,11 +6094,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       color: color,
     ).copyWith(fontSize: 12, fontWeight: FontWeight.w600);
 
-    final textStyle =
-        DictTypography.getBaseStyle(
-          DictElementType.definition,
-          color: colorScheme.onSurface,
-        );
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.definition,
+      color: colorScheme.onSurface,
+    );
 
     final spans = <InlineSpan>[];
 
@@ -8179,7 +8530,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   // 获取图片真实尺寸
-  static Future<Size?> _getImageDimensions(Uint8List bytes, String cacheKey) async {
+  static Future<Size?> _getImageDimensions(
+    Uint8List bytes,
+    String cacheKey,
+  ) async {
     if (_dimensionCache.containsKey(cacheKey)) {
       return _dimensionCache[cacheKey];
     }
@@ -8241,7 +8595,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           context: context,
           imageBytes: base64Image,
           thumbnailHeight: thumbnailHeight,
-          onTap: () => _showImageDialog(context, imageFile, cleanedBytes, isSvg),
+          onTap: () =>
+              _showImageDialog(context, imageFile, cleanedBytes, isSvg),
         );
       }
 
@@ -8252,7 +8607,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
           margin: const EdgeInsets.only(left: 8),
           decoration: BoxDecoration(
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.3),
             ),
             borderRadius: BorderRadius.circular(4),
           ),
@@ -8320,7 +8677,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
             margin: const EdgeInsets.only(left: 8),
             decoration: BoxDecoration(
               border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.3),
               ),
               borderRadius: BorderRadius.circular(4),
             ),
