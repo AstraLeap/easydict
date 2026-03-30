@@ -120,7 +120,8 @@ class PathNavigatorState extends State<PathNavigator> {
           borderRadius: BorderRadius.circular(4),
           border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3)),
         ),
-        child: Row(
+        child: ClipRect(
+          child: Row(
           children: [
             if (widget.onHomeTap != null)
               InkWell(
@@ -291,6 +292,7 @@ class PathNavigatorState extends State<PathNavigator> {
                 ),
               ),
           ],
+        ),
         ),
       ),
     );

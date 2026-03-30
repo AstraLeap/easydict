@@ -658,6 +658,7 @@ class DictionaryEntry {
   final String entryType;
   final String? page;
   final String? section;
+  final dynamic pos; // 根节点词性，支持 string 或 List<string>
   final List<String> tags;
   final List<String> certifications;
   final Map<String, dynamic> frequency;
@@ -670,6 +671,16 @@ class DictionaryEntry {
   final List<String> groups; // 所属分组ID列表
   final bool hasOriginalHeadword; // 原始 JSON 中是否存在 headword 字段
   final Map<String, dynamic> _rawJson;
+
+  /// 获取 pos 列表（统一处理 string 和 List<string> 类型）
+  List<String> get posList {
+    if (pos == null) return [];
+    if (pos is String) return [pos];
+    if (pos is List) {
+      return (pos as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
+    }
+    return [];
+  }
 
   /// 匹配的 headword 及其对应的 anchor 列表
   /// 每个元素是 (headword, anchor) 的记录
@@ -685,6 +696,7 @@ class DictionaryEntry {
     required this.entryType,
     this.page,
     this.section,
+    this.pos,
     required this.tags,
     required this.certifications,
     required this.frequency,
@@ -729,6 +741,7 @@ class DictionaryEntry {
         entryType: json['entry_type'] as String? ?? 'word',
         page: json['page']?.toString(),
         section: json['section']?.toString(),
+        pos: json['pos'], // 保持原始类型（String 或 List<String>）
         tags: json['tags'] != null
             ? (json['tags'] as List<dynamic>)
                   .map((e) => e?.toString() ?? '')
@@ -838,6 +851,7 @@ class DictionaryEntry {
       'entry_type': entryType,
       'page': page,
       'section': section,
+      if (pos != null) 'pos': pos,
       'tags': tags,
       'certifications': certifications,
       'frequency': frequency,

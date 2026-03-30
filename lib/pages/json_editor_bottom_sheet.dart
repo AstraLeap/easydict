@@ -1222,29 +1222,45 @@ class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 行号列 - 使用 Transform 跟随滚动
+                      // 行号列 - 只渲染可见范围内的行号
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final scrollOffset = _textScrollCtrl.hasClients
                               ? _textScrollCtrl.offset
                               : 0.0;
+                          final viewHeight = constraints.maxHeight;
+
+                          // 计算可见范围
+                          const topPadding = 8.0;
+                          final firstVisibleLine = ((scrollOffset - topPadding) / _lineHeight).floor().clamp(0, _nodes.length - 1);
+                          final lastVisibleLine = ((scrollOffset + viewHeight - topPadding) / _lineHeight).ceil().clamp(0, _nodes.length - 1);
+
+                          // 额外渲染上下各 2 行以平滑滚动
+                          const bufferLines = 2;
+                          final startLine = (firstVisibleLine - bufferLines).clamp(0, _nodes.length - 1);
+                          final endLine = (lastVisibleLine + bufferLines).clamp(0, _nodes.length - 1);
+
                           return SizedBox(
                             width: 48,
                             height: constraints.maxHeight,
                             child: ClipRect(
-                              child: Transform.translate(
-                                offset: Offset(0, -scrollOffset),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      for (int i = 0; i < _nodes.length; i++)
-                                        _buildGutterCell(i, colorScheme),
-                                    ],
+                              child: Stack(
+                                children: [
+                                  // 使用 Positioned 来定位行号列
+                                  Positioned(
+                                    top: startLine * _lineHeight + topPadding - scrollOffset,
+                                    left: 0,
+                                    right: 0,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        for (int i = startLine; i <= endLine; i++)
+                                          _buildGutterCell(i, colorScheme),
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ),
                           );

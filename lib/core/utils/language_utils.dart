@@ -101,6 +101,34 @@ class LanguageUtils {
     return standardizeLanguageCode(langCode);
   }
 
+  /// 将语言代码规范化用于字体查找（保留中文繁简信息）。
+  ///
+  /// 与 [normalizeSourceLanguage] 不同，此方法保留中文的繁简区分：
+  ///   zh / zh-hans → zh-hans（简体）
+  ///   zh-hant / zh-hk / zh-tw / zh-mo → zh-hant（繁体）
+  ///
+  /// 其他语言：取基础语言代码（去除地区子标签），并处理别名。
+  static String normalizeForFontLookup(String langCode) {
+    final lower = langCode.toLowerCase();
+    // 处理中文变体
+    if (!lower.contains('-')) {
+      if (lower == 'zh') return 'zh-hans'; // 无子标签中文默认简体
+      // 处理别名
+      return _languageCodeAliases[lower] ?? lower;
+    }
+    if (lower == 'zh-hans') return 'zh-hans';
+    if (lower == 'zh-hant' ||
+        lower == 'zh-hk' ||
+        lower == 'zh-tw' ||
+        lower == 'zh-mo') {
+      return 'zh-hant';
+    }
+    // 其他带地区子标签的语言：取基础部分并处理别名
+    final idx = lower.indexOf('-');
+    final base = lower.substring(0, idx);
+    return _languageCodeAliases[base] ?? base;
+  }
+
   /// 未设置字体缩放倍率时的默认值。
   ///
   /// 字母文字语言（拉丁/西里尔/阿拉伯）返回 1.15；

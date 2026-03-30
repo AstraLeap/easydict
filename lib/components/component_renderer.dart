@@ -1619,7 +1619,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (dictId != null && dictId.isNotEmpty) {
       final cachedMetadata = DictionaryManager().getCachedMetadata(dictId);
       if (cachedMetadata != null) {
-        _sourceLanguage = LanguageUtils.normalizeSourceLanguage(
+        _sourceLanguage = LanguageUtils.normalizeForFontLookup(
           cachedMetadata.sourceLanguage,
         );
         _targetLanguages = cachedMetadata.targetLanguages;
@@ -2472,7 +2472,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     // 检查是否有 comment
-    final hasComment = comment != null &&
+    final hasComment =
+        comment != null &&
         ((comment is String && comment.isNotEmpty) ||
             (comment is Map<String, dynamic> && comment.isNotEmpty) ||
             (comment is List && comment.isNotEmpty));
@@ -2524,12 +2525,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (int i = 0; i < comment.length; i++)
-              _buildExample(context, comment[i], leftMargin: 0, path: [...commentPath, i.toString()]),
+              _buildExample(
+                context,
+                comment[i],
+                leftMargin: 0,
+                path: [...commentPath, i.toString()],
+              ),
           ],
         );
       } else {
         // map：直接渲染
-        commentContent = _buildExample(context, comment, leftMargin: 0, path: commentPath);
+        commentContent = _buildExample(
+          context,
+          comment,
+          leftMargin: 0,
+          path: commentPath,
+        );
       }
 
       // 整行宽度的 comment 容器
@@ -2625,7 +2636,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // 7. page
     if (source['page'] != null) {
-      middleParts.add(isChinese ? '第${source['page']}页' : 'p.${source['page']}');
+      middleParts.add(
+        isChinese ? '第${source['page']}页' : 'p.${source['page']}',
+      );
     }
 
     // 8. edition
@@ -2688,7 +2701,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
       if (mounted && metadata != null) {
         setState(() {
-          _sourceLanguage = LanguageUtils.normalizeSourceLanguage(
+          _sourceLanguage = LanguageUtils.normalizeForFontLookup(
             metadata.sourceLanguage,
           );
           _targetLanguages = metadata.targetLanguages;
@@ -4639,9 +4652,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
         : entry.headline ?? '';
     final isUsingHeadword = entry.hasOriginalHeadword;
 
-    final pos = entry.sense.isNotEmpty
+    // 优先使用根节点 pos，如果没有则回退到 sense[0]['pos']
+    final rootPosList = entry.posList;
+    final sensePos = entry.sense.isNotEmpty
         ? (entry.sense[0]['pos'] as String? ?? '')
         : '';
+    final isRootPos = rootPosList.isNotEmpty;
+    final posList = isRootPos
+        ? rootPosList
+        : (sensePos.isNotEmpty ? [sensePos] : <String>[]);
+
     final isPhrase = entry.entryType == 'phrase';
     final headwordElementType = isPhrase
         ? DictElementType.headwordPhrase
@@ -4672,19 +4692,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 ),
               ),
             ),
-            if (pos.isNotEmpty) ...[
+            if (posList.isNotEmpty) ...[
               const SizedBox(width: 8),
               Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: PathScope.append(
-                  context,
-                  key: 'senses.0.pos',
-                  child: Builder(
-                    builder: (context) {
-                      return _buildPosElement(context, pos);
-                    },
-                  ),
-                ),
+                padding: const EdgeInsets.only(bottom: 2),
+                child: _buildPosTags(context, posList, isRootPos: isRootPos),
               ),
             ],
           ],
@@ -4861,7 +4873,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final key = entry.key;
         final val = entry.value;
 
-        if (key == 'usage' || key == 'source' || key == 'audios' || key == 'comment') continue;
+        if (key == 'usage' ||
+            key == 'source' ||
+            key == 'audios' ||
+            key == 'comment')
+          continue;
 
         if (val is String && val.isNotEmpty) {
           texts.add(MapEntry(key, val));
@@ -5120,11 +5136,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final pathData = _PathData(textPath, 'Note ($langKey)');
 
-      Logger.d('Note: 创建 tapRecognizer, text=$text, langKey=$langKey', tag: 'NoteDebug');
+      Logger.d(
+        'Note: 创建 tapRecognizer, text=$text, langKey=$langKey',
+        tag: 'NoteDebug',
+      );
 
       final tapRecognizer = TapGestureRecognizer()
         ..onTapDown = (details) {
-          Logger.d('Note onTapDown: position=${details.globalPosition}', tag: 'NoteDebug');
+          Logger.d(
+            'Note onTapDown: position=${details.globalPosition}',
+            tag: 'NoteDebug',
+          );
           _lastTapPosition = details.globalPosition;
           _currentSelectionPathData = pathData;
         }
@@ -5139,10 +5161,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   const Duration(milliseconds: 300) &&
               _lastTapButton == 0;
 
-          Logger.d('Note onTap: isDoubleTap=$isDoubleTap, _lastTapTime=$_lastTapTime, _lastTapButton=$_lastTapButton', tag: 'NoteDebug');
+          Logger.d(
+            'Note onTap: isDoubleTap=$isDoubleTap, _lastTapTime=$_lastTapTime, _lastTapButton=$_lastTapButton',
+            tag: 'NoteDebug',
+          );
 
           if (isDoubleTap && _lastTapPosition != null) {
-            Logger.d('Note 双击触发, 准备调用 _handleDoubleTapOnText', tag: 'NoteDebug');
+            Logger.d(
+              'Note 双击触发, 准备调用 _handleDoubleTapOnText',
+              tag: 'NoteDebug',
+            );
             _handleDoubleTapOnText(
               _lastTapPosition!,
               text,
@@ -5162,7 +5190,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
         ..onSecondaryTapUp = (details) {
-          Logger.d('Note onSecondaryTapUp: position=${details.globalPosition}', tag: 'NoteDebug');
+          Logger.d(
+            'Note onSecondaryTapUp: position=${details.globalPosition}',
+            tag: 'NoteDebug',
+          );
           _lastTapPosition = details.globalPosition;
           _handleElementSecondaryTap(
             _convertPathToString(textPath),
@@ -5192,7 +5223,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
         elementType: DictElementType.note,
         mouseCursor: SystemMouseCursors.text,
         onShowMenu: (position, menuText) {
-          Logger.d('Note onShowMenu: position=$position, text=$menuText', tag: 'NoteDebug');
+          Logger.d(
+            'Note onShowMenu: position=$position, text=$menuText',
+            tag: 'NoteDebug',
+          );
           _handleElementSecondaryTap(
             _convertPathToString(textPath),
             pathData.label,
@@ -5201,7 +5235,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
           );
         },
         onDoubleTapWord: (word, position) {
-          Logger.d('Note onDoubleTapWord: word=$word, position=$position', tag: 'NoteDebug');
+          Logger.d(
+            'Note onDoubleTapWord: word=$word, position=$position',
+            tag: 'NoteDebug',
+          );
           _performDoubleTapSearch(word, context);
         },
       );
@@ -5475,109 +5512,111 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                 'Pronunciation Note',
                               );
 
-                                // 创建手势识别器以支持双击查词和右键菜单
-                                final noteStyle = DictTypography.getBaseStyle(
-                                  DictElementType.example,
-                                  color: colorScheme.onSurfaceVariant,
-                                );
+                              // 创建手势识别器以支持双击查词和右键菜单
+                              final noteStyle = DictTypography.getBaseStyle(
+                                DictElementType.example,
+                                color: colorScheme.onSurfaceVariant,
+                              );
 
-                                final tapRecognizer = TapGestureRecognizer()
-                                  ..onTapDown = (details) {
-                                    _lastTapPosition = details.globalPosition;
-                                    _currentSelectionPathData = notePathData;
-                                  }
-                                  ..onTap = () {
-                                    _handleElementTap(
-                                      _convertPathToString(notePath),
-                                      notePathData.label,
-                                    );
-                                    // 检测双击
-                                    final now = DateTime.now();
-                                    final isDoubleTap = _lastTapTime != null &&
-                                        now.difference(_lastTapTime!) <
-                                            const Duration(milliseconds: 300) &&
-                                        _lastTapButton == 0;
-                                    if (isDoubleTap && _lastTapPosition != null) {
-                                      Logger.d('双击触发', tag: 'DoubleTapWord');
-                                      _handleDoubleTapOnText(
-                                        _lastTapPosition!,
-                                        note,
-                                        noteStyle,
-                                        GlobalKey(),
-                                        context,
-                                      );
-                                      _lastTapTime = null;
-                                      _lastTapButton = null;
-                                      _lastTapPosition = null;
-                                    } else {
-                                      _lastTapTime = now;
-                                      _lastTapButton = 0;
-                                    }
-                                  };
-
-                                final secondaryTapRecognizer =
-                                    _SecondaryTapGestureRecognizer()
-                                      ..onSecondaryTapUp = (details) {
-                                        Logger.d(
-                                          'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
-                                          tag: 'ComponentRenderer._buildPronunciations',
-                                        );
-                                        _lastTapPosition = details.globalPosition;
-                                        _handleElementSecondaryTap(
-                                          _convertPathToString(notePath),
-                                          notePathData.label,
-                                          context,
-                                          details.globalPosition,
-                                        );
-                                      };
-
-                                _recognizers.addAll([
-                                  tapRecognizer,
-                                  secondaryTapRecognizer,
-                                ]);
-
-                                final recognizer = _MultiGestureRecognizer(
-                                  tapRecognizer: tapRecognizer,
-                                  secondaryTapRecognizer: secondaryTapRecognizer,
-                                  longPressRecognizer: null,
-                                  doubleTapRecognizer: null,
-                                );
-
-                                final result = _parseFormattedText(
-                                  note,
-                                  noteStyle,
-                                  context: context,
-                                  path: notePath,
-                                  elementType: DictElementType.example,
-                                  recognizer: recognizer,
-                                  mouseCursor: SystemMouseCursors.text,
-                                  onShowMenu: (position, text) {
-                                    _handleElementSecondaryTap(
-                                      _convertPathToString(notePath),
-                                      notePathData.label,
-                                      context,
-                                      position,
-                                    );
-                                  },
-                                  onDoubleTapWord: (word, position) {
-                                    _performDoubleTapSearch(word, context);
-                                  },
-                                );
-
-                                return _HighlightWrapper(
-                                  isHighlighting: _isHighlighting(
+                              final tapRecognizer = TapGestureRecognizer()
+                                ..onTapDown = (details) {
+                                  _lastTapPosition = details.globalPosition;
+                                  _currentSelectionPathData = notePathData;
+                                }
+                                ..onTap = () {
+                                  _handleElementTap(
                                     _convertPathToString(notePath),
+                                    notePathData.label,
+                                  );
+                                  // 检测双击
+                                  final now = DateTime.now();
+                                  final isDoubleTap =
+                                      _lastTapTime != null &&
+                                      now.difference(_lastTapTime!) <
+                                          const Duration(milliseconds: 300) &&
+                                      _lastTapButton == 0;
+                                  if (isDoubleTap && _lastTapPosition != null) {
+                                    Logger.d('双击触发', tag: 'DoubleTapWord');
+                                    _handleDoubleTapOnText(
+                                      _lastTapPosition!,
+                                      note,
+                                      noteStyle,
+                                      GlobalKey(),
+                                      context,
+                                    );
+                                    _lastTapTime = null;
+                                    _lastTapButton = null;
+                                    _lastTapPosition = null;
+                                  } else {
+                                    _lastTapTime = now;
+                                    _lastTapButton = 0;
+                                  }
+                                };
+
+                              final secondaryTapRecognizer =
+                                  _SecondaryTapGestureRecognizer()
+                                    ..onSecondaryTapUp = (details) {
+                                      Logger.d(
+                                        'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
+                                        tag:
+                                            'ComponentRenderer._buildPronunciations',
+                                      );
+                                      _lastTapPosition = details.globalPosition;
+                                      _handleElementSecondaryTap(
+                                        _convertPathToString(notePath),
+                                        notePathData.label,
+                                        context,
+                                        details.globalPosition,
+                                      );
+                                    };
+
+                              _recognizers.addAll([
+                                tapRecognizer,
+                                secondaryTapRecognizer,
+                              ]);
+
+                              final recognizer = _MultiGestureRecognizer(
+                                tapRecognizer: tapRecognizer,
+                                secondaryTapRecognizer: secondaryTapRecognizer,
+                                longPressRecognizer: null,
+                                doubleTapRecognizer: null,
+                              );
+
+                              final result = _parseFormattedText(
+                                note,
+                                noteStyle,
+                                context: context,
+                                path: notePath,
+                                elementType: DictElementType.example,
+                                recognizer: recognizer,
+                                mouseCursor: SystemMouseCursors.text,
+                                onShowMenu: (position, text) {
+                                  _handleElementSecondaryTap(
+                                    _convertPathToString(notePath),
+                                    notePathData.label,
+                                    context,
+                                    position,
+                                  );
+                                },
+                                onDoubleTapWord: (word, position) {
+                                  _performDoubleTapSearch(word, context);
+                                },
+                              );
+
+                              return _HighlightWrapper(
+                                isHighlighting: _isHighlighting(
+                                  _convertPathToString(notePath),
+                                ),
+                                child: _TappableWrapper(
+                                  pathData: notePathData,
+                                  child: Text.rich(
+                                    TextSpan(children: result.spans),
                                   ),
-                                  child: _TappableWrapper(
-                                    pathData: notePathData,
-                                    child: Text.rich(
-                                      TextSpan(children: result.spans),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ],
                     );
                   },
@@ -5707,13 +5746,110 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  Widget _buildPosElement(BuildContext context, String pos) {
+  Widget _buildPosElement(
+    BuildContext context,
+    String pos, {
+    bool isRootPos = false,
+  }) {
     if (pos.isEmpty) return const SizedBox.shrink();
+
+    // 根节点 pos 使用带圆角方框的样式
+    if (isRootPos) {
+      return _buildRootPosTag(context, pos, index: 0);
+    }
 
     return PathScope.append(
       context,
       key: 'pos',
       child: Builder(builder: (context) => _renderPos(context, pos)),
+    );
+  }
+
+  /// 构建多个 pos 标签（支持 List<string> 类型）
+  Widget _buildPosTags(
+    BuildContext context,
+    List<String> posList, {
+    required bool isRootPos,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: posList.asMap().entries.map((entry) {
+        final index = entry.key;
+        final pos = entry.value;
+        return Padding(
+          padding: EdgeInsets.only(left: index > 0 ? 6 : 0),
+          child: _buildRootPosTag(
+            context,
+            pos,
+            index: index,
+            isRootPos: isRootPos,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  /// 构建单个 pos 标签（带圆角方框样式）
+  Widget _buildRootPosTag(
+    BuildContext context,
+    String pos, {
+    required int index,
+    bool isRootPos = true,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    // 使用较小的字号
+    final textStyle = DictTypography.getBaseStyle(
+      DictElementType.pos,
+      color: colorScheme.primary,
+    ).copyWith(fontSize: 14.0);
+
+    final result = _parseFormattedText(
+      pos,
+      textStyle,
+      context: context,
+      elementType: DictElementType.pos,
+    );
+
+    // 根节点路径：pos（单个）或 pos.0, pos.1（多个）
+    // sense 内路径：senses.0.pos（单个）或 senses.0.pos.0, senses.0.pos.1（多个）
+    final String pathKey;
+    if (isRootPos) {
+      pathKey = index == 0 && _localEntry.posList.length == 1
+          ? 'pos'
+          : 'pos.$index';
+    } else {
+      pathKey = index == 0 ? 'pos' : 'pos.$index';
+    }
+    final pathData = _PathData([pathKey], 'Part of Speech');
+
+    return PathScope.append(
+      context,
+      key: pathKey,
+      child: Builder(
+        builder: (context) {
+          return GestureDetector(
+            onLongPressStart: (details) {
+              _showContextMenu(context, details.globalPosition, pathData);
+            },
+            onSecondaryTapDown: (details) {
+              _showContextMenu(context, details.globalPosition, pathData);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.1),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.4),
+                  width: 0.6,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text.rich(TextSpan(children: result.spans)),
+            ),
+          );
+        },
+      ),
     );
   }
 
