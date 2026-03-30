@@ -1614,6 +1614,127 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
+  /// 构建表格组件
+  Widget _buildTable(
+    BuildContext context,
+    Map<String, dynamic> value,
+    List<String> path,
+  ) {
+    final columns = value['columns'] as List<dynamic>?;
+    final data = value['data'] as List<dynamic>?;
+
+    if (columns == null || data == null) {
+      return const SizedBox.shrink();
+    }
+
+    final columnList = columns.cast<String>();
+    final dataList = data.cast<List<dynamic>>();
+
+    return _buildTableWidget(
+      context: context,
+      columns: columnList,
+      data: dataList,
+      path: path,
+    );
+  }
+
+  /// 构建表格 Widget
+  Widget _buildTableWidget({
+    required BuildContext context,
+    required List<String> columns,
+    required List<List<dynamic>> data,
+    required List<String> path,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textStyle = TextStyle(
+      fontSize: 13,
+      color: colorScheme.onSurface,
+    );
+    final headerStyle = textStyle.copyWith(
+      fontWeight: FontWeight.bold,
+    );
+
+    // 动态生成列宽
+    final columnWidths = <int, TableColumnWidth>{};
+    for (var i = 0; i < columns.length; i++) {
+      columnWidths[i] = const FlexColumnWidth(1);
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: colorScheme.outline.withValues(alpha: 0.3),
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Table(
+          border: TableBorder.symmetric(
+            inside: BorderSide(
+              color: colorScheme.outline.withValues(alpha: 0.2),
+            ),
+          ),
+          columnWidths: columnWidths,
+          children: [
+            // 表头
+            TableRow(
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              ),
+              children: columns.map((col) {
+                return Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(col, style: headerStyle),
+                );
+              }).toList(),
+            ),
+            // 数据行
+            ...data.asMap().entries.map((entry) {
+              final rowIndex = entry.key;
+              final row = entry.value;
+              return TableRow(
+                children: row.asMap().entries.map((cell) {
+                  final cellPath = [...path, '$rowIndex', '${cell.key}'];
+                  return Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: _buildTableCell(
+                      context,
+                      cell.value,
+                      cellPath,
+                      textStyle,
+                    ),
+                  );
+                }).toList(),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建表格单元格
+  Widget _buildTableCell(
+    BuildContext context,
+    dynamic value,
+    List<String> path,
+    TextStyle baseStyle,
+  ) {
+    if (value is String) {
+      return Text(value, style: baseStyle);
+    }
+    if (value is num) {
+      return Text(value.toString(), style: baseStyle);
+    }
+    if (value is Map<String, dynamic> || value is List) {
+      // 嵌套内容递归渲染
+      return renderJsonElement(context, 'cell', value, path);
+    }
+    return Text(value?.toString() ?? '', style: baseStyle);
+  }
+
   void _initSourceLanguage() {
     final dictId = _localEntry.dictId;
     if (dictId != null && dictId.isNotEmpty) {
@@ -5387,245 +5508,272 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 return const SizedBox.shrink();
               }
 
-              return PathScope.append(
-                context,
-                key: '$index',
-                child: Builder(
-                  builder: (context) {
-                    final rawPath = PathScope.of(context);
-                    // 当原始 pronunciation 是单个对象（非列表）时，去掉多余的索引路径段
-                    final path = entry.pronunciationIsSingleObject
-                        ? (rawPath.length > 1
-                              ? rawPath.sublist(0, rawPath.length - 1)
-                              : rawPath)
-                        : rawPath;
-                    final pathData = _PathData(path, 'Pronunciation');
+              // 当原始 pronunciation 是单个对象（非列表）时，不添加索引路径段
+              final isSingleObject = entry.pronunciationIsSingleObject;
+              final indexKey = isSingleObject ? null : '$index';
 
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Material(
-                          color: Colors.transparent,
-                          child: GestureDetector(
-                            onSecondaryTapUp: (details) {
-                              _lastTapPosition = details.globalPosition;
-                              _handleElementSecondaryTap(
-                                _convertPathToString(path),
-                                pathData.label,
-                                context,
-                                details.globalPosition,
-                              );
-                            },
-                            child: InkWell(
-                              onTap: audioFile.isNotEmpty
-                                  ? () {
-                                      _playAudio(entry.dictId ?? '', audioFile);
-                                    }
-                                  : null,
-                              onLongPress: () {
-                                _handleElementSecondaryTap(
-                                  _convertPathToString(path),
-                                  pathData.label,
-                                  context,
-                                  Offset.zero,
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              splashColor: audioFile.isNotEmpty
-                                  ? colorScheme.primary.withValues(alpha: 0.1)
-                                  : null,
-                              mouseCursor: audioFile.isNotEmpty
-                                  ? SystemMouseCursors.click
-                                  : SystemMouseCursors.basic,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: audioFile.isNotEmpty
-                                      ? colorScheme.surfaceContainerHighest
-                                      : null,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: audioFile.isNotEmpty
-                                      ? null
-                                      : Border.all(
-                                          color: colorScheme.outlineVariant,
-                                          width: 1,
-                                        ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    if (region.isNotEmpty)
-                                      PathScope.append(
-                                        context,
-                                        key: 'region',
-                                        child: Builder(
-                                          builder: (context) {
-                                            return _buildPronunciationRegionElement(
-                                              context,
-                                              region,
-                                              hasAudio: audioFile.isNotEmpty,
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    if (notation.isNotEmpty)
-                                      PathScope.append(
-                                        context,
-                                        key: 'notation',
-                                        child: Builder(
-                                          builder: (context) {
-                                            return _buildPronunciationPhoneticElement(
-                                              context,
-                                              notation,
-                                              hasAudio: audioFile.isNotEmpty,
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    if (audioFile.isNotEmpty) ...[
-                                      const SizedBox(width: 5),
-                                      Icon(
-                                        Icons.volume_up,
-                                        size: 13,
-                                        color: colorScheme.primary,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (note.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Builder(
-                            builder: (context) {
-                              // 使用已修正的 path 作为基础，添加 'note' 键
-                              final notePath = [...path, 'note'];
-                              final notePathData = _PathData(
-                                notePath,
-                                'Pronunciation Note',
-                              );
-
-                              // 创建手势识别器以支持双击查词和右键菜单
-                              final noteStyle = DictTypography.getBaseStyle(
-                                DictElementType.example,
-                                color: colorScheme.onSurfaceVariant,
-                              );
-
-                              final tapRecognizer = TapGestureRecognizer()
-                                ..onTapDown = (details) {
-                                  _lastTapPosition = details.globalPosition;
-                                  _currentSelectionPathData = notePathData;
-                                }
-                                ..onTap = () {
-                                  _handleElementTap(
-                                    _convertPathToString(notePath),
-                                    notePathData.label,
-                                  );
-                                  // 检测双击
-                                  final now = DateTime.now();
-                                  final isDoubleTap =
-                                      _lastTapTime != null &&
-                                      now.difference(_lastTapTime!) <
-                                          const Duration(milliseconds: 300) &&
-                                      _lastTapButton == 0;
-                                  if (isDoubleTap && _lastTapPosition != null) {
-                                    Logger.d('双击触发', tag: 'DoubleTapWord');
-                                    _handleDoubleTapOnText(
-                                      _lastTapPosition!,
-                                      note,
-                                      noteStyle,
-                                      GlobalKey(),
-                                      context,
-                                    );
-                                    _lastTapTime = null;
-                                    _lastTapButton = null;
-                                    _lastTapPosition = null;
-                                  } else {
-                                    _lastTapTime = now;
-                                    _lastTapButton = 0;
-                                  }
-                                };
-
-                              final secondaryTapRecognizer =
-                                  _SecondaryTapGestureRecognizer()
-                                    ..onSecondaryTapUp = (details) {
-                                      Logger.d(
-                                        'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
-                                        tag:
-                                            'ComponentRenderer._buildPronunciations',
-                                      );
-                                      _lastTapPosition = details.globalPosition;
-                                      _handleElementSecondaryTap(
-                                        _convertPathToString(notePath),
-                                        notePathData.label,
-                                        context,
-                                        details.globalPosition,
-                                      );
-                                    };
-
-                              _recognizers.addAll([
-                                tapRecognizer,
-                                secondaryTapRecognizer,
-                              ]);
-
-                              final recognizer = _MultiGestureRecognizer(
-                                tapRecognizer: tapRecognizer,
-                                secondaryTapRecognizer: secondaryTapRecognizer,
-                                longPressRecognizer: null,
-                                doubleTapRecognizer: null,
-                              );
-
-                              final result = _parseFormattedText(
-                                note,
-                                noteStyle,
-                                context: context,
-                                path: notePath,
-                                elementType: DictElementType.example,
-                                recognizer: recognizer,
-                                mouseCursor: SystemMouseCursors.text,
-                                onShowMenu: (position, text) {
-                                  _handleElementSecondaryTap(
-                                    _convertPathToString(notePath),
-                                    notePathData.label,
-                                    context,
-                                    position,
-                                  );
-                                },
-                                onDoubleTapWord: (word, position) {
-                                  _performDoubleTapSearch(word, context);
-                                },
-                              );
-
-                              return _HighlightWrapper(
-                                isHighlighting: _isHighlighting(
-                                  _convertPathToString(notePath),
-                                ),
-                                child: _TappableWrapper(
-                                  pathData: notePathData,
-                                  child: Text.rich(
-                                    TextSpan(children: result.spans),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ],
+              // 如果是单个对象，直接使用当前 context；否则添加索引路径段
+              return indexKey == null
+                  ? _buildPronunciationItem(
+                      context,
+                      region,
+                      notation,
+                      audioFile,
+                      note,
+                      entry.dictId,
+                    )
+                  : PathScope.append(
+                      context,
+                      key: indexKey,
+                      child: Builder(
+                        builder: (context) {
+                          return _buildPronunciationItem(
+                            context,
+                            region,
+                            notation,
+                            audioFile,
+                            note,
+                            entry.dictId,
+                          );
+                        },
+                      ),
                     );
-                  },
-                ),
-              );
             }).toList(),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildPronunciationItem(
+    BuildContext context,
+    String region,
+    String notation,
+    String audioFile,
+    String note,
+    String? dictId,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final path = PathScope.of(context);
+    final pathData = _PathData(path, 'Pronunciation');
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: GestureDetector(
+            onSecondaryTapUp: (details) {
+              _lastTapPosition = details.globalPosition;
+              _handleElementSecondaryTap(
+                _convertPathToString(path),
+                pathData.label,
+                context,
+                details.globalPosition,
+              );
+            },
+            child: InkWell(
+              onTap: audioFile.isNotEmpty
+                  ? () {
+                      _playAudio(dictId ?? '', audioFile);
+                    }
+                  : null,
+              onLongPress: () {
+                _handleElementSecondaryTap(
+                  _convertPathToString(path),
+                  pathData.label,
+                  context,
+                  Offset.zero,
+                );
+              },
+              borderRadius: BorderRadius.circular(12),
+              splashColor: audioFile.isNotEmpty
+                  ? colorScheme.primary.withValues(alpha: 0.1)
+                  : null,
+              mouseCursor: audioFile.isNotEmpty
+                  ? SystemMouseCursors.click
+                  : SystemMouseCursors.basic,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: audioFile.isNotEmpty
+                      ? colorScheme.surfaceContainerHighest
+                      : null,
+                  borderRadius: BorderRadius.circular(12),
+                  border: audioFile.isNotEmpty
+                      ? null
+                      : Border.all(
+                          color: colorScheme.outlineVariant,
+                          width: 1,
+                        ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (region.isNotEmpty)
+                      PathScope.append(
+                        context,
+                        key: 'region',
+                        child: Builder(
+                          builder: (context) {
+                            return _buildPronunciationRegionElement(
+                              context,
+                              region,
+                              hasAudio: audioFile.isNotEmpty,
+                            );
+                          },
+                        ),
+                      ),
+                    if (notation.isNotEmpty)
+                      PathScope.append(
+                        context,
+                        key: 'notation',
+                        child: Builder(
+                          builder: (context) {
+                            return _buildPronunciationPhoneticElement(
+                              context,
+                              notation,
+                              hasAudio: audioFile.isNotEmpty,
+                            );
+                          },
+                        ),
+                      ),
+                    if (audioFile.isNotEmpty) ...[
+                      const SizedBox(width: 5),
+                      Icon(
+                        Icons.volume_up,
+                        size: 13,
+                        color: colorScheme.primary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (note.isNotEmpty) ...[
+          const SizedBox(width: 6),
+          Builder(
+            builder: (context) {
+              // 使用已修正的 path 作为基础，添加 'note' 键
+              final notePath = [...path, 'note'];
+              final notePathData = _PathData(
+                notePath,
+                'Pronunciation Note',
+              );
+
+              // 创建手势识别器以支持双击查词和右键菜单
+              final noteStyle = DictTypography.getBaseStyle(
+                DictElementType.example,
+                color: colorScheme.onSurfaceVariant,
+              );
+
+              final tapRecognizer = TapGestureRecognizer()
+                ..onTapDown = (details) {
+                  _lastTapPosition = details.globalPosition;
+                  _currentSelectionPathData = notePathData;
+                }
+                ..onTap = () {
+                  _handleElementTap(
+                    _convertPathToString(notePath),
+                    notePathData.label,
+                  );
+                  // 检测双击
+                  final now = DateTime.now();
+                  final isDoubleTap =
+                      _lastTapTime != null &&
+                      now.difference(_lastTapTime!) <
+                          const Duration(milliseconds: 300) &&
+                      _lastTapButton == 0;
+                  if (isDoubleTap && _lastTapPosition != null) {
+                    Logger.d('双击触发', tag: 'DoubleTapWord');
+                    _handleDoubleTapOnText(
+                      _lastTapPosition!,
+                      note,
+                      noteStyle,
+                      GlobalKey(),
+                      context,
+                    );
+                    _lastTapTime = null;
+                    _lastTapButton = null;
+                    _lastTapPosition = null;
+                  } else {
+                    _lastTapTime = now;
+                    _lastTapButton = 0;
+                  }
+                };
+
+              final secondaryTapRecognizer =
+                  _SecondaryTapGestureRecognizer()
+                    ..onSecondaryTapUp = (details) {
+                      Logger.d(
+                        'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
+                        tag:
+                            'ComponentRenderer._buildPronunciations',
+                      );
+                      _lastTapPosition = details.globalPosition;
+                      _handleElementSecondaryTap(
+                        _convertPathToString(notePath),
+                        notePathData.label,
+                        context,
+                        details.globalPosition,
+                      );
+                    };
+
+              _recognizers.addAll([
+                tapRecognizer,
+                secondaryTapRecognizer,
+              ]);
+
+              final recognizer = _MultiGestureRecognizer(
+                tapRecognizer: tapRecognizer,
+                secondaryTapRecognizer: secondaryTapRecognizer,
+                longPressRecognizer: null,
+                doubleTapRecognizer: null,
+              );
+
+              final result = _parseFormattedText(
+                note,
+                noteStyle,
+                context: context,
+                path: notePath,
+                elementType: DictElementType.example,
+                recognizer: recognizer,
+                mouseCursor: SystemMouseCursors.text,
+                onShowMenu: (position, text) {
+                  _handleElementSecondaryTap(
+                    _convertPathToString(notePath),
+                    notePathData.label,
+                    context,
+                    position,
+                  );
+                },
+                onDoubleTapWord: (word, position) {
+                  _performDoubleTapSearch(word, context);
+                },
+              );
+
+              return _HighlightWrapper(
+                isHighlighting: _isHighlighting(
+                  _convertPathToString(notePath),
+                ),
+                child: _TappableWrapper(
+                  pathData: notePathData,
+                  child: Text.rich(
+                    TextSpan(children: result.spans),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ],
     );
   }
 
@@ -8253,6 +8401,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     'image': 'image',
     'clob': 'clob',
     'text': 'text',
+    'table': 'table',
   };
 
   Widget _buildStringListAsRow(
@@ -8480,13 +8629,29 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // 2. 如果key是数字，表明value是list中的一个元素
     if (isNumericKey) {
-      // 2.1 如果value是一个list<string>，则使用_buildStringListAsRow渲染value
+      // 2.1 如果value是一个Map，迭代渲染其中的每个键值对
+      if (value is Map<String, dynamic>) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: value.entries.map((entry) {
+            final itemPath = [...path, entry.key];
+            return renderJsonElement(
+              context,
+              entry.key,
+              entry.value,
+              itemPath,
+              forceNested: forceNested,
+            );
+          }).toList(),
+        );
+      }
+      // 2.2 如果value是一个list<string>，则使用_buildStringListAsRow渲染value
       if (value is List &&
           value.isNotEmpty &&
           value.every((e) => e is String)) {
         return _buildStringListAsRow(context, value.cast<String>(), path);
       }
-      // 2.2 如果value是一个list<list>，则迭代调用renderJsonElement自身渲染value中的每一个子list
+      // 2.3 如果value是一个list<list>，则迭代调用renderJsonElement自身渲染value中的每一个子list
       if (value is List && value.isNotEmpty && value.every((e) => e is List)) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -8618,6 +8783,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         return _buildClobContent(context, value, path);
       case 'text':
         return _buildTextContent(context, value, path);
+      case 'table':
+        return _buildTable(context, value, path);
       default:
         return const SizedBox.shrink();
     }
