@@ -116,7 +116,7 @@ python build_dictionary.py <jsonl_path> <lang> [options]
 | 参数         | 说明                      | 默认值 |
 | ------------ | ------------------------- | ------ |
 | `jsonl_path` | JSONL 文件路径            | -      |
-| `lang`       | 语言代码（如 zh, ja, en） | -      |
+| `lang`       | 语言代码（如 zh, jp, en） | -      |
 
 #### 可选参数
 
@@ -134,7 +134,7 @@ python build_dictionary.py <jsonl_path> <lang> [options]
 
 ```bash
 # 基础用法：仅生成词典数据库
-python auxi_tools/build_dictionary.py data/entries.jsonl ja
+python auxi_tools/build_dictionary.py data/entries.jsonl en
 
 # 自定义压缩参数
 python auxi_tools/build_dictionary.py data/entries.jsonl zh \
@@ -142,7 +142,7 @@ python auxi_tools/build_dictionary.py data/entries.jsonl zh \
     --compress-level 9
 
 # 完整用法：包含媒体资源和分组
-python auxi_tools/build_dictionary.py data/entries.jsonl ja \
+python auxi_tools/build_dictionary.py data/entries.jsonl zh-hant \
     --audio-dir data/audio \
     --image-dir data/image \
     --groups data/groups.jsonl \
@@ -200,7 +200,7 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
     "data": {
         "key1": {},
         "key2": {},
-    }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。value一定要是map，data可以放在词典的任何地方
+    }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。**value一定要是map**，data可以放在词典的任何地方
     "customKey": {}, //除了规范里给定的键值外，还可以添加自定义键值，这会被渲染为board元素。board标题为customKey，customKey对应的值需要是一个map，map里的键值对会被渲染为board的内容。
     "table": {
         "column": ["id", "姓名", "职位"],

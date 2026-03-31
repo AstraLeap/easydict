@@ -17,6 +17,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
   onNavigateToEntry;
   final double maxHeight; // 最大高度，传入屏幕高度的 70%
   final void Function(bool isOverflow)? onOverflowChanged; // 溢出状态变化回调
+  final void Function(String dictId)? onExpandDictionary; // 展开词典回调
 
   const DictionaryNavigationPanel({
     super.key,
@@ -27,6 +28,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
     this.onNavigateToEntry,
     this.maxHeight = double.infinity,
     this.onOverflowChanged,
+    this.onExpandDictionary,
   });
 
   @override
@@ -80,6 +82,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   final GlobalKey _navPanelKey = GlobalKey();
   final LayerLink _layerLink = LayerLink();
   final LayerLink _directoryLayerLink = LayerLink();
+  final GlobalKey _sectionButtonKey = GlobalKey(); // 用于获取选中 section 按钮的位置
   OverlayEntry? _overlayEntry;
   OverlayEntry? _directoryOverlayEntry;
 
@@ -123,6 +126,23 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           }
         });
       }
+    }
+
+    // 当导航栏位置变化时（父组件重建），延迟更新 Overlay 以重新计算遮罩位置
+    // 必须使用 addPostFrameCallback 避免在 build 阶段调用 markNeedsBuild
+    if (_isDirectoryExpanded && _directoryOverlayEntry != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _directoryOverlayEntry != null) {
+          _directoryOverlayEntry!.markNeedsBuild();
+        }
+      });
+    }
+    if (_isPageListExpanded && _overlayEntry != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _overlayEntry != null) {
+          _overlayEntry!.markNeedsBuild();
+        }
+      });
     }
   }
 
@@ -219,6 +239,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         }
 
         return Stack(
+          fit: StackFit.passthrough,
+          clipBehavior: Clip.none,
           children: [
             // 左侧主内容区域的遮罩
             Positioned(
@@ -290,13 +312,15 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   }
 
   OverlayEntry _createDirectoryOverlayEntry(PageGroup page, int sectionIndex) {
-    const offset = Offset(-12, 0);
     const navBarWidth = 52.0;
+    const leftOffset = 22.0; // 目录列表左边距离导航栏右侧的距离
+    const bottomMargin = 72.0; // 底部工具栏高度（与导航栏一致）
 
     return OverlayEntry(
       builder: (context) {
         final screenWidth = MediaQuery.of(context).size.width;
         final screenHeight = MediaQuery.of(context).size.height;
+        final topPadding = MediaQuery.of(context).padding.top; // 状态栏高度（与导航栏一致）
         final isMobile = screenWidth < 600;
         final directoryWidth = isMobile ? 260.0 : 300.0;
 
@@ -315,62 +339,43 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           // 如果获取失败，使用默认值
         }
 
-        return Stack(
-          children: [
-            // 左侧主内容区域的遮罩
-            Positioned(
-              left: 0,
-              top: 0,
-              width: screenWidth - navBarWidth,
-              height: screenHeight,
-              child: GestureDetector(
-                onTap: _closeDirectory,
-                onSecondaryTap: _closeDirectory,
-                behavior: HitTestBehavior.opaque,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            // 右侧导航栏上方区域的遮罩
-            if (navTop > 0)
-              Positioned(
-                right: 0,
-                top: 0,
-                width: navBarWidth,
-                height: navTop,
-                child: GestureDetector(
-                  onTap: _closeDirectory,
-                  onSecondaryTap: _closeDirectory,
-                  behavior: HitTestBehavior.opaque,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            // 右侧导航栏下方区域的遮罩
-            if (navBottom < screenHeight)
-              Positioned(
-                right: 0,
-                top: navBottom,
-                width: navBarWidth,
-                height: screenHeight - navBottom,
-                child: GestureDetector(
-                  onTap: _closeDirectory,
-                  onSecondaryTap: _closeDirectory,
-                  behavior: HitTestBehavior.opaque,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            // 目录列表
-            Positioned(
-              width: directoryWidth,
-              child: CompositedTransformFollower(
-                link: _directoryLayerLink,
-                showWhenUnlinked: false,
-                targetAnchor: Alignment.centerLeft,
-                followerAnchor: Alignment.centerRight,
-                offset: offset,
-                child: _buildDirectoryBubble(context, page, sectionIndex),
-              ),
-            ),
-          ],
+        // 获取 section 按钮的位置（用于目录列表定位）
+        double sectionCenterY = screenHeight / 2;
+        try {
+          final renderBox =
+              _sectionButtonKey.currentContext?.findRenderObject()
+                  as RenderBox?;
+          if (renderBox != null && renderBox.hasSize) {
+            final position = renderBox.localToGlobal(Offset.zero);
+            // section 按钮的垂直中心位置
+            sectionCenterY = position.dy + renderBox.size.height / 2;
+          }
+        } catch (e) {
+          // 如果获取失败，使用默认值
+        }
+
+        // 计算目录列表的水平位置
+        // 目录列表右边缘距离导航栏右侧 leftOffset 像素
+        final directoryLeft =
+            screenWidth - navBarWidth - leftOffset - directoryWidth;
+
+        // 计算目录列表的边界（与导航栏一致：顶部到状态栏，底部到工具栏顶部）
+        final minTop = topPadding;
+        final maxBottom = screenHeight - bottomMargin;
+
+        return _DirectoryOverlayContent(
+          directoryLeft: directoryLeft,
+          directoryWidth: directoryWidth,
+          sectionCenterY: sectionCenterY,
+          minTop: minTop,
+          maxBottom: maxBottom,
+          navTop: navTop,
+          navBottom: navBottom,
+          navBarWidth: navBarWidth,
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+          onClose: _closeDirectory,
+          bubbleChild: _buildDirectoryBubble(context, page, sectionIndex),
         );
       },
     );
@@ -473,7 +478,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         // 获取 ListView 的实际内容高度（通过 ScrollController）
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_mainScrollController.hasClients) {
-            final contentHeight = _mainScrollController.position.maxScrollExtent +
+            final contentHeight =
+                _mainScrollController.position.maxScrollExtent +
                 _mainScrollController.position.viewportDimension;
             final isOverflow = contentHeight > widget.maxHeight;
 
@@ -493,7 +499,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         // 获取内容高度
         double contentHeight = constraints.maxHeight;
         if (_mainScrollController.hasClients) {
-          contentHeight = _mainScrollController.position.maxScrollExtent +
+          contentHeight =
+              _mainScrollController.position.maxScrollExtent +
               _mainScrollController.position.viewportDimension;
         }
 
@@ -683,56 +690,36 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          constraints: const BoxConstraints(maxHeight: 400),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: colorScheme.shadow.withOpacity(0.1),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-            border: Border.all(
-              color: colorScheme.outlineVariant.withOpacity(0.5),
-              width: 1,
-            ),
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 400),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-          child: Material(
-            color: Colors.transparent,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _buildDirectoryItems(context, page),
-                ),
-              ),
+        ],
+        border: Border.all(
+          color: colorScheme.outlineVariant.withOpacity(0.5),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: _buildDirectoryItems(context, page),
             ),
           ),
         ),
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Transform.translate(
-              offset: const Offset(8, 0),
-              child: CustomPaint(
-                painter: _ArrowPainter(
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
-                  borderColor: colorScheme.outlineVariant.withOpacity(0.5),
-                ),
-                size: const Size(8, 16),
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1193,7 +1180,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     if (isSelected && dictId == widget.entryGroup.currentDictionaryId) {
       return CompositedTransformTarget(
         link: _directoryLayerLink,
-        child: sectionWidget,
+        child: Container(key: _sectionButtonKey, child: sectionWidget),
       );
     }
 
@@ -1205,6 +1192,9 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     for (int i = 0; i < widget.entryGroup.dictionaryGroups.length; i++) {
       if (widget.entryGroup.dictionaryGroups[i].dictionaryId ==
           dict.dictionaryId) {
+        // 先展开词典（如果处于折叠状态）
+        widget.onExpandDictionary?.call(dict.dictionaryId);
+
         widget.entryGroup.setCurrentDictionaryIndex(i);
         widget.entryGroup.dictionaryGroups[i].setCurrentPageIndex(0);
         widget.entryGroup.dictionaryGroups[i].setCurrentSectionIndex(0);
@@ -1337,6 +1327,9 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           isCrossDictionary = true;
         }
 
+        // 先展开词典（如果处于折叠状态）
+        widget.onExpandDictionary?.call(dictId);
+
         widget.entryGroup.setCurrentDictionaryIndex(i);
 
         final dict = widget.entryGroup.dictionaryGroups[i];
@@ -1437,5 +1430,268 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         }
       });
     }
+  }
+}
+
+/// 目录列表定位组件
+/// 自动测量目录列表高度，并使其与 section 按钮垂直居中对齐
+/// 仅在空间不足时调整位置
+class _DirectoryBubblePositioner extends StatefulWidget {
+  final double left;
+  final double width;
+  final double sectionCenterY;
+  final double minTop;
+  final double maxBottom;
+  final void Function(double top, double height)? onPositioned;
+  final Widget child;
+
+  const _DirectoryBubblePositioner({
+    required this.left,
+    required this.width,
+    required this.sectionCenterY,
+    required this.minTop,
+    required this.maxBottom,
+    this.onPositioned,
+    required this.child,
+  });
+
+  @override
+  State<_DirectoryBubblePositioner> createState() =>
+      _DirectoryBubblePositionerState();
+}
+
+class _DirectoryBubblePositionerState
+    extends State<_DirectoryBubblePositioner> {
+  final GlobalKey _childKey = GlobalKey();
+  double? _bubbleHeight;
+
+  @override
+  void initState() {
+    super.initState();
+    // 在第一帧后获取高度
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureHeight();
+    });
+  }
+
+  void _measureHeight() {
+    final renderBox =
+        _childKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null && renderBox.hasSize) {
+      final newHeight = renderBox.size.height;
+      if (_bubbleHeight != newHeight) {
+        setState(() {
+          _bubbleHeight = newHeight;
+        });
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(_DirectoryBubblePositioner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 当参数变化时重新测量
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureHeight();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // 使用已知高度或默认高度计算位置
+    final bubbleHeight = _bubbleHeight ?? 200.0;
+
+    // 理想位置：目录列表中心与 section 按钮中心对齐
+    final idealTop = widget.sectionCenterY - bubbleHeight / 2;
+    final idealBottom = idealTop + bubbleHeight;
+
+    double top = idealTop;
+
+    // 仅在空间不足时调整
+    if (idealTop < widget.minTop) {
+      // 上方空间不够，向下调整
+      top = widget.minTop;
+    } else if (idealBottom > widget.maxBottom) {
+      // 下方空间不够，向上调整
+      top = widget.maxBottom - bubbleHeight;
+      // 确保不会超出顶部
+      if (top < widget.minTop) {
+        top = widget.minTop;
+      }
+    }
+
+    // 通知父组件当前的位置和高度
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onPositioned?.call(top, bubbleHeight);
+    });
+
+    // 箭头始终与 section 按钮垂直对齐
+    final arrowY = widget.sectionCenterY - top;
+
+    return Positioned(
+      left: widget.left,
+      top: top,
+      width: widget.width,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(key: _childKey, child: widget.child),
+          // 箭头：始终与 section 按钮垂直对齐
+          Positioned(
+            right: -8, // 向右偏移，使箭头位于目录列表右边
+            top: arrowY - 8, // 8 是箭头高度的一半，使箭头中心对齐
+            child: CustomPaint(
+              painter: _ArrowPainter(
+                color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
+                borderColor: colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+              size: const Size(8, 16), // 增大箭头尺寸
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 目录列表 Overlay 内容容器
+/// 管理目录列表的位置和遮罩
+class _DirectoryOverlayContent extends StatefulWidget {
+  final double directoryLeft;
+  final double directoryWidth;
+  final double sectionCenterY;
+  final double minTop;
+  final double maxBottom;
+  final double navTop;
+  final double navBottom;
+  final double navBarWidth;
+  final double screenWidth;
+  final double screenHeight;
+  final VoidCallback onClose;
+  final Widget bubbleChild;
+
+  const _DirectoryOverlayContent({
+    required this.directoryLeft,
+    required this.directoryWidth,
+    required this.sectionCenterY,
+    required this.minTop,
+    required this.maxBottom,
+    required this.navTop,
+    required this.navBottom,
+    required this.navBarWidth,
+    required this.screenWidth,
+    required this.screenHeight,
+    required this.onClose,
+    required this.bubbleChild,
+  });
+
+  @override
+  State<_DirectoryOverlayContent> createState() =>
+      _DirectoryOverlayContentState();
+}
+
+class _DirectoryOverlayContentState extends State<_DirectoryOverlayContent> {
+  double? _bubbleTop;
+  double? _bubbleHeight;
+
+  void _onBubblePositioned(double top, double height) {
+    if (_bubbleTop != top || _bubbleHeight != height) {
+      setState(() {
+        _bubbleTop = top;
+        _bubbleHeight = height;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      clipBehavior: Clip.none,
+      children: [
+        // 左侧主内容区域的遮罩（不包括目录列表区域）
+        Positioned(
+          left: 0,
+          top: 0,
+          width: widget.directoryLeft.clamp(0.0, widget.screenWidth),
+          height: widget.screenHeight,
+          child: GestureDetector(
+            onTap: widget.onClose,
+            onSecondaryTap: widget.onClose,
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox.expand(),
+          ),
+        ),
+        // 右侧导航栏上方区域的遮罩
+        if (widget.navTop > 0)
+          Positioned(
+            right: 0,
+            top: 0,
+            width: widget.navBarWidth,
+            height: widget.navTop,
+            child: GestureDetector(
+              onTap: widget.onClose,
+              onSecondaryTap: widget.onClose,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        // 右侧导航栏下方区域的遮罩
+        if (widget.navBottom < widget.screenHeight)
+          Positioned(
+            right: 0,
+            top: widget.navBottom,
+            width: widget.navBarWidth,
+            height: widget.screenHeight - widget.navBottom,
+            child: GestureDetector(
+              onTap: widget.onClose,
+              onSecondaryTap: widget.onClose,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        // 目录列表上方的遮罩（目录列表区域上方）
+        if (_bubbleTop != null &&
+            _bubbleHeight != null &&
+            _bubbleTop! > widget.minTop)
+          Positioned(
+            left: widget.directoryLeft,
+            top: widget.minTop,
+            width: widget.directoryWidth,
+            height: _bubbleTop! - widget.minTop,
+            child: GestureDetector(
+              onTap: widget.onClose,
+              onSecondaryTap: widget.onClose,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        // 目录列表下方的遮罩（目录列表区域下方）
+        if (_bubbleTop != null && _bubbleHeight != null)
+          Positioned(
+            left: widget.directoryLeft,
+            top: _bubbleTop! + _bubbleHeight!,
+            width: widget.directoryWidth,
+            height: widget.maxBottom - _bubbleTop! - _bubbleHeight!,
+            child: GestureDetector(
+              onTap: widget.onClose,
+              onSecondaryTap: widget.onClose,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        // 目录列表
+        _DirectoryBubblePositioner(
+          left: widget.directoryLeft,
+          width: widget.directoryWidth,
+          sectionCenterY: widget.sectionCenterY,
+          minTop: widget.minTop,
+          maxBottom: widget.maxBottom,
+          onPositioned: _onBubblePositioned,
+          child: widget.bubbleChild,
+        ),
+      ],
+    );
   }
 }

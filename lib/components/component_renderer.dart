@@ -27,6 +27,7 @@ import 'rendering/formatted_text_parser.dart'
 import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
+import '../core/utils/responsive_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
@@ -6507,9 +6508,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ? [...basePath, labelPrefix, fieldName]
         : [...basePath, fieldName];
 
-    // 渲染值部分 - 使用 CustomDecoratedText 包装以支持自定义虚线装饰
+    // 渲染值部分 - 使用原生下划线装饰
     if (value is List) {
-      // 数组：逐个元素渲染，每个元素有独立的 Text.rich 以支持双击查词
+      // 数组：逐个元素渲染，每个元素有独立的样式以支持点击查词
       for (int i = 0; i < value.length; i++) {
         if (i > 0) {
           spans.add(TextSpan(text: ', ', style: textStyle));
@@ -6549,33 +6550,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
           doubleTapRecognizer: null,
         );
 
-        // 使用 CustomDecoratedText 包装以支持自定义虚线装饰
+        // 使用原生下划线装饰
         spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: CustomDecoratedText(
-              text: itemText,
-              style: textStyle,
-              decorationType: CustomDecorationType.dashed,
+          TextSpan(
+            text: itemText,
+            style: textStyle.copyWith(
+              decoration: TextDecoration.underline,
               decorationColor: color,
-              recognizer: recognizer,
-              mouseCursor: SystemMouseCursors.click,
-              onTap: () {
-                widget.onElementTap?.call('lookup:$itemText', itemText);
-              },
-              onShowMenu: (position, text) {
-                _handleElementSecondaryTap(
-                  _convertPathToString(itemPath),
-                  text,
-                  context,
-                  position,
-                );
-              },
-              onDoubleTapWord: (word, position) {
-                _performDoubleTapSearch(word, context);
-              },
             ),
+            recognizer: recognizer,
+            mouseCursor: SystemMouseCursors.click,
           ),
         );
       }
@@ -6613,33 +6597,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
         doubleTapRecognizer: null,
       );
 
-      // 使用 CustomDecoratedText 包装以支持自定义虚线装饰
+      // 使用原生下划线装饰
       spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.baseline,
-          baseline: TextBaseline.alphabetic,
-          child: CustomDecoratedText(
-            text: itemText,
-            style: textStyle,
-            decorationType: CustomDecorationType.dashed,
+        TextSpan(
+          text: itemText,
+          style: textStyle.copyWith(
+            decoration: TextDecoration.underline,
             decorationColor: color,
-            recognizer: recognizer,
-            mouseCursor: SystemMouseCursors.click,
-            onTap: () {
-              widget.onElementTap?.call('lookup:$itemText', itemText);
-            },
-            onShowMenu: (position, text) {
-              _handleElementSecondaryTap(
-                _convertPathToString(fieldPath),
-                text,
-                context,
-                position,
-              );
-            },
-            onDoubleTapWord: (word, position) {
-              _performDoubleTapSearch(word, context);
-            },
           ),
+          recognizer: recognizer,
+          mouseCursor: SystemMouseCursors.click,
         ),
       );
     }
@@ -7252,7 +7219,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     bool isSubsense = false,
   }) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final senseLeftIndent = screenWidth > 600 ? 30.0 : (screenWidth * 0.06);
+    final senseLeftIndent = responsiveValue(
+      screenWidth: screenWidth,
+      minWidth: 400,
+      maxWidth: 900,
+      minValue: 20,
+      maxValue: 40,
+    );
 
     final labelRaw = sense['label'];
     // label 既可以是单个 map，也可以是 map list
@@ -8910,21 +8883,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   // 缩略图尺寸常量
-  static const double _thumbnailBaseSize = 100.0;
-  static const double _thumbnailMaxSize = 200.0; // 最大为原始的2倍
-
   // 图片尺寸缓存
   static final Map<String, Size> _dimensionCache = {};
-
-  // 计算响应式缩略图高度
-  static double _calculateThumbnailHeight(double containerWidth) {
-    // 基础：400px 窗口宽度 = 100px 缩略图
-    // 每增加 100px 窗口宽度，缩略图增大 25px
-    // 最大：200px
-    const baseWidth = 400.0;
-    final size = _thumbnailBaseSize + (containerWidth - baseWidth) * 0.25;
-    return size.clamp(_thumbnailBaseSize, _thumbnailMaxSize);
-  }
 
   // 获取图片真实尺寸
   static Future<Size?> _getImageDimensions(
@@ -8978,7 +8938,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
   ) {
     // 使用 MediaQuery 获取窗口宽度，确保响应式调整
     final windowWidth = MediaQuery.of(context).size.width;
-    final thumbnailHeight = _calculateThumbnailHeight(windowWidth);
+    final thumbnailHeight = responsiveValue(
+      screenWidth: windowWidth,
+      minWidth: 400,
+      maxWidth: 900,
+      minValue: 100,
+      maxValue: 175,
+    );
 
     if (isSvg) {
       final svgString = String.fromCharCodes(imageBytes);
@@ -9124,79 +9090,128 @@ class ComponentRendererState extends State<ComponentRenderer> {
     showDialog(
       context: context,
       builder: (context) {
-        final screenSize = MediaQuery.of(context).size;
-        final padding = 16.0;
-        final maxWidth = screenSize.width - padding * 2;
-        final maxHeight = screenSize.height - padding * 2;
-
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: EdgeInsets.zero,
-          child: Stack(
-            children: [
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: screenSize.width,
-                  height: screenSize.height,
-                  color: Colors.transparent,
-                ),
-              ),
-              Center(
-                child: Container(
-                  padding: EdgeInsets.all(padding),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: maxWidth,
-                      maxHeight: maxHeight,
-                    ),
-                    child: GestureDetector(
-                      onTap: () {},
-                      child: InteractiveViewer(
-                        maxScale: 5.0,
-                        minScale: 0.5,
-                        constrained: true,
-                        child: Builder(
-                          builder: (context) {
-                            if (isSvg && displaySvg != null) {
-                              if (displayImageBytes != null) {
-                                return Image.memory(
-                                  displayImageBytes,
-                                  fit: BoxFit.contain,
-                                );
-                              }
-                              return SvgPicture.string(
-                                displaySvg,
-                                fit: BoxFit.contain,
-                                allowDrawingOutsideViewBox: true,
-                                clipBehavior: Clip.none,
-                                placeholderBuilder: (context) {
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
-                                  );
-                                },
-                              );
-                            } else {
-                              return Image.memory(
-                                imageBytes,
-                                fit: BoxFit.contain,
-                              );
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        return _ImageViewerDialog(
+          imageBytes: displayImageBytes ?? imageBytes,
+          svgString: displayImageBytes != null ? null : displaySvg,
         );
       },
+    );
+  }
+}
+
+/// 图片查看器对话框
+class _ImageViewerDialog extends StatefulWidget {
+  final Uint8List imageBytes;
+  final String? svgString;
+
+  const _ImageViewerDialog({
+    required this.imageBytes,
+    this.svgString,
+  });
+
+  @override
+  State<_ImageViewerDialog> createState() => _ImageViewerDialogState();
+}
+
+class _ImageViewerDialogState extends State<_ImageViewerDialog> {
+  final TransformationController _transformController =
+      TransformationController();
+  Size? _imageSize;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImageDimensions();
+  }
+
+  Future<void> _loadImageDimensions() async {
+    try {
+      final codec = await instantiateImageCodec(widget.imageBytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      setState(() {
+        _imageSize = Size(image.width.toDouble(), image.height.toDouble());
+        _isLoading = false;
+      });
+      image.dispose();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _transformController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final padding = 32.0;
+    final availableSize = Size(
+      screenSize.width - padding * 2,
+      screenSize.height - padding * 2,
+    );
+
+    // 计算图片初始显示尺寸：保持比例，尽可能占满宽度或高度
+    double? displayWidth;
+    double? displayHeight;
+    if (_imageSize != null) {
+      final aspectRatio = _imageSize!.width / _imageSize!.height;
+      final screenAspectRatio = availableSize.width / availableSize.height;
+
+      if (aspectRatio > screenAspectRatio) {
+        // 图片更宽，以宽度为准
+        displayWidth = availableSize.width;
+        displayHeight = displayWidth / aspectRatio;
+      } else {
+        // 图片更高，以高度为准
+        displayHeight = availableSize.height;
+        displayWidth = displayHeight * aspectRatio;
+      }
+    }
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.zero,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Container(
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: _isLoading
+              ? CircularProgressIndicator(
+                  color: Theme.of(context).colorScheme.primary,
+                )
+              : InteractiveViewer(
+                  transformationController: _transformController,
+                  maxScale: 5.0,
+                  minScale: 0.5,
+                  constrained: true,
+                  clipBehavior: Clip.none,
+                  boundaryMargin: const EdgeInsets.all(double.infinity),
+                  child: widget.svgString != null
+                      ? SvgPicture.string(
+                          widget.svgString!,
+                          width: displayWidth,
+                          height: displayHeight,
+                          fit: BoxFit.contain,
+                          allowDrawingOutsideViewBox: true,
+                          clipBehavior: Clip.none,
+                        )
+                      : Image.memory(
+                          widget.imageBytes,
+                          width: displayWidth,
+                          height: displayHeight,
+                          fit: BoxFit.contain,
+                        ),
+                ),
+        ),
+      ),
     );
   }
 }
@@ -9528,45 +9543,53 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
             );
           }).toList(),
         ),
-        if (_selectedIndex != null)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            width: double.infinity,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: widget.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Builder(
-              builder: (context) {
-                final selectedKey = widget.keys[_selectedIndex!];
-                final selectedValue = widget.value[selectedKey];
-
-                return Container(
+        // 使用 AnimatedSize 实现展开/收起动画
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: _selectedIndex != null
+              ? Container(
+                  margin: const EdgeInsets.only(top: 8),
                   width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  child: selectedValue is Map<String, dynamic>
-                      ? widget.contentBuilder(selectedValue, [
-                          ...widget.path,
-                          selectedKey,
-                        ])
-                      : selectedValue is List<dynamic>
-                      ? widget.contentBuilder(
-                          {selectedKey: selectedValue},
-                          [...widget.path, selectedKey],
-                        )
-                      : Text(
-                          selectedValue?.toString() ?? '',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: widget.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                );
-              },
-            ),
-          ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: widget.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Builder(
+                    key: ValueKey(_selectedIndex),
+                    builder: (context) {
+                      final selectedKey = widget.keys[_selectedIndex!];
+                      final selectedValue = widget.value[selectedKey];
+
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        child: selectedValue is Map<String, dynamic>
+                            ? widget.contentBuilder(selectedValue, [
+                                ...widget.path,
+                                selectedKey,
+                              ])
+                            : selectedValue is List<dynamic>
+                            ? widget.contentBuilder(
+                                {selectedKey: selectedValue},
+                                [...widget.path, selectedKey],
+                              )
+                            : Text(
+                                selectedValue?.toString() ?? '',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: widget.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                      );
+                    },
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
       ],
     );
   }

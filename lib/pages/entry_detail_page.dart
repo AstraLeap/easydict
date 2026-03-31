@@ -16,6 +16,7 @@ import '../components/dictionary_navigation_panel.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
 import '../core/utils/language_utils.dart';
+import '../core/utils/responsive_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../data/database_service.dart';
@@ -1749,6 +1750,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 initialDy: _navPanelDy,
                 navPanelKey: _navPanelKey,
                 navPanelVersionNotifier: _navPanelVersionNotifier,
+                onExpandDictionary: (dictId) {
+                  // 展开词典
+                  if (_collapsedDicts.contains(dictId)) {
+                    setState(() {
+                      _collapsedDicts.remove(dictId);
+                    });
+                  }
+                },
               ),
             // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
             if (_isSearchMode)
@@ -2320,19 +2329,18 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 根据屏幕宽度动态计算边距
+  ///
+  /// 采用三段式策略：宽度 ≤ 400 固定 4px，宽度 ≥ 900 固定 28px，中间线性插值
   EdgeInsets _getDynamicPadding(BuildContext context) {
-    // 使用 MediaQuery.sizeOf(context) 替代 MediaQuery.of(context).size
-    // 这样可以避免不必要的重建，但在这个场景下，我们更需要确保在布局过程中不直接依赖可能变化的 MediaQuery
-    // 或者将 Padding 计算移到 build 方法外部，或者使用 LayoutBuilder
     final screenWidth = MediaQuery.sizeOf(context).width;
-
-    if (screenWidth < 600) {
-      return const EdgeInsets.symmetric(horizontal: 2, vertical: 6);
-    } else if (screenWidth < 900) {
-      return const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
-    } else {
-      return const EdgeInsets.symmetric(horizontal: 24, vertical: 6);
-    }
+    final horizontalPadding = responsiveValue(
+      screenWidth: screenWidth,
+      minWidth: 400,
+      maxWidth: 900,
+      minValue: 4,
+      maxValue: 28,
+    );
+    return EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 6);
   }
 
   Widget _buildEntryContent(
