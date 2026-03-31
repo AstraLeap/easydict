@@ -1620,8 +1620,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Map<String, dynamic> value,
     List<String> path,
   ) {
-    final columns = value['columns'] as List<dynamic>?;
-    final data = value['data'] as List<dynamic>?;
+    final columns = value['column'] as List<dynamic>?;
+    final data = value['content'] as List<dynamic>?;
 
     if (columns == null || data == null) {
       return const SizedBox.shrink();
@@ -1683,10 +1683,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               ),
-              children: columns.map((col) {
+              children: columns.asMap().entries.map((entry) {
+                final colIndex = entry.key;
+                final col = entry.value;
+                final headerPath = [...path, 'column', '$colIndex'];
                 return Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Text(col, style: headerStyle),
+                  child: _buildTableCellText(
+                    context,
+                    col,
+                    headerPath,
+                    headerStyle,
+                    label: 'Table Header',
+                  ),
                 );
               }).toList(),
             ),
@@ -1696,7 +1705,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               final row = entry.value;
               return TableRow(
                 children: row.asMap().entries.map((cell) {
-                  final cellPath = [...path, '$rowIndex', '${cell.key}'];
+                  final cellPath = [...path, 'content', '$rowIndex', '${cell.key}'];
                   return Padding(
                     padding: const EdgeInsets.all(8),
                     child: _buildTableCell(
@@ -1723,16 +1732,98 @@ class ComponentRendererState extends State<ComponentRenderer> {
     TextStyle baseStyle,
   ) {
     if (value is String) {
-      return Text(value, style: baseStyle);
+      return _buildTableCellText(context, value, path, baseStyle);
     }
     if (value is num) {
-      return Text(value.toString(), style: baseStyle);
+      return _buildTableCellText(context, value.toString(), path, baseStyle);
     }
     if (value is Map<String, dynamic> || value is List) {
       // 嵌套内容递归渲染
       return renderJsonElement(context, 'cell', value, path);
     }
-    return Text(value?.toString() ?? '', style: baseStyle);
+    return _buildTableCellText(context, value?.toString() ?? '', path, baseStyle);
+  }
+
+  /// 构建表格单元格文本，支持双击查词和右键菜单
+  Widget _buildTableCellText(
+    BuildContext context,
+    String text,
+    List<String> path,
+    TextStyle style, {
+    String label = 'Table Cell',
+  }) {
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    final pathData = _PathData(path, label);
+    final textKey = GlobalKey();
+
+    // 创建手势识别器以支持点击和右键菜单
+    final tapRecognizer = TapGestureRecognizer()
+      ..onTapDown = (details) {
+        _lastTapPosition = details.globalPosition;
+        _currentSelectionPathData = pathData;
+      }
+      ..onTap = () {
+        // 单击立即生效
+        _handleElementTap(_convertPathToString(path), pathData.label);
+
+        // 检测双击
+        final now = DateTime.now();
+        final isDoubleTap =
+            _lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 300) &&
+            _lastTapButton == 0;
+
+        if (isDoubleTap && _lastTapPosition != null) {
+          Logger.d('Table cell 双击触发', tag: 'DoubleTapWord');
+          _handleDoubleTapOnText(
+            _lastTapPosition!,
+            text,
+            style,
+            textKey,
+            context,
+          );
+          _lastTapTime = null;
+          _lastTapButton = null;
+          _lastTapPosition = null;
+        } else {
+          _lastTapTime = now;
+          _lastTapButton = 0;
+        }
+      };
+
+    // 添加右键菜单支持
+    final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+      ..onSecondaryTapUp = (details) {
+        _lastTapPosition = details.globalPosition;
+        _handleElementSecondaryTap(
+          _convertPathToString(path),
+          pathData.label,
+          context,
+          details.globalPosition,
+        );
+      };
+
+    _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
+
+    // 使用 MultiGestureRecognizer 支持点击和右键
+    final recognizer = _MultiGestureRecognizer(
+      tapRecognizer: tapRecognizer,
+      secondaryTapRecognizer: secondaryTapRecognizer,
+      longPressRecognizer: null,
+      doubleTapRecognizer: null,
+    );
+
+    // 解析文本，添加手势识别器
+    final result = _parseFormattedText(
+      text,
+      style,
+      context: context,
+      recognizer: recognizer,
+      mouseCursor: SystemMouseCursors.text,
+    );
+
+    return Text.rich(TextSpan(children: result.spans), key: textKey);
   }
 
   void _initSourceLanguage() {
@@ -7898,7 +7989,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final boardKey = _getElementKey(key);
 
       Widget boardWidget;
-      if (value is Map<String, dynamic>) {
+      if (predefinedRenderers.containsKey(key)) {
+        // 预定义渲染器优先
+        boardWidget = renderJsonElement(context, key, value, path);
+      } else if (value is Map<String, dynamic>) {
         final title = value['title'] as String? ?? key;
         final display = value['display'] as String? ?? '00';
         final boardData = {...value, 'title': title, 'display': display};

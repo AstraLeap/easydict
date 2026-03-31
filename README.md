@@ -196,13 +196,19 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
             "audio_file": "fog_uk.opus",
         },
     ], //可选，可以是map，也可以是list of map
-    "phrases": ["fog in", "fog of"], // 可选，短语部分
+    "phrases": ["fog in", "fog of"], // 可选，短语部分，点击后将以小窗的形式展开短语内容
     "data": {
         "key1": {},
         "key2": {},
-    }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。data可以放在词典的任何地方
+    }, //可选，本部分为自定义数据部分，会渲染为tab组件，key1，key2会显示为tab名。value一定要是map，data可以放在词典的任何地方
     "customKey": {}, //除了规范里给定的键值外，还可以添加自定义键值，这会被渲染为board元素。board标题为customKey，customKey对应的值需要是一个map，map里的键值对会被渲染为board的内容。
-
+    "table": {
+        "column": ["id", "姓名", "职位"],
+        "content": [
+            [1, "张三", "工程师"],
+            [2, "李四", "设计师"],
+        ],
+    }, //表格元素可以放在json的任意位置
     "sense": [
         {
             "index": 1, //必选
@@ -235,9 +241,12 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
             "image": {
                 "image_file": "fog.jpg",
             }, //可选
-            "note": "常用于 'in a fog' 结构，描述因疲倦或震惊而无法正常思考。", //可选，批准部分
+            "note": {
+                "zh": "常用于 'in a fog' 结构，描述因疲倦或震惊而无法正常思考。",
+            }, //可选，注释部分，键名需要是语言名
             "example": [
                 {
+                    "usage": "take courage/guts", //例句的用法
                     "en": "He was walking around in a mental fog after the accident.",
                     "zh": "事故发生后，他整个人都陷入了意识模糊的状态中。",
                     "source": {
@@ -254,7 +263,6 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
                         "edition": "2nd", // 可选：版次
                         "tail": "some",
                     }, //可选，例句来源。渲染格式：非中文 (年份) 作者. 书名. 出版社, 页码.；中文 朝代 · 作者 · 书名
-                    "note": { "en": "" },
                     "comment": {}, //结构和example相同
                     "audios": [
                         {
@@ -262,19 +270,18 @@ python auxi_tools/build_dictionary.py data/entries.jsonl ja \
                             "audio_file": "fog_ex1_uk.mp3",
                         },
                     ], //可选，例句音频
-                }, //必填，map里可以有多个键值对，但键值一定要是metadata.json中target_language列表里有的值
-                {
-                    "usage": "take courage/guts", //例句的用法
-                    "en": "[It takes](bold) courage to admit you are wrong.",
                 },
                 {
                     "usage_group": "take (sb) sth (to do sth)", //一个例句用法中有多组例句
-                    "example ": [
+                    "example": [
                         { "en": "Repairs take time to carry out." },
                         {
                             "en": "[It took](bold) a few minutes for his eyes to adjust to the dark.",
                         },
                     ],
+                }, //特殊例句，里面包括一个usage_group名，和一个嵌套的example元素
+                {
+                    "en": "[It takes](bold) courage to admit you are wrong.",
                 },
             ], //可选
             "subsense": [
