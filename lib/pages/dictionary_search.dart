@@ -292,11 +292,20 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   Future<void> _searchFromDailyWord(String word) async {
     if (_selectedLanguages.isEmpty) return;
 
+    // 防止重复搜索
+    if (_isSearchingWord) {
+      Logger.d('_searchFromDailyWord: 跳过，正在搜索中', tag: 'DictionarySearch');
+      return;
+    }
+
     String? language = _wordLanguageCache[word];
     if (language == null) {
       language = await _dailyWordService.getWordLanguage(word);
       _wordLanguageCache[word] = language;
     }
+
+    _isSearchingWord = true;
+    Logger.d('_searchFromDailyWord 开始: $word', tag: 'DictionarySearch');
 
     setState(() {
       _isLoading = true;
@@ -362,7 +371,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
     setState(() {
       _isLoading = false;
+      _isSearchingWord = false;
     });
+    Logger.d('_searchFromDailyWord 完成: $word', tag: 'DictionarySearch');
   }
 
   /// 加载高级搜索设置
@@ -572,7 +583,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 处理剪切板搜索事件
   void _handleClipboardSearch(String text) {
-    Logger.i('收到剪切板搜索事件: $text', tag: 'DictionarySearch');
+    Logger.i(
+      '收到剪切板搜索事件: $text, _isSearchingWord=$_isSearchingWord',
+      tag: 'DictionarySearch',
+    );
     // 设置搜索框文本
     _searchController.text = text;
     // 执行搜索
@@ -580,6 +594,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   Future<void> _searchWord() async {
+    // 防止重复搜索
+    if (_isSearchingWord) {
+      Logger.d('_searchWord: 跳过，正在搜索中', tag: 'DictionarySearch');
+      return;
+    }
+
     _debounceTimer?.cancel();
     _prefixSearchToken++;
     final word = _searchController.text.trim();
@@ -595,7 +615,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
     _isSearchingWord = true;
 
-    Logger.d('用户开始查词: $word', tag: 'DictionarySearch');
+    Logger.d('用户开始查词: $word, _isSearchingWord 已设置为 true', tag: 'DictionarySearch');
 
     // 首次查英语词且 en.db 不存在时，直接弹出下载推荐（不等待查询结果）
     if (_detectLanguage(word) == 'en') {
@@ -711,6 +731,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       _isLoading = false;
       _isSearchingWord = false;
     });
+    Logger.d('_searchWord 完成: $word, _isSearchingWord 已重置为 false', tag: 'DictionarySearch');
   }
 
   @override

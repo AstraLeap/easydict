@@ -1022,6 +1022,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               Container(
                 constraints: const BoxConstraints(minWidth: 16),
                 height: 16,
+                margin: const EdgeInsets.only(top: 2),
                 padding: const EdgeInsets.symmetric(horizontal: 3),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(

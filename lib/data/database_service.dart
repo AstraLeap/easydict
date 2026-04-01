@@ -1246,8 +1246,16 @@ class DatabaseService {
     String? sourceLanguage,
     String? dictId,
   }) async {
+    Logger.d(
+      'getAllEntries 开始: word=$word, exactMatch=$exactMatch, sourceLanguage=$sourceLanguage, dictId=$dictId',
+      tag: 'DatabaseService',
+    );
     final dictManager = DictionaryManager();
     final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
+    Logger.d(
+      'getAllEntries: enabledDicts.length=${enabledDicts.length}, dictIds=${enabledDicts.map((d) => d.id).toList()}',
+      tag: 'DatabaseService',
+    );
 
     // 如果指定了 dictId，使用旧逻辑（单词典搜索）
     if (dictId != null && dictId.isNotEmpty) {
@@ -1322,9 +1330,17 @@ class DatabaseService {
     }
 
     // 遍历每个词典搜索
+    Logger.d(
+      'getAllEntries: 开始遍历 ${filteredDicts.length} 个词典',
+      tag: 'DatabaseService',
+    );
     for (final metadata in filteredDicts) {
       final langCode = LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
       final normQuery = normQueries[langCode]!;
+      Logger.d(
+        'getAllEntries: 正在搜索词典 ${metadata.id}, langCode=$langCode',
+        tag: 'DatabaseService',
+      );
 
       // 先直接搜索单词
       var entries = await _searchInDictionary(
@@ -1379,6 +1395,11 @@ class DatabaseService {
     for (final r in dictResults) {
       allRelations.addAll(r.relations);
     }
+
+    Logger.d(
+      'getAllEntries 完成: word=$word, allEntries.length=${allEntries.length}, dictResults.length=${dictResults.length}',
+      tag: 'DatabaseService',
+    );
 
     return SearchResult(
       entries: allEntries,

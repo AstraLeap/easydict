@@ -651,7 +651,19 @@ class DictionaryManager {
         'getEnabledDictionariesMetadata: 返回缓存 (${_enabledDictionariesMetadataCache!.length} 个词典)',
         tag: 'DictionaryManager',
       );
-      return _enabledDictionariesMetadataCache!;
+      // 检查缓存中是否有重复
+      final ids = _enabledDictionariesMetadataCache!.map((m) => m.id).toList();
+      final uniqueIds = ids.toSet();
+      if (ids.length != uniqueIds.length) {
+        Logger.w(
+          'getEnabledDictionariesMetadata: 缓存中有重复词典! ids=$ids',
+          tag: 'DictionaryManager',
+        );
+        // 清除有问题的缓存，重新加载
+        _enabledDictionariesMetadataCache = null;
+      } else {
+        return _enabledDictionariesMetadataCache!;
+      }
     }
 
     Logger.d(
@@ -663,9 +675,29 @@ class DictionaryManager {
       'getEnabledDictionariesMetadata: 启用的词典ID: $enabledIds',
       tag: 'DictionaryManager',
     );
+
+    // 检查是否有重复的词典ID
+    final uniqueEnabledIds = enabledIds.toSet().toList();
+    if (uniqueEnabledIds.length != enabledIds.length) {
+      Logger.w(
+        'getEnabledDictionariesMetadata: 启用的词典ID中有重复! 原始=$enabledIds, 去重后=$uniqueEnabledIds',
+        tag: 'DictionaryManager',
+      );
+    }
+
     final metadata = <DictionaryMetadata>[];
 
+    // 使用去重后的词典ID列表，保持顺序
+    final seenIds = <String>{};
+    final processedIds = <String>[];
     for (final id in enabledIds) {
+      if (!seenIds.contains(id)) {
+        seenIds.add(id);
+        processedIds.add(id);
+      }
+    }
+
+    for (final id in processedIds) {
       final item = await getDictionaryMetadata(id);
       if (item != null) {
         final dbPath = await getDictionaryDbPath(id);
