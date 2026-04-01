@@ -66,6 +66,8 @@
     "fontConfig": "Font Config",
     "themeSettings": "Theme Settings",
     "displaySettings": "Display Settings",
+    "showHeadwordSyllable": "Show Syllable Form by Default",
+    "showHeadwordSyllableSubtitle": "Display headword in syllable form (e.g., au·tar·chy), tap to toggle",
     "layoutScale": "Layout Scale",
     "clickAction": "Click Action",
     "toolbar": "Bottom Toolbar",

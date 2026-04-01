@@ -20,6 +20,7 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   final _preferencesService = PreferencesService();
   String _clickAction = PreferencesService.actionAiTranslate;
   double _dictionaryContentScale = 1.0;
+  bool _showHeadwordSyllableByDefault = false;
 
   @override
   void initState() {
@@ -30,9 +31,12 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   Future<void> _loadData() async {
     final clickAction = await _preferencesService.getClickAction();
     final dictionaryContentScale = FontLoaderService().getDictionaryContentScale();
+    final showHeadwordSyllableByDefault =
+        await _preferencesService.getShowHeadwordSyllableByDefault();
     setState(() {
       _clickAction = clickAction;
       _dictionaryContentScale = dictionaryContentScale;
+      _showHeadwordSyllableByDefault = showHeadwordSyllableByDefault;
     });
   }
 
@@ -83,6 +87,20 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
           onTap: () => _showDictionaryContentScaleDialog(),
         ),
 
+        // 默认显示音节形式
+        _buildSwitchTile(
+          icon: Icons.text_fields,
+          title: context.t.settings.showHeadwordSyllable,
+          subtitle: context.t.settings.showHeadwordSyllableSubtitle,
+          value: _showHeadwordSyllableByDefault,
+          onChanged: (value) async {
+            await _preferencesService.setShowHeadwordSyllableByDefault(value);
+            setState(() {
+              _showHeadwordSyllableByDefault = value;
+            });
+          },
+        ),
+
         // 点击动作设置
         _buildSettingsTile(
           icon: Icons.touch_app_outlined,
@@ -113,6 +131,25 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
       subtitle: subtitle != null ? Text(subtitle) : null,
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: onTap,
+    );
+  }
+
+  Widget _buildSwitchTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: subtitle != null ? Text(subtitle) : null,
+      trailing: Switch(
+        value: value,
+        onChanged: onChanged,
+      ),
+      onTap: () => onChanged(!value),
     );
   }
 

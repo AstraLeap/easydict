@@ -1020,17 +1020,18 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 16,
+                constraints: const BoxConstraints(minWidth: 16),
                 height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 3),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainerHighest,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   '$index',
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: index >= 100 ? 8 : 10,
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),

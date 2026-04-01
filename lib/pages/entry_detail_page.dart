@@ -4722,6 +4722,21 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       bool needTranslation = false;
       bool needToggleTranslation = false;
 
+      // 辅助函数：检查父级 Map 中是否有其他可见的语言
+      bool hasOtherVisibleLanguages(Map parent, String clickedLang) {
+        int visibleCount = 0;
+        for (final key in parent.keys) {
+          // 检查是否是语言代码
+          final isLangCode =
+              LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
+          if (isLangCode && parent[key] is String && parent[key].isNotEmpty) {
+            visibleCount++;
+          }
+        }
+        // 只有当有多个可见语言时才能切换
+        return visibleCount > 1;
+      }
+
       // 如果点击的是源语言 key
       if (lastKey == sourceLang) {
         if (parentValue is Map) {
@@ -4731,12 +4746,18 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             needTranslation = true;
           } else {
             // 已有目标语言翻译，需要切换显示/隐藏
-            needToggleTranslation = true;
+            // 但要检查是否是唯一可见的语言
+            if (hasOtherVisibleLanguages(parentValue, lastKey)) {
+              needToggleTranslation = true;
+            }
           }
         }
       } else if (lastKey == targetLang) {
         // 点击的是目标语言，需要切换显示/隐藏
-        needToggleTranslation = true;
+        // 但要检查是否是唯一可见的语言
+        if (parentValue is Map && hasOtherVisibleLanguages(parentValue, lastKey)) {
+          needToggleTranslation = true;
+        }
       } else {
         // 如果点击的是其他语言代码 key
         if (currentValue is String) {
@@ -4956,7 +4977,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           // 值可以是字符串、非空列表或非空Map
           final hasTranslation = _hasTranslationContent(value);
           if (hasTranslation) {
-            languagePaths.add(newPath);
+            // 智能隐藏逻辑：只有当该位置存在其他可显示的语言内容时，才隐藏当前语言
+            // 这样可以避免隐藏后没有任何内容可显示的情况
+            final hasOtherVisibleContent = _checkHasOtherVisibleContent(
+              data,
+              key,
+              sourceLang,
+              effectiveTargetLangs,
+            );
+            if (hasOtherVisibleContent) {
+              languagePaths.add(newPath);
+            }
           }
         }
 
@@ -4996,6 +5027,27 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     if (value is List) return value.isNotEmpty;
     if (value is Map) return value.isNotEmpty;
     return true;
+  }
+
+  /// 检查父级 Map 中是否有其他可显示的语言内容
+  /// 即：源语言内容 或 非目标语言内容
+  /// 用于智能隐藏逻辑：只有存在其他可显示内容时才隐藏当前语言
+  bool _checkHasOtherVisibleContent(
+    Map<String, dynamic> parentMap,
+    String currentLangKey,
+    String sourceLang,
+    Set<String> effectiveTargetLangs,
+  ) {
+    for (final entry in parentMap.entries) {
+      if (entry.key == currentLangKey) continue; // 跳过当前语言
+      if (!_hasTranslationContent(entry.value)) continue; // 跳过空内容
+
+      // 如果是源语言，或者不是目标语言（非隐藏范围），则有其他可显示内容
+      if (entry.key == sourceLang || !effectiveTargetLangs.contains(entry.key)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _processAiDialog(DictionaryEntry entry, String path, String label) {

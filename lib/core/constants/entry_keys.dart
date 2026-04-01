@@ -17,6 +17,7 @@ const List<String> kExcludedEntryKeys = [
 
   // 已单独渲染的内容字段
   'headword',
+  'headword_syllable', // 音节形式，在 headword 点击时切换显示
   'headline', // headline 在 _buildWord 中作为标题渲染
   'entry_type',
   'page',
@@ -24,7 +25,6 @@ const List<String> kExcludedEntryKeys = [
   'tags',
   'certifications',
   'frequency',
-  'etymology',
   'pronunciation',
   'phonetic', // 根节点 phonetic 不单独渲染
   'pos', // 根节点 pos 在 _buildWord 中渲染
@@ -33,6 +33,7 @@ const List<String> kExcludedEntryKeys = [
   'phrase', // toJson() 输出 'phrase'
   'phrases', // 原始 JSON 中的 'phrases' 字段
   'data',
+  'note', // note 单独渲染，在普通 board 之前
   'clob', // clob 单独渲染
   'text', // text 单独渲染
 

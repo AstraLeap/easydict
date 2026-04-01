@@ -655,6 +655,7 @@ class DictionaryEntry {
   final String? version;
   final String headword;
   final String? headline; // 标题字段，优先显示
+  final String? headwordSyllable; // 音节形式的词条，如 "au·tar·chy"
   final String entryType;
   final String? page;
   final String? section;
@@ -662,7 +663,6 @@ class DictionaryEntry {
   final List<String> tags;
   final List<String> certifications;
   final Map<String, dynamic> frequency;
-  final dynamic etymology;
   final List<Map<String, dynamic>> pronunciations;
   final List<Map<String, dynamic>> sense;
   final List<String> phrase;
@@ -693,6 +693,7 @@ class DictionaryEntry {
     this.version,
     required this.headword,
     this.headline,
+    this.headwordSyllable,
     required this.entryType,
     this.page,
     this.section,
@@ -700,7 +701,6 @@ class DictionaryEntry {
     required this.tags,
     required this.certifications,
     required this.frequency,
-    this.etymology,
     required this.pronunciations,
     required this.sense,
     this.phrase = const [],
@@ -738,6 +738,7 @@ class DictionaryEntry {
         version: json['version']?.toString(),
         headword: headword,
         headline: json['headline']?.toString(),
+        headwordSyllable: json['headword_syllable']?.toString(),
         entryType: json['entry_type'] as String? ?? 'word',
         page: json['page']?.toString(),
         section: json['section']?.toString(),
@@ -757,7 +758,6 @@ class DictionaryEntry {
         frequency: json['frequency'] is Map<String, dynamic>
             ? json['frequency'] as Map<String, dynamic>
             : {},
-        etymology: json['etymology'],
         pronunciations: _parsePronunciations(json['pronunciation']),
         groups: _parseGroups(json['groups']),
         sense: json['sense'] != null
@@ -848,6 +848,7 @@ class DictionaryEntry {
       if (dictId != null) 'dict_id': dictId,
       'headword': headword,
       if (headline != null) 'headline': headline,
+      if (headwordSyllable != null) 'headword_syllable': headwordSyllable,
       'entry_type': entryType,
       'page': page,
       'section': section,
@@ -855,7 +856,6 @@ class DictionaryEntry {
       'tags': tags,
       'certifications': certifications,
       'frequency': frequency,
-      'etymology': etymology,
       'pronunciation': pronunciations,
       'sense': sense,
       'phrase': phrase,

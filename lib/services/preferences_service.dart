@@ -46,6 +46,8 @@ class PreferencesService {
   static const String _kGlobalTranslationVisibility =
       'global_translation_visibility';
   static const String _kDictionaryContentScale = 'dictionary_content_scale';
+  static const String _kShowHeadwordSyllableByDefault =
+      'show_headword_syllable_by_default';
 
   // 剪切板监听和托盘设置键名
   static const String _kClipboardWatchEnabled = 'clipboard_watch_enabled';
@@ -287,6 +289,16 @@ class PreferencesService {
   Future<void> setDictionaryContentScale(double scale) async {
     final p = await prefs;
     await p.setDouble(_kDictionaryContentScale, scale);
+  }
+
+  Future<bool> getShowHeadwordSyllableByDefault() async {
+    final p = await prefs;
+    return p.getBool(_kShowHeadwordSyllableByDefault) ?? true;
+  }
+
+  Future<void> setShowHeadwordSyllableByDefault(bool show) async {
+    final p = await prefs;
+    await p.setBool(_kShowHeadwordSyllableByDefault, show);
   }
 
   Future<LLMConfig?> getLLMConfig({bool isFast = false}) async {

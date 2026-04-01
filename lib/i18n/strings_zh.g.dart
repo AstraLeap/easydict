@@ -278,6 +278,12 @@ class TranslationsSettingsZh {
 	/// zh: '显示设置'
 	String get displaySettings => '显示设置';
 
+	/// zh: '默认显示音节形式'
+	String get showHeadwordSyllable => '默认显示音节形式';
+
+	/// zh: '将词条标题显示为音节形式（如 au·tar·chy），点击可切换'
+	String get showHeadwordSyllableSubtitle => '将词条标题显示为音节形式（如 au·tar·chy），点击可切换';
+
 	/// zh: '软件布局缩放'
 	String get layoutScale => '软件布局缩放';
 
@@ -2617,6 +2623,8 @@ extension on Translations {
 			'settings.fontConfig' => '字体配置',
 			'settings.themeSettings' => '主题设置',
 			'settings.displaySettings' => '显示设置',
+			'settings.showHeadwordSyllable' => '默认显示音节形式',
+			'settings.showHeadwordSyllableSubtitle' => '将词条标题显示为音节形式（如 au·tar·chy），点击可切换',
 			'settings.layoutScale' => '软件布局缩放',
 			'settings.clickAction' => '点击动作设置',
 			'settings.toolbar' => '底部工具栏设置',
@@ -3065,10 +3073,10 @@ extension on Translations {
 			'dict.statusUpdateFailed' => '状态更新失败',
 			'dict.statusPreparing' => '准备中',
 			'dict.statusPreparingUpdate' => '准备更新',
-			'dict.statusDownloading' => '下载中',
-			'dict.statusCompleted' => '已完成',
 			_ => null,
 		} ?? switch (path) {
+			'dict.statusDownloading' => '下载中',
+			'dict.statusCompleted' => '已完成',
 			'dict.storeNotConfigured' => '未配置词典存储目录',
 			'dict.downloadFailed' => '下载失败',
 			'dict.tooltipUpdateJson' => '更新JSON',

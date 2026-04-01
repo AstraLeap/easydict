@@ -150,6 +150,8 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 	@override String get fontConfig => 'Font Config';
 	@override String get themeSettings => 'Theme Settings';
 	@override String get displaySettings => 'Display Settings';
+	@override String get showHeadwordSyllable => 'Show Syllable Form by Default';
+	@override String get showHeadwordSyllableSubtitle => 'Display headword in syllable form (e.g., au·tar·chy), tap to toggle';
 	@override String get layoutScale => 'Layout Scale';
 	@override String get clickAction => 'Click Action';
 	@override String get toolbar => 'Bottom Toolbar';
@@ -1088,6 +1090,8 @@ extension on TranslationsEn {
 			'settings.fontConfig' => 'Font Config',
 			'settings.themeSettings' => 'Theme Settings',
 			'settings.displaySettings' => 'Display Settings',
+			'settings.showHeadwordSyllable' => 'Show Syllable Form by Default',
+			'settings.showHeadwordSyllableSubtitle' => 'Display headword in syllable form (e.g., au·tar·chy), tap to toggle',
 			'settings.layoutScale' => 'Layout Scale',
 			'settings.clickAction' => 'Click Action',
 			'settings.toolbar' => 'Bottom Toolbar',
@@ -1538,10 +1542,10 @@ extension on TranslationsEn {
 			'dict.statusPreparingUpdate' => 'Preparing update',
 			'dict.statusDownloading' => 'Downloading',
 			'dict.statusCompleted' => 'Completed',
-			'dict.storeNotConfigured' => 'Dictionary storage directory not configured',
-			'dict.downloadFailed' => 'Download failed',
 			_ => null,
 		} ?? switch (path) {
+			'dict.storeNotConfigured' => 'Dictionary storage directory not configured',
+			'dict.downloadFailed' => 'Download failed',
 			'dict.tooltipUpdateJson' => 'Update JSON',
 			'dict.tooltipReplaceFile' => 'Replace File',
 			'dict.tooltipPushUpdate' => 'Push Update',

@@ -169,6 +169,7 @@ python auxi_tools/build_dictionary.py data/entries.jsonl zh-hant \
     "entry_id": 212, // 必填，**不重复**的entry标识符，**整型**
     "headword": "fog", // 与headline二选一。可重复的词头
     "headline": "つける【付ける・附ける】", // 与headword二选一。如果选择headline，则必须使用links字段，用来表明查什么词可以查到本词头
+    "headword_syllable": "au·tar·chy", //记录音节
     "links": "from_word", //可以是string或者是list of string，查询"from_word"时也能查到本词条
     "phonetic": "pinyin", // 可选，辅助搜索词，主要用于表意文字
     "entry_type": "word", // 可选，word或phrase等等

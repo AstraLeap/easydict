@@ -1396,6 +1396,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
 
+  // headword 音节显示状态：true 表示显示音节形式，false 表示显示原始形式
+  // null 表示尚未初始化，会从设置中加载
+  bool? _showHeadwordSyllable;
+
   // 当前选择的文本（用于选择完成后触发查词）
   SelectedContent? _currentSelection;
 
@@ -1445,6 +1449,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _hiddenLanguagesNotifier = HiddenLanguagesNotifier([]);
     _initSourceLanguage();
     _loadClickAction();
+    _loadHeadwordSyllableSetting();
     _fontScales = FontLoaderService().getFontScales();
     _listenToEvents();
   }
@@ -2904,6 +2909,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (mounted) {
       setState(() {
         _clickAction = action;
+      });
+    }
+  }
+
+  Future<void> _loadHeadwordSyllableSetting() async {
+    final showByDefault = await PreferencesService().getShowHeadwordSyllableByDefault();
+    if (mounted) {
+      setState(() {
+        _showHeadwordSyllable = showByDefault;
       });
     }
   }
@@ -4842,6 +4856,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ],
         // 渲染 phrase
         _buildPhrases(context),
+        // 渲染 note（在普通 board 之前）
+        _buildNoteIfExist(context),
         // 渲染所有未渲染的 key 为 board
         _buildRemainingBoards(context),
         // 渲染 clob 和 text（在最后）
@@ -4854,16 +4870,37 @@ class ComponentRendererState extends State<ComponentRenderer> {
   /// 构建词条标题（headline 或 headword）
   /// 优先显示 headline，如果没有则显示 headword
   /// 支持动态字体调整和右键菜单
+  /// 支持点击切换音节形式（如果有 headword_syllable）
   Widget _buildWord(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final entry = _localEntry;
 
-    // 优先使用 headword，如果没有则使用 headline
-    // 注意：如果原始 JSON 没有 headword 字段，应该使用 headline（包含完整格式如振假名）
-    final displayText = entry.hasOriginalHeadword && entry.headword.isNotEmpty
-        ? entry.headword
-        : entry.headline ?? '';
-    final isUsingHeadword = entry.hasOriginalHeadword;
+    // 判断是否有音节形式可用
+    final hasSyllable = entry.headwordSyllable != null &&
+        entry.headwordSyllable!.isNotEmpty;
+
+    // 决定当前显示的文本
+    String displayText;
+    bool isUsingHeadword;
+    bool isShowingSyllable = false;
+
+    if (entry.hasOriginalHeadword && entry.headword.isNotEmpty) {
+      // 有 headword
+      if (hasSyllable && _showHeadwordSyllable == true) {
+        // 显示音节形式
+        displayText = entry.headwordSyllable!;
+        isUsingHeadword = true;
+        isShowingSyllable = true;
+      } else {
+        // 显示原始 headword
+        displayText = entry.headword;
+        isUsingHeadword = true;
+      }
+    } else {
+      // 没有 headword，使用 headline
+      displayText = entry.headline ?? '';
+      isUsingHeadword = false;
+    }
 
     // 优先使用根节点 pos，如果没有则回退到 sense[0]['pos']
     final rootPosList = entry.posList;
@@ -4900,6 +4937,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       colorScheme: colorScheme,
                       pathKey: isUsingHeadword ? 'headword' : 'headline',
                       label: isUsingHeadword ? 'Headword' : 'Headline',
+                      canToggleSyllable: hasSyllable && isUsingHeadword,
+                      isShowingSyllable: isShowingSyllable,
                     );
                   },
                 ),
@@ -4926,6 +4965,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     required ColorScheme colorScheme,
     required String pathKey,
     required String label,
+    bool canToggleSyllable = false,
+    bool isShowingSyllable = false,
   }) {
     final baseStyle = DictTypography.getBaseStyle(
       elementType,
@@ -4935,15 +4976,26 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final path = PathScope.of(context);
     final pathData = _PathData(path, label);
 
+    // 点击 headword 时的处理：如果有音节形式，则切换显示
+    void onHeadwordTap() {
+      if (canToggleSyllable) {
+        // 切换音节显示状态
+        setState(() {
+          _showHeadwordSyllable = !isShowingSyllable;
+        });
+      } else {
+        // 没有音节形式，执行默认点击动作
+        _handleElementTap(_convertPathToString(path), label);
+      }
+    }
+
     // 创建手势识别器以支持点击事件
     final tapRecognizer = TapGestureRecognizer()
       ..onTapDown = (details) {
         _lastTapPosition = details.globalPosition;
         _currentSelectionPathData = pathData;
       }
-      ..onTap = () {
-        _handleElementTap(_convertPathToString(path), label);
-      };
+      ..onTap = onHeadwordTap;
 
     // 解析格式化文本，传递 recognizer 以支持点击
     final formattedResult = _parseFormattedText(
@@ -4962,9 +5014,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           context: context,
           pathData: pathData,
           child: GestureDetector(
-            onTap: () {
-              _handleElementTap(_convertPathToString(path), label);
-            },
+            onTap: onHeadwordTap,
             onSecondaryTapUp: (details) {
               _lastTapPosition = details.globalPosition;
               _handleElementSecondaryTap(
@@ -7720,6 +7770,41 @@ class ComponentRendererState extends State<ComponentRenderer> {
       children: [
         const SizedBox(height: 12),
         _buildData(context, value, path: ['data']),
+      ],
+    );
+  }
+
+  /// 渲染 note（如果存在），在普通 board 之前显示
+  Widget _buildNoteIfExist(BuildContext context) {
+    final entry = _localEntry;
+    final entryJson = entry.toJson();
+
+    if (!entryJson.containsKey('note')) return const SizedBox.shrink();
+
+    final value = entryJson['note'];
+    if (value == null) return const SizedBox.shrink();
+
+    Map<String, String>? noteMap;
+    if (value is Map<String, dynamic>) {
+      noteMap = {};
+      for (final entry in value.entries) {
+        if (entry.value is String && entry.value.isNotEmpty) {
+          noteMap[entry.key] = entry.value as String;
+        }
+      }
+      if (noteMap.isEmpty) noteMap = null;
+    } else if (value is String && value.isNotEmpty) {
+      final sourceLang = _sourceLanguage ?? 'en';
+      noteMap = {sourceLang: value};
+    }
+
+    if (noteMap == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        _buildnote(context, noteMap, path: ['note']),
       ],
     );
   }
