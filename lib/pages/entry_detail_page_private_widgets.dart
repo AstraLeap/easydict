@@ -13,7 +13,7 @@ class _DraggableNavPanel extends StatefulWidget {
   final double initialDy;
   final GlobalKey<DictionaryNavigationPanelState>? navPanelKey;
   final ValueNotifier<int>? navPanelVersionNotifier;
-  final void Function(String dictId)? onExpandDictionary;
+  final Future<void> Function(String dictId)? onExpandDictionary;
 
   const _DraggableNavPanel({
     required this.entryGroup,

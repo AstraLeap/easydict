@@ -125,6 +125,7 @@ class EntryNavState {
 class EntryDetailPage extends StatefulWidget {
   final DictionaryEntryGroup entryGroup;
   final String initialWord;
+
   /// 按词典分组的结果（包含每个词典的关系词信息）
   final List<DictSearchResult>? dictResults;
 
@@ -148,7 +149,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
-  final ScrollOffsetController _scrollOffsetController = ScrollOffsetController();
+  final ScrollOffsetController _scrollOffsetController =
+      ScrollOffsetController();
   final _preferencesService = PreferencesService();
 
   /// 键盘事件焦点节点
@@ -290,7 +292,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _entriesExpanded = false;
 
   /// 子组展开状态缓存（存储子组的孙子组数据）
-  final Map<String, List<group_model.DictionaryGroup>> _subGroupChildrenCache = {};
+  final Map<String, List<group_model.DictionaryGroup>> _subGroupChildrenCache =
+      {};
 
   /// 子组词条 headwords 缓存
   final Map<String, Map<int, String>> _subGroupEntryHeadwordsCache = {};
@@ -431,7 +434,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     const toolbarHeight = 56.0;
     const minBottomPadding = 16.0;
     const extraMargin = 50.0; // 额外留白，保留部分上下文
-    final toolbarSpace = toolbarHeight + bottomPadding + bottomInset + minBottomPadding + extraMargin;
+    final toolbarSpace =
+        toolbarHeight +
+        bottomPadding +
+        bottomInset +
+        minBottomPadding +
+        extraMargin;
     return windowHeight - toolbarSpace;
   }
 
@@ -461,16 +469,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
       // 滚动到顶部
       _isProgrammaticScroll = true;
-      _itemScrollController.scrollTo(
-        index: 0,
-        duration: const Duration(milliseconds: 300),
-      ).then((_) {
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (mounted) {
-            _isProgrammaticScroll = false;
-          }
-        });
-      });
+      _itemScrollController
+          .scrollTo(index: 0, duration: const Duration(milliseconds: 300))
+          .then((_) {
+            Future.delayed(const Duration(milliseconds: 400), () {
+              if (mounted) {
+                _isProgrammaticScroll = false;
+              }
+            });
+          });
     }
   }
 
@@ -810,7 +817,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         if (dictId.isEmpty) continue;
 
         // 获取该词典的元数据
-        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        final metadata = await DictionaryManager().getDictionaryMetadata(
+          dictId,
+        );
         if (metadata == null) continue;
 
         final sourceLang = metadata.sourceLanguage;
@@ -821,7 +830,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         for (final pageGroup in dictGroup.pageGroups) {
           for (final section in pageGroup.sections) {
             final json = section.entry.toJson();
-            _collectLanguagePaths(json, '', dictLanguagePaths, sourceLang, targetLangs);
+            _collectLanguagePaths(
+              json,
+              '',
+              dictLanguagePaths,
+              sourceLang,
+              targetLangs,
+            );
           }
         }
 
@@ -1750,12 +1765,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 initialDy: _navPanelDy,
                 navPanelKey: _navPanelKey,
                 navPanelVersionNotifier: _navPanelVersionNotifier,
-                onExpandDictionary: (dictId) {
+                onExpandDictionary: (dictId) async {
                   // 展开词典
                   if (_collapsedDicts.contains(dictId)) {
                     setState(() {
                       _collapsedDicts.remove(dictId);
                     });
+                    // 等待一帧让内容区域渲染
+                    await WidgetsBinding.instance.endOfFrame;
                   }
                 },
               ),
@@ -1818,20 +1835,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
     if (isDesktop) {
-      return Row(
-        children: [
-          // 左侧独立的返回按钮（搜索模式下也保持显示）
-          Expanded(child: _buildDesktopBackButton()),
-          const SizedBox(width: 16),
-          // 右侧工具栏或搜索栏
-          Expanded(
-            flex:
-                _toolbarActions.length + (_overflowActions.isNotEmpty ? 1 : 0),
-            child: _isSearchMode
-                ? _buildSearchBar()
-                : _buildBottomActionBar(isDesktop: true),
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Row(
+            children: [
+              // 左侧独立的返回按钮（搜索模式下也保持显示）
+              Expanded(child: _buildDesktopBackButton()),
+              const SizedBox(width: 16),
+              // 右侧工具栏或搜索栏
+              Expanded(
+                flex:
+                    _toolbarActions.length +
+                    (_overflowActions.isNotEmpty ? 1 : 0),
+                child: _isSearchMode
+                    ? _buildSearchBar()
+                    : _buildBottomActionBar(isDesktop: true),
+              ),
+            ],
           ),
-        ],
+        ),
       );
     }
 
@@ -1992,7 +2015,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       String? group;
       final dictId = searchResult.entries.first.dictId;
       if (dictId != null) {
-        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        final metadata = await DictionaryManager().getDictionaryMetadata(
+          dictId,
+        );
         group = metadata?.sourceLanguage;
       }
       await historyService.addSearchRecord(word, group: group);
@@ -2177,54 +2202,104 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Widget _buildOverflowButton(ColorScheme colorScheme) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _showOverflowMenu(context, colorScheme),
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          child: Icon(
-            Icons.more_horiz,
-            size: 24,
-            color: colorScheme.onSurfaceVariant,
+    return Builder(
+      builder: (buttonContext) {
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showOverflowMenu(buttonContext, colorScheme),
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              child: Icon(
+                Icons.more_horiz,
+                size: 24,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  void _showOverflowMenu(BuildContext context, ColorScheme colorScheme) {
+  void _showOverflowMenu(BuildContext buttonContext, ColorScheme colorScheme) {
     final RenderBox overlay =
         Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
     final Size overlaySize = overlay.size;
 
-    // 获取底部安全区域高度
+    // 获取按钮的位置和尺寸
+    final RenderBox button = buttonContext.findRenderObject() as RenderBox;
+    final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final buttonSize = button.size;
+
+    // 获取底部安全区域高度和键盘高度
     final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = mediaQuery.padding.bottom;
+    final bottomSafePadding = mediaQuery.padding.bottom;
+    final keyboardHeight = mediaQuery.viewInsets.bottom;
 
-    // 计算底部工具栏的高度（约56dp + 边距）
-    const toolbarHeight = 72.0;
-    const menuMargin = 8.0;
+    // 计算底部工具栏的实际位置
+    // _KeyboardAwareBottomBar 使用 AnimatedPositioned，bottom = keyboardHeight + 16（最少16）
+    const minBottomPadding = 16.0;
+    final toolbarBottom = keyboardHeight + minBottomPadding;
 
-    // 计算菜单应该显示的底部位置（在底部工具栏上方）
-    final menuBottom = bottomPadding > 0
-        ? bottomPadding + toolbarHeight + menuMargin
-        : 16.0 + toolbarHeight + menuMargin;
+    // 工具栏高度：按钮高度(44) + padding(2*2) + 边框 ≈ 48dp
+    // 更精确的计算：通过按钮位置反推
+    // 按钮在工具栏内，工具栏有 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2)
+    // 工具栏顶部 Y = 按钮顶部Y - 工具栏顶部padding(2) - 圆角影响(约4)
+    const toolbarTopPadding = 6.0; // 工具栏顶部到按钮顶部的距离
+    final toolbarTopY = buttonPosition.dy - toolbarTopPadding;
 
+    // 菜单右边距
+    final menuRight = overlaySize.width - buttonPosition.dx - buttonSize.width;
+
+    // 菜单高度：每个菜单项约48dp
+    final menuHeight = _overflowActions.length * 48.0;
+
+    // 菜单底部要在工具栏顶部之上，留出间距
+    const menuMargin = 20.0;
+    final menuBottomY = toolbarTopY - menuMargin;
+
+    // showMenu 的 position.top 表示菜单顶部的 Y 坐标
+    // 所以 position.top = 菜单底部Y - 菜单高度
+    final menuTopY = menuBottomY - menuHeight;
+
+    // 使用锚点区域
     final menuPosition = RelativeRect.fromLTRB(
-      overlaySize.width - 200, // 右侧对齐，预留菜单宽度
-      overlaySize.height -
-          menuBottom -
-          (_overflowActions.length * 48), // 从底部向上计算
-      16, // 右边距
-      menuBottom, // 底部距离
+      buttonPosition.dx,
+      menuTopY, // 菜单顶部Y
+      menuRight,
+      overlaySize.height - menuBottomY, // 菜单底部距离屏幕底部的距离
     );
+
+    // 调试信息
+    debugPrint('=== 更多菜单调试信息 ===');
+    debugPrint('屏幕尺寸: $overlaySize');
+    debugPrint('按钮位置: $buttonPosition');
+    debugPrint('按钮尺寸: $buttonSize');
+    debugPrint('键盘高度: $keyboardHeight');
+    debugPrint('底部安全区: $bottomSafePadding');
+    debugPrint('工具栏底部距离: $toolbarBottom');
+    debugPrint('工具栏顶部Y: $toolbarTopY');
+    debugPrint('菜单底部Y: $menuBottomY');
+    debugPrint('菜单顶部Y: $menuTopY');
+    debugPrint('菜单高度: $menuHeight');
+    debugPrint('menuPosition: $menuPosition');
+    debugPrint('===========================');
 
     showMenu<String>(
       context: context,
       position: menuPosition,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withOpacity(0.5),
+          width: 1,
+        ),
+      ),
+      color: colorScheme.surfaceContainerHighest.withOpacity(0.9),
+      shadowColor: colorScheme.shadow.withOpacity(0.1),
       items: _overflowActions
           .map(
             (action) => PopupMenuItem(
@@ -4299,7 +4374,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       String? group;
       final dictId = result.entries.first.dictId;
       if (dictId != null) {
-        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        final metadata = await DictionaryManager().getDictionaryMetadata(
+          dictId,
+        );
         group = metadata?.sourceLanguage;
       }
       await historyService.addSearchRecord(word, group: group);

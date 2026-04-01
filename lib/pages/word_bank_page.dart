@@ -1343,30 +1343,70 @@ class _WordBankPageState extends State<WordBankPage> {
 
         // 单词列表
         widgets.add(
-          SliverList(
-            key: ValueKey('${lang}_${_selectedList}_${_currentSortMode.name}'),
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final wordData = filteredWords[index];
-              final word = wordData['word'] as String? ?? '';
-              // 构建浏览列表（当前筛选后的单词列表）
-              final browseWords = filteredWords
-                  .map((w) => w['word'] as String? ?? '')
-                  .where((w) => w.isNotEmpty)
-                  .toList();
+          SliverLayoutBuilder(
+            builder: (context, constraints) {
+              final useGrid = constraints.crossAxisExtent >= 800;
+              if (!useGrid) {
+                return SliverList(
+                  key: ValueKey(
+                    '${lang}_${_selectedList}_${_currentSortMode.name}',
+                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final wordData = filteredWords[index];
+                    final word = wordData['word'] as String? ?? '';
+                    final browseWords = filteredWords
+                        .map((w) => w['word'] as String? ?? '')
+                        .where((w) => w.isNotEmpty)
+                        .toList();
 
-              return _buildWordListItem(
-                wordData: wordData,
-                language: lang,
-                browseWords: browseWords,
-                browseIndex: index,
-                onRemove: () {
-                  _wordBankService.removeWord(word, lang);
-                  setState(() {
-                    filteredWords.removeAt(index);
-                  });
-                },
+                    return _buildWordListItem(
+                      wordData: wordData,
+                      language: lang,
+                      browseWords: browseWords,
+                      browseIndex: index,
+                      onRemove: () {
+                        _wordBankService.removeWord(word, lang);
+                        setState(() {
+                          filteredWords.removeAt(index);
+                        });
+                      },
+                    );
+                  }, childCount: filteredWords.length),
+                );
+              }
+              return SliverGrid(
+                key: ValueKey(
+                  '${lang}_${_selectedList}_${_currentSortMode.name}_grid',
+                ),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisExtent: 56,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 4,
+                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final wordData = filteredWords[index];
+                  final word = wordData['word'] as String? ?? '';
+                  final browseWords = filteredWords
+                      .map((w) => w['word'] as String? ?? '')
+                      .where((w) => w.isNotEmpty)
+                      .toList();
+
+                  return _buildWordListItem(
+                    wordData: wordData,
+                    language: lang,
+                    browseWords: browseWords,
+                    browseIndex: index,
+                    onRemove: () {
+                      _wordBankService.removeWord(word, lang);
+                      setState(() {
+                        filteredWords.removeAt(index);
+                      });
+                    },
+                  );
+                }, childCount: filteredWords.length),
               );
-            }, childCount: filteredWords.length),
+            },
           ),
         );
       }
@@ -1395,32 +1435,70 @@ class _WordBankPageState extends State<WordBankPage> {
         );
       } else {
         widgets.add(
-          SliverList(
-            key: ValueKey(
-              '${_selectedLanguage}_${_selectedList}_${_currentSortMode.name}',
-            ),
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final wordData = filteredWords[index];
-              final word = wordData['word'] as String? ?? '';
-              // 构建浏览列表（当前筛选后的单词列表）
-              final browseWords = filteredWords
-                  .map((w) => w['word'] as String? ?? '')
-                  .where((w) => w.isNotEmpty)
-                  .toList();
+          SliverLayoutBuilder(
+            builder: (context, constraints) {
+              final useGrid = constraints.crossAxisExtent >= 800;
+              if (!useGrid) {
+                return SliverList(
+                  key: ValueKey(
+                    '${_selectedLanguage}_${_selectedList}_${_currentSortMode.name}',
+                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final wordData = filteredWords[index];
+                    final word = wordData['word'] as String? ?? '';
+                    final browseWords = filteredWords
+                        .map((w) => w['word'] as String? ?? '')
+                        .where((w) => w.isNotEmpty)
+                        .toList();
 
-              return _buildWordListItem(
-                wordData: wordData,
-                language: _selectedLanguage!,
-                browseWords: browseWords,
-                browseIndex: index,
-                onRemove: () {
-                  _wordBankService.removeWord(word, _selectedLanguage!);
-                  setState(() {
-                    filteredWords.removeAt(index);
-                  });
-                },
+                    return _buildWordListItem(
+                      wordData: wordData,
+                      language: _selectedLanguage!,
+                      browseWords: browseWords,
+                      browseIndex: index,
+                      onRemove: () {
+                        _wordBankService.removeWord(word, _selectedLanguage!);
+                        setState(() {
+                          filteredWords.removeAt(index);
+                        });
+                      },
+                    );
+                  }, childCount: filteredWords.length),
+                );
+              }
+              return SliverGrid(
+                key: ValueKey(
+                  '${_selectedLanguage}_${_selectedList}_${_currentSortMode.name}_grid',
+                ),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisExtent: 56,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 4,
+                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final wordData = filteredWords[index];
+                  final word = wordData['word'] as String? ?? '';
+                  final browseWords = filteredWords
+                      .map((w) => w['word'] as String? ?? '')
+                      .where((w) => w.isNotEmpty)
+                      .toList();
+
+                  return _buildWordListItem(
+                    wordData: wordData,
+                    language: _selectedLanguage!,
+                    browseWords: browseWords,
+                    browseIndex: index,
+                    onRemove: () {
+                      _wordBankService.removeWord(word, _selectedLanguage!);
+                      setState(() {
+                        filteredWords.removeAt(index);
+                      });
+                    },
+                  );
+                }, childCount: filteredWords.length),
               );
-            }, childCount: filteredWords.length),
+            },
           ),
         );
       }

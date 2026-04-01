@@ -260,6 +260,12 @@ class TranslationsSettingsZh {
 	/// zh: '词典管理'
 	String get dictionaryManager => '词典管理';
 
+	/// zh: '词典商店'
+	String get dictionaryStore => '词典商店';
+
+	/// zh: '创作者中心'
+	String get creatorCenter => '创作者中心';
+
 	/// zh: 'AI 配置'
 	String get aiConfig => 'AI 配置';
 
@@ -268,6 +274,9 @@ class TranslationsSettingsZh {
 
 	/// zh: '主题设置'
 	String get themeSettings => '主题设置';
+
+	/// zh: '显示设置'
+	String get displaySettings => '显示设置';
 
 	/// zh: '软件布局缩放'
 	String get layoutScale => '软件布局缩放';
@@ -289,6 +298,12 @@ class TranslationsSettingsZh {
 
 	/// zh: '音频播放引擎'
 	String get audioBackend => '音频播放引擎';
+
+	/// zh: '核心功能'
+	String get coreFeatures => '核心功能';
+
+	/// zh: '外观'
+	String get appearance => '外观';
 
 	late final TranslationsSettingsAudioBackendDialogZh audioBackendDialog = TranslationsSettingsAudioBackendDialogZh.internal(_root);
 	late final TranslationsSettingsScaleDialogZh scaleDialog = TranslationsSettingsScaleDialogZh.internal(_root);
@@ -1312,6 +1327,9 @@ class TranslationsDictZh {
 
 	/// zh: '词典来源'
 	String get tabSource => '词典来源';
+
+	/// zh: '词典商店'
+	String get tabStore => '词典商店';
 
 	/// zh: '创作者中心'
 	String get tabCreator => '创作者中心';
@@ -2593,9 +2611,12 @@ extension on Translations {
 			'settings.title' => '设置',
 			'settings.cloudService' => '云服务',
 			'settings.dictionaryManager' => '词典管理',
+			'settings.dictionaryStore' => '词典商店',
+			'settings.creatorCenter' => '创作者中心',
 			'settings.aiConfig' => 'AI 配置',
 			'settings.fontConfig' => '字体配置',
 			'settings.themeSettings' => '主题设置',
+			'settings.displaySettings' => '显示设置',
 			'settings.layoutScale' => '软件布局缩放',
 			'settings.clickAction' => '点击动作设置',
 			'settings.toolbar' => '底部工具栏设置',
@@ -2603,6 +2624,8 @@ extension on Translations {
 			'settings.about' => '关于软件',
 			'settings.appLanguage' => '应用语言',
 			'settings.audioBackend' => '音频播放引擎',
+			'settings.coreFeatures' => '核心功能',
+			'settings.appearance' => '外观',
 			'settings.audioBackendDialog.title' => '音频播放引擎',
 			'settings.audioBackendDialog.subtitle' => '选择音频播放后端（Android 如遇播放卡顿可尝试切换）',
 			'settings.audioBackendDialog.mediaKit' => 'MediaKit (默认)',
@@ -2987,6 +3010,7 @@ extension on Translations {
 			'dict.title' => '词典管理',
 			'dict.tabSort' => '词典排序',
 			'dict.tabSource' => '词典来源',
+			'dict.tabStore' => '词典商店',
 			'dict.tabCreator' => '创作者中心',
 			'dict.localDir' => '本地词典目录',
 			'dict.changeDirTooltip' => '更改目录',
@@ -3043,14 +3067,14 @@ extension on Translations {
 			'dict.statusPreparingUpdate' => '准备更新',
 			'dict.statusDownloading' => '下载中',
 			'dict.statusCompleted' => '已完成',
+			_ => null,
+		} ?? switch (path) {
 			'dict.storeNotConfigured' => '未配置词典存储目录',
 			'dict.downloadFailed' => '下载失败',
 			'dict.tooltipUpdateJson' => '更新JSON',
 			'dict.tooltipReplaceFile' => '替换文件',
 			'dict.tooltipPushUpdate' => '推送更新',
 			'dict.tooltipDelete' => '删除',
-			_ => null,
-		} ?? switch (path) {
 			'dict.tooltipUpdate' => '更新词典',
 			'dict.tooltipDownload' => '下载词典',
 			'dict.daysAgo' => ({required Object n}) => '${n}天前',

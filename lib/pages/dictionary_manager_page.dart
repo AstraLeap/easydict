@@ -37,7 +37,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../i18n/strings.g.dart';
 
 class DictionaryManagerPage extends StatefulWidget {
-  const DictionaryManagerPage({super.key});
+  final VoidCallback? onBack;
+
+  const DictionaryManagerPage({super.key, this.onBack});
 
   @override
   State<DictionaryManagerPage> createState() => _DictionaryManagerPageState();
@@ -91,6 +93,15 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       // 加载本地词典
       final allDicts = await _dictManager.getAllDictionariesMetadata();
       final enabledIds = await _dictManager.getEnabledDictionaries();
+
+      // 自动启用新添加的词典
+      final allDictIds = allDicts.map((d) => d.id).toSet();
+      final newDictIds = allDictIds.difference(enabledIds.toSet());
+      if (newDictIds.isNotEmpty) {
+        Logger.i('发现新词典，自动启用: $newDictIds', tag: 'DictionaryManagerPage');
+        enabledIds.addAll(newDictIds);
+        await _dictManager.setEnabledDictionaries(enabledIds);
+      }
 
       // 加载已保存的语言顺序
       final savedOrder = await _advancedSettingsService.getLanguageOrder();
@@ -679,59 +690,22 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   @override
   Widget build(BuildContext context) {
     final scale = FontLoaderService().getDictionaryContentScale();
-    final updateCheckService = context.watch<DictUpdateCheckService>();
-    final updateCount = updateCheckService.updatableCount;
 
-    final content = DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(context.t.dict.title),
-          bottom: TabBar(
-            tabs: [
-              Tab(text: context.t.dict.tabSort),
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(context.t.dict.tabSource),
-                    if (updateCount > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.error,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$updateCount',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onError,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Tab(text: context.t.dict.tabCreator),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildDictionaryManagementTab(),
-            _buildSettingsAndSubscriptionTab(),
-            _buildCreatorCenterTab(),
-          ],
-        ),
-        bottomSheet: const DownloadProgressPanel(),
+    final content = Scaffold(
+      appBar: AppBar(
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onBack,
+              )
+            : null,
+        title: Text(context.t.dict.title),
+        centerTitle: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
       ),
+      body: _buildDictionaryManagementContent(),
+      bottomSheet: const DownloadProgressPanel(),
     );
 
     if (scale == 1.0) {
@@ -741,8 +715,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     return PageScaleWrapper(child: content);
   }
 
-  /// Tab1: 词典排序 - 按语言分组（语言 tab 本身支持长按拖动排序）
-  Widget _buildDictionaryManagementTab() {
+  /// 词典排序内容
+  Widget _buildDictionaryManagementContent() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -774,9 +748,11 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
     return Column(
       children: [
+        // 词典目录设置（移动到语言 tab 栏上方）
+        _buildCurrentDirectoryCard(),
         // 可拖动排序的语言 tab 栏
         Container(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(context).scaffoldBackgroundColor,
           height: 48,
           child: Row(
             children: [
@@ -799,6 +775,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                   itemBuilder: (context, index) {
                     final lang = displayLangs[index];
                     final isSelected = lang == currentLang;
+                    final colorScheme = Theme.of(context).colorScheme;
                     return ReorderableDragStartListener(
                       key: ValueKey(lang),
                       index: index,
@@ -806,11 +783,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                         onTap: () => setState(() => _selectedDictLang = lang),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
+                          height: 48,
                           decoration: BoxDecoration(
                             border: Border(
                               bottom: BorderSide(
                                 color: isSelected
-                                    ? Theme.of(context).colorScheme.primary
+                                    ? colorScheme.primary
                                     : Colors.transparent,
                                 width: 2,
                               ),
@@ -824,8 +802,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
                                     ? FontWeight.bold
                                     : FontWeight.normal,
                                 color: isSelected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : null,
+                                    ? colorScheme.primary
+                                    : colorScheme.onSurface,
                               ),
                             ),
                           ),
@@ -967,16 +945,13 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
     );
   }
 
-  /// Tab2: 词典来源 - 包含本地目录设置、在线词典列表
+  /// Tab2: 词典来源 - 在线词典列表
   Widget _buildSettingsAndSubscriptionTab() {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 800),
         child: CustomScrollView(
           slivers: [
-            // 本地目录设置
-            SliverToBoxAdapter(child: _buildCurrentDirectoryCard()),
-
             // 在线词典列表标题
             SliverToBoxAdapter(
               child: Padding(
@@ -1551,7 +1526,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   void _showBatchUpdateDialog(DictUpdateCheckService updateCheckService) {
     showDialog(
       context: context,
-      builder: (context) => _BatchUpdateDialog(
+      builder: (context) => BatchUpdateDialog(
         updateCheckService: updateCheckService,
         dictManager: _dictManager,
         storeService: _storeService,
@@ -1570,7 +1545,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
         final directory = snapshot.data ?? context.t.common.loading;
 
         return Card(
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: ListTile(
             leading: const Icon(Icons.folder_outlined),
             title: Text(context.t.dict.localDir),
@@ -2729,6 +2704,7 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
           builder: (context, constraints) {
             final isNarrow = constraints.maxWidth < 480;
             final hPad = isNarrow ? 12.0 : 24.0;
+            final colorScheme = Theme.of(context).colorScheme;
             return SingleChildScrollView(
               padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 24.0),
               child: Center(
@@ -2749,22 +2725,27 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
                       _buildFilesSection(),
                       const SizedBox(height: 28),
 
-                      // 删除词典按鈕
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
+                      // 删除词典按钮
+                      Center(
+                        child: TextButton.icon(
                           onPressed: () => _deleteDictionary(metadata),
-                          icon: const Icon(
-                            Icons.delete_forever,
-                            color: Colors.red,
+                          icon: Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                            color: colorScheme.error.withValues(alpha: 0.7),
                           ),
                           label: Text(
                             context.t.dict.deleteDictTitle,
-                            style: const TextStyle(color: Colors.red),
+                            style: TextStyle(
+                              color: colorScheme.error.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.red),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -3466,14 +3447,15 @@ class _DictionaryDetailPageState extends State<DictionaryDetailPage> {
   }
 }
 
-class _BatchUpdateDialog extends StatefulWidget {
+class BatchUpdateDialog extends StatefulWidget {
   final DictUpdateCheckService updateCheckService;
   final DictionaryManager dictManager;
   final DictionaryStoreService? storeService;
   final UserDictsService userDictsService;
   final VoidCallback onComplete;
 
-  const _BatchUpdateDialog({
+  const BatchUpdateDialog({
+    super.key,
     required this.updateCheckService,
     required this.dictManager,
     required this.storeService,
@@ -3482,10 +3464,10 @@ class _BatchUpdateDialog extends StatefulWidget {
   });
 
   @override
-  State<_BatchUpdateDialog> createState() => _BatchUpdateDialogState();
+  State<BatchUpdateDialog> createState() => _BatchUpdateDialogState();
 }
 
-class _BatchUpdateDialogState extends State<_BatchUpdateDialog> {
+class _BatchUpdateDialogState extends State<BatchUpdateDialog> {
   final Set<String> _selectedDictIds = {};
   bool _isRefreshing = false;
 

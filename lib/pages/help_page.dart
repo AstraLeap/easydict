@@ -12,7 +12,9 @@ import '../components/global_scale_wrapper.dart';
 import '../i18n/strings.g.dart';
 
 class HelpPage extends StatefulWidget {
-  const HelpPage({super.key});
+  final VoidCallback? onBack;
+
+  const HelpPage({super.key, this.onBack});
 
   @override
   State<HelpPage> createState() => _HelpPageState();
@@ -82,6 +84,12 @@ class _HelpPageState extends State<HelpPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onBack,
+              )
+            : null,
         title: Text(context.t.help.title),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -89,142 +97,156 @@ class _HelpPageState extends State<HelpPage> {
       ),
       body: PageScaleWrapper(
         scale: _contentScale,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Center(
-              child: Column(
-                children: [
-                  const SizedBox(height: 24),
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.asset(
-                        'assets/icon/app_icon.png',
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+        child: CustomScrollView(
+          slivers: [
+            SliverList(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: _buildContent(context, colorScheme, appUpdateService),
                   ),
-                  const SizedBox(height: 20),
-                  ShaderMask(
-                    shaderCallback: (bounds) => LinearGradient(
-                      colors: [colorScheme.primary, colorScheme.secondary],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ).createShader(bounds),
-                    child: Text(
-                      'EasyDict',
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 2.0,
-                          ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    context.t.help.tagline,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                ],
+                );
+              }, childCount: 1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(
+    BuildContext context,
+    ColorScheme colorScheme,
+    AppUpdateService appUpdateService,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          const SizedBox(height: 24),
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.asset(
+                'assets/icon/app_icon.png',
+                width: 80,
+                height: 80,
+                fit: BoxFit.cover,
               ),
             ),
+          ),
+          const SizedBox(height: 20),
+          ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              colors: [colorScheme.primary, colorScheme.secondary],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ).createShader(bounds),
+            child: Text(
+              'EasyDict',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 2.0,
+                  ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            context.t.help.tagline,
+            style: TextStyle(
+              fontSize: 16,
+              color: colorScheme.onSurfaceVariant,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 28),
 
+          _buildSettingsGroup(
+            context,
+            children: [
+              _buildSettingsTile(
+                context,
+                title: context.t.help.forumTitle,
+                subtitle: context.t.help.forumSubtitle,
+                icon: Icons.forum_outlined,
+                iconColor: colorScheme.primary,
+                isExternal: true,
+                onTap: () async {
+                  final url = Uri.parse(
+                    'https://forum.freemdict.com/t/topic/43251',
+                  );
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                },
+              ),
+              _buildSettingsTile(
+                context,
+                title: 'GitHub',
+                subtitle: context.t.help.githubSubtitle,
+                icon: Icons.code,
+                iconColor: colorScheme.primary,
+                isExternal: true,
+                onTap: () async {
+                  final url = Uri.parse(
+                    'https://github.com/AstraLeap/easydict',
+                  );
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // 系统信息组
+          if (_configDirPath != null)
             _buildSettingsGroup(
               context,
               children: [
-                _buildSettingsTile(
+                _buildOpenFolderTile(
                   context,
-                  title: context.t.help.forumTitle,
-                  subtitle: context.t.help.forumSubtitle,
-                  icon: Icons.forum_outlined,
+                  title: '配置目录',
+                  path: _configDirPath!,
+                  icon: Icons.folder_outlined,
                   iconColor: colorScheme.primary,
-                  isExternal: true,
-                  onTap: () async {
-                    final url = Uri.parse(
-                      'https://forum.freemdict.com/t/topic/43251',
-                    );
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(
-                        url,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                ),
-                _buildSettingsTile(
-                  context,
-                  title: 'GitHub',
-                  subtitle: context.t.help.githubSubtitle,
-                  icon: Icons.code,
-                  iconColor: colorScheme.primary,
-                  isExternal: true,
-                  onTap: () async {
-                    final url = Uri.parse(
-                      'https://github.com/AstraLeap/easydict',
-                    );
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(
-                        url,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
                 ),
               ],
             ),
 
-            const SizedBox(height: 16),
+          if (_configDirPath != null) const SizedBox(height: 16),
 
-            // 系统信息组
-            if (_configDirPath != null)
-              _buildSettingsGroup(
-                context,
-                children: [
-                  _buildOpenFolderTile(
-                    context,
-                    title: '配置目录',
-                    path: _configDirPath!,
-                    icon: Icons.folder_outlined,
-                    iconColor: colorScheme.primary,
-                  ),
-                ],
-              ),
+          // 检查更新组
+          _buildSettingsGroup(
+            context,
+            children: [_buildUpdateTile(context, appUpdateService)],
+          ),
 
-            if (_configDirPath != null) const SizedBox(height: 16),
+          const SizedBox(height: 16),
 
-            // 检查更新组
-            _buildSettingsGroup(
-              context,
-              children: [_buildUpdateTile(context, appUpdateService)],
+          Text(
+            'Copyright © 2026 EasyDict Team',
+            style: TextStyle(
+              fontSize: 12,
+              color: colorScheme.outline.withOpacity(0.5),
             ),
-
-            const SizedBox(height: 16),
-
-            Center(
-              child: Text(
-                'Copyright © 2026 EasyDict Team',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.outline.withOpacity(0.5),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

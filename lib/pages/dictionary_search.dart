@@ -320,7 +320,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       String? group;
       final dictId = searchResult.entries.first.dictId;
       if (dictId != null) {
-        final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+        final metadata = await DictionaryManager().getDictionaryMetadata(
+          dictId,
+        );
         group = metadata?.sourceLanguage;
       }
       await _historyService.addSearchRecord(word, group: group);
@@ -618,10 +620,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     });
 
     // 总是更新排序位置，保留已记录的语言；仅在搜索成功后再更新语言
-    await _historyService.addSearchRecord(
-      word,
-      exactMatch: _exactMatch,
-    );
+    await _historyService.addSearchRecord(word, exactMatch: _exactMatch);
 
     final searchResult = await _dbService.getAllEntries(
       word,
@@ -778,15 +777,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       // 精确匹配状态图标按钮
                       IconButton(
                         icon: Icon(
-                          _exactMatch
-                              ? Icons.filter_alt
-                              : Icons.filter_alt_off,
+                          _exactMatch ? Icons.filter_alt : Icons.filter_alt_off,
                           size: 20,
                           color: _exactMatch
                               ? Theme.of(context).colorScheme.primary
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         onPressed: () {
                           setState(() {
@@ -960,7 +955,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   /// 构建每日单词区域
   Widget _buildDailyWordsSection() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       decoration: BoxDecoration(
         color: Theme.of(
           context,
@@ -1408,18 +1403,23 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             ),
           ),
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 10,
-                mainAxisExtent: 40,
-              ),
-              itemCount: _searchRecords.length,
-              itemBuilder: (context, index) {
-                final record = _searchRecords[index];
-                return _buildHistoryItem(record);
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final crossAxisCount = constraints.maxWidth >= 600 ? 3 : 2;
+                return GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 10,
+                    mainAxisExtent: 40,
+                  ),
+                  itemCount: _searchRecords.length,
+                  itemBuilder: (context, index) {
+                    final record = _searchRecords[index];
+                    return _buildHistoryItem(record);
+                  },
+                );
               },
             ),
           ),

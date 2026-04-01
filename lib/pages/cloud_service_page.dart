@@ -28,7 +28,9 @@ import '../components/global_scale_wrapper.dart';
 import '../components/transfer_progress_panel.dart';
 
 class CloudServicePage extends StatefulWidget {
-  const CloudServicePage({super.key});
+  final VoidCallback? onBack;
+
+  const CloudServicePage({super.key, this.onBack});
 
   @override
   State<CloudServicePage> createState() => _CloudServicePageState();
@@ -126,6 +128,8 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = false;
         _currentUser = null;
       });
+      // 通知登录状态变化
+      EntryEventBus().emitAuthStateChanged(false);
       if (mounted) {
         showToast(context, context.t.cloud.subscriptionChanged);
       }
@@ -147,6 +151,9 @@ class _CloudServicePageState extends State<CloudServicePage> {
     }
 
     _currentBaseUrl = url;
+
+    // 通知订阅链接变化
+    EntryEventBus().emitSubscriptionUrlChanged();
 
     if (mounted) {
       showToast(context, context.t.cloud.subscriptionSaved);
@@ -359,6 +366,8 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = result.user;
       });
+      // 通知登录状态变化
+      EntryEventBus().emitAuthStateChanged(true);
       showToast(context, context.t.cloud.loginSuccess);
       return true;
     } else {
@@ -395,6 +404,8 @@ class _CloudServicePageState extends State<CloudServicePage> {
         _isLoggedIn = true;
         _currentUser = result.user;
       });
+      // 通知登录状态变化
+      EntryEventBus().emitAuthStateChanged(true);
       showToast(context, context.t.cloud.registerSuccess);
       return true;
     } else {
@@ -411,6 +422,8 @@ class _CloudServicePageState extends State<CloudServicePage> {
       _isLoggedIn = false;
       _currentUser = null;
     });
+    // 通知登录状态变化
+    EntryEventBus().emitAuthStateChanged(false);
     showToast(context, context.t.cloud.loggedOut);
   }
 
@@ -565,54 +578,60 @@ class _CloudServicePageState extends State<CloudServicePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: PageScaleWrapper(
-        child: Stack(
-          children: [
-            CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  title: Text(context.t.cloud.title),
-                  centerTitle: true,
-                  pinned: true,
-                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                  surfaceTintColor: Colors.transparent,
-                ),
-                SliverToBoxAdapter(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _buildSubscriptionCard(),
-                            const SizedBox(height: 16),
-                            _buildAccountCard(),
-                            const SizedBox(height: 24),
-                            if (_service != null &&
-                                _availableDictionaries.isNotEmpty)
-                              _buildDictionariesSummary(),
-                            const SizedBox(height: 80),
-                          ],
-                        ),
+    final content = PageScaleWrapper(
+      child: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                leading: widget.onBack != null
+                    ? IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: widget.onBack,
+                      )
+                    : null,
+                title: Text(context.t.cloud.title),
+                centerTitle: true,
+                pinned: true,
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                surfaceTintColor: Colors.transparent,
+              ),
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildSubscriptionCard(),
+                          const SizedBox(height: 16),
+                          _buildAccountCard(),
+                          const SizedBox(height: 24),
+                          if (_service != null &&
+                              _availableDictionaries.isNotEmpty)
+                            _buildDictionariesSummary(),
+                          const SizedBox(height: 80),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: UploadProgressPanel(),
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: UploadProgressPanel(),
+          ),
+        ],
       ),
     );
+
+    return Scaffold(body: content);
   }
 
   Widget _buildSubscriptionCard() {

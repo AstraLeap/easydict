@@ -144,9 +144,12 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 	@override String get title => 'Settings';
 	@override String get cloudService => 'Cloud Service';
 	@override String get dictionaryManager => 'Dictionary Manager';
+	@override String get dictionaryStore => 'Dictionary Store';
+	@override String get creatorCenter => 'Creator Center';
 	@override String get aiConfig => 'AI Config';
 	@override String get fontConfig => 'Font Config';
 	@override String get themeSettings => 'Theme Settings';
+	@override String get displaySettings => 'Display Settings';
 	@override String get layoutScale => 'Layout Scale';
 	@override String get clickAction => 'Click Action';
 	@override String get toolbar => 'Bottom Toolbar';
@@ -154,6 +157,8 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 	@override String get about => 'About';
 	@override String get appLanguage => 'App Language';
 	@override String get audioBackend => 'Audio Playback Engine';
+	@override String get coreFeatures => 'Core Features';
+	@override String get appearance => 'Appearance';
 	@override late final _TranslationsSettingsAudioBackendDialogEn audioBackendDialog = _TranslationsSettingsAudioBackendDialogEn._(_root);
 	@override late final _TranslationsSettingsScaleDialogEn scaleDialog = _TranslationsSettingsScaleDialogEn._(_root);
 	@override late final _TranslationsSettingsClickActionDialogEn clickActionDialog = _TranslationsSettingsClickActionDialogEn._(_root);
@@ -553,6 +558,7 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get title => 'Dictionary Manager';
 	@override String get tabSort => 'Dict Order';
 	@override String get tabSource => 'Dict Source';
+	@override String get tabStore => 'Dict Store';
 	@override String get tabCreator => 'Creator Center';
 	@override String get localDir => 'Local Dict Directory';
 	@override String get changeDirTooltip => 'Change Directory';
@@ -1076,9 +1082,12 @@ extension on TranslationsEn {
 			'settings.title' => 'Settings',
 			'settings.cloudService' => 'Cloud Service',
 			'settings.dictionaryManager' => 'Dictionary Manager',
+			'settings.dictionaryStore' => 'Dictionary Store',
+			'settings.creatorCenter' => 'Creator Center',
 			'settings.aiConfig' => 'AI Config',
 			'settings.fontConfig' => 'Font Config',
 			'settings.themeSettings' => 'Theme Settings',
+			'settings.displaySettings' => 'Display Settings',
 			'settings.layoutScale' => 'Layout Scale',
 			'settings.clickAction' => 'Click Action',
 			'settings.toolbar' => 'Bottom Toolbar',
@@ -1086,6 +1095,8 @@ extension on TranslationsEn {
 			'settings.about' => 'About',
 			'settings.appLanguage' => 'App Language',
 			'settings.audioBackend' => 'Audio Playback Engine',
+			'settings.coreFeatures' => 'Core Features',
+			'settings.appearance' => 'Appearance',
 			'settings.audioBackendDialog.title' => 'Audio Playback Engine',
 			'settings.audioBackendDialog.subtitle' => 'Select audio backend (switch if Android playback stutters)',
 			'settings.audioBackendDialog.mediaKit' => 'MediaKit (Default)',
@@ -1470,6 +1481,7 @@ extension on TranslationsEn {
 			'dict.title' => 'Dictionary Manager',
 			'dict.tabSort' => 'Dict Order',
 			'dict.tabSource' => 'Dict Source',
+			'dict.tabStore' => 'Dict Store',
 			'dict.tabCreator' => 'Creator Center',
 			'dict.localDir' => 'Local Dict Directory',
 			'dict.changeDirTooltip' => 'Change Directory',
@@ -1528,14 +1540,14 @@ extension on TranslationsEn {
 			'dict.statusCompleted' => 'Completed',
 			'dict.storeNotConfigured' => 'Dictionary storage directory not configured',
 			'dict.downloadFailed' => 'Download failed',
+			_ => null,
+		} ?? switch (path) {
 			'dict.tooltipUpdateJson' => 'Update JSON',
 			'dict.tooltipReplaceFile' => 'Replace File',
 			'dict.tooltipPushUpdate' => 'Push Update',
 			'dict.tooltipDelete' => 'Delete',
 			'dict.tooltipUpdate' => 'Update dictionary',
 			'dict.tooltipDownload' => 'Download dictionary',
-			_ => null,
-		} ?? switch (path) {
 			'dict.daysAgo' => ({required Object n}) => '${n} days ago',
 			'dict.monthsAgo' => ({required Object n}) => '${n} months ago',
 			'dict.yearsAgo' => ({required Object n}) => '${n} years ago',

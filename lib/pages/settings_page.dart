@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,7 +5,6 @@ import 'package:window_manager/window_manager.dart';
 import '../core/locale_provider.dart';
 import '../core/theme_provider.dart';
 import '../core/utils/toast_utils.dart';
-import '../core/utils/language_utils.dart';
 
 import '../i18n/strings.g.dart';
 import '../services/dict_update_check_service.dart';
@@ -16,47 +14,25 @@ import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
 import '../services/clipboard_watcher_service.dart';
 import '../services/system_tray_service.dart';
+import '../services/dictionary_manager.dart';
+import '../services/auth_service.dart';
+import '../services/entry_event_bus.dart';
 import '../components/global_scale_wrapper.dart';
 import 'cloud_service_page.dart';
 import 'dictionary_manager_page.dart';
+import 'dictionary_source_page.dart';
+import 'creator_center_page.dart';
+import 'display_settings_page.dart';
 import 'font_config_page.dart';
 import 'help_page.dart';
 import 'llm_config_page.dart';
 import 'theme_color_page.dart';
+import 'settings/menu_item.dart';
+import 'settings/wide_layout.dart';
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
-
-String _getLocalizedActionLabel(BuildContext context, String action) {
-  final t = context.t.settings.actionLabel;
-  switch (action) {
-    case PreferencesService.actionAiTranslate:
-      return t.aiTranslate;
-    case PreferencesService.actionCopy:
-      return t.copy;
-    case PreferencesService.actionAskAi:
-      return t.askAi;
-    case PreferencesService.actionEdit:
-      return t.edit;
-    case PreferencesService.actionSpeak:
-      return t.speak;
-    case PreferencesService.actionBack:
-      return t.back;
-    case PreferencesService.actionSearch:
-      return t.search;
-    case PreferencesService.actionFavorite:
-      return t.favorite;
-    case PreferencesService.actionToggleTranslate:
-      return t.toggleTranslate;
-    case PreferencesService.actionAiHistory:
-      return t.aiHistory;
-    case PreferencesService.actionResetEntry:
-      return t.resetEntry;
-    default:
-      return action;
-  }
-}
 
 // ─────────────────────────────────────────────
 // SettingsPage
@@ -74,31 +50,265 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final _preferencesService = PreferencesService();
-  String _clickAction = PreferencesService.actionAiTranslate;
+  final _dictManager = DictionaryManager();
+  final _authService = AuthService();
+  final _eventBus = EntryEventBus();
   bool _isLoading = true;
-  double _dictionaryContentScale = 1.0;
+
+  /// 云服务器URL是否已设置
+  bool _hasCloudServer = false;
+
+  /// 用户是否已登录
+  bool _isLoggedIn = false;
+
+  /// 当前选中的菜单索引
+  /// -1 表示未选中（宽屏模式下右侧留空，窄屏模式下显示主页）
+  int _selectedMenuIndex = -1;
+
+  /// 上一次的宽屏状态（用于检测布局切换）
+  bool? _lastIsWideLayout;
+
+  /// 宽屏布局阈值
+  static const double _wideLayoutThreshold = 800.0;
+
+  /// 菜单项配置列表
+  List<SettingsMenuItem>? _menuItems;
+
+  /// 菜单分组配置列表
+  List<SettingsMenuGroup>? _menuGroups;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _listenEvents();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    FontLoaderService().reloadDictionaryContentScale();
+  void _listenEvents() {
+    // 监听订阅链接变化
+    _eventBus.subscriptionUrlChanged.listen((_) {
+      _refreshCloudStatus();
+    });
+
+    // 监听登录状态变化
+    _eventBus.authStateChanged.listen((event) {
+      setState(() {
+        _isLoggedIn = event.isLoggedIn;
+      });
+    });
+  }
+
+  /// 刷新云服务器和登录状态
+  Future<void> _refreshCloudStatus() async {
+    final cloudUrl = await _dictManager.onlineSubscriptionUrl;
+    final hasCloudServer = cloudUrl.isNotEmpty;
+
+    bool isLoggedIn = false;
+    if (hasCloudServer) {
+      _authService.setBaseUrl(cloudUrl);
+      final token = await _preferencesService.getAuthToken();
+      final userData = await _preferencesService.getAuthUserData();
+      if (token != null && userData != null) {
+        _authService.restoreSession(token: token, userData: userData);
+        isLoggedIn = _authService.isLoggedIn;
+      }
+    }
+
+    // 只有状态变化时才更新
+    if (_hasCloudServer != hasCloudServer || _isLoggedIn != isLoggedIn) {
+      setState(() {
+        _hasCloudServer = hasCloudServer;
+        _isLoggedIn = isLoggedIn;
+      });
+    }
   }
 
   Future<void> _loadData() async {
-    final clickAction = await _preferencesService.getClickAction();
-    final dictionaryContentScale = FontLoaderService()
-        .getDictionaryContentScale();
+    // 检查云服务器是否设置
+    final cloudUrl = await _dictManager.onlineSubscriptionUrl;
+    final hasCloudServer = cloudUrl.isNotEmpty;
+
+    // 检查登录状态
+    if (hasCloudServer) {
+      _authService.setBaseUrl(cloudUrl);
+      // 尝试恢复登录状态
+      final token = await _preferencesService.getAuthToken();
+      final userData = await _preferencesService.getAuthUserData();
+      if (token != null && userData != null) {
+        _authService.restoreSession(token: token, userData: userData);
+      }
+    }
+
     setState(() {
-      _clickAction = clickAction;
-      _dictionaryContentScale = dictionaryContentScale;
+      _hasCloudServer = hasCloudServer;
+      _isLoggedIn = _authService.isLoggedIn;
       _isLoading = false;
     });
+  }
+
+  /// 初始化菜单项配置
+  void _initMenuItems(BuildContext context) {
+    if (_menuItems != null) return;
+
+    final updateCheckService = context.read<DictUpdateCheckService>();
+    final appUpdateService = context.read<AppUpdateService>();
+    final colorScheme = Theme.of(context).colorScheme;
+
+    _menuItems = [
+      // 设置主页（窄屏模式下的默认页）
+      SettingsMenuItem(
+        id: 'home',
+        titleBuilder: (t) => t.settings.title,
+        icon: Icons.settings,
+        type: SettingsContentType.homePage,
+        group: 'home',
+      ),
+
+      // 云服务
+      SettingsMenuItem(
+        id: 'cloud_service',
+        titleBuilder: (t) => t.settings.cloudService,
+        icon: Icons.cloud_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => CloudServicePage(onBack: onBack),
+        group: 'cloud',
+      ),
+
+      // 词典商店（只有设置了云服务器才显示）
+      SettingsMenuItem(
+        id: 'dictionary_store',
+        titleBuilder: (t) => t.settings.dictionaryStore,
+        icon: Icons.store_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => DictionarySourcePage(onBack: onBack),
+        badgeCountProvider: () => updateCheckService.updatableCount,
+        group: 'cloud',
+        visibilityCondition: () => _hasCloudServer,
+      ),
+
+      // 创作者中心（只有登录了账号才显示）
+      SettingsMenuItem(
+        id: 'creator_center',
+        titleBuilder: (t) => t.settings.creatorCenter,
+        icon: Icons.edit_note,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => CreatorCenterPage(onBack: onBack),
+        group: 'cloud',
+        visibilityCondition: () => _isLoggedIn,
+      ),
+
+      // 核心功能组
+      SettingsMenuItem(
+        id: 'dictionary_manager',
+        titleBuilder: (t) => t.settings.dictionaryManager,
+        icon: Icons.folder_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => DictionaryManagerPage(onBack: onBack),
+        group: 'core',
+      ),
+      SettingsMenuItem(
+        id: 'font_config',
+        titleBuilder: (t) => t.settings.fontConfig,
+        icon: Icons.font_download_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => FontConfigPage(onBack: onBack),
+        group: 'core',
+      ),
+      SettingsMenuItem(
+        id: 'ai_config',
+        titleBuilder: (t) => t.settings.aiConfig,
+        icon: Icons.auto_awesome,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => LLMConfigPage(onBack: onBack),
+        group: 'core',
+      ),
+
+      // 外观设置组
+      SettingsMenuItem(
+        id: 'theme_settings',
+        titleBuilder: (t) => t.settings.themeSettings,
+        icon: Icons.palette_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => ThemeColorPage(onBack: onBack),
+        group: 'appearance',
+      ),
+      SettingsMenuItem(
+        id: 'display_settings',
+        titleBuilder: (t) => t.settings.displaySettings,
+        icon: Icons.display_settings_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => DisplaySettingsPage(onBack: onBack),
+        group: 'appearance',
+      ),
+      SettingsMenuItem(
+        id: 'misc',
+        titleBuilder: (t) => t.settings.misc,
+        icon: Icons.settings_suggest_outlined,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => MiscSettingsPage(onBack: onBack),
+        group: 'appearance',
+      ),
+
+      // 帮助与支持组
+      SettingsMenuItem(
+        id: 'about',
+        titleBuilder: (t) => t.settings.about,
+        icon: Icons.help_outline,
+        type: SettingsContentType.subPage,
+        subPageBuilder: ({onBack}) => HelpPage(onBack: onBack),
+        badgeCountProvider: () => appUpdateService.hasUpdate ? 1 : null,
+        group: 'help',
+      ),
+    ];
+
+    _menuGroups = [
+      // 主页组（仅窄屏模式显示）
+      SettingsMenuGroup(
+        id: 'home',
+        items: _menuItems!.where((item) => item.group == 'home').toList(),
+      ),
+      SettingsMenuGroup(
+        id: 'cloud',
+        items: _menuItems!.where((item) => item.group == 'cloud').toList(),
+      ),
+      SettingsMenuGroup(
+        id: 'core',
+        titleBuilder: (t) => t.settings.coreFeatures,
+        items: _menuItems!.where((item) => item.group == 'core').toList(),
+      ),
+      SettingsMenuGroup(
+        id: 'appearance',
+        titleBuilder: (t) => t.settings.appearance,
+        items: _menuItems!.where((item) => item.group == 'appearance').toList(),
+      ),
+      SettingsMenuGroup(
+        id: 'help',
+        items: _menuItems!.where((item) => item.group == 'help').toList(),
+      ),
+    ];
+  }
+
+  /// 处理菜单选中
+  void _onMenuSelected(int index) {
+    if (index == -2) {
+      // 宽屏模式下返回：显示空白占位
+      setState(() => _selectedMenuIndex = -1);
+      return;
+    }
+    if (index < 0) {
+      // 窄屏模式下返回主页
+      setState(() => _selectedMenuIndex = 0);
+      return;
+    }
+
+    final item = _menuItems![index];
+    if (item.type == SettingsContentType.dialog) {
+      // 对话框类型直接弹出对话框
+      item.showDialog?.call(context);
+    } else {
+      // 子页面/内嵌类型切换右侧内容
+      setState(() => _selectedMenuIndex = index);
+    }
   }
 
   String _getThemeColorName(BuildContext context, Color color) {
@@ -138,522 +348,48 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  void _showClickActionDialog() async {
-    final currentOrder = await _preferencesService.getClickActionOrder();
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) {
-        return _ClickActionOrderDialog(
-          initialOrder: currentOrder,
-          onSave: (newOrder) async {
-            await _preferencesService.setClickActionOrder(newOrder);
-            setState(() {
-              _clickAction = newOrder.first;
-            });
-          },
-        );
-      },
-    );
-  }
-
-  void _showToolbarConfigDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => const _ToolbarConfigDialog(),
-    );
-  }
-
-  void _showLanguageDialog() {
-    final localeProvider = context.read<LocaleProvider>();
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return _LanguagePickerDialog(
-          currentOption: localeProvider.currentOption,
-          onSelected: (option) {
-            localeProvider.setLocaleOption(option);
-          },
-        );
-      },
-    );
-  }
-
-  void _showDictionaryContentScaleDialog() async {
-    final oldScale = _dictionaryContentScale;
-    final contentScale = FontLoaderService().getDictionaryContentScale();
-    await showDialog(
-      context: context,
-      builder: (context) {
-        final dialog = ScaleDialogWidget(
-          title: context.t.settings.scaleDialog.title,
-          subtitle: context.t.settings.scaleDialog.subtitle,
-          currentValue: (_dictionaryContentScale * 100).round().toDouble(),
-          min: 50,
-          max: 200,
-          divisions: 5,
-          unit: '%',
-          onSave: (value) async {
-            final prefs = PreferencesService();
-            await prefs.setDictionaryContentScale(value / 100);
-            await FontLoaderService().reloadDictionaryContentScale();
-            if (mounted) {
-              setState(() {
-                _dictionaryContentScale = value / 100;
-              });
-            }
-          },
-        );
-        if (contentScale == 1.0) return dialog;
-        return PageScaleWrapper(scale: contentScale, child: dialog);
-      },
-    );
-    // 如果用户更改了缩放，弹出10秒倒计时确认对话框
-    if (mounted && (_dictionaryContentScale - oldScale).abs() > 0.001) {
-      final newScale = _dictionaryContentScale;
-      final confirmed = await _showScaleConfirmationDialog(newScale);
-      if (!confirmed) {
-        final prefs = PreferencesService();
-        await prefs.setDictionaryContentScale(oldScale);
-        await FontLoaderService().reloadDictionaryContentScale();
-        if (mounted) {
-          setState(() {
-            _dictionaryContentScale = oldScale;
-          });
-        }
-      }
-    }
-  }
-
-  Future<bool> _showScaleConfirmationDialog(double newScale) async {
-    int countdown = 10;
-    Timer? timer;
-    bool? dialogResult;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            timer ??= Timer.periodic(const Duration(seconds: 1), (t) {
-              if (countdown <= 1) {
-                t.cancel();
-                dialogResult = false;
-                Navigator.of(dialogContext).pop();
-              } else {
-                setDialogState(() => countdown--);
-              }
-            });
-            return AlertDialog(
-              title: Text(
-                context.t.settings.scaleDialog.confirmTitle,
-                locale: getFontLocale(),
-              ),
-              content: Text(
-                context.t.settings.scaleDialog.confirmBody(
-                  percent: (newScale * 100).round(),
-                  seconds: countdown,
-                ),
-                locale: getFontLocale(),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    timer?.cancel();
-                    dialogResult = false;
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: Text(context.t.common.undo, locale: getFontLocale()),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    timer?.cancel();
-                    dialogResult = true;
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: Text(
-                    context.t.common.confirm,
-                    locale: getFontLocale(),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    timer?.cancel();
-    return dialogResult ?? false;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    final updateCheckService = context.watch<DictUpdateCheckService>();
-    final appUpdateService = context.watch<AppUpdateService>();
-    // watch LocaleProvider so the language subtitle rebuilds on locale change
-    context.watch<LocaleProvider>();
-    final colorScheme = Theme.of(context).colorScheme;
-    final contentScale = FontLoaderService().getDictionaryContentScale();
-    return Scaffold(
-      body: PageScaleWrapper(
-        scale: contentScale,
-        child: SafeArea(
-          bottom: false,
-          child: CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.only(left: 16, right: 16, top: 12),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    // 云服务组
-                    _buildSettingsGroup(
-                      context,
-                      children: [
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.cloudService,
-                          icon: Icons.cloud_outlined,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const CloudServicePage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 核心功能组
-                    _buildSettingsGroup(
-                      context,
-                      children: [
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.dictionaryManager,
-                          icon: Icons.folder_outlined,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          badgeCount: updateCheckService.updatableCount,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    const DictionaryManagerPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.aiConfig,
-                          icon: Icons.auto_awesome,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const LLMConfigPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.fontConfig,
-                          icon: Icons.font_download_outlined,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          onTap: () async {
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const FontConfigPage(),
-                              ),
-                            );
-                            // 从字体配置页返回后，刷新父级的缩放值
-                            if (mounted) {
-                              final newScale = FontLoaderService()
-                                  .getDictionaryContentScale();
-                              widget.contentScaleNotifier?.value = newScale;
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 外观设置组
-                    _buildSettingsGroup(
-                      context,
-                      children: [
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.themeSettings,
-                          icon: Icons.palette_outlined,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const ThemeColorPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.appLanguage,
-                          icon: Icons.language_outlined,
-                          iconColor: colorScheme.primary,
-                          onTap: _showLanguageDialog,
-                        ),
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.layoutScale,
-                          icon: Icons.zoom_in,
-                          iconColor: colorScheme.primary,
-                          onTap: _showDictionaryContentScaleDialog,
-                        ),
-                        if (!_isLoading)
-                          _buildSettingsTile(
-                            context,
-                            title: context.t.settings.clickAction,
-                            icon: Icons.touch_app_outlined,
-                            iconColor: colorScheme.primary,
-                            onTap: _showClickActionDialog,
-                          ),
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.toolbar,
-                          icon: Icons.apps,
-                          iconColor: colorScheme.primary,
-                          onTap: _showToolbarConfigDialog,
-                        ),
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.misc,
-                          icon: Icons.settings_suggest_outlined,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const MiscSettingsPage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 帮助与支持组
-                    _buildSettingsGroup(
-                      context,
-                      children: [
-                        _buildSettingsTile(
-                          context,
-                          title: context.t.settings.about,
-                          icon: Icons.help_outline,
-                          iconColor: colorScheme.primary,
-                          showArrow: true,
-                          badgeCount: appUpdateService.hasUpdate ? 1 : null,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const HelpPage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    // const SizedBox(height: 22),
-                  ]),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideLayout = screenWidth >= _wideLayoutThreshold;
 
-  Widget _buildSettingsGroup(
-    BuildContext context, {
-    required List<Widget> children,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: colorScheme.outlineVariant.withOpacity(0.5),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        children: _addDividers(
-          children,
-          colorScheme.outlineVariant.withOpacity(0.3),
-        ),
-      ),
-    );
-  }
+    // 初始化菜单项
+    _initMenuItems(context);
 
-  List<Widget> _addDividers(List<Widget> children, Color dividerColor) {
-    final result = <Widget>[];
-    for (int i = 0; i < children.length; i++) {
-      result.add(children[i]);
-      if (i < children.length - 1) {
-        result.add(Divider(height: 1, indent: 52, color: dividerColor));
+    // 处理布局切换
+    if (_lastIsWideLayout != null && _lastIsWideLayout != isWideLayout) {
+      // 布局发生变化
+      if (!isWideLayout) {
+        // 从宽屏切换到窄屏：如果当前未选中，显示主页
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _selectedMenuIndex == -1) {
+            setState(() => _selectedMenuIndex = 0);
+          }
+        });
+      } else {
+        // 从窄屏切换到宽屏：如果当前是主页，显示空白占位
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _selectedMenuIndex == 0) {
+            setState(() => _selectedMenuIndex = -1);
+          }
+        });
       }
     }
-    return result;
-  }
+    _lastIsWideLayout = isWideLayout;
 
-  Widget _buildSettingsTile(
-    BuildContext context, {
-    required String title,
-    String? subtitle,
-    required IconData icon,
-    Color? iconColor,
-    bool showArrow = false,
-    bool isExternal = false,
-    int? badgeCount,
-    Widget? trailing,
-    VoidCallback? onTap,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final effectiveIconColor = iconColor ?? colorScheme.onSurfaceVariant;
+    // 宽屏模式下，主页(index 0) 显示空白占位；窄屏模式下，未选中时显示主页
+    final effectiveSelectedIndex = isWideLayout
+        ? (_selectedMenuIndex == 0 ? -1 : _selectedMenuIndex)
+        : (_selectedMenuIndex == -1 ? 0 : _selectedMenuIndex);
 
-    Widget? effectiveTrailing;
-    if (trailing != null) {
-      effectiveTrailing = trailing;
-    } else {
-      effectiveTrailing = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (badgeCount != null && badgeCount > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: colorScheme.error,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '$badgeCount',
-                style: TextStyle(
-                  color: colorScheme.onError,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          if (showArrow)
-            Icon(Icons.chevron_right, color: colorScheme.outline, size: 20)
-          else if (isExternal)
-            Icon(Icons.open_in_new, color: colorScheme.outline, size: 18),
-        ],
-      );
-    }
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      leading: Icon(icon, color: effectiveIconColor, size: 24),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-      ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            )
-          : null,
-      trailing: effectiveTrailing,
-      onTap: onTap,
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// _LanguagePickerDialog
-// ─────────────────────────────────────────────
-
-class _LanguagePickerDialog extends StatefulWidget {
-  const _LanguagePickerDialog({
-    required this.currentOption,
-    required this.onSelected,
-  });
-
-  final AppLocaleOption currentOption;
-  final void Function(AppLocaleOption) onSelected;
-
-  @override
-  State<_LanguagePickerDialog> createState() => _LanguagePickerDialogState();
-}
-
-class _LanguagePickerDialogState extends State<_LanguagePickerDialog> {
-  late AppLocaleOption _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.currentOption;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.t;
-    final options = [
-      (AppLocaleOption.auto, t.language.auto),
-      (AppLocaleOption.zh, t.language.zh),
-      (AppLocaleOption.en, t.language.en),
-    ];
-
-    return AlertDialog(
-      title: Text(t.language.dialogTitle),
-      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: options.map((entry) {
-          final (option, label) = entry;
-          return RadioListTile<AppLocaleOption>(
-            title: Text(label),
-            value: option,
-            groupValue: _selected,
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _selected = v);
-              widget.onSelected(v);
-              Navigator.of(context).pop();
-            },
-          );
-        }).toList(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.common.cancel),
-        ),
-      ],
+    // 统一使用 WideSettingsLayout，通过 showMenuPanel 控制是否显示左侧菜单
+    return WideSettingsLayout(
+      menuItems: _menuItems!,
+      menuGroups: _menuGroups!,
+      selectedIndex: effectiveSelectedIndex,
+      onMenuSelected: _onMenuSelected,
+      contentScaleNotifier: widget.contentScaleNotifier,
+      showMenuPanel: isWideLayout,
     );
   }
 }
@@ -664,7 +400,9 @@ class _LanguagePickerDialogState extends State<_LanguagePickerDialog> {
 
 /// 其它设置页面
 class MiscSettingsPage extends StatefulWidget {
-  const MiscSettingsPage({super.key});
+  final VoidCallback? onBack;
+
+  const MiscSettingsPage({super.key, this.onBack});
 
   @override
   State<MiscSettingsPage> createState() => _MiscSettingsPageState();
@@ -711,6 +449,12 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onBack,
+              )
+            : null,
         title: Text(context.t.settings.misc_page.title),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -722,278 +466,239 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
               scale: _contentScale,
               child: CustomScrollView(
                 slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.all(16),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        _buildSectionTitle(
-                          context,
-                          context.t.settings.misc_page.auxDbTitle,
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 800),
+                          child: _buildContent(context, colorScheme),
                         ),
-                        const SizedBox(height: 8),
-                        Card(
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                              color: colorScheme.outlineVariant.withOpacity(
-                                0.5,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                leading: Icon(
-                                  Icons.translate,
-                                  color: colorScheme.primary,
-                                ),
-                                title: Text(
-                                  context.t.settings.misc_page.skipAskRedirect,
-                                ),
-                                subtitle: Text(
-                                  _neverAskAgain
-                                      ? context
-                                            .t
-                                            .settings
-                                            .misc_page
-                                            .skipAskEnabled
-                                      : context
-                                            .t
-                                            .settings
-                                            .misc_page
-                                            .skipAskDisabled,
-                                ),
-                                trailing: Switch(
-                                  value: _neverAskAgain,
-                                  onChanged: (value) async {
-                                    if (value) {
-                                      await _englishDbService.setNeverAskAgain(
-                                        true,
-                                      );
-                                      setState(() => _neverAskAgain = true);
-                                    } else {
-                                      await _englishDbService
-                                          .resetNeverAskAgain();
-                                      setState(() => _neverAskAgain = false);
-                                    }
-                                  },
-                                ),
-                              ),
-                              Divider(
-                                height: 1,
-                                indent: 56,
-                                color: colorScheme.outlineVariant.withOpacity(
-                                  0.3,
-                                ),
-                              ),
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                leading: Icon(
-                                  Icons.storage_outlined,
-                                  color: _englishDbExists
-                                      ? colorScheme.error
-                                      : colorScheme.outline,
-                                ),
-                                title: Text(
-                                  context.t.settings.misc_page.deleteAuxDb,
-                                  style: TextStyle(
-                                    color: _englishDbExists
-                                        ? colorScheme.error
-                                        : colorScheme.outline,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  _englishDbExists
-                                      ? context
-                                            .t
-                                            .settings
-                                            .misc_page
-                                            .auxDbInstalled
-                                      : context
-                                            .t
-                                            .settings
-                                            .misc_page
-                                            .auxDbNotInstalled,
-                                ),
-                                onTap: _englishDbExists
-                                    ? () => _showDeleteAuxDbDialog()
-                                    : null,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildSectionTitle(
-                          context,
-                          context.t.settings.misc_page.dictUpdateTitle,
-                        ),
-                        const SizedBox(height: 8),
-                        Card(
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                              color: colorScheme.outlineVariant.withOpacity(
-                                0.5,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            leading: Icon(
-                              Icons.update,
-                              color: colorScheme.primary,
-                            ),
-                            title: Text(
-                              context.t.settings.misc_page.autoCheckDictUpdate,
-                            ),
-                            subtitle: Text(
-                              context
-                                  .t
-                                  .settings
-                                  .misc_page
-                                  .autoCheckDictUpdateSubtitle,
-                            ),
-                            trailing: Switch(
-                              value: _autoCheckDictUpdate,
-                              onChanged: (value) async {
-                                await _preferencesService
-                                    .setAutoCheckDictUpdate(value);
-                                setState(() => _autoCheckDictUpdate = value);
-                                final updateCheckService = context
-                                    .read<DictUpdateCheckService>();
-                                if (value) {
-                                  updateCheckService.startDailyCheck();
-                                } else {
-                                  updateCheckService.stopDailyCheck();
-                                  updateCheckService.clearAllUpdates();
-                                }
-                              },
-                            ),
-                          ),
-                        ),
-                        // 桌面功能设置组（仅桌面平台显示）
-                        if (Platform.isWindows ||
-                            Platform.isMacOS ||
-                            Platform.isLinux) ...[
-                          const SizedBox(height: 24),
-                          _buildSectionTitle(
-                            context,
-                            context.t.settings.misc_page.desktopFeaturesTitle,
-                          ),
-                          const SizedBox(height: 8),
-                          Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: colorScheme.outlineVariant.withOpacity(
-                                  0.5,
-                                ),
-                                width: 1,
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  leading: Icon(
-                                    Icons.content_paste_search,
-                                    color: colorScheme.primary,
-                                  ),
-                                  title: Text(
-                                    context.t.settings.clipboardWatch,
-                                  ),
-                                  subtitle: Text(
-                                    _clipboardWatchEnabled
-                                        ? context
-                                              .t
-                                              .settings
-                                              .clipboardWatchEnabled
-                                        : context
-                                              .t
-                                              .settings
-                                              .clipboardWatchDisabled,
-                                  ),
-                                  trailing: Switch(
-                                    value: _clipboardWatchEnabled,
-                                    onChanged: (value) async {
-                                      await _preferencesService
-                                          .setClipboardWatchEnabled(value);
-                                      await ClipboardWatcherService()
-                                          .setEnabled(value);
-                                      await SystemTrayService()
-                                          .updateClipboardWatchState(value);
-                                      setState(
-                                        () => _clipboardWatchEnabled = value,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                Divider(
-                                  height: 1,
-                                  indent: 56,
-                                  color: colorScheme.outlineVariant.withOpacity(
-                                    0.3,
-                                  ),
-                                ),
-                                ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  leading: Icon(
-                                    Icons.remove_circle_outline,
-                                    color: colorScheme.primary,
-                                  ),
-                                  title: Text(
-                                    context.t.settings.minimizeToTray,
-                                  ),
-                                  subtitle: Text(
-                                    context.t.settings.minimizeToTrayDesc,
-                                  ),
-                                  trailing: Switch(
-                                    value: _minimizeToTray,
-                                    onChanged: (value) async {
-                                      await _preferencesService
-                                          .setMinimizeToTray(value);
-                                      // 更新窗口管理器的 preventClose 设置
-                                      await windowManager.setPreventClose(
-                                        value,
-                                      );
-                                      // 更新托盘菜单
-                                      await SystemTrayService()
-                                          .updateMinimizeToTrayState(value);
-                                      setState(() => _minimizeToTray = value);
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ]),
+                      );
+                    }, childCount: 1),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionTitle(
+            context,
+            context.t.settings.misc_page.auxDbTitle,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: colorScheme.outlineVariant.withOpacity(0.5),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  leading: Icon(
+                    Icons.translate,
+                    color: colorScheme.primary,
+                  ),
+                  title: Text(
+                    context.t.settings.misc_page.skipAskRedirect,
+                  ),
+                  subtitle: Text(
+                    _neverAskAgain
+                        ? context.t.settings.misc_page.skipAskEnabled
+                        : context.t.settings.misc_page.skipAskDisabled,
+                  ),
+                  trailing: Switch(
+                    value: _neverAskAgain,
+                    onChanged: (value) async {
+                      if (value) {
+                        await _englishDbService.setNeverAskAgain(true);
+                        setState(() => _neverAskAgain = true);
+                      } else {
+                        await _englishDbService.resetNeverAskAgain();
+                        setState(() => _neverAskAgain = false);
+                      }
+                    },
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  indent: 56,
+                  color: colorScheme.outlineVariant.withOpacity(0.3),
+                ),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  leading: Icon(
+                    Icons.storage_outlined,
+                    color:
+                        _englishDbExists ? colorScheme.error : colorScheme.outline,
+                  ),
+                  title: Text(
+                    context.t.settings.misc_page.deleteAuxDb,
+                    style: TextStyle(
+                      color: _englishDbExists
+                          ? colorScheme.error
+                          : colorScheme.outline,
+                    ),
+                  ),
+                  subtitle: Text(
+                    _englishDbExists
+                        ? context.t.settings.misc_page.auxDbInstalled
+                        : context.t.settings.misc_page.auxDbNotInstalled,
+                  ),
+                  onTap:
+                      _englishDbExists ? () => _showDeleteAuxDbDialog() : null,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _buildSectionTitle(
+            context,
+            context.t.settings.misc_page.dictUpdateTitle,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: colorScheme.outlineVariant.withOpacity(0.5),
+                width: 1,
+              ),
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              leading: Icon(
+                Icons.update,
+                color: colorScheme.primary,
+              ),
+              title: Text(
+                context.t.settings.misc_page.autoCheckDictUpdate,
+              ),
+              subtitle: Text(
+                context.t.settings.misc_page.autoCheckDictUpdateSubtitle,
+              ),
+              trailing: Switch(
+                value: _autoCheckDictUpdate,
+                onChanged: (value) async {
+                  await _preferencesService.setAutoCheckDictUpdate(value);
+                  setState(() => _autoCheckDictUpdate = value);
+                  final updateCheckService =
+                      context.read<DictUpdateCheckService>();
+                  if (value) {
+                    updateCheckService.startDailyCheck();
+                  } else {
+                    updateCheckService.stopDailyCheck();
+                    updateCheckService.clearAllUpdates();
+                  }
+                },
+              ),
+            ),
+          ),
+          // 桌面功能设置组（仅桌面平台显示）
+          if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) ...[
+            const SizedBox(height: 24),
+            _buildSectionTitle(
+              context,
+              context.t.settings.misc_page.desktopFeaturesTitle,
+            ),
+            const SizedBox(height: 8),
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    leading: Icon(
+                      Icons.content_paste_search,
+                      color: colorScheme.primary,
+                    ),
+                    title: Text(
+                      context.t.settings.clipboardWatch,
+                    ),
+                    subtitle: Text(
+                      _clipboardWatchEnabled
+                          ? context.t.settings.clipboardWatchEnabled
+                          : context.t.settings.clipboardWatchDisabled,
+                    ),
+                    trailing: Switch(
+                      value: _clipboardWatchEnabled,
+                      onChanged: (value) async {
+                        await _preferencesService.setClipboardWatchEnabled(value);
+                        await ClipboardWatcherService().setEnabled(value);
+                        await SystemTrayService().updateClipboardWatchState(value);
+                        setState(() => _clipboardWatchEnabled = value);
+                      },
+                    ),
+                  ),
+                  Divider(
+                    height: 1,
+                    indent: 56,
+                    color: colorScheme.outlineVariant.withOpacity(0.3),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    leading: Icon(
+                      Icons.remove_circle_outline,
+                      color: colorScheme.primary,
+                    ),
+                    title: Text(
+                      context.t.settings.minimizeToTray,
+                    ),
+                    subtitle: Text(
+                      context.t.settings.minimizeToTrayDesc,
+                    ),
+                    trailing: Switch(
+                      value: _minimizeToTray,
+                      onChanged: (value) async {
+                        await _preferencesService.setMinimizeToTray(value);
+                        // 更新窗口管理器的 preventClose 设置
+                        await windowManager.setPreventClose(value);
+                        // 更新托盘菜单
+                        await SystemTrayService().updateMinimizeToTrayState(value);
+                        setState(() => _minimizeToTray = value);
+                      },
                     ),
                   ),
                 ],
               ),
             ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1051,392 +756,6 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
             child: Text(context.t.common.delete),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// _ClickActionOrderDialog
-// ─────────────────────────────────────────────
-
-class _ClickActionOrderDialog extends StatefulWidget {
-  final List<String> initialOrder;
-  final Function(List<String>) onSave;
-
-  const _ClickActionOrderDialog({
-    required this.initialOrder,
-    required this.onSave,
-  });
-
-  @override
-  State<_ClickActionOrderDialog> createState() =>
-      _ClickActionOrderDialogState();
-}
-
-class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
-  late List<String> _order;
-
-  @override
-  void initState() {
-    super.initState();
-    _order = List.from(widget.initialOrder);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final contentScale = FontLoaderService().getDictionaryContentScale();
-
-    final dialog = AlertDialog(
-      title: Text(context.t.settings.clickActionDialog.title),
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      content: SizedBox(
-        width: 450,
-        height: 320,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                context.t.settings.clickActionDialog.hint,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Expanded(
-              child: ReorderableListView(
-                buildDefaultDragHandles: false,
-                children: [
-                  for (int index = 0; index < _order.length; index++)
-                    ReorderableDragStartListener(
-                      index: index,
-                      key: ValueKey(_order[index]),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                        ),
-                        title: Text(
-                          _getLocalizedActionLabel(context, _order[index]),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (index == 0)
-                              Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Container(
-                                    height: 1,
-                                    color: colorScheme.primary,
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                    ),
-                                    color: colorScheme.surface,
-                                    child: Text(
-                                      context
-                                          .t
-                                          .settings
-                                          .clickActionDialog
-                                          .primaryLabel,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: colorScheme.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.drag_handle, size: 20),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-                onReorder: (oldIndex, newIndex) {
-                  setState(() {
-                    if (oldIndex < newIndex) newIndex -= 1;
-                    final item = _order.removeAt(oldIndex);
-                    _order.insert(newIndex, item);
-                  });
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(context.t.common.cancel),
-        ),
-        FilledButton(
-          onPressed: () {
-            widget.onSave(_order);
-            Navigator.pop(context);
-          },
-          child: Text(context.t.common.save),
-        ),
-      ],
-    );
-
-    if (contentScale == 1.0) return dialog;
-    return PageScaleWrapper(scale: contentScale, child: dialog);
-  }
-}
-
-// ─────────────────────────────────────────────
-// _ToolbarConfigDialog
-// ─────────────────────────────────────────────
-
-class _ToolbarConfigDialog extends StatefulWidget {
-  const _ToolbarConfigDialog();
-
-  @override
-  State<_ToolbarConfigDialog> createState() => _ToolbarConfigDialogState();
-}
-
-class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
-  final _preferencesService = PreferencesService();
-  List<String> _allActions = [];
-  int _dividerIndex = 4;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final (toolbarActions, overflowActions) = await _preferencesService
-        .getToolbarAndOverflowActions();
-    setState(() {
-      _allActions = [...toolbarActions, ...overflowActions];
-      _dividerIndex = toolbarActions.length;
-      _isLoading = false;
-    });
-  }
-
-  void _saveActions() {
-    final toolbarActions = _allActions.sublist(0, _dividerIndex);
-    final overflowActions = _allActions.sublist(_dividerIndex);
-    _preferencesService.setToolbarAndOverflowActions(
-      toolbarActions,
-      overflowActions,
-    );
-  }
-
-  void _onReorder(int oldIndex, int newIndex) {
-    final oldIsInToolbar = oldIndex < _dividerIndex;
-    final oldActualIndex = oldIndex > _dividerIndex ? oldIndex - 1 : oldIndex;
-    if (newIndex > oldIndex) newIndex -= 1;
-    final newIsInToolbar = newIndex < _dividerIndex;
-    final newActualIndex = newIndex > _dividerIndex ? newIndex - 1 : newIndex;
-    if (!oldIsInToolbar &&
-        newIsInToolbar &&
-        _dividerIndex >= PreferencesService.maxToolbarItems) {
-      _showMaxItemsError();
-      return;
-    }
-    setState(() {
-      final item = _allActions.removeAt(oldActualIndex);
-      _allActions.insert(newActualIndex, item);
-      if (oldIsInToolbar && !newIsInToolbar) {
-        _dividerIndex -= 1;
-      } else if (!oldIsInToolbar && newIsInToolbar) {
-        _dividerIndex += 1;
-      }
-    });
-    _saveActions();
-  }
-
-  void _onDividerReorder(int newIndex) {
-    if (newIndex > _dividerIndex) newIndex -= 1;
-    if (newIndex > PreferencesService.maxToolbarItems) {
-      _showMaxItemsError();
-      return;
-    }
-    setState(() => _dividerIndex = newIndex);
-    _saveActions();
-  }
-
-  void _showMaxItemsError() {
-    showToast(
-      context,
-      context.t.settings.toolbarDialog.maxItemsError(
-        max: PreferencesService.maxToolbarItems,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final contentScale = FontLoaderService().getDictionaryContentScale();
-
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
-
-    final dialog = AlertDialog(
-      title: Text(context.t.settings.toolbarDialog.title),
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      content: SizedBox(
-        width: 450,
-        height: 420,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                context.t.settings.toolbarDialog.hint(
-                  max: PreferencesService.maxToolbarItems,
-                ),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Expanded(
-              child: ReorderableListView.builder(
-                buildDefaultDragHandles: false,
-                padding: EdgeInsets.zero,
-                itemCount: _allActions.length + 1,
-                onReorder: (oldIndex, newIndex) {
-                  if (oldIndex == _dividerIndex) {
-                    _onDividerReorder(newIndex);
-                  } else {
-                    _onReorder(oldIndex, newIndex);
-                  }
-                },
-                itemBuilder: (context, index) {
-                  if (index == _dividerIndex) {
-                    return _buildDividerItem(index, colorScheme);
-                  }
-                  final actualIndex = index > _dividerIndex ? index - 1 : index;
-                  final action = _allActions[actualIndex];
-                  return _buildActionTile(
-                    action,
-                    actualIndex,
-                    index,
-                    colorScheme,
-                    isInToolbar: actualIndex < _dividerIndex,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(context.t.common.done),
-        ),
-      ],
-    );
-
-    if (contentScale == 1.0) return dialog;
-    return PageScaleWrapper(scale: contentScale, child: dialog);
-  }
-
-  Widget _buildDividerItem(int index, ColorScheme colorScheme) {
-    return ReorderableDragStartListener(
-      index: index,
-      key: ValueKey('__divider__$index'),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(
-            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-            border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.5),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.drag_handle, color: colorScheme.primary, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(child: Divider(color: colorScheme.primary)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        context.t.settings.toolbarDialog.dividerLabel,
-                        style: TextStyle(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                    Expanded(child: Divider(color: colorScheme.primary)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionTile(
-    String action,
-    int actualIndex,
-    int listIndex,
-    ColorScheme colorScheme, {
-    required bool isInToolbar,
-  }) {
-    return ReorderableDragStartListener(
-      index: listIndex,
-      key: ValueKey('action_$action'),
-      child: Container(
-        color: isInToolbar
-            ? colorScheme.primaryContainer.withValues(alpha: 0.1)
-            : colorScheme.secondaryContainer.withValues(alpha: 0.1),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          minLeadingWidth: 32,
-          leading: Icon(
-            Icons.drag_handle,
-            color: colorScheme.onSurfaceVariant,
-            size: 18,
-          ),
-          title: Icon(PreferencesService.getActionIcon(action), size: 20),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: isInToolbar
-                  ? colorScheme.primaryContainer
-                  : colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              isInToolbar
-                  ? context.t.settings.toolbarDialog.toolbar
-                  : context.t.settings.toolbarDialog.overflow,
-              style: TextStyle(
-                fontSize: 10,
-                color: isInToolbar
-                    ? colorScheme.onPrimaryContainer
-                    : colorScheme.onSecondaryContainer,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

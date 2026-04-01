@@ -67,6 +67,17 @@ class ClipboardSearchEvent {
   const ClipboardSearchEvent(this.text);
 }
 
+/// 订阅链接变化事件（云服务页面设置/取消订阅链接时触发）
+class SubscriptionUrlChangedEvent {
+  const SubscriptionUrlChangedEvent();
+}
+
+/// 登录状态变化事件（登录/登出时触发）
+class AuthStateChangedEvent {
+  final bool isLoggedIn;
+  const AuthStateChangedEvent(this.isLoggedIn);
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -90,6 +101,10 @@ class EntryEventBus {
       StreamController<SearchHistoryChangedEvent>.broadcast();
   final _clipboardSearchController =
       StreamController<ClipboardSearchEvent>.broadcast();
+  final _subscriptionUrlChangedController =
+      StreamController<SubscriptionUrlChangedEvent>.broadcast();
+  final _authStateChangedController =
+      StreamController<AuthStateChangedEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -109,6 +124,10 @@ class EntryEventBus {
       _searchHistoryChangedController.stream;
   Stream<ClipboardSearchEvent> get clipboardSearch =>
       _clipboardSearchController.stream;
+  Stream<SubscriptionUrlChangedEvent> get subscriptionUrlChanged =>
+      _subscriptionUrlChangedController.stream;
+  Stream<AuthStateChangedEvent> get authStateChanged =>
+      _authStateChangedController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -146,6 +165,14 @@ class EntryEventBus {
     _clipboardSearchController.add(event);
   }
 
+  void emitSubscriptionUrlChanged() {
+    _subscriptionUrlChangedController.add(const SubscriptionUrlChangedEvent());
+  }
+
+  void emitAuthStateChanged(bool isLoggedIn) {
+    _authStateChangedController.add(AuthStateChangedEvent(isLoggedIn));
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
@@ -156,5 +183,7 @@ class EntryEventBus {
     _languageOrderChangedController.close();
     _searchHistoryChangedController.close();
     _clipboardSearchController.close();
+    _subscriptionUrlChangedController.close();
+    _authStateChangedController.close();
   }
 }

@@ -17,7 +17,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
   onNavigateToEntry;
   final double maxHeight; // 最大高度，传入屏幕高度的 70%
   final void Function(bool isOverflow)? onOverflowChanged; // 溢出状态变化回调
-  final void Function(String dictId)? onExpandDictionary; // 展开词典回调
+  final Future<void> Function(String dictId)? onExpandDictionary; // 展开词典回调（异步）
 
   const DictionaryNavigationPanel({
     super.key,
@@ -1188,12 +1188,12 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   }
 
   // 切换词典
-  void _onDictionarySelected(DictionaryGroup dict) {
+  Future<void> _onDictionarySelected(DictionaryGroup dict) async {
     for (int i = 0; i < widget.entryGroup.dictionaryGroups.length; i++) {
       if (widget.entryGroup.dictionaryGroups[i].dictionaryId ==
           dict.dictionaryId) {
         // 先展开词典（如果处于折叠状态）
-        widget.onExpandDictionary?.call(dict.dictionaryId);
+        await widget.onExpandDictionary?.call(dict.dictionaryId);
 
         widget.entryGroup.setCurrentDictionaryIndex(i);
         widget.entryGroup.dictionaryGroups[i].setCurrentPageIndex(0);
@@ -1203,13 +1203,18 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         widget.onPageChanged?.call();
         widget.onSectionChanged?.call();
 
-        final newDict = widget.entryGroup.dictionaryGroups[i];
-        if (newDict.pageGroups.isNotEmpty &&
-            newDict.pageGroups[0].sections.isNotEmpty) {
-          widget.onNavigateToEntry?.call(
-            newDict.pageGroups[0].sections[0].entry,
-          );
-        }
+        // 等待 UI 重建后再滚动
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+
+          final newDict = widget.entryGroup.dictionaryGroups[i];
+          if (newDict.pageGroups.isNotEmpty &&
+              newDict.pageGroups[0].sections.isNotEmpty) {
+            widget.onNavigateToEntry?.call(
+              newDict.pageGroups[0].sections[0].entry,
+            );
+          }
+        });
 
         // 关闭page列表的overlay
         _removeOverlay();
@@ -1317,7 +1322,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     DictionarySection section,
     String dictId,
     String? targetPath,
-  ) {
+  ) async {
     bool isCrossDictionary = false;
     bool isCrossPage = false;
 
@@ -1328,7 +1333,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         }
 
         // 先展开词典（如果处于折叠状态）
-        widget.onExpandDictionary?.call(dictId);
+        await widget.onExpandDictionary?.call(dictId);
 
         widget.entryGroup.setCurrentDictionaryIndex(i);
 

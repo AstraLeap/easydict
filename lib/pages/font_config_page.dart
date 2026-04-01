@@ -13,7 +13,9 @@ import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
 class FontConfigPage extends StatefulWidget {
-  const FontConfigPage({super.key});
+  final VoidCallback? onBack;
+
+  const FontConfigPage({super.key, this.onBack});
 
   @override
   State<FontConfigPage> createState() => _FontConfigPageState();
@@ -571,7 +573,14 @@ class _FontConfigPageState extends State<FontConfigPage>
         : CustomScrollView(
             slivers: [
               SliverAppBar(
+                leading: widget.onBack != null
+                    ? IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: widget.onBack,
+                      )
+                    : null,
                 title: Text(context.t.font.title),
+                centerTitle: true,
                 pinned: true,
                 backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                 surfaceTintColor: Colors.transparent,
@@ -596,7 +605,7 @@ class _FontConfigPageState extends State<FontConfigPage>
               ),
               SliverToBoxAdapter(
                 child: Card(
-                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: ListTile(
                     leading: const Icon(Icons.folder_outlined),
                     title: Text(context.t.font.folderLabel),
@@ -628,6 +637,19 @@ class _FontConfigPageState extends State<FontConfigPage>
                       controller: _tabController,
                       isScrollable: true,
                       tabAlignment: TabAlignment.start,
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      indicator: UnderlineTabIndicator(
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                      labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                      labelColor: Theme.of(context).colorScheme.primary,
+                      unselectedLabelColor: Theme.of(context).colorScheme.onSurface,
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.normal,
+                      ),
                       tabs: _languages
                           .map(
                             (lang) => Tab(

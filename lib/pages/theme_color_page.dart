@@ -72,7 +72,9 @@ class _SuperEllipsePainter extends CustomPainter {
 }
 
 class ThemeColorPage extends StatefulWidget {
-  const ThemeColorPage({super.key});
+  final VoidCallback? onBack;
+
+  const ThemeColorPage({super.key, this.onBack});
 
   @override
   State<ThemeColorPage> createState() => _ThemeColorPageState();
@@ -118,6 +120,12 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onBack,
+              )
+            : null,
         title: Text(context.t.theme.title),
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,

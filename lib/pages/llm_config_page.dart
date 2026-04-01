@@ -962,7 +962,9 @@ class ApiTestResult {
 }
 
 class LLMConfigPage extends StatefulWidget {
-  const LLMConfigPage({super.key});
+  final VoidCallback? onBack;
+
+  const LLMConfigPage({super.key, this.onBack});
 
   @override
   State<LLMConfigPage> createState() => _LLMConfigPageState();
@@ -2378,7 +2380,16 @@ class _LLMConfigPageState extends State<LLMConfigPage>
 
     final content = Scaffold(
       appBar: AppBar(
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onBack,
+              )
+            : null,
         title: Text(context.t.ai.title),
+        centerTitle: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
         bottom: TabBar(
           controller: _tabController,
           tabs: [
@@ -2485,7 +2496,7 @@ class _LLMConfigPageState extends State<LLMConfigPage>
               valueListenable: _voiceNotifierFor(lang.langCode),
               isExpanded: true,
               decoration: InputDecoration(
-                contentPadding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
+                contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),

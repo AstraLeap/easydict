@@ -79,38 +79,47 @@ void showToast(BuildContext context, String message, {SnackBarAction? action}) {
   final overlayEntry = OverlayEntry(
     builder: (context) => Positioned(
       bottom: bottom,
-      left: 16,
-      right: 16,
+      left: 0,
+      right: 0,
       child: Material(
         color: Colors.transparent,
         child: SafeArea(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 630),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    message,
-                    style: TextStyle(color: colorScheme.onSurface),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withOpacity(0.5),
+                    width: 1,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                if (action != null) action,
-              ],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        message,
+                        style: TextStyle(color: colorScheme.onSurface),
+                      ),
+                    ),
+                    if (action != null) action,
+                  ],
+                ),
+              ),
             ),
           ),
         ),
