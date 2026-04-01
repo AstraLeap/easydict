@@ -94,13 +94,21 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       final allDicts = await _dictManager.getAllDictionariesMetadata();
       final enabledIds = await _dictManager.getEnabledDictionaries();
 
-      // 自动启用新添加的词典
+      // 自动启用新添加的词典（区分真正的新词典和被禁用的词典）
       final allDictIds = allDicts.map((d) => d.id).toSet();
-      final newDictIds = allDictIds.difference(enabledIds.toSet());
+      final knownDictIds = await _dictManager.getKnownDictionaries();
+      final newDictIds = allDictIds.difference(knownDictIds);
       if (newDictIds.isNotEmpty) {
         Logger.i('发现新词典，自动启用: $newDictIds', tag: 'DictionaryManagerPage');
         enabledIds.addAll(newDictIds);
         await _dictManager.setEnabledDictionaries(enabledIds);
+        // 将新词典标记为已知
+        await _dictManager.addKnownDictionaries(newDictIds);
+      }
+      // 确保所有词典都被标记为已知（处理已删除词典的情况）
+      if (allDictIds.difference(knownDictIds).isNotEmpty ||
+          knownDictIds.difference(allDictIds).isNotEmpty) {
+        await _dictManager.addKnownDictionaries(allDictIds);
       }
 
       // 加载已保存的语言顺序

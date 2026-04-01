@@ -23,6 +23,7 @@ class DictionaryManager {
   static const String _dictionariesDirKey = 'dictionaries_base_dir';
   static const String _onlineSubscriptionUrlKey = 'online_subscription_url';
   static const String _enabledDictionariesKey = 'enabled_dictionaries';
+  static const String _knownDictionariesKey = 'known_dictionaries';
   static const String _metaFileName = 'metadata.json';
   static const String _dbFileName = 'dictionary.db';
   static const String _mediaDbFileName = 'media.db';
@@ -202,6 +203,21 @@ class DictionaryManager {
     final prefs = await SharedPreferences.getInstance();
     final List<String>? enabled = prefs.getStringList(_enabledDictionariesKey);
     return enabled ?? [];
+  }
+
+  /// 获取已知词典ID列表
+  Future<Set<String>> getKnownDictionaries() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String>? known = prefs.getStringList(_knownDictionariesKey);
+    return known?.toSet() ?? {};
+  }
+
+  /// 添加已知词典ID
+  Future<void> addKnownDictionaries(Set<String> dictionaryIds) async {
+    final known = await getKnownDictionaries();
+    known.addAll(dictionaryIds);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_knownDictionariesKey, known.toList());
   }
 
   /// 启用的词典ID缓存
