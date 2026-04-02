@@ -631,7 +631,22 @@ class _CloudServicePageState extends State<CloudServicePage> {
       ),
     );
 
-    return Scaffold(body: content);
+    final scaffold = Scaffold(body: content);
+
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: scaffold,
+      );
+    }
+
+    return scaffold;
   }
 
   Widget _buildSubscriptionCard() {

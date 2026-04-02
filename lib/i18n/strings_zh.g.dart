@@ -275,14 +275,14 @@ class TranslationsSettingsZh {
 	/// zh: '主题设置'
 	String get themeSettings => '主题设置';
 
-	/// zh: '显示设置'
-	String get displaySettings => '显示设置';
+	/// zh: '界面设置'
+	String get displaySettings => '界面设置';
 
 	/// zh: '默认显示音节形式'
 	String get showHeadwordSyllable => '默认显示音节形式';
 
-	/// zh: '将词条标题显示为音节形式（如 au·tar·chy），点击可切换'
-	String get showHeadwordSyllableSubtitle => '将词条标题显示为音节形式（如 au·tar·chy），点击可切换';
+	/// zh: '将词条标题显示为音节形式（如 en·thu·si·asm），点击可切换'
+	String get showHeadwordSyllableSubtitle => '将词条标题显示为音节形式（如 en·thu·si·asm），点击可切换';
 
 	/// zh: '软件布局缩放'
 	String get layoutScale => '软件布局缩放';
@@ -359,6 +359,12 @@ class TranslationsSearchZh {
 
 	/// zh: '清除'
 	String get historyClear => '清除';
+
+	/// zh: '清除历史记录'
+	String get historyClearConfirmTitle => '清除历史记录';
+
+	/// zh: '确定要清除所有查词历史记录吗？此操作不可撤销。'
+	String get historyClearConfirmBody => '确定要清除所有查词历史记录吗？此操作不可撤销。';
 
 	/// zh: '历史记录已清除'
 	String get historyCleared => '历史记录已清除';
@@ -1367,8 +1373,11 @@ class TranslationsDictZh {
 	/// zh: '{count} 个'
 	String disabledCount({required Object count}) => '${count} 个';
 
-	/// zh: '长按语言标签可拖动排序'
-	String get dragHint => '长按语言标签可拖动排序';
+	/// zh: '拖动排序语言'
+	String get dragHint => '拖动排序语言';
+
+	/// zh: '语言排序'
+	String get languageOrderTitle => '语言排序';
 
 	/// zh: '在线词典列表'
 	String get onlineDicts => '在线词典列表';
@@ -2622,9 +2631,9 @@ extension on Translations {
 			'settings.aiConfig' => 'AI 配置',
 			'settings.fontConfig' => '字体配置',
 			'settings.themeSettings' => '主题设置',
-			'settings.displaySettings' => '显示设置',
+			'settings.displaySettings' => '界面设置',
 			'settings.showHeadwordSyllable' => '默认显示音节形式',
-			'settings.showHeadwordSyllableSubtitle' => '将词条标题显示为音节形式（如 au·tar·chy），点击可切换',
+			'settings.showHeadwordSyllableSubtitle' => '将词条标题显示为音节形式（如 en·thu·si·asm），点击可切换',
 			'settings.layoutScale' => '软件布局缩放',
 			'settings.clickAction' => '点击动作设置',
 			'settings.toolbar' => '底部工具栏设置',
@@ -2703,6 +2712,8 @@ extension on Translations {
 			'search.startHint' => '输入单词开始查询',
 			'search.historyTitle' => '历史记录',
 			'search.historyClear' => '清除',
+			'search.historyClearConfirmTitle' => '清除历史记录',
+			'search.historyClearConfirmBody' => '确定要清除所有查词历史记录吗？此操作不可撤销。',
 			'search.historyCleared' => '历史记录已清除',
 			'search.historyDeleted' => ({required Object word}) => '已删除 "${word}"',
 			'search.wildcardNoEntry' => '通配符模式下请从候选词列表中选择词条',
@@ -3029,7 +3040,8 @@ extension on Translations {
 			'dict.disabled' => '已禁用',
 			'dict.enabledCount' => ({required Object count}) => '${count} 个',
 			'dict.disabledCount' => ({required Object count}) => '${count} 个',
-			'dict.dragHint' => '长按语言标签可拖动排序',
+			'dict.dragHint' => '拖动排序语言',
+			'dict.languageOrderTitle' => '语言排序',
 			'dict.onlineDicts' => '在线词典列表',
 			'dict.onlineCount' => ({required Object count}) => '${count} 个',
 			'dict.loadFailed' => '加载失败',
@@ -3070,11 +3082,11 @@ extension on Translations {
 			'dict.deleteFailed' => ({required Object error}) => '删除失败: ${error}',
 			'dict.dictNotFound' => '未找到指定词典',
 			'dict.dictDeleteFailed' => '词典删除失败',
+			_ => null,
+		} ?? switch (path) {
 			'dict.statusUpdateFailed' => '状态更新失败',
 			'dict.statusPreparing' => '准备中',
 			'dict.statusPreparingUpdate' => '准备更新',
-			_ => null,
-		} ?? switch (path) {
 			'dict.statusDownloading' => '下载中',
 			'dict.statusCompleted' => '已完成',
 			'dict.storeNotConfigured' => '未配置词典存储目录',

@@ -618,6 +618,7 @@ DictionaryEntry? _parseEntryInIsolate(JsonParseParams params) {
 class DictSearchResult {
   final String dictId;
   final List<DictionaryEntry> entries;
+
   /// 该词典通过关系词找到时，记录关系信息
   /// key: 相关词（如 "sleep"）, value: 关系类型列表
   final Map<String, List<SearchRelation>> relations;
@@ -636,6 +637,7 @@ class SearchResult {
   final List<DictionaryEntry> entries;
   final String originalWord;
   final Map<String, List<SearchRelation>> relations;
+
   /// 按词典分组的结果
   final List<DictSearchResult> dictResults;
 
@@ -655,7 +657,7 @@ class DictionaryEntry {
   final String? version;
   final String headword;
   final String? headline; // 标题字段，优先显示
-  final String? headwordSyllable; // 音节形式的词条，如 "au·tar·chy"
+  final String? headwordSyllable; // 音节形式的词条，如 "en·thu·si·asm"
   final String entryType;
   final String? page;
   final String? section;
@@ -677,7 +679,10 @@ class DictionaryEntry {
     if (pos == null) return [];
     if (pos is String) return [pos];
     if (pos is List) {
-      return (pos as List).map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
+      return (pos as List)
+          .map((e) => e?.toString() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
     }
     return [];
   }
@@ -718,7 +723,8 @@ class DictionaryEntry {
   }) {
     try {
       // 检测原始 JSON 中是否存在 headword 字段
-      final hasOriginalHeadword = json.containsKey('headword') &&
+      final hasOriginalHeadword =
+          json.containsKey('headword') &&
           json['headword']?.toString().isNotEmpty == true;
 
       // 处理 headword：优先 headword，若为空则从 headline 提取纯文本
@@ -1203,7 +1209,8 @@ class DatabaseService {
 
     for (final normalizedLang in languageCodes) {
       // 使用原始语言代码进行繁简转换判断
-      final originalLang = normalizedToOriginal[normalizedLang] ?? normalizedLang;
+      final originalLang =
+          normalizedToOriginal[normalizedLang] ?? normalizedLang;
 
       // 计算 headword 标准化结果
       final headwordNorm = _normalizeSearchWord(word, langCode: originalLang);
@@ -1318,7 +1325,11 @@ class DatabaseService {
     if (shouldPrepareEnglishRelations) {
       try {
         englishRelations = await EnglishSearchService()
-            .searchWithRelations(word, maxRelatedWords: 10, maxRelationsPerWord: 3)
+            .searchWithRelations(
+              word,
+              maxRelatedWords: 10,
+              maxRelationsPerWord: 3,
+            )
             .timeout(
               const Duration(seconds: 3),
               onTimeout: () => <String, List<SearchRelation>>{},
@@ -1335,7 +1346,9 @@ class DatabaseService {
       tag: 'DatabaseService',
     );
     for (final metadata in filteredDicts) {
-      final langCode = LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
+      final langCode = LanguageUtils.normalizeSourceLanguage(
+        metadata.sourceLanguage,
+      );
       final normQuery = normQueries[langCode]!;
       Logger.d(
         'getAllEntries: 正在搜索词典 ${metadata.id}, langCode=$langCode',
@@ -1352,10 +1365,9 @@ class DatabaseService {
 
       if (entries.isNotEmpty) {
         // 直接查到了
-        dictResults.add(DictSearchResult(
-          dictId: metadata.id,
-          entries: entries,
-        ));
+        dictResults.add(
+          DictSearchResult(dictId: metadata.id, entries: entries),
+        );
       } else if (englishRelations != null && langCode == 'en') {
         // 查不到，且是英语词典，尝试搜索关系词
         final validRelations = <String, List<SearchRelation>>{};
@@ -1380,11 +1392,13 @@ class DatabaseService {
         }
 
         if (relatedEntries.isNotEmpty) {
-          dictResults.add(DictSearchResult(
-            dictId: metadata.id,
-            entries: relatedEntries,
-            relations: validRelations,
-          ));
+          dictResults.add(
+            DictSearchResult(
+              dictId: metadata.id,
+              entries: relatedEntries,
+              relations: validRelations,
+            ),
+          );
         }
       }
     }
@@ -2457,7 +2471,10 @@ class DatabaseService {
       // 如果更新成功，记录到 commits 表
       if (result > 0 && !skipCommit) {
         // 保留已有 insert 记录（不能把未进入服务器的 insert 覆盖为 update）
-        final existingType = await _getExistingCommitType(db, entry.entryIdAsInt);
+        final existingType = await _getExistingCommitType(
+          db,
+          entry.entryIdAsInt,
+        );
         final operationType = existingType == 'insert' ? 'insert' : 'update';
         await _recordUpdate(
           db,
@@ -2569,7 +2586,10 @@ class DatabaseService {
       if (!skipCommit) {
         // 若已有 insert 记录（尚未推送）则保持 insert；
         // 若是全新条目，记为 insert；否则记为 update
-        final existingType = await _getExistingCommitType(db, entry.entryIdAsInt);
+        final existingType = await _getExistingCommitType(
+          db,
+          entry.entryIdAsInt,
+        );
         final operationType = (isNewEntry || existingType == 'insert')
             ? 'insert'
             : 'update';

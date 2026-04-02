@@ -447,7 +447,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
+    final content = Scaffold(
       appBar: AppBar(
         leading: widget.onBack != null
             ? IconButton(
@@ -480,6 +480,21 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
               ),
             ),
     );
+
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: content,
+      );
+    }
+
+    return content;
   }
 
   Widget _buildContent(BuildContext context, ColorScheme colorScheme) {

@@ -124,7 +124,7 @@ class _SettingsHomePageContent extends StatelessWidget {
           child: CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.only(left: 16, right: 16, top: 24),
+                padding: const EdgeInsets.only(left: 16, right: 16, top: 12),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate(
                     _buildMenuGroups(context, displayItems, colorScheme, updateCheckService, appUpdateService),

@@ -149,9 +149,9 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 	@override String get aiConfig => 'AI Config';
 	@override String get fontConfig => 'Font Config';
 	@override String get themeSettings => 'Theme Settings';
-	@override String get displaySettings => 'Display Settings';
+	@override String get displaySettings => 'Interface Settings';
 	@override String get showHeadwordSyllable => 'Show Syllable Form by Default';
-	@override String get showHeadwordSyllableSubtitle => 'Display headword in syllable form (e.g., au·tar·chy), tap to toggle';
+	@override String get showHeadwordSyllableSubtitle => 'Display headword in syllable form (e.g., en·thu·si·asm), tap to toggle';
 	@override String get layoutScale => 'Layout Scale';
 	@override String get clickAction => 'Click Action';
 	@override String get toolbar => 'Bottom Toolbar';
@@ -187,6 +187,8 @@ class _TranslationsSearchEn extends TranslationsSearchZh {
 	@override String get startHint => 'Enter a word to start lookup';
 	@override String get historyTitle => 'History';
 	@override String get historyClear => 'Clear';
+	@override String get historyClearConfirmTitle => 'Clear History';
+	@override String get historyClearConfirmBody => 'Are you sure you want to clear all search history? This action cannot be undone.';
 	@override String get historyCleared => 'History cleared';
 	@override String historyDeleted({required Object word}) => 'Deleted "${word}"';
 	@override String get wildcardNoEntry => 'In wildcard mode, please select a word from the candidate list';
@@ -571,7 +573,8 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String get disabled => 'Disabled';
 	@override String enabledCount({required Object count}) => '${count}';
 	@override String disabledCount({required Object count}) => '${count}';
-	@override String get dragHint => 'Long-press language tab to drag and reorder';
+	@override String get dragHint => 'Reorder languages';
+	@override String get languageOrderTitle => 'Language Order';
 	@override String get onlineDicts => 'Online Dictionaries';
 	@override String onlineCount({required Object count}) => '${count}';
 	@override String get loadFailed => 'Load failed';
@@ -1089,9 +1092,9 @@ extension on TranslationsEn {
 			'settings.aiConfig' => 'AI Config',
 			'settings.fontConfig' => 'Font Config',
 			'settings.themeSettings' => 'Theme Settings',
-			'settings.displaySettings' => 'Display Settings',
+			'settings.displaySettings' => 'Interface Settings',
 			'settings.showHeadwordSyllable' => 'Show Syllable Form by Default',
-			'settings.showHeadwordSyllableSubtitle' => 'Display headword in syllable form (e.g., au·tar·chy), tap to toggle',
+			'settings.showHeadwordSyllableSubtitle' => 'Display headword in syllable form (e.g., en·thu·si·asm), tap to toggle',
 			'settings.layoutScale' => 'Layout Scale',
 			'settings.clickAction' => 'Click Action',
 			'settings.toolbar' => 'Bottom Toolbar',
@@ -1170,6 +1173,8 @@ extension on TranslationsEn {
 			'search.startHint' => 'Enter a word to start lookup',
 			'search.historyTitle' => 'History',
 			'search.historyClear' => 'Clear',
+			'search.historyClearConfirmTitle' => 'Clear History',
+			'search.historyClearConfirmBody' => 'Are you sure you want to clear all search history? This action cannot be undone.',
 			'search.historyCleared' => 'History cleared',
 			'search.historyDeleted' => ({required Object word}) => 'Deleted "${word}"',
 			'search.wildcardNoEntry' => 'In wildcard mode, please select a word from the candidate list',
@@ -1496,7 +1501,8 @@ extension on TranslationsEn {
 			'dict.disabled' => 'Disabled',
 			'dict.enabledCount' => ({required Object count}) => '${count}',
 			'dict.disabledCount' => ({required Object count}) => '${count}',
-			'dict.dragHint' => 'Long-press language tab to drag and reorder',
+			'dict.dragHint' => 'Reorder languages',
+			'dict.languageOrderTitle' => 'Language Order',
 			'dict.onlineDicts' => 'Online Dictionaries',
 			'dict.onlineCount' => ({required Object count}) => '${count}',
 			'dict.loadFailed' => 'Load failed',
@@ -1539,11 +1545,11 @@ extension on TranslationsEn {
 			'dict.dictDeleteFailed' => 'Dictionary delete failed',
 			'dict.statusUpdateFailed' => 'Status update failed',
 			'dict.statusPreparing' => 'Preparing',
+			_ => null,
+		} ?? switch (path) {
 			'dict.statusPreparingUpdate' => 'Preparing update',
 			'dict.statusDownloading' => 'Downloading',
 			'dict.statusCompleted' => 'Completed',
-			_ => null,
-		} ?? switch (path) {
 			'dict.storeNotConfigured' => 'Dictionary storage directory not configured',
 			'dict.downloadFailed' => 'Download failed',
 			'dict.tooltipUpdateJson' => 'Update JSON',

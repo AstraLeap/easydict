@@ -6,7 +6,7 @@ import 'content_panel.dart';
 /// 统一设置布局
 /// 宽屏模式：左侧固定宽度菜单 + 右侧自适应内容
 /// 窄屏模式：仅显示右侧内容区（隐藏左侧菜单）
-class WideSettingsLayout extends StatelessWidget {
+class WideSettingsLayout extends StatefulWidget {
   /// 菜单项列表
   final List<SettingsMenuItem> menuItems;
 
@@ -39,26 +39,48 @@ class WideSettingsLayout extends StatelessWidget {
   });
 
   @override
+  State<WideSettingsLayout> createState() => _WideSettingsLayoutState();
+}
+
+class _WideSettingsLayoutState extends State<WideSettingsLayout> {
+  /// 上一次选中的菜单 ID（用于判断动画方向）
+  String? _previousItemId;
+
+  @override
+  void didUpdateWidget(WideSettingsLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 更新上一次的 ID
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      final oldItem = oldWidget.selectedIndex >= 0 &&
+              oldWidget.selectedIndex < widget.menuItems.length
+          ? widget.menuItems[oldWidget.selectedIndex]
+          : null;
+      _previousItemId = oldItem?.id;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
     // 获取当前菜单项（如果索引有效）
-    final currentItem = selectedIndex >= 0 && selectedIndex < menuItems.length
-        ? menuItems[selectedIndex]
+    final currentItem = widget.selectedIndex >= 0 &&
+            widget.selectedIndex < widget.menuItems.length
+        ? widget.menuItems[widget.selectedIndex]
         : null;
 
     return Scaffold(
       body: Row(
         children: [
           // 左侧菜单栏 - 仅宽屏模式显示
-          if (showMenuPanel) ...[
+          if (widget.showMenuPanel) ...[
             SizedBox(
               width: 280,
               child: SettingsMenuPanel(
-                menuItems: menuItems,
-                menuGroups: menuGroups,
-                selectedIndex: selectedIndex,
-                onSelected: onMenuSelected,
+                menuItems: widget.menuItems,
+                menuGroups: widget.menuGroups,
+                selectedIndex: widget.selectedIndex,
+                onSelected: widget.onMenuSelected,
               ),
             ),
 
@@ -70,18 +92,76 @@ class WideSettingsLayout extends StatelessWidget {
             ),
           ],
 
-          // 右侧内容区 - 自适应宽度
+          // 右侧内容区 - 自适应宽度，使用 AnimatedSwitcher 实现页面切换动画
           Expanded(
-            child: currentItem != null
-                ? SettingsContentPanel(
-                    currentItem: currentItem,
-                    contentScaleNotifier: contentScaleNotifier,
-                    menuItems: menuItems,
-                    menuGroups: menuGroups,
-                    onMenuSelected: onMenuSelected,
-                    showMenuPanel: showMenuPanel,
-                  )
-                : _buildEmptyPlaceholder(context),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeInOut,
+              switchOutCurve: Curves.easeInOut,
+              layoutBuilder: (currentChild, previousChildren) {
+                // 使用 Stack 布局以支持预见性返回动画
+                return Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    ...previousChildren,
+                    if (currentChild != null) currentChild,
+                  ],
+                );
+              },
+              transitionBuilder: (child, animation) {
+                // 窄屏模式使用滑动动画，宽屏模式使用淡入淡出
+                if (!widget.showMenuPanel) {
+                  // 判断动画方向：
+                  // - 进入子页面：从右向左
+                  // - 返回主页：从左向右
+                  final isReturning = currentItem?.id == 'home' ||
+                      _previousItemId != null && currentItem?.id == 'home';
+
+                  final offsetAnimation = Tween<Offset>(
+                    begin: isReturning
+                        ? const Offset(-1.0, 0.0) // 返回：从左侧滑入
+                        : const Offset(1.0, 0.0), // 进入：从右侧滑入
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ));
+
+                  final fadeAnimation = Tween<double>(
+                    begin: 0.0,
+                    end: 1.0,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+                  ));
+
+                  return FadeTransition(
+                    opacity: fadeAnimation,
+                    child: SlideTransition(
+                      position: offsetAnimation,
+                      child: child,
+                    ),
+                  );
+                } else {
+                  // 宽屏模式：仅淡入淡出
+                  return FadeTransition(
+                    opacity: animation,
+                    child: child,
+                  );
+                }
+              },
+              child: currentItem != null
+                  ? SettingsContentPanel(
+                      key: ValueKey(currentItem.id),
+                      currentItem: currentItem,
+                      contentScaleNotifier: widget.contentScaleNotifier,
+                      menuItems: widget.menuItems,
+                      menuGroups: widget.menuGroups,
+                      onMenuSelected: widget.onMenuSelected,
+                      showMenuPanel: widget.showMenuPanel,
+                    )
+                  : _buildEmptyPlaceholder(context),
+            ),
           ),
         ],
       ),

@@ -118,7 +118,7 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       },
     );
 
-    return Scaffold(
+    final content = Scaffold(
       appBar: AppBar(
         leading: widget.onBack != null
             ? IconButton(
@@ -133,6 +133,21 @@ class _ThemeColorPageState extends State<ThemeColorPage> {
       ),
       body: PageScaleWrapper(scale: _dictionaryContentScale, child: body),
     );
+
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: content,
+      );
+    }
+
+    return content;
   }
 
   Widget _buildSectionTitle(BuildContext context, String title) {

@@ -9,7 +9,6 @@ import '../services/font_loader_service.dart';
 import '../services/preferences_service.dart';
 import '../core/utils/language_utils.dart';
 import '../core/utils/toast_utils.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 
 class FontConfigPage extends StatefulWidget {
@@ -568,128 +567,146 @@ class _FontConfigPageState extends State<FontConfigPage>
 
   @override
   Widget build(BuildContext context) {
-    final content = _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                leading: widget.onBack != null
-                    ? IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: widget.onBack,
-                      )
-                    : null,
-                title: Text(context.t.font.title),
-                centerTitle: true,
-                pinned: true,
-                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                surfaceTintColor: Colors.transparent,
-                actions: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: IconButton(
-                      icon: const Icon(Icons.refresh),
-                      tooltip: context.t.font.refreshTooltip,
-                      onPressed: () async {
-                        setState(() => _isLoading = true);
-                        await PreferencesService().clearAllFontConfigs();
-                        await _loadData(forceRescan: true);
-                        await FontLoaderService().reloadFonts();
-                        if (mounted) {
-                          showToast(context, context.t.font.refreshSuccess);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              SliverToBoxAdapter(
-                child: Card(
-                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.folder_outlined),
-                    title: Text(context.t.font.folderLabel),
-                    subtitle: Text(
-                      _fontFolderPath ?? context.t.font.folderNotSet,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _fontFolderPath == null
-                            ? Theme.of(context).colorScheme.outline
-                            : null,
-                      ),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: _selectFolder,
-                      tooltip: _fontFolderPath == null
-                          ? context.t.font.folderSet
-                          : context.t.font.folderChange,
-                    ),
-                  ),
-                ),
-              ),
-              if (_languages.isNotEmpty && _tabController != null) ...[
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _SliverTabBarDelegate(
-                    TabBar(
-                      controller: _tabController,
-                      isScrollable: true,
-                      tabAlignment: TabAlignment.start,
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      indicator: UnderlineTabIndicator(
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.primary,
-                          width: 2,
-                        ),
-                      ),
-                      labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-                      labelColor: Theme.of(context).colorScheme.primary,
-                      unselectedLabelColor: Theme.of(context).colorScheme.onSurface,
-                      unselectedLabelStyle: const TextStyle(
-                        fontWeight: FontWeight.normal,
-                      ),
-                      tabs: _languages
-                          .map(
-                            (lang) => Tab(
-                              text: LanguageUtils.getDisplayNameExtended(
-                                lang,
-                                context.t,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    Theme.of(context).scaffoldBackgroundColor,
-                  ),
-                ),
-                // 使用 SliverList 来显示当前选中的 tab 内容
-                SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 800),
-                        child: _buildLanguageTabContent(
-                          _languages[_tabController!.index],
-                        ),
-                      ),
-                    );
-                  }, childCount: 1),
-                ),
-              ] else if (!_isLoading)
-                SliverFillRemaining(
-                  child: Center(child: Text(context.t.font.noDicts)),
-                ),
-            ],
-          );
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
+    Widget body;
+    if (_isLoading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_languages.isEmpty || _tabController == null) {
+      body = Center(child: Text(context.t.font.noDicts));
+    } else {
+      body = Column(
+        children: [
+          // 字体文件夹设置卡片
+          Card(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: Text(context.t.font.folderLabel),
+              subtitle: Text(
+                _fontFolderPath ?? context.t.font.folderNotSet,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _fontFolderPath == null
+                      ? colorScheme.outline
+                      : null,
+                ),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: _selectFolder,
+                tooltip: _fontFolderPath == null
+                    ? context.t.font.folderSet
+                    : context.t.font.folderChange,
+              ),
+            ),
+          ),
+          // TabBar
+          Material(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              indicator: _FixedWidthIndicator(
+                color: colorScheme.primary,
+                width: 24,
+                height: 3,
+              ),
+              labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+              labelColor: colorScheme.primary,
+              unselectedLabelColor: colorScheme.onSurface,
+              unselectedLabelStyle: const TextStyle(
+                fontWeight: FontWeight.normal,
+              ),
+              tabs: _languages
+                  .map(
+                    (lang) => Tab(
+                      text: LanguageUtils.getDisplayNameExtended(
+                        lang,
+                        context.t,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          // TabBarView - 支持触摸滑动切换
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: _languages
+                  .map(
+                    (lang) => SingleChildScrollView(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 800),
+                          child: _buildLanguageTabContent(lang),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final content = Scaffold(
+      appBar: AppBar(
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onBack,
+              )
+            : null,
+        title: Text(context.t.font.title),
+        centerTitle: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: context.t.font.refreshTooltip,
+              onPressed: () async {
+                setState(() => _isLoading = true);
+                await PreferencesService().clearAllFontConfigs();
+                await _loadData(forceRescan: true);
+                await FontLoaderService().reloadFonts();
+                if (mounted) {
+                  showToast(context, context.t.font.refreshSuccess);
+                }
+              },
+            ),
+          ),
+        ],
+      ),
       body: PageScaleWrapper(
         scale: FontLoaderService().getDictionaryContentScale(),
-        child: content,
+        child: body,
       ),
     );
+
+    Widget result = Scaffold(body: content);
+
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: result,
+      );
+    }
+
+    return result;
   }
 
   Widget _buildLanguageTabContent(String language) {
@@ -1332,4 +1349,54 @@ class UserFontConfigs {
   FontFile? sansBold;
   FontFile? sansItalic;
   FontFile? sansBoldItalic;
+}
+
+/// 固定宽度的 Tab 指示器
+class _FixedWidthIndicator extends Decoration {
+  final Color color;
+  final double width;
+  final double height;
+
+  const _FixedWidthIndicator({
+    required this.color,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) {
+    return _FixedWidthPainter(color: color, width: width, height: height);
+  }
+}
+
+class _FixedWidthPainter extends BoxPainter {
+  final Color color;
+  final double width;
+  final double height;
+
+  _FixedWidthPainter({
+    required this.color,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final Paint paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    // 计算居中位置
+    final double tabWidth = configuration.size!.width;
+    final double left = offset.dx + (tabWidth - width) / 2;
+    final double top = offset.dy + configuration.size!.height - height;
+
+    // 绘制圆角矩形
+    final RRect rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(left, top, width, height),
+      const Radius.circular(2),
+    );
+
+    canvas.drawRRect(rect, paint);
+  }
 }

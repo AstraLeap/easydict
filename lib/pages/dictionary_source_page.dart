@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
+import 'dart:convert';
 import '../services/dictionary_manager.dart';
 import '../services/dictionary_store_service.dart';
 import '../services/download_manager.dart';
 import '../services/user_dicts_service.dart';
 import '../services/dict_update_check_service.dart';
 import '../services/font_loader_service.dart';
+import '../services/zstd_service.dart';
 import '../data/models/remote_dictionary.dart';
+import '../data/models/dictionary_metadata.dart';
+import '../data/models/user_dictionary.dart' as user_dict;
+import '../data/database_service.dart' as db_service;
 import '../core/logger.dart';
 import '../core/utils/toast_utils.dart';
 import '../i18n/strings.g.dart';
 import '../components/global_scale_wrapper.dart';
 import '../components/transfer_progress_panel.dart';
-import 'dictionary_manager_page.dart' show BatchUpdateDialog;
+import 'dictionary_manager_page.dart' show BatchUpdateDialog, DictUpdateDialog;
 
 class DictionarySourcePage extends StatefulWidget {
   final VoidCallback? onBack;
@@ -110,11 +116,25 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
       bottomSheet: const DownloadProgressPanel(),
     );
 
-    if (scale == 1.0) {
-      return content;
+    Widget result = content;
+    if (scale != 1.0) {
+      result = PageScaleWrapper(child: content);
     }
 
-    return PageScaleWrapper(child: content);
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: result,
+      );
+    }
+
+    return result;
   }
 
   Widget _buildContent() {
@@ -575,8 +595,341 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
     );
   }
 
-  void _checkAndUpdateDictionary(RemoteDictionary dict) {
-    _startDownload(dict);
+  Future<void> _checkAndUpdateDictionary(RemoteDictionary dict) async {
+    if (_storeService == null) {
+      showToast(context, context.t.dict.configCloudFirst);
+      return;
+    }
+
+    try {
+      _dictManager.clearMetadataCache(dict.id);
+      final metadata = await _dictManager.getDictionaryMetadata(dict.id);
+      if (metadata == null) {
+        showToast(context, context.t.dict.getDictInfoFailed);
+        return;
+      }
+
+      final currentVersion = metadata.version;
+      Logger.d(
+        '检查词典更新: ${dict.id}, 当前版本: $currentVersion',
+        tag: 'DictionarySourcePage',
+      );
+
+      var updateInfo = await _userDictsService.getDictUpdateInfo(
+        dict.id,
+        currentVersion,
+      );
+
+      Logger.d('更新信息: $updateInfo', tag: 'DictionarySourcePage');
+      if (updateInfo != null) {
+        Logger.d(
+          'from: ${updateInfo.from}, to: ${updateInfo.to}, files: ${updateInfo.required.files}, entries: ${updateInfo.required.entries}',
+          tag: 'DictionarySourcePage',
+        );
+
+        // 检查本地是否存在 media.db
+        final hasMediaDb = await _dictManager.hasMediaDb(dict.id);
+        if (!hasMediaDb) {
+          // 过滤掉 media.db 相关的更新
+          final filteredFiles = updateInfo.required.files
+              .where((file) => file != 'media.db')
+              .toList();
+
+          // 创建过滤后的更新信息
+          updateInfo = user_dict.DictUpdateInfo(
+            dictId: updateInfo.dictId,
+            from: updateInfo.from,
+            to: updateInfo.to,
+            history: updateInfo.history,
+            required: user_dict.DictUpdateRequired(
+              files: filteredFiles,
+              entries: updateInfo.required.entries,
+            ),
+          );
+          Logger.d(
+            '过滤后的更新信息: files: ${updateInfo.required.files}',
+            tag: 'DictionarySourcePage',
+          );
+        }
+      }
+
+      if (!mounted) return;
+
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => DictUpdateDialog(
+          dictName: dict.name,
+          dictId: dict.id,
+          updateInfo: updateInfo,
+          storeService: _storeService!,
+          metadata: metadata,
+        ),
+      );
+
+      if (result == null) return;
+
+      if (result['type'] == 'smart' && updateInfo != null) {
+        await _executeSmartUpdate(dict, updateInfo, metadata);
+      } else if (result['type'] == 'manual') {
+        await _executeManualUpdate(dict, result, metadata, updateInfo);
+      }
+    } catch (e) {
+      showToast(context, context.t.dict.updateFailed(error: '$e'));
+      Logger.e('更新词典失败: $e', tag: 'DictionarySourcePage');
+    }
+  }
+
+  Future<void> _executeSmartUpdate(
+    RemoteDictionary dict,
+    user_dict.DictUpdateInfo updateInfo,
+    DictionaryMetadata metadata,
+  ) async {
+    // 若既无文件更新也无条目更新，则只更新本地版本号
+    if (updateInfo.required.files.isEmpty &&
+        updateInfo.required.entries.isEmpty) {
+      final newMetadata = DictionaryMetadata(
+        id: metadata.id,
+        name: metadata.name,
+        version: updateInfo.to,
+        description: metadata.description,
+        sourceLanguage: metadata.sourceLanguage,
+        targetLanguages: metadata.targetLanguages,
+        publisher: metadata.publisher,
+        maintainer: metadata.maintainer,
+        contactMaintainer: metadata.contactMaintainer,
+        updatedAt: DateTime.now(),
+      );
+      await _dictManager.saveDictionaryMetadata(newMetadata);
+      if (mounted) {
+        showToast(
+          context,
+          context.t.dict.versionUpdated(version: updateInfo.to),
+        );
+        _loadOnlineDictionaries();
+      }
+      return;
+    }
+
+    final downloadManager = context.read<DownloadManager>();
+    final dictDir = await _dictManager.getDictionaryDir(dict.id);
+    final totalSteps =
+        updateInfo.required.files.length +
+        (updateInfo.required.entries.isNotEmpty ? 1 : 0);
+
+    await downloadManager.startUpdate(
+      dict.id,
+      dict.name,
+      (onProgress) async {
+        var currentStep = 0;
+
+        for (final fileName in updateInfo.required.files) {
+          currentStep++;
+          onProgress(
+            context.t.dict.downloading(
+              step: currentStep,
+              total: totalSteps,
+              name: fileName,
+            ),
+            currentStep,
+            totalSteps,
+          );
+
+          final savePath = path.join(dictDir, fileName);
+          bool downloadOk = false;
+          await for (final event in _storeService!.downloadDictFileStream(
+            dict.id,
+            fileName,
+            savePath,
+          )) {
+            if (event['type'] == 'progress') {
+              onProgress(
+                context.t.dict.downloading(
+                  step: currentStep,
+                  total: totalSteps,
+                  name: fileName,
+                ),
+                currentStep,
+                totalSteps,
+                receivedBytes: (event['receivedBytes'] as num).toInt(),
+                totalBytes: (event['totalBytes'] as num).toInt(),
+                fileProgress: (event['progress'] as num).toDouble(),
+                speedBytesPerSecond: (event['speedBytesPerSecond'] as num)
+                    .toInt(),
+              );
+            } else if (event['type'] == 'complete') {
+              downloadOk = true;
+            } else if (event['type'] == 'error') {
+              throw Exception(
+                context.t.dict.downloadFileFailedError(
+                  name: fileName,
+                  error: '${event['error']}',
+                ),
+              );
+            }
+          }
+          if (!downloadOk)
+            throw Exception(context.t.dict.downloadFileFailed(name: fileName));
+        }
+
+        if (updateInfo.required.entries.isNotEmpty) {
+          currentStep++;
+          onProgress(
+            context.t.dict.downloadingEntries(
+              step: currentStep,
+              total: totalSteps,
+            ),
+            currentStep,
+            totalSteps,
+          );
+
+          final zstdData = await _userDictsService.downloadEntryUpdates(
+            dict.id,
+            updateInfo.required.entries,
+          );
+
+          if (zstdData == null) {
+            throw Exception(context.t.dict.downloadEntriesFailed);
+          }
+
+          final zstdDict = await _dictManager.getZstdDictionary(dict.id);
+          final databaseService = db_service.DatabaseService();
+          final zstdService = ZstdService();
+
+          final decompressed = zstdService.decompress(zstdData, zstdDict);
+          final jsonlContent = utf8.decode(decompressed);
+          final lines = jsonlContent.split('\n');
+
+          for (final line in lines) {
+            if (line.trim().isEmpty) continue;
+            final entryJson = jsonDecode(line) as Map<String, dynamic>;
+            entryJson['dict_id'] = dict.id;
+            final entry = db_service.DictionaryEntry.fromJson(entryJson);
+            await databaseService.insertOrUpdateEntry(entry);
+          }
+        }
+      },
+      onComplete: () async {
+        if (!mounted) return;
+
+        final newMetadata = DictionaryMetadata(
+          id: metadata.id,
+          name: metadata.name,
+          version: updateInfo.to,
+          description: metadata.description,
+          sourceLanguage: metadata.sourceLanguage,
+          targetLanguages: metadata.targetLanguages,
+          publisher: metadata.publisher,
+          maintainer: metadata.maintainer,
+          contactMaintainer: metadata.contactMaintainer,
+          updatedAt: DateTime.now(),
+        );
+        await _dictManager.saveDictionaryMetadata(newMetadata);
+
+        showToast(context, context.t.dict.updateSuccess);
+        _loadOnlineDictionaries();
+      },
+      onError: (error) {
+        if (!mounted) return;
+        showToast(context, context.t.dict.updateFailed(error: '$error'));
+      },
+    );
+  }
+
+  Future<void> _executeManualUpdate(
+    RemoteDictionary dict,
+    Map<String, dynamic> options,
+    DictionaryMetadata metadata,
+    user_dict.DictUpdateInfo? updateInfo,
+  ) async {
+    final includeMetadata = options['includeMetadata'] as bool;
+    final includeLogo = options['includeLogo'] as bool;
+    final includeDb = options['includeDb'] as bool;
+    final includeMedia = options['includeMedia'] as bool;
+
+    final filesToDownload = <String>[];
+    if (includeMetadata) filesToDownload.add('metadata.json');
+    if (includeLogo) filesToDownload.add('logo.png');
+    if (includeDb) filesToDownload.add('dictionary.db');
+    if (includeMedia) filesToDownload.add('media.db');
+
+    if (filesToDownload.isEmpty) {
+      showToast(context, context.t.dict.noFileSelected);
+      return;
+    }
+
+    final downloadManager = context.read<DownloadManager>();
+    final dictDir = await _dictManager.getDictionaryDir(dict.id);
+    final totalSteps = filesToDownload.length;
+
+    await downloadManager.startUpdate(
+      dict.id,
+      dict.name,
+      (onProgress) async {
+        for (var i = 0; i < filesToDownload.length; i++) {
+          final fileName = filesToDownload[i];
+          final step = i + 1;
+          onProgress(
+            context.t.dict.downloading(
+              step: step,
+              total: totalSteps,
+              name: fileName,
+            ),
+            step,
+            totalSteps,
+          );
+
+          final savePath = path.join(dictDir, fileName);
+          bool downloadOk = false;
+          await for (final event in _storeService!.downloadDictFileStream(
+            dict.id,
+            fileName,
+            savePath,
+          )) {
+            if (event['type'] == 'progress') {
+              onProgress(
+                context.t.dict.downloading(
+                  step: step,
+                  total: totalSteps,
+                  name: fileName,
+                ),
+                step,
+                totalSteps,
+                receivedBytes: (event['receivedBytes'] as num).toInt(),
+                totalBytes: (event['totalBytes'] as num).toInt(),
+                fileProgress: (event['progress'] as num).toDouble(),
+                speedBytesPerSecond: (event['speedBytesPerSecond'] as num)
+                    .toInt(),
+              );
+            } else if (event['type'] == 'complete') {
+              downloadOk = true;
+            } else if (event['type'] == 'error') {
+              throw Exception(
+                context.t.dict.downloadFileFailedError(
+                  name: fileName,
+                  error: '${event['error']}',
+                ),
+              );
+            }
+          }
+          if (!downloadOk)
+            throw Exception(context.t.dict.downloadFileFailed(name: fileName));
+        }
+      },
+      onComplete: () async {
+        if (!mounted) return;
+
+        if (includeMetadata) {
+          _dictManager.clearMetadataCache(dict.id);
+        }
+
+        showToast(context, context.t.dict.updateSuccess);
+        _loadOnlineDictionaries();
+      },
+      onError: (error) {
+        if (!mounted) return;
+        showToast(context, context.t.dict.updateFailed(error: '$error'));
+      },
+    );
   }
 
   String _formatLargeNumber(int number) {

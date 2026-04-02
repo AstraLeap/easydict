@@ -82,7 +82,7 @@ class _HelpPageState extends State<HelpPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final appUpdateService = context.watch<AppUpdateService>();
 
-    return Scaffold(
+    final content = Scaffold(
       appBar: AppBar(
         leading: widget.onBack != null
             ? IconButton(
@@ -113,6 +113,21 @@ class _HelpPageState extends State<HelpPage> {
         ),
       ),
     );
+
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: content,
+      );
+    }
+
+    return content;
   }
 
   Widget _buildContent(
@@ -154,6 +169,7 @@ class _HelpPageState extends State<HelpPage> {
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                     letterSpacing: 2.0,
+                    fontFamily: 'SourceSerif4',
                   ),
             ),
           ),

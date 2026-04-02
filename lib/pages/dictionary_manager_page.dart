@@ -45,7 +45,8 @@ class DictionaryManagerPage extends StatefulWidget {
   State<DictionaryManagerPage> createState() => _DictionaryManagerPageState();
 }
 
-class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
+class _DictionaryManagerPageState extends State<DictionaryManagerPage>
+    with TickerProviderStateMixin {
   final DictionaryManager _dictManager = DictionaryManager();
   final UserDictsService _userDictsService = UserDictsService();
   final AdvancedSearchSettingsService _advancedSettingsService =
@@ -63,6 +64,11 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   List<String> _languageOrder = [];
   String? _selectedDictLang;
 
+  // TabController 用于支持触摸滑动切换
+  TabController? _tabController;
+  // 记录上次的语言顺序，用于判断是否需要重建 TabController
+  List<String>? _lastLanguageOrder;
+
   // 创作者中心相关状态
   final AuthService _authService = AuthService();
   bool _isLoggedIn = false;
@@ -78,6 +84,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
   @override
   void dispose() {
+    _tabController?.dispose();
     // 若后台下载仍在进行，不关闭 HTTP 客户端，让 DownloadManager 继续使用
     if (!DownloadManager().isDownloading) {
       _storeService?.dispose();
@@ -716,11 +723,25 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       bottomSheet: const DownloadProgressPanel(),
     );
 
-    if (scale == 1.0) {
-      return content;
+    Widget result = content;
+    if (scale != 1.0) {
+      result = PageScaleWrapper(child: content);
     }
 
-    return PageScaleWrapper(child: content);
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: result,
+      );
+    }
+
+    return result;
   }
 
   /// 词典排序内容
@@ -749,114 +770,138 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
       return _buildEmptyState();
     }
 
-    // 确定当前选中的语言
+    // 确保选中的语言有效
     final currentLang = displayLangs.contains(_selectedDictLang)
         ? _selectedDictLang!
         : displayLangs.first;
+    final currentIndex = displayLangs.indexOf(currentLang);
+
+    // 初始化或更新 TabController
+    // 注意：当语言顺序改变时，需要重建 TabController 以同步新的顺序
+    final shouldRebuildController = _tabController == null ||
+        _tabController!.length != displayLangs.length ||
+        _lastLanguageOrder == null ||
+        !_listEquals(_lastLanguageOrder!, displayLangs);
+
+    if (shouldRebuildController) {
+      _tabController?.dispose();
+      _tabController = TabController(
+        length: displayLangs.length,
+        vsync: this,
+        initialIndex: currentIndex.clamp(0, displayLangs.length - 1),
+      );
+      _lastLanguageOrder = List.from(displayLangs);
+    } else if (_tabController!.index != currentIndex) {
+      // 同步当前选中索引（不触发动画，避免抽动）
+      _tabController!.index = currentIndex.clamp(0, displayLangs.length - 1);
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
       children: [
         // 词典目录设置（移动到语言 tab 栏上方）
         _buildCurrentDirectoryCard(),
-        // 可拖动排序的语言 tab 栏
-        Container(
+        // 语言 tab 栏
+        Material(
           color: Theme.of(context).scaffoldBackgroundColor,
-          height: 48,
           child: Row(
             children: [
               Expanded(
-                child: ReorderableListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  buildDefaultDragHandles: false,
-                  padding: EdgeInsets.zero,
-                  onReorder: (oldIndex, newIndex) {
-                    if (newIndex > oldIndex) newIndex--;
-                    final newOrder = List<String>.from(displayLangs);
-                    final item = newOrder.removeAt(oldIndex);
-                    newOrder.insert(newIndex, item);
-                    setState(() {
-                      _languageOrder = newOrder;
-                    });
-                    _saveLanguageOrder();
-                  },
-                  itemCount: displayLangs.length,
-                  itemBuilder: (context, index) {
-                    final lang = displayLangs[index];
-                    final isSelected = lang == currentLang;
-                    final colorScheme = Theme.of(context).colorScheme;
-                    return ReorderableDragStartListener(
-                      key: ValueKey(lang),
-                      index: index,
-                      child: InkWell(
-                        onTap: () => setState(() => _selectedDictLang = lang),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          height: 48,
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: isSelected
-                                    ? colorScheme.primary
-                                    : Colors.transparent,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              LanguageUtils.getDisplayName(lang, context.t),
-                              style: TextStyle(
-                                fontWeight: isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: isSelected
-                                    ? colorScheme.primary
-                                    : colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  indicator: _FixedWidthIndicator(
+                    color: colorScheme.primary,
+                    width: 24,
+                    height: 3,
+                  ),
+                  labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  labelColor: colorScheme.primary,
+                  unselectedLabelColor: colorScheme.onSurface,
+                  unselectedLabelStyle: const TextStyle(
+                    fontWeight: FontWeight.normal,
+                  ),
+                  tabs: displayLangs
+                      .map(
+                        (lang) => Tab(
+                          text: LanguageUtils.getDisplayName(lang, context.t),
                         ),
-                      ),
-                    );
-                  },
+                      )
+                      .toList(),
                 ),
               ),
-              // 长按拖动提示图标
+              // 拖拽排序按钮
               Tooltip(
                 message: context.t.dict.dragHint,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Icon(
-                    Icons.swap_horiz,
-                    size: 18,
-                    color: Colors.grey[400],
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.swap_horiz,
+                      size: 18,
+                      color: Colors.grey[400],
+                    ),
+                    onPressed: () => _showLanguageOrderDialog(displayLangs),
                   ),
                 ),
               ),
             ],
           ),
         ),
-        // 当前语言的词典列表
+        // 使用 TabBarView 支持触摸滑动切换
         Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: _buildLanguageDictionaryList(
-                _allDictionaries
-                    .where(
-                      (d) =>
-                          LanguageUtils.normalizeSourceLanguage(
-                            d.sourceLanguage,
-                          ) ==
-                          currentLang,
-                    )
-                    .toList(),
-              ),
-            ),
+          child: TabBarView(
+            controller: _tabController,
+            children: displayLangs.map((lang) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800),
+                  child: _buildLanguageDictionaryList(
+                    _allDictionaries
+                        .where(
+                          (d) =>
+                              LanguageUtils.normalizeSourceLanguage(
+                                d.sourceLanguage,
+                              ) ==
+                              lang,
+                        )
+                        .toList(),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ),
       ],
     );
+  }
+
+  /// 显示语言排序对话框
+  void _showLanguageOrderDialog(List<String> displayLangs) {
+    showDialog(
+      context: context,
+      builder: (context) => _LanguageOrderDialog(
+        languages: List.from(displayLangs),
+        onReorder: (newOrder) {
+          setState(() {
+            _languageOrder = newOrder;
+            _lastLanguageOrder = List.from(newOrder);
+          });
+          _saveLanguageOrder();
+        },
+      ),
+    );
+  }
+
+  /// 比较两个列表是否相等
+  bool _listEquals<T>(List<T> a, List<T> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   Widget _buildLanguageDictionaryList(List<DictionaryMetadata> dicts) {
@@ -1855,7 +1900,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
 
       final result = await showDialog<Map<String, dynamic>>(
         context: context,
-        builder: (context) => _DictUpdateDialog(
+        builder: (context) => DictUpdateDialog(
           dictName: dict.name,
           dictId: dict.id,
           updateInfo: updateInfo,
@@ -2248,14 +2293,15 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage> {
   }
 }
 
-class _DictUpdateDialog extends StatefulWidget {
+class DictUpdateDialog extends StatefulWidget {
   final String dictName;
   final String dictId;
   final user_dict.DictUpdateInfo? updateInfo;
   final DictionaryStoreService storeService;
   final DictionaryMetadata metadata;
 
-  const _DictUpdateDialog({
+  const DictUpdateDialog({
+    super.key,
     required this.dictName,
     required this.dictId,
     required this.updateInfo,
@@ -2264,10 +2310,10 @@ class _DictUpdateDialog extends StatefulWidget {
   });
 
   @override
-  State<_DictUpdateDialog> createState() => _DictUpdateDialogState();
+  State<DictUpdateDialog> createState() => _DictUpdateDialogState();
 }
 
-class _DictUpdateDialogState extends State<_DictUpdateDialog>
+class _DictUpdateDialogState extends State<DictUpdateDialog>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _includeMetadata = false;
@@ -3756,5 +3802,129 @@ class _BatchUpdateDialogState extends State<BatchUpdateDialog> {
     }
 
     widget.onComplete();
+  }
+}
+
+/// 语言排序对话框
+class _LanguageOrderDialog extends StatefulWidget {
+  final List<String> languages;
+  final Function(List<String>) onReorder;
+
+  const _LanguageOrderDialog({
+    required this.languages,
+    required this.onReorder,
+  });
+
+  @override
+  State<_LanguageOrderDialog> createState() => _LanguageOrderDialogState();
+}
+
+class _LanguageOrderDialogState extends State<_LanguageOrderDialog> {
+  late List<String> _order;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = List.from(widget.languages);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Text(context.t.dict.languageOrderTitle),
+      content: SizedBox(
+        width: 280,
+        child: ReorderableListView.builder(
+          shrinkWrap: true,
+          buildDefaultDragHandles: false,
+          itemCount: _order.length,
+          onReorder: (oldIndex, newIndex) {
+            if (newIndex > oldIndex) newIndex--;
+            setState(() {
+              final item = _order.removeAt(oldIndex);
+              _order.insert(newIndex, item);
+            });
+          },
+          itemBuilder: (context, index) {
+            final lang = _order[index];
+            return ListTile(
+              key: ValueKey(lang),
+              title: Text(LanguageUtils.getDisplayName(lang, context.t)),
+              trailing: ReorderableDragStartListener(
+                index: index,
+                child: Icon(
+                  Icons.drag_handle,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(context.t.common.cancel),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.onReorder(_order);
+            Navigator.pop(context);
+          },
+          child: Text(context.t.common.save),
+        ),
+      ],
+    );
+  }
+}
+
+/// 固定宽度的 Tab 指示器
+class _FixedWidthIndicator extends Decoration {
+  final Color color;
+  final double width;
+  final double height;
+
+  const _FixedWidthIndicator({
+    required this.color,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) {
+    return _FixedWidthPainter(color: color, width: width, height: height);
+  }
+}
+
+class _FixedWidthPainter extends BoxPainter {
+  final Color color;
+  final double width;
+  final double height;
+
+  _FixedWidthPainter({
+    required this.color,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final Paint paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    // 计算居中位置
+    final double tabWidth = configuration.size!.width;
+    final double left = offset.dx + (tabWidth - width) / 2;
+    final double top = offset.dy + configuration.size!.height - height;
+
+    // 绘制圆角矩形
+    final RRect rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(left, top, width, height),
+      const Radius.circular(2),
+    );
+
+    canvas.drawRRect(rect, paint);
   }
 }

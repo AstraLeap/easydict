@@ -2402,11 +2402,25 @@ class _LLMConfigPageState extends State<LLMConfigPage>
       body: body,
     );
 
-    if (_dictionaryContentScale == 1.0) {
-      return content;
+    Widget result = content;
+    if (_dictionaryContentScale != 1.0) {
+      result = PageScaleWrapper(scale: _dictionaryContentScale, child: content);
     }
 
-    return PageScaleWrapper(scale: _dictionaryContentScale, child: content);
+    // 如果有 onBack 回调，使用 PopScope 拦截系统返回
+    if (widget.onBack != null) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, popResult) {
+          if (!didPop) {
+            widget.onBack!();
+          }
+        },
+        child: result,
+      );
+    }
+
+    return result;
   }
 
   Widget _buildLanguageVoiceSetting(LanguageVoiceMapping lang) {

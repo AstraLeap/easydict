@@ -560,6 +560,26 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   Future<void> _clearHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.t.search.historyClearConfirmTitle),
+        content: Text(context.t.search.historyClearConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.t.common.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.t.common.confirm),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     await _historyService.clearHistory();
     setState(() {
       _searchRecords = [];
