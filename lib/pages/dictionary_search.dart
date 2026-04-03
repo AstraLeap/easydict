@@ -781,7 +781,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         child: PageScaleWrapper(
           scale: contentScale,
           child: SafeArea(
-            top: false,
             bottom: false,
             child: Column(
               children: [
@@ -789,7 +788,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   padding: EdgeInsets.only(
                     left: 16,
                     right: 16,
-                    top: 16,
+                    top: 12,
                     bottom: 12,
                   ),
                   child: UnifiedSearchBarFactory.withLanguageSelector(
