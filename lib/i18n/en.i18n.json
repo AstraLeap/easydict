@@ -58,6 +58,7 @@
   },
   "settings": {
     "title": "Settings",
+    "selectFromLeftSidebar": "Please select a settings item from the left sidebar",
     "cloudService": "Cloud Service",
     "dictionaryManager": "Dictionary Manager",
     "dictionaryStore": "Dictionary Store",
@@ -520,6 +521,10 @@
     "hasUpdates": "{count} dictionaries have updates",
     "allUpToDate": "All dictionaries are up to date",
     "checkUpdates": "Check Updates",
+    "refreshStore": "Refresh Store",
+    "refreshStoreSuccess": "Store refreshed",
+    "refreshLocal": "Refresh Local",
+    "refreshLocalSuccess": "Local dictionaries refreshed",
     "checking": "Checking...",
     "downloadDict": "Download: {name}",
     "selectContent": "Select content to download:",

@@ -254,6 +254,9 @@ class TranslationsSettingsZh {
 	/// zh: '设置'
 	String get title => '设置';
 
+	/// zh: '请从左侧选择设置项'
+	String get selectFromLeftSidebar => '请从左侧选择设置项';
+
 	/// zh: '云服务'
 	String get cloudService => '云服务';
 
@@ -1414,6 +1417,18 @@ class TranslationsDictZh {
 
 	/// zh: '检查更新'
 	String get checkUpdates => '检查更新';
+
+	/// zh: '刷新商店'
+	String get refreshStore => '刷新商店';
+
+	/// zh: '商店已刷新'
+	String get refreshStoreSuccess => '商店已刷新';
+
+	/// zh: '刷新本地'
+	String get refreshLocal => '刷新本地';
+
+	/// zh: '本地词典已刷新'
+	String get refreshLocalSuccess => '本地词典已刷新';
 
 	/// zh: '检查中...'
 	String get checking => '检查中...';
@@ -2624,6 +2639,7 @@ extension on Translations {
 			'common.expand' => '展开',
 			'common.collapse' => '折叠',
 			'settings.title' => '设置',
+			'settings.selectFromLeftSidebar' => '请从左侧选择设置项',
 			'settings.cloudService' => '云服务',
 			'settings.dictionaryManager' => '词典管理',
 			'settings.dictionaryStore' => '词典商店',
@@ -3054,6 +3070,10 @@ extension on Translations {
 			'dict.hasUpdates' => ({required Object count}) => '发现 ${count} 个词典有更新',
 			'dict.allUpToDate' => '所有词典已是最新版本',
 			'dict.checkUpdates' => '检查更新',
+			'dict.refreshStore' => '刷新商店',
+			'dict.refreshStoreSuccess' => '商店已刷新',
+			'dict.refreshLocal' => '刷新本地',
+			'dict.refreshLocalSuccess' => '本地词典已刷新',
 			'dict.checking' => '检查中...',
 			'dict.downloadDict' => ({required Object name}) => '下载: ${name}',
 			'dict.selectContent' => '选择要下载的内容:',
@@ -3077,13 +3097,13 @@ extension on Translations {
 			'dict.updateSuccess' => '更新成功',
 			'dict.updateFailed' => ({required Object error}) => '更新失败: ${error}',
 			'dict.deleteConfirmTitle' => '确认删除',
+			_ => null,
+		} ?? switch (path) {
 			'dict.deleteConfirmBody' => ({required Object name}) => '确定要删除词典 "${name}" 吗？',
 			'dict.deleteSuccess' => '词典已删除',
 			'dict.deleteFailed' => ({required Object error}) => '删除失败: ${error}',
 			'dict.dictNotFound' => '未找到指定词典',
 			'dict.dictDeleteFailed' => '词典删除失败',
-			_ => null,
-		} ?? switch (path) {
 			'dict.statusUpdateFailed' => '状态更新失败',
 			'dict.statusPreparing' => '准备中',
 			'dict.statusPreparingUpdate' => '准备更新',

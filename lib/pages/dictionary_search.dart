@@ -635,7 +635,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
     _isSearchingWord = true;
 
-    Logger.d('用户开始查词: $word, _isSearchingWord 已设置为 true', tag: 'DictionarySearch');
+    Logger.d(
+      '用户开始查词: $word, _isSearchingWord 已设置为 true',
+      tag: 'DictionarySearch',
+    );
 
     // 首次查英语词且 en.db 不存在时，直接弹出下载推荐（不等待查询结果）
     if (_detectLanguage(word) == 'en') {
@@ -751,7 +754,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       _isLoading = false;
       _isSearchingWord = false;
     });
-    Logger.d('_searchWord 完成: $word, _isSearchingWord 已重置为 false', tag: 'DictionarySearch');
+    Logger.d(
+      '_searchWord 完成: $word, _isSearchingWord 已重置为 false',
+      tag: 'DictionarySearch',
+    );
   }
 
   @override
@@ -775,6 +781,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         child: PageScaleWrapper(
           scale: contentScale,
           child: SafeArea(
+            top: false,
             bottom: false,
             child: Column(
               children: [
@@ -782,7 +789,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                   padding: EdgeInsets.only(
                     left: 16,
                     right: 16,
-                    top: 12,
+                    top: 16,
                     bottom: 12,
                   ),
                   child: UnifiedSearchBarFactory.withLanguageSelector(
@@ -995,110 +1002,131 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 构建每日单词区域
   Widget _buildDailyWordsSection() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final borderColor = colorScheme.primary.withOpacity(0.4);
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-      decoration: BoxDecoration(
-        color: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  context.t.search.dailyWords,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                if (_selectedLanguages.isNotEmpty) ...[
-                  IconButton(
-                    onPressed: _isLoadingDailyWords ? null : _refreshDailyWords,
-                    icon: _isLoadingDailyWords
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          )
-                        : const Icon(Icons.refresh, size: 16),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: context.t.search.dailyWordsRefresh,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
+          // 边框容器
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 18, 12, 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: borderColor, width: 1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: _selectedLanguages.isEmpty
+                ? _buildDailyWordsEmptyState()
+                : _dailyWords.isEmpty && !_isLoadingDailyWords
+                ? Text(
+                    context.t.search.dailyWordsNoWords,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+                  )
+                : Wrap(
+                    spacing: 10,
+                    runSpacing: 4,
+                    children: _dailyWords.map((word) {
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => _searchFromDailyWord(word),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 2,
+                          ),
+                          child: Text(
+                            word,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
-                  IconButton(
-                    onPressed: () => _showDailyWordsSettingsDialog(),
-                    icon: const Icon(Icons.settings_outlined, size: 16),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: context.t.search.dailyWordsSettings,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
+          ),
+          // 左上角标题（骑在边框线上）
+          Positioned(
+            top: -10,
+            left: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 18,
+                    color: colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    context.t.search.dailyWords,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
-          if (_selectedLanguages.isEmpty)
-            _buildDailyWordsEmptyState()
-          else if (_dailyWords.isEmpty && !_isLoadingDailyWords)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-              child: Text(
-                context.t.search.dailyWordsNoWords,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: _dailyWords.map((word) {
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () => _searchFromDailyWord(word),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 2,
+          // 右上角按钮（骑在边框线上）
+          if (_selectedLanguages.isNotEmpty)
+            Positioned(
+              top: -10,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: _isLoadingDailyWords ? null : _refreshDailyWords,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: _isLoadingDailyWords
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colorScheme.primary,
+                                ),
+                              )
+                            : Icon(
+                                Icons.refresh,
+                                size: 18,
+                                color: colorScheme.primary,
+                              ),
                       ),
-                      child: Text(
-                        word,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 14.5,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant.withOpacity(0.85),
-                          fontWeight: FontWeight.w500,
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => _showDailyWordsSettingsDialog(),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.settings_outlined,
+                          size: 18,
+                          color: colorScheme.primary,
                         ),
                       ),
                     ),
-                  );
-                }).toList(),
+                  ],
+                ),
               ),
             ),
         ],
@@ -1108,24 +1136,21 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 构建每日单词空状态（未选择语言）
   Widget _buildDailyWordsEmptyState() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Row(
-        children: [
-          Text(
-            context.t.search.dailyWordsLanguage,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
+    return Row(
+      children: [
+        Text(
+          context.t.search.dailyWordsLanguage,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.outline,
           ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: () => _showDailyWordsSettingsDialog(),
-            icon: const Icon(Icons.add, size: 16),
-            label: Text(context.t.search.dailyWordsSettings),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        TextButton.icon(
+          onPressed: () => _showDailyWordsSettingsDialog(),
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(context.t.search.dailyWordsSettings),
+        ),
+      ],
     );
   }
 
@@ -1349,27 +1374,25 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 child: Text(context.t.common.close),
               ),
               FilledButton(
-                onPressed: selectedLanguages.isEmpty
-                    ? null
-                    : () async {
-                        await _dailyWordService.setSelectedLanguages(
-                          selectedLanguages,
-                        );
-                        await _dailyWordService.setSelectedLists(selectedLists);
-                        _selectedLanguages = selectedLanguages;
-                        _selectedLists = selectedLists;
-                        for (final lang in selectedLanguages) {
-                          await _loadWordListsForLanguage(lang);
-                        }
-                        // 强制刷新每日单词
-                        await _refreshDailyWords();
-                        if (mounted) {
-                          setState(() {});
-                        }
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                        }
-                      },
+                onPressed: () async {
+                  await _dailyWordService.setSelectedLanguages(
+                    selectedLanguages,
+                  );
+                  await _dailyWordService.setSelectedLists(selectedLists);
+                  _selectedLanguages = selectedLanguages;
+                  _selectedLists = selectedLists;
+                  for (final lang in selectedLanguages) {
+                    await _loadWordListsForLanguage(lang);
+                  }
+                  // 强制刷新每日单词
+                  await _refreshDailyWords();
+                  if (mounted) {
+                    setState(() {});
+                  }
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                },
                 child: Text(context.t.common.save),
               ),
             ],

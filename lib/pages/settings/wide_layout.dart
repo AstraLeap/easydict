@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:easydict/i18n/strings.g.dart';
 import 'menu_item.dart';
 import 'menu_panel.dart';
 import 'content_panel.dart';
@@ -183,7 +184,7 @@ class _WideSettingsLayoutState extends State<WideSettingsLayout> {
           ),
           const SizedBox(height: 16),
           Text(
-            '请从左侧选择设置项',
+            t.settings.selectFromLeftSidebar,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),

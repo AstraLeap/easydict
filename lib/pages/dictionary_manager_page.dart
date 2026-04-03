@@ -17,6 +17,7 @@ import '../services/download_manager.dart';
 import '../services/font_loader_service.dart';
 import '../services/user_dicts_service.dart';
 import '../services/auth_service.dart';
+import '../services/preferences_service.dart';
 import '../services/zstd_service.dart';
 import '../services/dict_update_check_service.dart';
 import '../data/models/dictionary_metadata.dart';
@@ -51,6 +52,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
   final UserDictsService _userDictsService = UserDictsService();
   final AdvancedSearchSettingsService _advancedSettingsService =
       AdvancedSearchSettingsService();
+  final PreferencesService _prefsService = PreferencesService();
 
   List<DictionaryMetadata> _allDictionaries = [];
   List<String> _enabledDictionaryIds = [];
@@ -153,14 +155,45 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
         _isLoading = false;
       });
 
-      // 如果有在线订阅，加载在线词典列表
+      // 如果有在线订阅，加载创作者中心数据和缓存的在线词典列表
       if (_storeService != null) {
-        _loadOnlineDictionaries();
         _checkLoginAndLoadUserDicts();
+        await _loadCachedOnlineDictionaries();
       }
     } catch (e) {
       Logger.e('加载设置失败: $e', tag: 'DictionaryManagerPage');
       setState(() => _isLoading = false);
+    }
+  }
+
+  /// 从缓存加载在线词典列表，如果没有缓存则自动获取
+  Future<void> _loadCachedOnlineDictionaries() async {
+    final cachedJson = await _prefsService.getCachedOnlineDictionaries();
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final jsonData = jsonDecode(cachedJson) as Map<String, dynamic>;
+        final list = jsonData['dictionaries'] as List<dynamic>? ?? [];
+        final downloadedIds = await _storeService!.getDownloadedDictionaryIds();
+        final dictionaries = list
+            .map(
+              (item) =>
+                  RemoteDictionary.fromJson(Map<String, dynamic>.from(item)),
+            )
+            .toList();
+        for (var dict in dictionaries) {
+          dict.isDownloaded = downloadedIds.contains(dict.id);
+        }
+        setState(() {
+          _onlineDictionaries = dictionaries;
+        });
+      } catch (e) {
+        Logger.e('解析缓存在线词典失败: $e', tag: 'DictionaryManagerPage');
+        // 解析失败，从网络获取
+        await _loadOnlineDictionaries();
+      }
+    } else {
+      // 没有缓存，从网络获取
+      await _loadOnlineDictionaries();
     }
   }
 
@@ -186,6 +219,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
       for (var dict in dictionaries) {
         dict.isDownloaded = downloadedIds.contains(dict.id);
       }
+
+      // 缓存词典列表
+      final jsonData = {
+        'dictionaries': dictionaries.map((d) => d.toJson()).toList(),
+      };
+      await _prefsService.setCachedOnlineDictionaries(jsonEncode(jsonData));
 
       setState(() {
         _onlineDictionaries = dictionaries;
@@ -718,6 +757,23 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: context.t.dict.refreshLocal,
+              onPressed: _isLoadingOnline
+                  ? null
+                  : () async {
+                      await _loadOnlineDictionaries();
+                      if (mounted) {
+                        showToast(context, context.t.dict.refreshLocalSuccess);
+                      }
+                    },
+            ),
+          ),
+        ],
       ),
       body: _buildDictionaryManagementContent(),
       bottomSheet: const DownloadProgressPanel(),
@@ -1943,7 +1999,9 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
         updatedAt: DateTime.now(),
       );
       await _dictManager.saveDictionaryMetadata(newMetadata);
+      // 清除 DictUpdateCheckService 中的更新缓存
       if (mounted) {
+        context.read<DictUpdateCheckService>().clearUpdate(dict.id);
         showToast(
           context,
           context.t.dict.versionUpdated(version: updateInfo.to),
@@ -2013,6 +2071,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
 
         // 只有在页面仍然挂载时才显示 toast 和刷新
         if (!mounted) return;
+        // 清除 DictUpdateCheckService 中的更新缓存
+        context.read<DictUpdateCheckService>().clearUpdate(dict.id);
         showToast(context, context.t.dict.updateSuccess);
         await _refreshLocalDictionaries();
       },
@@ -2108,6 +2168,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
 
         // 只有在页面仍然挂载时才显示 toast 和刷新
         if (!mounted) return;
+        // 清除 DictUpdateCheckService 中的更新缓存
+        context.read<DictUpdateCheckService>().clearUpdate(dict.id);
         showToast(context, context.t.dict.updateSuccess);
         await _refreshLocalDictionaries();
       },

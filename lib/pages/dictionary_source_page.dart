@@ -8,6 +8,7 @@ import '../services/download_manager.dart';
 import '../services/user_dicts_service.dart';
 import '../services/dict_update_check_service.dart';
 import '../services/font_loader_service.dart';
+import '../services/preferences_service.dart';
 import '../services/zstd_service.dart';
 import '../data/models/remote_dictionary.dart';
 import '../data/models/dictionary_metadata.dart';
@@ -32,6 +33,7 @@ class DictionarySourcePage extends StatefulWidget {
 class _DictionarySourcePageState extends State<DictionarySourcePage> {
   final DictionaryManager _dictManager = DictionaryManager();
   final UserDictsService _userDictsService = UserDictsService();
+  final PreferencesService _prefsService = PreferencesService();
 
   List<RemoteDictionary> _onlineDictionaries = [];
   bool _isLoadingOnline = false;
@@ -61,7 +63,39 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
       final downloadManager = context.read<DownloadManager>();
       downloadManager.setStoreService(_storeService!);
       downloadManager.resumeAllDownloads();
-      _loadOnlineDictionaries();
+      // 加载缓存的在线词典列表，如果没有缓存则自动获取
+      await _loadCachedOnlineDictionaries();
+    }
+  }
+
+  /// 从缓存加载在线词典列表，如果没有缓存则自动获取
+  Future<void> _loadCachedOnlineDictionaries() async {
+    final cachedJson = await _prefsService.getCachedOnlineDictionaries();
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final jsonData = jsonDecode(cachedJson) as Map<String, dynamic>;
+        final list = jsonData['dictionaries'] as List<dynamic>? ?? [];
+        final downloadedIds = await _storeService!.getDownloadedDictionaryIds();
+        final dictionaries = list
+            .map(
+              (item) =>
+                  RemoteDictionary.fromJson(Map<String, dynamic>.from(item)),
+            )
+            .toList();
+        for (var dict in dictionaries) {
+          dict.isDownloaded = downloadedIds.contains(dict.id);
+        }
+        setState(() {
+          _onlineDictionaries = dictionaries;
+        });
+      } catch (e) {
+        Logger.e('解析缓存在线词典失败: $e', tag: 'DictionarySourcePage');
+        // 解析失败，从网络获取
+        await _loadOnlineDictionaries();
+      }
+    } else {
+      // 没有缓存，从网络获取
+      await _loadOnlineDictionaries();
     }
   }
 
@@ -79,6 +113,12 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
       for (var dict in dictionaries) {
         dict.isDownloaded = downloadedIds.contains(dict.id);
       }
+
+      // 缓存词典列表
+      final jsonData = {
+        'dictionaries': dictionaries.map((d) => d.toJson()).toList(),
+      };
+      await _prefsService.setCachedOnlineDictionaries(jsonEncode(jsonData));
 
       setState(() {
         _onlineDictionaries = dictionaries;
@@ -111,6 +151,23 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
         centerTitle: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: context.t.dict.refreshStore,
+              onPressed: _isLoadingOnline
+                  ? null
+                  : () async {
+                      await _loadOnlineDictionaries();
+                      if (mounted) {
+                        showToast(context, context.t.dict.refreshStoreSuccess);
+                      }
+                    },
+            ),
+          ),
+        ],
       ),
       body: _buildContent(),
       bottomSheet: const DownloadProgressPanel(),

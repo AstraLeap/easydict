@@ -60,6 +60,7 @@
   },
   "settings": {
     "title": "设置",
+    "selectFromLeftSidebar": "请从左侧选择设置项",
     "cloudService": "云服务",
     "dictionaryManager": "词典管理",
     "dictionaryStore": "词典商店",
@@ -522,6 +523,10 @@
     "hasUpdates": "发现 {count} 个词典有更新",
     "allUpToDate": "所有词典已是最新版本",
     "checkUpdates": "检查更新",
+    "refreshStore": "刷新商店",
+    "refreshStoreSuccess": "商店已刷新",
+    "refreshLocal": "刷新本地",
+    "refreshLocalSuccess": "本地词典已刷新",
     "checking": "检查中...",
     "downloadDict": "下载: {name}",
     "selectContent": "选择要下载的内容:",

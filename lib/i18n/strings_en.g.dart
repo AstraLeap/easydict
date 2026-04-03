@@ -142,6 +142,7 @@ class _TranslationsSettingsEn extends TranslationsSettingsZh {
 
 	// Translations
 	@override String get title => 'Settings';
+	@override String get selectFromLeftSidebar => 'Please select a settings item from the left sidebar';
 	@override String get cloudService => 'Cloud Service';
 	@override String get dictionaryManager => 'Dictionary Manager';
 	@override String get dictionaryStore => 'Dictionary Store';
@@ -587,6 +588,10 @@ class _TranslationsDictEn extends TranslationsDictZh {
 	@override String hasUpdates({required Object count}) => '${count} dictionaries have updates';
 	@override String get allUpToDate => 'All dictionaries are up to date';
 	@override String get checkUpdates => 'Check Updates';
+	@override String get refreshStore => 'Refresh Store';
+	@override String get refreshStoreSuccess => 'Store refreshed';
+	@override String get refreshLocal => 'Refresh Local';
+	@override String get refreshLocalSuccess => 'Local dictionaries refreshed';
 	@override String get checking => 'Checking...';
 	@override String downloadDict({required Object name}) => 'Download: ${name}';
 	@override String get selectContent => 'Select content to download:';
@@ -1085,6 +1090,7 @@ extension on TranslationsEn {
 			'common.redo' => 'Redo',
 			'common.selectLanguage' => 'Select Language',
 			'settings.title' => 'Settings',
+			'settings.selectFromLeftSidebar' => 'Please select a settings item from the left sidebar',
 			'settings.cloudService' => 'Cloud Service',
 			'settings.dictionaryManager' => 'Dictionary Manager',
 			'settings.dictionaryStore' => 'Dictionary Store',
@@ -1515,6 +1521,10 @@ extension on TranslationsEn {
 			'dict.hasUpdates' => ({required Object count}) => '${count} dictionaries have updates',
 			'dict.allUpToDate' => 'All dictionaries are up to date',
 			'dict.checkUpdates' => 'Check Updates',
+			'dict.refreshStore' => 'Refresh Store',
+			'dict.refreshStoreSuccess' => 'Store refreshed',
+			'dict.refreshLocal' => 'Refresh Local',
+			'dict.refreshLocalSuccess' => 'Local dictionaries refreshed',
 			'dict.checking' => 'Checking...',
 			'dict.downloadDict' => ({required Object name}) => 'Download: ${name}',
 			'dict.selectContent' => 'Select content to download:',
@@ -1540,13 +1550,13 @@ extension on TranslationsEn {
 			'dict.deleteConfirmTitle' => 'Confirm Delete',
 			'dict.deleteConfirmBody' => ({required Object name}) => 'Delete dictionary "${name}"?',
 			'dict.deleteSuccess' => 'Dictionary deleted',
+			_ => null,
+		} ?? switch (path) {
 			'dict.deleteFailed' => ({required Object error}) => 'Delete failed: ${error}',
 			'dict.dictNotFound' => 'Dictionary not found',
 			'dict.dictDeleteFailed' => 'Dictionary delete failed',
 			'dict.statusUpdateFailed' => 'Status update failed',
 			'dict.statusPreparing' => 'Preparing',
-			_ => null,
-		} ?? switch (path) {
 			'dict.statusPreparingUpdate' => 'Preparing update',
 			'dict.statusDownloading' => 'Downloading',
 			'dict.statusCompleted' => 'Completed',

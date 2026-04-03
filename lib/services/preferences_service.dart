@@ -737,4 +737,40 @@ class PreferencesService {
     final p = await prefs;
     await p.setBool(_kGroupDetailEntriesExpanded, expanded);
   }
+
+  // ============ 在线词典列表缓存 ============
+
+  static const String _kCachedOnlineDictionaries = 'cached_online_dictionaries';
+  static const String _kCachedOnlineDictionariesTime =
+      'cached_online_dictionaries_time';
+
+  /// 获取缓存的在线词典列表 JSON
+  Future<String?> getCachedOnlineDictionaries() async {
+    final p = await prefs;
+    return p.getString(_kCachedOnlineDictionaries);
+  }
+
+  /// 设置缓存的在线词典列表 JSON
+  Future<void> setCachedOnlineDictionaries(String json) async {
+    final p = await prefs;
+    await p.setString(_kCachedOnlineDictionaries, json);
+    await p.setInt(
+      _kCachedOnlineDictionariesTime,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// 获取缓存时间
+  Future<DateTime?> getCachedOnlineDictionariesTime() async {
+    final p = await prefs;
+    final time = p.getInt(_kCachedOnlineDictionariesTime);
+    return time != null ? DateTime.fromMillisecondsSinceEpoch(time) : null;
+  }
+
+  /// 清除缓存的在线词典列表
+  Future<void> clearCachedOnlineDictionaries() async {
+    final p = await prefs;
+    await p.remove(_kCachedOnlineDictionaries);
+    await p.remove(_kCachedOnlineDictionariesTime);
+  }
 }
