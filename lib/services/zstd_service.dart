@@ -147,11 +147,15 @@ ffi.DynamicLibrary _openZstdLibrary() {
   } else if (Platform.isMacOS) {
     try {
       return ffi.DynamicLibrary.open('libzstd.dylib');
-    } catch (e) {
-      Logger.e('Failed to load libzstd.dylib: $e', tag: 'ZstdService');
-      throw Exception(
-        'Could not find libzstd.dylib. Please ensure zstd is statically linked or libzstd.dylib is available.',
-      );
+    } catch (_) {
+      try {
+        return ffi.DynamicLibrary.open('zstd_ffi.framework/zstd_ffi');
+      } catch (e) {
+        Logger.e('Failed to load libzstd.dylib and zstd_ffi.framework: $e', tag: 'ZstdService');
+        throw Exception(
+          'Could not find libzstd.dylib or zstd_ffi.framework. Please ensure zstd is statically linked or available.',
+        );
+      }
     }
   }
   throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
