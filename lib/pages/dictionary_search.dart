@@ -1005,7 +1005,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final borderColor = colorScheme.primary.withOpacity(0.4);
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Stack(
         clipBehavior: Clip.none,
         children: [

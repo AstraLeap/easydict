@@ -1810,6 +1810,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       focusNode: _keyboardFocusNode,
       autofocus: true,
       onKey: (node, event) {
+        // 搜索框获得焦点时不拦截键盘事件，允许正常输入
+        if (_searchFocusNode.hasFocus) {
+          return KeyEventResult.ignored;
+        }
         if (event is RawKeyDownEvent) {
           _handleKeyEvent(event.logicalKey);
           return KeyEventResult.handled;
@@ -1958,6 +1962,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                         _isSearchMode = false;
                         _searchController.clear();
                       });
+                      // 退出搜索模式后重新让页面获得焦点，以响应键盘事件
+                      _keyboardFocusNode.requestFocus();
                     },
                     child: const Padding(
                       padding: EdgeInsets.all(10),
