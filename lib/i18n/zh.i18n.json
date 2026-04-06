@@ -793,14 +793,20 @@
     "save": "保存",
     "delete": "删除",
     "empty": "暂无笔记",
-    "placeholder": "输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](entry://词典ID/词条ID/路径)\n示例：[查看释义](entry://oxford/en_123/sense.0.definition)",
+    "placeholder": "输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)",
     "addToNote": "添加到笔记",
     "linkAdded": "已添加到笔记",
     "returnToNote": "返回笔记",
     "settings": "笔记设置",
     "defaultExpanded": "默认展开笔记",
     "defaultExpandedDesc": "笔记面板默认展开显示",
-    "defaultCollapsedDesc": "笔记面板默认折叠"
+    "defaultCollapsedDesc": "笔记面板默认折叠",
+    "bold": "加粗",
+    "italic": "斜体",
+    "link": "链接",
+    "code": "代码",
+    "preview": "预览",
+    "previewEmpty": "暂无内容可预览"
   },
   "groups": {
     "title": "组管理",

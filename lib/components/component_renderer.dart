@@ -2536,7 +2536,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       currentTextOffset += text.length;
 
       final path = key.isEmpty ? basePath : [...basePath, key];
-      final pathData = _PathData(path, 'Example Text ($key)');
+      final pathData = _PathData(path, 'Example Text');
 
       final hiddenPath = path.join('.');
       // 使用 notifier 的当前值，这样当状态变化时会重建
@@ -3231,14 +3231,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final word = entry.headword;
     final language = _sourceLanguage ?? 'en';
 
-    // 构建链接格式：[显示文本](entry://dictId/entryId/json.path)
+    // 构建链接格式：[label](dictId_entryId/json.path)
     final dictId = entry.dictId ?? '';
-    final entryId = entry.id;
+    final entryId = entry.id; // 使用完整 id (dictId_entryId 格式)
     final jsonPath = pathData.path.join('.');
     final label = pathData.label;
 
-    // 格式: [label](entry://dictId/entryId/json.path)
-    final link = '[$label](entry://$dictId/$entryId/$jsonPath)';
+    // 格式: [label](dictId_entryId/json.path)
+    final link = '[$label]($entryId/$jsonPath)';
 
     // 调用外部提供的回调来处理笔记
     widget.onAddToNote?.call(word, language, link);
@@ -5502,7 +5502,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final startOffset = currentTextOffset;
       currentTextOffset += text.length;
 
-      final pathData = _PathData(textPath, 'Note ($langKey)');
+      final pathData = _PathData(textPath, 'Note');
 
       Logger.d(
         'Note: 创建 tapRecognizer, text=$text, langKey=$langKey',
@@ -6420,7 +6420,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           currentTextOffset += definition.value.length;
 
           final path = [...PathScope.of(context), definition.key];
-          final pathData = _PathData(path, 'Definition (${definition.key})');
+          final pathData = _PathData(path, 'Definition');
 
           final hiddenPath = path.join('.');
           // 使用 notifier 的当前值，这样当状态变化时会重建
@@ -6507,7 +6507,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             context: context,
             path: path,
             language: definitionLangKey.isEmpty ? null : definitionLangKey,
-            label: 'Definition (${definition.key})',
+            label: 'Definition',
             recognizer: recognizer,
             hidden: hidden,
             elementType: DictElementType.definition,

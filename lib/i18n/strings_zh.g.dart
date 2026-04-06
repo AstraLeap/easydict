@@ -2235,8 +2235,8 @@ class TranslationsNoteZh {
 	/// zh: '暂无笔记'
 	String get empty => '暂无笔记';
 
-	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](entry://词典ID/词条ID/路径) 示例：[查看释义](entry://oxford/en_123/sense.0.definition)'
-	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](entry://词典ID/词条ID/路径)\n示例：[查看释义](entry://oxford/en_123/sense.0.definition)';
+	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](词典ID_词条ID/路径) 示例：[查看释义](oxford_en_123/sense.0.definition)'
+	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)';
 
 	/// zh: '添加到笔记'
 	String get addToNote => '添加到笔记';
@@ -2258,6 +2258,24 @@ class TranslationsNoteZh {
 
 	/// zh: '笔记面板默认折叠'
 	String get defaultCollapsedDesc => '笔记面板默认折叠';
+
+	/// zh: '加粗'
+	String get bold => '加粗';
+
+	/// zh: '斜体'
+	String get italic => '斜体';
+
+	/// zh: '链接'
+	String get link => '链接';
+
+	/// zh: '代码'
+	String get code => '代码';
+
+	/// zh: '预览'
+	String get preview => '预览';
+
+	/// zh: '暂无内容可预览'
+	String get previewEmpty => '暂无内容可预览';
 }
 
 // Path: groups
@@ -3429,7 +3447,7 @@ extension on Translations {
 			'note.save' => '保存',
 			'note.delete' => '删除',
 			'note.empty' => '暂无笔记',
-			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](entry://词典ID/词条ID/路径)\n示例：[查看释义](entry://oxford/en_123/sense.0.definition)',
+			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)',
 			'note.addToNote' => '添加到笔记',
 			'note.linkAdded' => '已添加到笔记',
 			'note.returnToNote' => '返回笔记',
@@ -3437,6 +3455,12 @@ extension on Translations {
 			'note.defaultExpanded' => '默认展开笔记',
 			'note.defaultExpandedDesc' => '笔记面板默认展开显示',
 			'note.defaultCollapsedDesc' => '笔记面板默认折叠',
+			'note.bold' => '加粗',
+			'note.italic' => '斜体',
+			'note.link' => '链接',
+			'note.code' => '代码',
+			'note.preview' => '预览',
+			'note.previewEmpty' => '暂无内容可预览',
 			'groups.title' => '组管理',
 			'groups.manageGroups' => '管理组',
 			'groups.createGroup' => '创建组',

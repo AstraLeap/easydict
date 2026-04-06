@@ -852,6 +852,9 @@ class DictionaryEntry {
   /// 获取纯数字格式的 entry_id（公开访问）
   int get entryIdAsInt => _pureEntryIdAsInt;
 
+  /// 获取纯 entry_id 字符串（去掉 dict_id 前缀）
+  String get pureEntryId => _pureEntryId;
+
   /// 原始 JSON 中的 pronunciation 字段是否为单个对象（而非列表）
   bool get pronunciationIsSingleObject {
     final raw = _rawJson['pronunciation'];

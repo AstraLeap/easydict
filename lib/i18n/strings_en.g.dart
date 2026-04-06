@@ -873,7 +873,7 @@ class _TranslationsNoteEn extends TranslationsNoteZh {
 	@override String get save => 'Save';
 	@override String get delete => 'Delete';
 	@override String get empty => 'No notes yet';
-	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](entry://dictId/entryId/path)\nExample: [See definition](entry://oxford/en_123/sense.0.definition)';
+	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)';
 	@override String get addToNote => 'Add to Note';
 	@override String get linkAdded => 'Added to note';
 	@override String get returnToNote => 'Return to Note';
@@ -881,6 +881,12 @@ class _TranslationsNoteEn extends TranslationsNoteZh {
 	@override String get defaultExpanded => 'Expand Notes by Default';
 	@override String get defaultExpandedDesc => 'Note panel is expanded by default';
 	@override String get defaultCollapsedDesc => 'Note panel is collapsed by default';
+	@override String get bold => 'Bold';
+	@override String get italic => 'Italic';
+	@override String get link => 'Link';
+	@override String get code => 'Code';
+	@override String get preview => 'Preview';
+	@override String get previewEmpty => 'No content to preview';
 }
 
 // Path: groups
@@ -1826,7 +1832,7 @@ extension on TranslationsEn {
 			'note.save' => 'Save',
 			'note.delete' => 'Delete',
 			'note.empty' => 'No notes yet',
-			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](entry://dictId/entryId/path)\nExample: [See definition](entry://oxford/en_123/sense.0.definition)',
+			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)',
 			'note.addToNote' => 'Add to Note',
 			'note.linkAdded' => 'Added to note',
 			'note.returnToNote' => 'Return to Note',
@@ -1834,6 +1840,12 @@ extension on TranslationsEn {
 			'note.defaultExpanded' => 'Expand Notes by Default',
 			'note.defaultExpandedDesc' => 'Note panel is expanded by default',
 			'note.defaultCollapsedDesc' => 'Note panel is collapsed by default',
+			'note.bold' => 'Bold',
+			'note.italic' => 'Italic',
+			'note.link' => 'Link',
+			'note.code' => 'Code',
+			'note.preview' => 'Preview',
+			'note.previewEmpty' => 'No content to preview',
 			'groups.title' => 'Group Management',
 			'groups.manageGroups' => 'Manage Groups',
 			'groups.createGroup' => 'Create Group',

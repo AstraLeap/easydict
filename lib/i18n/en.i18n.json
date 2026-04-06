@@ -791,14 +791,20 @@
     "save": "Save",
     "delete": "Delete",
     "empty": "No notes yet",
-    "placeholder": "Enter note content (Markdown supported)\n\nLink format: [text](entry://dictId/entryId/path)\nExample: [See definition](entry://oxford/en_123/sense.0.definition)",
+    "placeholder": "Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)",
     "addToNote": "Add to Note",
     "linkAdded": "Added to note",
     "returnToNote": "Return to Note",
     "settings": "Note Settings",
     "defaultExpanded": "Expand Notes by Default",
     "defaultExpandedDesc": "Note panel is expanded by default",
-    "defaultCollapsedDesc": "Note panel is collapsed by default"
+    "defaultCollapsedDesc": "Note panel is collapsed by default",
+    "bold": "Bold",
+    "italic": "Italic",
+    "link": "Link",
+    "code": "Code",
+    "preview": "Preview",
+    "previewEmpty": "No content to preview"
   },
   "groups": {
     "title": "Group Management",

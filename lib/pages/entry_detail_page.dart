@@ -38,7 +38,7 @@ import '../services/preferences_service.dart';
 import '../services/search_history_service.dart';
 import '../services/user_dicts_service.dart';
 import '../widgets/path_navigator.dart';
-import '../widgets/note_editor_dialog.dart';
+import '../widgets/note_editor_bottom_sheet.dart';
 import '../data/models/group_model.dart' as group_model;
 import '../services/group_service.dart';
 import 'json_editor_bottom_sheet.dart';
@@ -171,6 +171,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _noteDefaultExpanded = true;
   bool _showReturnToNoteButton = false;
   String _currentLanguage = 'en';  // 缓存当前语言
+  Key _notePanelRefreshKey = UniqueKey();  // 用于强制刷新笔记面板
 
   /// 浏览列表相关状态
   BrowseList? _browseList;
@@ -1634,7 +1635,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 显示笔记编辑器
   Future<void> _showNoteEditor({String? linkToAppend}) async {
     final language = await _getCurrentLanguage();
-    final result = await NoteEditorDialog.show(
+    final result = await NoteEditorBottomSheet.show(
       context,
       word: _currentWord,
       language: language,
@@ -1643,24 +1644,42 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     if (result && mounted) {
       setState(() {
         _hasNote = true;
+        // 更新笔记面板的 key 强制刷新
+        _notePanelRefreshKey = UniqueKey();
+      });
+    }
+  }
+
+  /// 处理添加到笔记的回调
+  /// 注意：word 和 language 参数来自 component_renderer，但我们使用 _currentWord 和 _currentLanguage
+  Future<void> _handleAddToNote(String word, String language, String link) async {
+    // 使用当前查词的单词和语言，而不是词条的 headword
+    final noteService = NoteService();
+    await noteService.appendToNote(_currentWord, _currentLanguage, '\n$link');
+    if (mounted) {
+      showToast(context, context.t.note.linkAdded);
+      setState(() {
+        _hasNote = true;
+        // 更新笔记面板的 key 强制刷新
+        _notePanelRefreshKey = UniqueKey();
       });
     }
   }
 
   /// 处理笔记链接点击
-  /// 链接格式: dictId/entryId/json.path
+  /// 链接格式: dictId_entryId/json.path
   void _handleNoteLinkTap(String path) {
     final parts = path.split('/');
-    if (parts.length < 2) return;
+    if (parts.length < 1) return;
 
-    final dictId = parts[0];
-    final entryId = parts[1];
-    final jsonPath = parts.length > 2 ? parts.sublist(2).join('.') : '';
+    // 第一部分是完整的 entryId (dictId_entryId 格式)
+    final entryId = parts[0];
+    final jsonPath = parts.length > 1 ? parts.sublist(1).join('.') : '';
 
     // 查找对应的 entry
     DictionaryEntry? targetEntry;
     for (final entry in entries) {
-      if (entry.dictId == dictId && entry.id == entryId) {
+      if (entry.id == entryId) {
         targetEntry = entry;
         break;
       }
@@ -1668,21 +1687,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     if (targetEntry == null) return;
 
-    // 滚动到该 entry
-    _scrollToEntry(targetEntry);
-
-    // 如果有 json path，滚动到具体元素
-    if (jsonPath.isNotEmpty) {
-      // 延迟一下让 entry 先滚动到位置
-      Future.delayed(const Duration(milliseconds: 300), () {
-        EntryEventBus().emitScrollToElement(
-          ScrollToElementEvent(
-            entryId: entryId,
-            path: jsonPath,
-          ),
-        );
-      });
-    }
+    // 直接滚动到目标位置（如果有 json path 就滚动到具体元素，否则滚动到 entry 顶部）
+    _scrollToEntry(targetEntry, targetPath: jsonPath.isNotEmpty ? jsonPath : null);
 
     // 显示返回按钮
     setState(() {
@@ -1829,6 +1835,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                     // 索引 0: 笔记面板（如果有笔记）
                     if (index == 0 && noteOffset == 1) {
                       return NotePanel(
+                        key: _notePanelRefreshKey,
                         word: _currentWord,
                         language: _currentLanguage,
                         initiallyExpanded: _noteDefaultExpanded,
@@ -2803,6 +2810,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               onPathJump: (path, ctx) {
                 _scrollToElement(entry.id, path);
               },
+              onAddToNote: (word, language, link) {
+                _handleAddToNote(word, language, link);
+              },
             ),
           ],
         );
@@ -3122,6 +3132,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         },
         onAiAsk: (path, label) {
           // 可以添加 AI 询问处理
+        },
+        onAddToNote: (word, language, link) {
+          _handleAddToNote(word, language, link);
         },
       );
     }
@@ -3715,6 +3728,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 onGroupJump: (groupId, ctx) {
                   _navigateToGroup(entryId, dictId, groupId);
                 },
+                onAddToNote: (word, language, link) {
+                  _handleAddToNote(word, language, link);
+                },
               ),
             );
           },
@@ -3856,6 +3872,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         onGroupJump: (groupId, ctx) {
           _navigateToGroup(entryId, dictId, groupId);
         },
+        onAddToNote: (word, language, link) {
+          _handleAddToNote(word, language, link);
+        },
       );
     }
 
@@ -3896,6 +3915,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             },
             onGroupJump: (groupId, ctx) {
               _navigateToGroup(entryId, dictId, groupId);
+            },
+            onAddToNote: (word, language, link) {
+              _handleAddToNote(word, language, link);
             },
           );
         }
