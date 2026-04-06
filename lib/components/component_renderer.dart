@@ -8192,12 +8192,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
       child: Builder(
         builder: (context) {
           return Container(
-            key: elementKey,
             margin: const EdgeInsets.only(bottom: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 可折叠的标题栏（紧凑布局）
+                // 可折叠的标题栏（紧凑布局）- GlobalKey 绑定在这里
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -8211,6 +8210,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     });
                   },
                   child: Padding(
+                    key: elementKey, // GlobalKey 绑定在标题行
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -8280,12 +8280,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
       child: Builder(
         builder: (context) {
           return Container(
-            key: elementKey,
             margin: const EdgeInsets.only(bottom: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 可折叠的标题栏（紧凑布局）
+                // 可折叠的标题栏（紧凑布局）- GlobalKey 绑定在这里
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -8299,6 +8298,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     });
                   },
                   child: Padding(
+                    key: elementKey, // GlobalKey 绑定在标题行
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -8380,14 +8380,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
           key: '$i',
           child: Builder(
             builder: (context) {
-              return Container(
-                key: _getElementKey(pathStr),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // headword + pos + pronunciation 同一行
-                    if (displayText.isNotEmpty)
-                      Wrap(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // headword + pos + pronunciation 同一行 - GlobalKey 绑定在 headword 行
+                  if (displayText.isNotEmpty)
+                    Padding(
+                      key: _getElementKey(pathStr), // GlobalKey 绑定在 headword 行
+                      padding: EdgeInsets.zero,
+                      child: Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 8,
                         runSpacing: 4,
@@ -8413,87 +8414,75 @@ class ComponentRendererState extends State<ComponentRenderer> {
                             _buildChildPronunciationsInline(context, pronunciations),
                         ],
                       ),
-                    // 复用现有渲染方法
-                    if (childEntry.sense.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _buildSenses(context, childEntry),
-                    ],
-                    if (childEntry.senseGroup.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _buildSenseGroups(context, childEntry),
-                    ],
-                    if (childEntry.phrase.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _buildPhrases(context, childEntry),
-                    ],
-                    if (childData['data'] != null) ...[
-                      const SizedBox(height: 12),
-                      PathScope.append(
-                        context,
-                        key: 'data',
-                        child: Builder(
-                          builder: (context) {
-                            return renderJsonElement(context, 'data', childData['data'], pathStr.split('.')..add('data'));
-                          },
-                        ),
-                      ),
-                    ],
-                    if (childData['note'] != null) ...[
-                      const SizedBox(height: 8),
-                      PathScope.append(
-                        context,
-                        key: 'note',
-                        child: Builder(
-                          builder: (context) {
-                            return renderJsonElement(context, 'note', childData['note'], pathStr.split('.')..add('note'));
-                          },
-                        ),
-                      ),
-                    ],
-                    if (childData['clob'] != null) ...[
-                      const SizedBox(height: 8),
-                      PathScope.append(
-                        context,
-                        key: 'clob',
-                        child: Builder(
-                          builder: (context) {
-                            return renderJsonElement(context, 'clob', childData['clob'], pathStr.split('.')..add('clob'));
-                          },
-                        ),
-                      ),
-                    ],
-                    if (childData['text'] != null) ...[
-                      const SizedBox(height: 8),
-                      PathScope.append(
-                        context,
-                        key: 'text',
-                        child: Builder(
-                          builder: (context) {
-                            return renderJsonElement(context, 'text', childData['text'], pathStr.split('.')..add('text'));
-                          },
-                        ),
-                      ),
-                    ],
+                    ),
+                  // 复用现有渲染方法
+                  if (childEntry.sense.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildSenses(context, childEntry),
                   ],
-                ),
+                  if (childEntry.senseGroup.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildSenseGroups(context, childEntry),
+                  ],
+                  if (childEntry.phrase.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildPhrases(context, childEntry),
+                  ],
+                  if (childData['data'] != null) ...[
+                    const SizedBox(height: 12),
+                    PathScope.append(
+                      context,
+                      key: 'data',
+                      child: Builder(
+                        builder: (context) {
+                          return renderJsonElement(context, 'data', childData['data'], pathStr.split('.')..add('data'));
+                        },
+                      ),
+                    ),
+                  ],
+                  if (childData['note'] != null) ...[
+                    const SizedBox(height: 8),
+                    PathScope.append(
+                      context,
+                      key: 'note',
+                      child: Builder(
+                        builder: (context) {
+                          return renderJsonElement(context, 'note', childData['note'], pathStr.split('.')..add('note'));
+                        },
+                      ),
+                    ),
+                  ],
+                  if (childData['clob'] != null) ...[
+                    const SizedBox(height: 8),
+                    PathScope.append(
+                      context,
+                      key: 'clob',
+                      child: Builder(
+                        builder: (context) {
+                          return renderJsonElement(context, 'clob', childData['clob'], pathStr.split('.')..add('clob'));
+                        },
+                      ),
+                    ),
+                  ],
+                  if (childData['text'] != null) ...[
+                    const SizedBox(height: 8),
+                    PathScope.append(
+                      context,
+                      key: 'text',
+                      child: Builder(
+                        builder: (context) {
+                          return renderJsonElement(context, 'text', childData['text'], pathStr.split('.')..add('text'));
+                        },
+                      ),
+                    ),
+                  ],
+                ],
               );
             },
           ),
         ),
       );
 
-      // 添加分隔线（除了最后一个）
-      if (i < children.length - 1) {
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Divider(
-              height: 1,
-              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-          ),
-        );
-      }
     }
 
     return Column(

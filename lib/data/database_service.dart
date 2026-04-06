@@ -495,6 +495,22 @@ Map<String, String> _extractHeadwordAnchorMap(Map<String, dynamic> data) {
   // 3. 递归搜索整个 JSON，提取 [text](anchor) 格式
   result.addAll(_extractAnchorsFromJson(data));
 
+  // 4. 处理 child_xxxx 字段（child_ 开头的 list of map）
+  for (final entry in data.entries) {
+    if (entry.key.startsWith('child_') && entry.value is List) {
+      final list = entry.value as List;
+      for (int i = 0; i < list.length; i++) {
+        final item = list[i];
+        if (item is Map && item.containsKey('headword')) {
+          final hw = item['headword']?.toString();
+          if (hw != null && hw.isNotEmpty) {
+            result[hw] = '${entry.key}.$i';
+          }
+        }
+      }
+    }
+  }
+
   return result;
 }
 

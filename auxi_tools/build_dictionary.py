@@ -600,6 +600,14 @@ def build_database_from_jsonl(
             # 3. 递归搜索整个JSON，提取 [text](anchor) 格式
             headword_anchor_map.update(extract_anchors_from_json(data))
 
+            # 4. 处理 child_xxxx 字段（child_ 开头的 list of map）
+            for key, value in data.items():
+                if key.startswith("child_") and isinstance(value, list):
+                    for idx, item in enumerate(value):
+                        if isinstance(item, dict) and "headword" in item:
+                            anchor = f"{key}.{idx}"
+                            headword_anchor_map[item["headword"]] = anchor
+
             # 如果没有任何headword，打印警告
             if not headword_anchor_map:
                 print(

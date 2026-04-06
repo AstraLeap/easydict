@@ -977,7 +977,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: colorScheme.primary,
                   ),
@@ -991,7 +991,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       ),
     );
 
-    // 显示 headword 作为子项
+    // 显示 headword 作为子项（占据整行）
     if (displayText.isNotEmpty) {
       items.add(
         InkWell(
@@ -1007,14 +1007,17 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           mouseCursor: SystemMouseCursors.click,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(28, 4, 12, 4),
-            child: Text(
-              displayText,
-              style: TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurface,
+            child: SizedBox(
+              width: double.infinity,
+              child: Text(
+                displayText,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
@@ -1064,7 +1067,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: colorScheme.primary,
                   ),
@@ -1106,14 +1109,17 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           mouseCursor: SystemMouseCursors.click,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(28, 4, 12, 4),
-            child: Text(
-              displayText,
-              style: TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurface,
+            child: SizedBox(
+              width: double.infinity,
+              child: Text(
+                displayText,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
