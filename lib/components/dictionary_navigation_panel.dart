@@ -835,7 +835,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       );
     }
 
-    // 3. 添加 boards 章节（从 entryJson 中获取，排除已渲染的key）
+    // 3. 添加 child_xxxx 章节到目录
     final entryJson = entry.toJson();
 
     for (final jsonEntry in entryJson.entries) {
@@ -850,6 +850,35 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
       if (value is List && value.isEmpty) continue;
       // 跳过空map
       if (value is Map && value.isEmpty) continue;
+
+      // 特殊处理 child_xxxx 类型（支持 Map 和 List<Map> 两种格式）
+      if (key.startsWith('child_')) {
+        if (value is Map<String, dynamic>) {
+          // 单个子词条（Map 格式）
+          _addChildEntrySingleItem(
+            context,
+            items,
+            key,
+            value,
+            colorScheme,
+            section,
+            currentSectionIndex,
+          );
+          continue;
+        } else if (value is List<dynamic> && value.isNotEmpty) {
+          // 多个子词条（List 格式）：一个标题，下面多个 headword
+          _addChildEntryListItems(
+            context,
+            items,
+            key,
+            value,
+            colorScheme,
+            section,
+            currentSectionIndex,
+          );
+          continue;
+        }
+      }
 
       final boardTitle = value is Map
           ? (value['title'] as String? ?? key)
@@ -899,6 +928,197 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     }
 
     return items;
+  }
+
+  /// 添加 child_xxxx 子词条到目录（单个 Map 格式）
+  /// 标题为 xxxx（从键名提取），子项为 headword
+  void _addChildEntrySingleItem(
+    BuildContext context,
+    List<Widget> items,
+    String key,
+    Map<String, dynamic> childData,
+    ColorScheme colorScheme,
+    DictionarySection section,
+    int sectionIndex,
+  ) {
+    // 从 child_xxxx 提取标题 xxxx
+    final title = key.length > 6 ? key.substring(6) : key;
+
+    // 提取 headword
+    final headword = childData['headword'] as String? ?? '';
+    final headline = childData['headline'] as String?;
+    final displayText = headword.isNotEmpty ? headword : (headline ?? '');
+
+    // 添加子词条标题（可点击跳转到 child 元素）
+    items.add(
+      InkWell(
+        onTap: () {
+          _onSectionTapped(
+            section,
+            section.entry.dictId ?? '',
+            sectionIndex,
+            true,
+            targetPath: key,
+          );
+        },
+        mouseCursor: SystemMouseCursors.click,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 显示 headword 作为子项
+    if (displayText.isNotEmpty) {
+      items.add(
+        InkWell(
+          onTap: () {
+            _onSectionTapped(
+              section,
+              section.entry.dictId ?? '',
+              sectionIndex,
+              true,
+              targetPath: key, // 跳转到 child 元素本身
+            );
+          },
+          mouseCursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 4, 12, 4),
+            child: Text(
+              displayText,
+              style: TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurface,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  /// 添加多个 child_xxxx 子词条到目录（List 格式）
+  /// 只显示一个标题 xxxx，下面有多个 headword 子项
+  void _addChildEntryListItems(
+    BuildContext context,
+    List<Widget> items,
+    String key,
+    List<dynamic> children,
+    ColorScheme colorScheme,
+    DictionarySection section,
+    int sectionIndex,
+  ) {
+    // 从 child_xxxx 提取标题 xxxx
+    final title = key.length > 6 ? key.substring(6) : key;
+
+    // 添加子词条标题（可点击跳转到 child 元素）
+    items.add(
+      InkWell(
+        onTap: () {
+          _onSectionTapped(
+            section,
+            section.entry.dictId ?? '',
+            sectionIndex,
+            true,
+            targetPath: key,
+          );
+        },
+        mouseCursor: SystemMouseCursors.click,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 添加每个 headword 作为子项
+    for (int i = 0; i < children.length; i++) {
+      final childData = children[i];
+      if (childData is! Map<String, dynamic>) continue;
+
+      final headword = childData['headword'] as String? ?? '';
+      final headline = childData['headline'] as String?;
+      final displayText = headword.isNotEmpty ? headword : (headline ?? '');
+
+      if (displayText.isEmpty) continue;
+
+      // 目标路径：child_xxxx.n 格式
+      final targetPath = '$key.$i';
+
+      items.add(
+        InkWell(
+          onTap: () {
+            _onSectionTapped(
+              section,
+              section.entry.dictId ?? '',
+              sectionIndex,
+              true,
+              targetPath: targetPath,
+            );
+          },
+          mouseCursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 4, 12, 4),
+            child: Text(
+              displayText,
+              style: TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurface,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   /// 根据词典元数据获取释义文本

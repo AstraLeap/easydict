@@ -84,6 +84,15 @@ enum DictElementType {
 
   /// text 字段（格式化文本内容）
   text,
+
+  /// 子词条标题（child_xxxx 的 xxxx，衬线粗体大字）
+  childTitle,
+
+  /// 子词条内的 headword（比根节点 headword 小）
+  childHeadword,
+
+  /// 子词条内的 pos（纯文本，比根节点 pos 大）
+  childPos,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,7 +178,7 @@ class DictTypography {
 
     // ── 词性/标签 ──
     DictElementType.pos: _ElementMeta(
-      baseFontSize: 15.5,
+      baseFontSize: 13.0,
       isSerifOrMonospace: false,
       fontWeight: FontWeight.w700,
       letterSpacing: 0.5,
@@ -294,6 +303,23 @@ class DictTypography {
       baseFontSize: 14.0,
       isSerifOrMonospace: false,
       lineHeight: 1.6,
+    ),
+
+    // ── 子词条 ──
+    DictElementType.childTitle: _ElementMeta(
+      baseFontSize: 19.0,
+      isSerifOrMonospace: true, // 衬线体
+      fontWeight: FontWeight.bold,
+    ),
+    DictElementType.childHeadword: _ElementMeta(
+      baseFontSize: 17.0,
+      isSerifOrMonospace: true, // 衬线体
+      fontWeight: FontWeight.bold,
+    ),
+    DictElementType.childPos: _ElementMeta(
+      baseFontSize: 15.0,
+      isSerifOrMonospace: false,
+      fontWeight: FontWeight.w700,
     ),
   };
 

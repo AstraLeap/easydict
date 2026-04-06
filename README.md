@@ -307,6 +307,14 @@ python auxi_tools/build_dictionary.py data/entries.jsonl zh-hant \
             "sense": [{}, {}], // 无 group_name 和 group_sub_name 时，仅渲染 sense 列表
         },
     ], //释义组
+    "child_xxxx": [
+        {
+            "headword": "someword1",
+            "pos": "adj",
+            "sense": [],
+        }, //以"child_xxxx"作为键名的元素，会被渲染为一个可折叠的标题为xxxx的组件，值里的字段支持使用和根节点相同的字段名，适用于不想单独被提取为entry的衍生词、习语等内容。
+        { "headword": "someword2", "sense_group": {} },
+    ],
     "text": "any text", //在这里显示任意文本
     "clob": "any text", //在这里显示任意文本，并且不会使用格式化文本渲染
 }

@@ -1409,6 +1409,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
   // 展开的 example comment 路径集合
   Set<String> _expandedCommentPaths = {};
 
+  // 折叠的 child_xxxx 条目路径集合（默认展开，点击后折叠）
+  Set<String> _collapsedChildPaths = {};
+
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
       (cu >= 65 && cu <= 90) || (cu >= 97 && cu <= 122);
@@ -2052,7 +2055,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _highlightingPaths.contains(path);
   }
 
-  /// 判断路径是否需要生成 GlobalKey（只有释义条目、phrase和board需要）
+  /// 判断路径是否需要生成 GlobalKey（只有释义条目、phrase、board和child_xxxx需要）
   bool _shouldGenerateGlobalKey(String path) {
     // 释义条目路径: sense_group.x.sense.y 或 sense.x
     if (path.contains('sense_group') && path.contains('sense')) return true;
@@ -2061,10 +2064,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // phrase
     if (path == 'phrase') return true;
 
+    // child_xxxx 元素（顶层 child_xxxx key 或 child_xxxx.0, child_xxxx.1 等索引路径）
+    final parts = path.split('.');
+    if (parts.isNotEmpty && _isChildKey(parts[0])) {
+      // 支持 child_xxxx 或 child_xxxx.n 格式
+      if (parts.length == 1) return true; // 单个 Map 格式
+      if (parts.length == 2 && int.tryParse(parts[1]) != null) return true; // List 格式的索引
+    }
+
     // board 元素（不在 _renderedKeys 中的顶层 key）
     // board 路径通常是直接的 key 名，如 "etymology", "notes" 等
-    final parts = path.split('.');
-    if (parts.length == 1 && !_isRenderedKey(parts[0])) return true;
+    if (parts.length == 1 && !_isRenderedKey(parts[0]) && !_isChildKey(parts[0])) return true;
 
     return false;
   }
@@ -6142,11 +6152,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    // 使用较小的字号
     final textStyle = DictTypography.getBaseStyle(
       DictElementType.pos,
       color: colorScheme.primary,
-    ).copyWith(fontSize: 14.0);
+    );
 
     final result = _parseFormattedText(
       pos,
@@ -6200,6 +6209,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
   String _capitalizeFirst(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
+  }
+
+  /// 检查键名是否为 child_xxxx 格式
+  bool _isChildKey(String key) => key.startsWith('child_');
+
+  /// 从 child_xxxx 键名提取显示标题
+  String _getChildTitle(String key) {
+    return key.length > 6 ? key.substring(6) : key;
   }
 
   Widget _buildPronunciationRegionElement(
@@ -7676,8 +7693,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  Widget _buildSenses(BuildContext context) {
-    final entry = _localEntry;
+  Widget _buildSenses(BuildContext context, [DictionaryEntry? entry]) {
+    final effectiveEntry = entry ?? _localEntry;
 
     return PathScope.append(
       context,
@@ -7686,7 +7703,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         builder: (context) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: entry.sense.asMap().entries.map((entryData) {
+            children: effectiveEntry.sense.asMap().entries.map((entryData) {
               final sense = entryData.value;
               final indexStr = _parseIndexValue(sense['index']);
 
@@ -7774,13 +7791,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
-  Widget _buildSenseGroups(BuildContext context) {
+  Widget _buildSenseGroups(BuildContext context, [DictionaryEntry? entry]) {
     final colorScheme = Theme.of(context).colorScheme;
-    final entry = _localEntry;
+    final effectiveEntry = entry ?? _localEntry;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: entry.senseGroup.asMap().entries.map((groupEntry) {
+      children: effectiveEntry.senseGroup.asMap().entries.map((groupEntry) {
         final groupIndex = groupEntry.key;
         final group = groupEntry.value;
         final groupName = group['group_name'] as String? ?? '';
@@ -7964,9 +7981,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _buildTextContent(context, value, ['text']);
   }
 
-  Widget _buildPhrases(BuildContext context) {
-    final entry = _localEntry;
-    final phrases = entry.phrase;
+  Widget _buildPhrases(BuildContext context, [DictionaryEntry? entry]) {
+    final effectiveEntry = entry ?? _localEntry;
+    final phrases = effectiveEntry.phrase;
 
     if (phrases.isEmpty) return const SizedBox.shrink();
 
@@ -8151,6 +8168,529 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
   }
 
+  /// 构建子词条（child_xxxx 字段，单个 Map 格式）
+  /// 子词条是一个可折叠的组件，包含 headword、pos、pronunciation（同行）、sense 等
+  /// 默认展开，点击可折叠
+  Widget _buildChildEntrySingle(
+    BuildContext context,
+    String key,
+    Map<String, dynamic> childData,
+    List<String> path,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final title = _getChildTitle(key);
+    final pathStr = key;
+    // 默认展开：只有明确标记为折叠时才折叠
+    final isExpanded = !_collapsedChildPaths.contains(pathStr);
+
+    // 使用 key 作为 GlobalKey 路径
+    final elementKey = _getElementKey(pathStr);
+
+    return PathScope.append(
+      context,
+      key: key,
+      child: Builder(
+        builder: (context) {
+          return Container(
+            key: elementKey,
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 可折叠的标题栏（紧凑布局）
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isExpanded) {
+                        // 当前展开，点击后折叠
+                        _collapsedChildPaths.add(pathStr);
+                      } else {
+                        // 当前折叠，点击后展开
+                        _collapsedChildPaths.remove(pathStr);
+                      }
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          title,
+                          style: DictTypography.getScaledStyle(
+                            DictElementType.childTitle,
+                            language: _sourceLanguage,
+                            fontScales: _fontScales,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: isExpanded ? 0 : -0.25,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          child: Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 14,
+                            color: colorScheme.primary.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // 展开的内容
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: isExpanded
+                      ? _buildChildEntryContent(context, childData, pathStr)
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 构建多个子词条（child_xxxx 为 List 格式时）
+  /// 一个标题 xxxx，下面包含多个子词条内容
+  Widget _buildChildEntryList(
+    BuildContext context,
+    String key,
+    List<dynamic> children,
+    List<String> path,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final title = _getChildTitle(key);
+    final pathStr = key;
+    // 默认展开：只有明确标记为折叠时才折叠
+    final isExpanded = !_collapsedChildPaths.contains(pathStr);
+
+    // 使用 key 作为 GlobalKey 路径
+    final elementKey = _getElementKey(pathStr);
+
+    return PathScope.append(
+      context,
+      key: key,
+      child: Builder(
+        builder: (context) {
+          return Container(
+            key: elementKey,
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 可折叠的标题栏（紧凑布局）
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isExpanded) {
+                        // 当前展开，点击后折叠
+                        _collapsedChildPaths.add(pathStr);
+                      } else {
+                        // 当前折叠，点击后展开
+                        _collapsedChildPaths.remove(pathStr);
+                      }
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          title,
+                          style: DictTypography.getScaledStyle(
+                            DictElementType.childTitle,
+                            language: _sourceLanguage,
+                            fontScales: _fontScales,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: isExpanded ? 0 : -0.25,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          child: Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 14,
+                            color: colorScheme.primary.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // 展开的内容：多个子词条
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: isExpanded
+                      ? _buildChildEntryListContent(context, key, children)
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 构建多个子词条的内容列表
+  /// 每个子词条之间用分隔线隔开
+  Widget _buildChildEntryListContent(
+    BuildContext context,
+    String key,
+    List<dynamic> children,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < children.length; i++) {
+      final childData = children[i];
+      if (childData is! Map<String, dynamic>) continue;
+
+      final pathStr = '$key.$i';
+      final headword = childData['headword'] as String? ?? '';
+      final headline = childData['headline'] as String?;
+      final displayText = headword.isNotEmpty ? headword : (headline ?? '');
+      final pos = childData['pos'];
+      final posList = _parsePosToList(pos);
+      final pronunciations = _parsePronunciationsFromData(childData['pronunciation']);
+
+      // 从 childData 创建 DictionaryEntry 用于复用渲染方法
+      final childEntry = DictionaryEntry.fromJson({
+        ...childData,
+        'id': '${_localEntry.id}_child_$i',
+        'dict_id': _localEntry.dictId,
+      });
+
+      widgets.add(
+        PathScope.append(
+          context,
+          key: '$i',
+          child: Builder(
+            builder: (context) {
+              return Container(
+                key: _getElementKey(pathStr),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // headword + pos + pronunciation 同一行
+                    if (displayText.isNotEmpty)
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          PathScope.append(
+                            context,
+                            key: 'headword',
+                            child: Builder(
+                              builder: (context) {
+                                return _buildHeadwordWithContextMenu(
+                                  context: context,
+                                  text: displayText,
+                                  elementType: DictElementType.childHeadword,
+                                  colorScheme: colorScheme,
+                                  pathKey: 'headword',
+                                  label: 'Headword',
+                                );
+                              },
+                            ),
+                          ),
+                          if (posList.isNotEmpty) _buildChildPosPlainText(context, posList),
+                          if (pronunciations.isNotEmpty)
+                            _buildChildPronunciationsInline(context, pronunciations),
+                        ],
+                      ),
+                    // 复用现有渲染方法
+                    if (childEntry.sense.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildSenses(context, childEntry),
+                    ],
+                    if (childEntry.senseGroup.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildSenseGroups(context, childEntry),
+                    ],
+                    if (childEntry.phrase.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildPhrases(context, childEntry),
+                    ],
+                    if (childData['data'] != null) ...[
+                      const SizedBox(height: 12),
+                      PathScope.append(
+                        context,
+                        key: 'data',
+                        child: Builder(
+                          builder: (context) {
+                            return renderJsonElement(context, 'data', childData['data'], pathStr.split('.')..add('data'));
+                          },
+                        ),
+                      ),
+                    ],
+                    if (childData['note'] != null) ...[
+                      const SizedBox(height: 8),
+                      PathScope.append(
+                        context,
+                        key: 'note',
+                        child: Builder(
+                          builder: (context) {
+                            return renderJsonElement(context, 'note', childData['note'], pathStr.split('.')..add('note'));
+                          },
+                        ),
+                      ),
+                    ],
+                    if (childData['clob'] != null) ...[
+                      const SizedBox(height: 8),
+                      PathScope.append(
+                        context,
+                        key: 'clob',
+                        child: Builder(
+                          builder: (context) {
+                            return renderJsonElement(context, 'clob', childData['clob'], pathStr.split('.')..add('clob'));
+                          },
+                        ),
+                      ),
+                    ],
+                    if (childData['text'] != null) ...[
+                      const SizedBox(height: 8),
+                      PathScope.append(
+                        context,
+                        key: 'text',
+                        child: Builder(
+                          builder: (context) {
+                            return renderJsonElement(context, 'text', childData['text'], pathStr.split('.')..add('text'));
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
+      // 添加分隔线（除了最后一个）
+      if (i < children.length - 1) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Divider(
+              height: 1,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+        );
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets,
+    );
+  }
+
+  /// 构建子词条内容
+  /// headword + pos + pronunciation 在同一行，然后是 sense 等其他内容
+  /// 复用现有渲染方法，通过传递 DictionaryEntry 参数
+  Widget _buildChildEntryContent(
+    BuildContext context,
+    Map<String, dynamic> childData,
+    String pathStr,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final pathList = pathStr.split('.');
+
+    // 提取字段用于 headword 行
+    final headword = childData['headword'] as String? ?? '';
+    final headline = childData['headline'] as String?;
+    final displayText = headword.isNotEmpty ? headword : (headline ?? '');
+    final pos = childData['pos'];
+    final posList = _parsePosToList(pos);
+    final pronunciations = _parsePronunciationsFromData(childData['pronunciation']);
+
+    // 从 childData 创建 DictionaryEntry 用于复用渲染方法
+    final childEntry = DictionaryEntry.fromJson({
+      ...childData,
+      'id': '${_localEntry.id}_child',
+      'dict_id': _localEntry.dictId,
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // headword + pos + pronunciation 同一行（与根节点布局不同）
+        if (displayText.isNotEmpty)
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              // 子词条 headword（小字号衬线体）
+              PathScope.append(
+                context,
+                key: 'headword',
+                child: Builder(
+                  builder: (context) {
+                    return _buildHeadwordWithContextMenu(
+                      context: context,
+                      text: displayText,
+                      elementType: DictElementType.childHeadword,
+                      colorScheme: colorScheme,
+                      pathKey: 'headword',
+                      label: 'Headword',
+                    );
+                  },
+                ),
+              ),
+              // pos 纯文本显示（无背景边框）
+              if (posList.isNotEmpty) _buildChildPosPlainText(context, posList),
+              if (pronunciations.isNotEmpty)
+                _buildChildPronunciationsInline(context, pronunciations),
+            ],
+          ),
+        // 复用现有渲染方法
+        if (childEntry.sense.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildSenses(context, childEntry),
+        ],
+        if (childEntry.senseGroup.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildSenseGroups(context, childEntry),
+        ],
+        if (childEntry.phrase.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildPhrases(context, childEntry),
+        ],
+        if (childData['data'] != null) ...[
+          const SizedBox(height: 12),
+          PathScope.append(
+            context,
+            key: 'data',
+            child: Builder(
+              builder: (context) {
+                return renderJsonElement(context, 'data', childData['data'], [...pathList, 'data']);
+              },
+            ),
+          ),
+        ],
+        if (childData['note'] != null) ...[
+          const SizedBox(height: 8),
+          PathScope.append(
+            context,
+            key: 'note',
+            child: Builder(
+              builder: (context) {
+                return renderJsonElement(context, 'note', childData['note'], [...pathList, 'note']);
+              },
+            ),
+          ),
+        ],
+        if (childData['clob'] != null) ...[
+          const SizedBox(height: 8),
+          PathScope.append(
+            context,
+            key: 'clob',
+            child: Builder(
+              builder: (context) {
+                return renderJsonElement(context, 'clob', childData['clob'], [...pathList, 'clob']);
+              },
+            ),
+          ),
+        ],
+        if (childData['text'] != null) ...[
+          const SizedBox(height: 8),
+          PathScope.append(
+            context,
+            key: 'text',
+            child: Builder(
+              builder: (context) {
+                return renderJsonElement(context, 'text', childData['text'], [...pathList, 'text']);
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 解析 pos 字段为 List<String>
+  List<String> _parsePosToList(dynamic pos) {
+    if (pos == null) return [];
+    if (pos is String) return pos.isNotEmpty ? [pos] : [];
+    if (pos is List) return pos.cast<String>();
+    return [];
+  }
+
+  /// 从 pronunciation 数据解析发音列表
+  List<Map<String, dynamic>> _parsePronunciationsFromData(dynamic pronunciation) {
+    if (pronunciation == null) return [];
+    if (pronunciation is Map<String, dynamic>) {
+      return [pronunciation];
+    }
+    if (pronunciation is List) {
+      return pronunciation.cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  /// 构建子词条的 pos 纯文本显示（无背景边框）
+  Widget _buildChildPosPlainText(BuildContext context, List<String> posList) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final posText = posList.join(' ');
+
+    return Text(
+      posText,
+      style: DictTypography.getScaledStyle(
+        DictElementType.childPos,
+        language: _sourceLanguage,
+        fontScales: _fontScales,
+        color: colorScheme.primary.withValues(alpha: 0.8),
+      ),
+    );
+  }
+
+  /// 构建子词条的内联发音显示（简化版，用于同行显示）
+  Widget _buildChildPronunciationsInline(
+    BuildContext context,
+    List<Map<String, dynamic>> pronunciations,
+  ) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: pronunciations.map((pron) {
+        final region = pron['region'] as String? ?? '';
+        final notation = pron['notation'] as String? ?? '';
+        final audioFile = pron['audio_file'] as String? ?? '';
+
+        if (notation.isEmpty && audioFile.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return _buildPronunciationItem(
+          context,
+          region,
+          notation,
+          audioFile,
+          '', // note 不在行内显示
+          _localEntry.dictId,
+        );
+      }).toList(),
+    );
+  }
+
   /// 渲染所有未单独渲染的 key 为 board
   Widget _buildRemainingBoards(BuildContext context) {
     final entry = _localEntry;
@@ -8172,10 +8712,26 @@ class ComponentRendererState extends State<ComponentRenderer> {
       if (value is List && value.isEmpty) continue;
 
       final path = [key];
+
+      Widget boardWidget;
+      // 处理 child_xxxx 字段（支持 Map 和 List<Map> 两种格式）
+      if (_isChildKey(key)) {
+        if (value is Map<String, dynamic>) {
+          // 单个子词条（Map 格式）
+          boardWidget = _buildChildEntrySingle(context, key, value, path);
+          widgets.add(boardWidget);
+          continue;
+        } else if (value is List<dynamic> && value.isNotEmpty) {
+          // 多个子词条（List 格式）：一个标题，下面多个子词条
+          boardWidget = _buildChildEntryList(context, key, value, path);
+          widgets.add(boardWidget);
+          continue;
+        }
+      }
+
       // 获取 board 的 GlobalKey 用于滚动定位
       final boardKey = _getElementKey(key);
 
-      Widget boardWidget;
       if (predefinedRenderers.containsKey(key)) {
         // 预定义渲染器优先
         boardWidget = renderJsonElement(context, key, value, path);
