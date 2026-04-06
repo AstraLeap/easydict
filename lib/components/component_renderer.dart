@@ -1362,6 +1362,9 @@ class ComponentRenderer extends StatefulWidget {
   /// 路径跳转回调，点击 [text](::path) 格式的链接时触发
   final void Function(String path, BuildContext context)? onPathJump;
 
+  /// 添加到笔记回调，参数：(word, language, link)
+  final void Function(String word, String language, String link)? onAddToNote;
+
   const ComponentRenderer({
     super.key,
     required this.entry,
@@ -1378,6 +1381,7 @@ class ComponentRenderer extends StatefulWidget {
     this.onGroupJump,
     this.onExactJump,
     this.onPathJump,
+    this.onAddToNote,
   });
 
   @override
@@ -3221,6 +3225,25 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
   }
 
+  /// 处理添加到笔记
+  void _handleAddToNote(_PathData pathData) {
+    final entry = widget.entry;
+    final word = entry.headword;
+    final language = _sourceLanguage ?? 'en';
+
+    // 构建链接格式：[显示文本](entry://dictId/entryId/json.path)
+    final dictId = entry.dictId ?? '';
+    final entryId = entry.id;
+    final jsonPath = pathData.path.join('.');
+    final label = pathData.label;
+
+    // 格式: [label](entry://dictId/entryId/json.path)
+    final link = '[$label](entry://$dictId/$entryId/$jsonPath)';
+
+    // 调用外部提供的回调来处理笔记
+    widget.onAddToNote?.call(word, language, link);
+  }
+
   void _performSpeak(String path, String label) async {
     // TTS防抖：每秒最多调用1次
     final now = DateTime.now();
@@ -3702,6 +3725,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
+    // 添加"添加到笔记"菜单项
+    if (pathData != null) {
+      menuItems.add(
+        ListTile(
+          leading: const Icon(Icons.note_add_outlined, size: 20),
+          title: Text(context.t.note.addToNote),
+          dense: true,
+          onTap: () {
+            closeMenu();
+            selectableState?.clearSelection();
+            _handleAddToNote(pathData);
+          },
+        ),
+      );
+    }
+
     return menuItems;
   }
 
@@ -4084,6 +4123,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   void _removeCurrentOverlay() {
+    // 如果已经没有 overlay，直接返回，避免重复日志
+    if (_currentOverlayEntry == null && _currentBarrierEntry == null) {
+      return;
+    }
+
     Logger.d(
       '_removeCurrentOverlay called, _currentOverlayEntry=$_currentOverlayEntry',
       tag: 'ContextMenu',
@@ -8242,12 +8286,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 ),
                 const SizedBox(height: 8),
                 // 展开的内容
-                AnimatedSize(
+                AnimatedCrossFade(
                   duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  child: isExpanded
-                      ? _buildChildEntryContent(context, childData, pathStr)
-                      : const SizedBox.shrink(),
+                  firstCurve: Curves.easeInOut,
+                  secondCurve: Curves.easeInOut,
+                  sizeCurve: Curves.easeInOut,
+                  crossFadeState: isExpanded
+                      ? CrossFadeState.showFirst
+                      : CrossFadeState.showSecond,
+                  firstChild: _buildChildEntryContent(context, childData, pathStr),
+                  secondChild: const SizedBox.shrink(),
                 ),
               ],
             ),
@@ -8330,12 +8378,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 ),
                 const SizedBox(height: 8),
                 // 展开的内容：多个子词条
-                AnimatedSize(
+                AnimatedCrossFade(
                   duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  child: isExpanded
-                      ? _buildChildEntryListContent(context, key, children)
-                      : const SizedBox.shrink(),
+                  firstCurve: Curves.easeInOut,
+                  secondCurve: Curves.easeInOut,
+                  sizeCurve: Curves.easeInOut,
+                  crossFadeState: isExpanded
+                      ? CrossFadeState.showFirst
+                      : CrossFadeState.showSecond,
+                  firstChild: _buildChildEntryListContent(context, key, children),
+                  secondChild: const SizedBox.shrink(),
                 ),
               ],
             ),

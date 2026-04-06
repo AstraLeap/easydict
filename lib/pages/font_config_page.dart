@@ -63,6 +63,9 @@ class _FontConfigPageState extends State<FontConfigPage>
 
     Map<String, DetectedFonts> detectedFonts = {};
     if (fontPath != null && fontPath.isNotEmpty) {
+      // 自动创建缺失的语言子文件夹
+      await _ensureLanguageSubfolders(fontPath, languages);
+
       detectedFonts = await _scanAllLanguageFonts(fontPath, languages);
 
       // 自动将扫描到的字体保存为配置（强制重新扫描时会覆盖现有配置）
@@ -307,10 +310,11 @@ class _FontConfigPageState extends State<FontConfigPage>
 
   Future<List<String>> _getAvailableLanguages() async {
     final dictManager = DictionaryManager();
-    final allMetadata = await dictManager.getAllDictionariesMetadata();
+    // 只获取已启用词典的语言
+    final enabledMetadata = await dictManager.getEnabledDictionariesMetadata();
     final languageSet = <String>{};
 
-    for (final metadata in allMetadata) {
+    for (final metadata in enabledMetadata) {
       if (metadata.sourceLanguage.isNotEmpty) {
         // 源语言：规范化后再映射到字体分组 key（与目标语言路径一致）
         // 这样 'zh' 会映射到 'zh-hans'，不产生独立的 'zh' tab
@@ -452,6 +456,24 @@ class _FontConfigPageState extends State<FontConfigPage>
     }
   }
 
+  /// 确保语言子文件夹存在（不存在则创建）
+  Future<void> _ensureLanguageSubfolders(
+    String basePath,
+    List<String> languages,
+  ) async {
+    try {
+      for (final lang in languages) {
+        final langDir = Directory(p.join(basePath, lang));
+        if (!await langDir.exists()) {
+          await langDir.create(recursive: true);
+          Logger.i('创建语言子文件夹: ${langDir.path}', tag: 'FontConfig');
+        }
+      }
+    } catch (e) {
+      Logger.w('创建语言子文件夹失败: $e', tag: 'FontConfig');
+    }
+  }
+
   Future<void> _createLanguageSubfolders(
     String basePath,
     List<String> languages,
@@ -496,6 +518,10 @@ class _FontConfigPageState extends State<FontConfigPage>
     }).toList();
 
     if (files.isEmpty) {
+      // 输出文件夹中所有文件名用于调试
+      final allEntities = await fontDir.list().toList();
+      final allNames = allEntities.map((e) => p.basename(e.path)).toList();
+      Logger.d('语言文件夹 $language 中没有字体文件，文件夹内容: $allNames', tag: 'FontConfig');
       showToast(context, context.t.font.noFontFiles(lang: language));
       return;
     }

@@ -54,6 +54,7 @@ class Translations with BaseTranslations<AppLocale, Translations> {
 	late final TranslationsCloudZh cloud = TranslationsCloudZh.internal(_root);
 	late final TranslationsDictZh dict = TranslationsDictZh.internal(_root);
 	late final TranslationsEntryZh entry = TranslationsEntryZh.internal(_root);
+	late final TranslationsNoteZh note = TranslationsNoteZh.internal(_root);
 	late final TranslationsGroupsZh groups = TranslationsGroupsZh.internal(_root);
 }
 
@@ -676,6 +677,48 @@ class TranslationsHelpZh {
 
 	/// zh: '检查更新失败: {error}'
 	String checkUpdateError({required Object error}) => '检查更新失败: ${error}';
+
+	/// zh: '隐藏功能'
+	String get hiddenFeatures => '隐藏功能';
+
+	/// zh: '隐藏功能'
+	String get hiddenFeaturesTitle => '隐藏功能';
+
+	/// zh: '配置目录'
+	String get configDir => '配置目录';
+
+	/// zh: '调试日志'
+	String get debugLog => '调试日志';
+
+	/// zh: '查看本次运行的日志文件'
+	String get debugLogDesc => '查看本次运行的日志文件';
+
+	/// zh: '暂无日志文件'
+	String get noLogFile => '暂无日志文件';
+
+	/// zh: '读取日志文件失败'
+	String get logReadError => '读取日志文件失败';
+
+	/// zh: '调试日志'
+	String get logDialogTitle => '调试日志';
+
+	/// zh: '通配符搜索'
+	String get wildcardSearch => '通配符搜索';
+
+	/// zh: 'LIKE 模式（输入含 % 或 _）： % 匹配任意个字符，_ 匹配恰好一个字符 例：hel% → hello、help；%字 → 汉字、生字 GLOB 模式（输入含 * ? [ ] ^）： * 匹配任意个字符，? 匹配单个字符 [abc] 匹配括号内任一字符，[^abc] 排除括号内字符'
+	String get wildcardSearchDesc => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符';
+
+	/// zh: '电脑端导航'
+	String get desktopNavTitle => '电脑端导航';
+
+	/// zh: '• 词典内容界面按 Esc 或长按返回键可返回主界面 • 方向键左右可以在词表间切换'
+	String get desktopNavDesc => '• 词典内容界面按 Esc 或长按返回键可返回主界面\n• 方向键左右可以在词表间切换';
+
+	/// zh: '手机端导航'
+	String get mobileNavTitle => '手机端导航';
+
+	/// zh: '• 词典内容界面上滑底部工具栏可返回主界面 • 左右滑可以在词汇列表内切换'
+	String get mobileNavDesc => '• 词典内容界面上滑底部工具栏可返回主界面\n• 左右滑可以在词汇列表内切换';
 }
 
 // Path: langNames
@@ -2169,6 +2212,54 @@ class TranslationsEntryZh {
 	String get morphThirdSingFull => '第三人称单数';
 }
 
+// Path: note
+class TranslationsNoteZh {
+	TranslationsNoteZh.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// zh: '笔记'
+	String get title => '笔记';
+
+	/// zh: '编辑'
+	String get edit => '编辑';
+
+	/// zh: '保存'
+	String get save => '保存';
+
+	/// zh: '删除'
+	String get delete => '删除';
+
+	/// zh: '暂无笔记'
+	String get empty => '暂无笔记';
+
+	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](entry://词典ID/词条ID/路径) 示例：[查看释义](entry://oxford/en_123/sense.0.definition)'
+	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](entry://词典ID/词条ID/路径)\n示例：[查看释义](entry://oxford/en_123/sense.0.definition)';
+
+	/// zh: '添加到笔记'
+	String get addToNote => '添加到笔记';
+
+	/// zh: '已添加到笔记'
+	String get linkAdded => '已添加到笔记';
+
+	/// zh: '返回笔记'
+	String get returnToNote => '返回笔记';
+
+	/// zh: '笔记设置'
+	String get settings => '笔记设置';
+
+	/// zh: '默认展开笔记'
+	String get defaultExpanded => '默认展开笔记';
+
+	/// zh: '笔记面板默认展开显示'
+	String get defaultExpandedDesc => '笔记面板默认展开显示';
+
+	/// zh: '笔记面板默认折叠'
+	String get defaultCollapsedDesc => '笔记面板默认折叠';
+}
+
 // Path: groups
 class TranslationsGroupsZh {
 	TranslationsGroupsZh.internal(this._root);
@@ -2838,6 +2929,20 @@ extension on Translations {
 			'help.updateError' => '检查失败，点击重试',
 			'help.githubApiError' => ({required Object code}) => 'GitHub API 错误 (状态码 ${code})',
 			'help.checkUpdateError' => ({required Object error}) => '检查更新失败: ${error}',
+			'help.hiddenFeatures' => '隐藏功能',
+			'help.hiddenFeaturesTitle' => '隐藏功能',
+			'help.configDir' => '配置目录',
+			'help.debugLog' => '调试日志',
+			'help.debugLogDesc' => '查看本次运行的日志文件',
+			'help.noLogFile' => '暂无日志文件',
+			'help.logReadError' => '读取日志文件失败',
+			'help.logDialogTitle' => '调试日志',
+			'help.wildcardSearch' => '通配符搜索',
+			'help.wildcardSearchDesc' => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符',
+			'help.desktopNavTitle' => '电脑端导航',
+			'help.desktopNavDesc' => '• 词典内容界面按 Esc 或长按返回键可返回主界面\n• 方向键左右可以在词表间切换',
+			'help.mobileNavTitle' => '手机端导航',
+			'help.mobileNavDesc' => '• 词典内容界面上滑底部工具栏可返回主界面\n• 左右滑可以在词汇列表内切换',
 			'langNames.zh' => '中文',
 			'langNames.jp' => '日语',
 			'langNames.ko' => '韩语',
@@ -3083,6 +3188,8 @@ extension on Translations {
 			'dict.dictDbWithSize' => ({required Object size}) => '[必选]词典数据库（${size}）',
 			'dict.mediaDb' => '媒体数据库',
 			'dict.mediaDbWithSize' => ({required Object size}) => '媒体数据库（${size}）',
+			_ => null,
+		} ?? switch (path) {
 			'dict.mediaDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的媒体数据库',
 			'dict.mediaDbNotExists' => '本地无此文件，无需更新',
 			'dict.mediaDbNotExistsCanDownload' => '本地无此文件，可下载',
@@ -3097,8 +3204,6 @@ extension on Translations {
 			'dict.updateSuccess' => '更新成功',
 			'dict.updateFailed' => ({required Object error}) => '更新失败: ${error}',
 			'dict.deleteConfirmTitle' => '确认删除',
-			_ => null,
-		} ?? switch (path) {
 			'dict.deleteConfirmBody' => ({required Object name}) => '确定要删除词典 "${name}" 吗？',
 			'dict.deleteSuccess' => '词典已删除',
 			'dict.deleteFailed' => ({required Object error}) => '删除失败: ${error}',
@@ -3319,6 +3424,19 @@ extension on Translations {
 			'entry.acronymLabel' => '首字母缩略词',
 			'entry.morphPluralForm' => '复数形式',
 			'entry.morphThirdSingFull' => '第三人称单数',
+			'note.title' => '笔记',
+			'note.edit' => '编辑',
+			'note.save' => '保存',
+			'note.delete' => '删除',
+			'note.empty' => '暂无笔记',
+			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](entry://词典ID/词条ID/路径)\n示例：[查看释义](entry://oxford/en_123/sense.0.definition)',
+			'note.addToNote' => '添加到笔记',
+			'note.linkAdded' => '已添加到笔记',
+			'note.returnToNote' => '返回笔记',
+			'note.settings' => '笔记设置',
+			'note.defaultExpanded' => '默认展开笔记',
+			'note.defaultExpandedDesc' => '笔记面板默认展开显示',
+			'note.defaultCollapsedDesc' => '笔记面板默认折叠',
 			'groups.title' => '组管理',
 			'groups.manageGroups' => '管理组',
 			'groups.createGroup' => '创建组',

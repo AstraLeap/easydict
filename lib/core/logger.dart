@@ -111,4 +111,36 @@ class Logger {
   static String? getLogFilePath() {
     return _logFile?.path;
   }
+
+  /// 获取日志目录路径
+  static Future<String?> getLogDirPath() async {
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      return path.join(appDir.path, 'logs');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// 获取最新的日志文件路径
+  static Future<File?> getLatestLogFile() async {
+    try {
+      final logDirPath = await getLogDirPath();
+      if (logDirPath == null) return null;
+
+      final logDir = Directory(logDirPath);
+      if (!await logDir.exists()) return null;
+
+      final files = await logDir.list().toList();
+      final logFiles = files.whereType<File>().where((f) => f.path.endsWith('.log')).toList();
+
+      if (logFiles.isEmpty) return null;
+
+      // 按修改时间排序，返回最新的
+      logFiles.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      return logFiles.first;
+    } catch (e) {
+      return null;
+    }
+  }
 }

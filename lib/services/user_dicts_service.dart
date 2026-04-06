@@ -710,24 +710,16 @@ class UserDictsService {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         final result = <String, DictUpdateInfo>{};
 
-        Logger.d('更新信息响应数据类型: ${data.runtimeType}', tag: 'UserDictsService');
-
         if (data is List) {
-          Logger.d('解析数组格式，长度: ${data.length}', tag: 'UserDictsService');
           for (final item in data) {
             if (item is Map<String, dynamic>) {
               final dictId = item['dict_id'] as String?;
-              Logger.d(
-                '解析词典: $dictId, from: ${item['from']}, to: ${item['to']}',
-                tag: 'UserDictsService',
-              );
               if (dictId != null) {
                 result[dictId] = DictUpdateInfo.fromJson(item);
               }
             }
           }
         } else if (data is Map<String, dynamic>) {
-          Logger.d('解析对象格式', tag: 'UserDictsService');
           data.forEach((key, value) {
             if (value != null) {
               result[key] = DictUpdateInfo.fromJson(
@@ -737,7 +729,7 @@ class UserDictsService {
           });
         }
 
-        Logger.d('解析结果: ${result.keys.toList()}', tag: 'UserDictsService');
+        Logger.d('解析到 ${result.length} 个词典更新信息', tag: 'UserDictsService');
         return result;
       } else {
         return {};

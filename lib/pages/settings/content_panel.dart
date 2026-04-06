@@ -9,7 +9,7 @@ import '../../components/global_scale_wrapper.dart';
 import 'menu_item.dart';
 
 /// 设置内容面板 (右侧)
-class SettingsContentPanel extends StatelessWidget {
+class SettingsContentPanel extends StatefulWidget {
   /// 当前菜单项
   final SettingsMenuItem currentItem;
 
@@ -39,28 +39,57 @@ class SettingsContentPanel extends StatelessWidget {
   });
 
   @override
+  State<SettingsContentPanel> createState() => _SettingsContentPanelState();
+}
+
+class _SettingsContentPanelState extends State<SettingsContentPanel> {
+  /// 缓存的子页面 widget，用于在布局切换时保持子页面状态
+  Widget? _cachedSubPage;
+
+  /// 当前缓存对应的菜单项 ID
+  String? _cachedItemId;
+
+  @override
+  void didUpdateWidget(SettingsContentPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 当菜单项 ID 变化时，清除缓存
+    if (oldWidget.currentItem.id != widget.currentItem.id) {
+      _cachedSubPage = null;
+      _cachedItemId = null;
+    }
+  }
+
+  void _handleOnBack() {
+    // 动态获取当前的 showMenuPanel 值
+    widget.onMenuSelected?.call(widget.showMenuPanel ? -2 : 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    switch (currentItem.type) {
+    switch (widget.currentItem.type) {
       case SettingsContentType.subPage:
         // 子页面类型：直接显示完整页面（子页面有自己的 AppBar）
         // 宽屏模式返回时显示空白占位，窄屏模式返回时显示主页
-        final page = currentItem.subPageBuilder?.call(
-          onBack: () => onMenuSelected?.call(showMenuPanel ? -2 : 0),
-        );
-        if (page == null) return const SizedBox.shrink();
-        return page;
+        // 只在菜单项变化时重新构建子页面，布局切换时保持状态
+        if (_cachedSubPage == null || _cachedItemId != widget.currentItem.id) {
+          _cachedSubPage = widget.currentItem.subPageBuilder?.call(
+            onBack: _handleOnBack,
+          );
+          _cachedItemId = widget.currentItem.id;
+        }
+        return _cachedSubPage ?? const SizedBox.shrink();
 
       case SettingsContentType.embedded:
         // 内嵌类型：直接显示内容
-        return currentItem.embeddedBuilder?.call(context) ??
+        return widget.currentItem.embeddedBuilder?.call(context) ??
             const SizedBox.shrink();
 
       case SettingsContentType.homePage:
         // 设置主页：显示设置列表
         return _SettingsHomePageContent(
-          menuItems: menuItems,
-          menuGroups: menuGroups,
-          onMenuSelected: onMenuSelected,
+          menuItems: widget.menuItems,
+          menuGroups: widget.menuGroups,
+          onMenuSelected: widget.onMenuSelected,
         );
 
       case SettingsContentType.dialog:
@@ -79,13 +108,13 @@ class SettingsContentPanel extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            currentItem.icon,
+            widget.currentItem.icon,
             size: 64,
             color: colorScheme.outlineVariant,
           ),
           const SizedBox(height: 16),
           Text(
-            currentItem.getTitle(t),
+            widget.currentItem.getTitle(t),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),

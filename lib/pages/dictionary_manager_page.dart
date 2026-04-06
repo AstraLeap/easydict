@@ -101,16 +101,28 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
     try {
       // 加载本地词典
       final allDicts = await _dictManager.getAllDictionariesMetadata();
-      final enabledIds = await _dictManager.getEnabledDictionaries();
+      var enabledIds = await _dictManager.getEnabledDictionaries();
+
+      // 清理启用列表中不存在的词典ID（数据库文件已被删除的情况）
+      final allDictIds = allDicts.map((d) => d.id).toSet();
+      final invalidIds = enabledIds.where((id) => !allDictIds.contains(id)).toList();
+      if (invalidIds.isNotEmpty) {
+        Logger.i('清理不存在的词典ID: $invalidIds', tag: 'DictionaryManagerPage');
+        enabledIds = enabledIds.where((id) => allDictIds.contains(id)).toList();
+        await _dictManager.setEnabledDictionaries(enabledIds);
+      }
 
       // 自动启用新添加的词典（区分真正的新词典和被禁用的词典）
-      final allDictIds = allDicts.map((d) => d.id).toSet();
       final knownDictIds = await _dictManager.getKnownDictionaries();
       final newDictIds = allDictIds.difference(knownDictIds);
       if (newDictIds.isNotEmpty) {
         Logger.i('发现新词典，自动启用: $newDictIds', tag: 'DictionaryManagerPage');
-        enabledIds.addAll(newDictIds);
-        await _dictManager.setEnabledDictionaries(enabledIds);
+        // 过滤掉已存在的ID，避免重复
+        final actuallyNew = newDictIds.where((id) => !enabledIds.contains(id)).toList();
+        if (actuallyNew.isNotEmpty) {
+          enabledIds.addAll(actuallyNew);
+          await _dictManager.setEnabledDictionaries(enabledIds);
+        }
         // 将新词典标记为已知
         await _dictManager.addKnownDictionaries(newDictIds);
       }
@@ -846,11 +858,17 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
         vsync: this,
         initialIndex: currentIndex.clamp(0, displayLangs.length - 1),
       );
+      _tabController!.addListener(() {
+        // 同步更新选中的语言
+        if (_tabController!.indexIsChanging) {
+          _selectedDictLang = displayLangs[_tabController!.index];
+        }
+      });
       _lastLanguageOrder = List.from(displayLangs);
-    } else if (_tabController!.index != currentIndex) {
-      // 同步当前选中索引（不触发动画，避免抽动）
-      _tabController!.index = currentIndex.clamp(0, displayLangs.length - 1);
+      // 确保初始化时 _selectedDictLang 正确
+      _selectedDictLang = displayLangs[currentIndex.clamp(0, displayLangs.length - 1)];
     }
+    // 注意：不再在 build 时强制同步 index，避免覆盖用户的 tab 选择
 
     final colorScheme = Theme.of(context).colorScheme;
 

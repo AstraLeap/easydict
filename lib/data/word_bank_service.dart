@@ -92,8 +92,41 @@ class WordBankService {
       await _copyDatabaseFromAssets(dbPath);
     }
 
-    _database = await openDatabase(dbPath, version: 1);
+    _database = await openDatabase(
+      dbPath,
+      version: 2,
+      onCreate: (db, version) async {
+        await _createLanguageTable(db, 'en');
+        if (version >= 2) {
+          await _createNotesTable(db);
+        }
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createNotesTable(db);
+        }
+      },
+    );
     return _database!;
+  }
+
+  /// 创建笔记表
+  Future<void> _createNotesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS notes (
+        word TEXT PRIMARY KEY,
+        language TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        created_at INTEGER DEFAULT 0,
+        updated_at INTEGER DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_notes_word ON notes(word)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_notes_language ON notes(language)',
+    );
   }
 
   /// 从 assets 复制数据库到用户目录
@@ -119,10 +152,12 @@ class WordBankService {
 
   /// 创建新的数据库
   Future<void> _createNewDatabase(String path) async {
-    final db = await openDatabase(path, version: 1);
+    final db = await openDatabase(path, version: 2);
 
     // 创建默认的英语词表表
     await _createLanguageTable(db, 'en');
+    // 创建笔记表
+    await _createNotesTable(db);
 
     await db.close();
   }

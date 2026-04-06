@@ -278,7 +278,21 @@
     "currentVersion": "Current version {version}",
     "updateError": "Check failed, tap to retry",
     "githubApiError": "GitHub API error (status {code})",
-    "checkUpdateError": "Update check failed: {error}"
+    "checkUpdateError": "Update check failed: {error}",
+    "hiddenFeatures": "Hidden Features",
+    "hiddenFeaturesTitle": "Hidden Features",
+    "configDir": "Config Directory",
+    "debugLog": "Debug Log",
+    "debugLogDesc": "View the log file from this session",
+    "noLogFile": "No log file available",
+    "logReadError": "Failed to read log file",
+    "logDialogTitle": "Debug Log",
+    "wildcardSearch": "Wildcard Search",
+    "wildcardSearchDesc": "LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them",
+    "desktopNavTitle": "Desktop Navigation",
+    "desktopNavDesc": "• Press Esc or long-press back to return to home\n• Use left/right arrow keys to navigate between words",
+    "mobileNavTitle": "Mobile Navigation",
+    "mobileNavDesc": "• Swipe up on toolbar to return to home\n• Swipe left/right to navigate between words"
   },
   "langNames": {
     "zh": "Chinese",
@@ -770,6 +784,21 @@
     "acronymLabel": "Acronym",
     "morphPluralForm": "Plural form",
     "morphThirdSingFull": "Third person singular"
+  },
+  "note": {
+    "title": "Note",
+    "edit": "Edit",
+    "save": "Save",
+    "delete": "Delete",
+    "empty": "No notes yet",
+    "placeholder": "Enter note content (Markdown supported)\n\nLink format: [text](entry://dictId/entryId/path)\nExample: [See definition](entry://oxford/en_123/sense.0.definition)",
+    "addToNote": "Add to Note",
+    "linkAdded": "Added to note",
+    "returnToNote": "Return to Note",
+    "settings": "Note Settings",
+    "defaultExpanded": "Expand Notes by Default",
+    "defaultExpandedDesc": "Note panel is expanded by default",
+    "defaultCollapsedDesc": "Note panel is collapsed by default"
   },
   "groups": {
     "title": "Group Management",

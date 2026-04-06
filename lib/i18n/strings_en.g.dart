@@ -53,6 +53,7 @@ class TranslationsEn extends Translations with BaseTranslations<AppLocale, Trans
 	@override late final _TranslationsCloudEn cloud = _TranslationsCloudEn._(_root);
 	@override late final _TranslationsDictEn dict = _TranslationsDictEn._(_root);
 	@override late final _TranslationsEntryEn entry = _TranslationsEntryEn._(_root);
+	@override late final _TranslationsNoteEn note = _TranslationsNoteEn._(_root);
 	@override late final _TranslationsGroupsEn groups = _TranslationsGroupsEn._(_root);
 }
 
@@ -311,6 +312,20 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get updateError => 'Check failed, tap to retry';
 	@override String githubApiError({required Object code}) => 'GitHub API error (status ${code})';
 	@override String checkUpdateError({required Object error}) => 'Update check failed: ${error}';
+	@override String get hiddenFeatures => 'Hidden Features';
+	@override String get hiddenFeaturesTitle => 'Hidden Features';
+	@override String get configDir => 'Config Directory';
+	@override String get debugLog => 'Debug Log';
+	@override String get debugLogDesc => 'View the log file from this session';
+	@override String get noLogFile => 'No log file available';
+	@override String get logReadError => 'Failed to read log file';
+	@override String get logDialogTitle => 'Debug Log';
+	@override String get wildcardSearch => 'Wildcard Search';
+	@override String get wildcardSearchDesc => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them';
+	@override String get desktopNavTitle => 'Desktop Navigation';
+	@override String get desktopNavDesc => '• Press Esc or long-press back to return to home\n• Use left/right arrow keys to navigate between words';
+	@override String get mobileNavTitle => 'Mobile Navigation';
+	@override String get mobileNavDesc => '• Swipe up on toolbar to return to home\n• Swipe left/right to navigate between words';
 }
 
 // Path: langNames
@@ -846,6 +861,28 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get morphThirdSingFull => 'Third person singular';
 }
 
+// Path: note
+class _TranslationsNoteEn extends TranslationsNoteZh {
+	_TranslationsNoteEn._(TranslationsEn root) : this._root = root, super.internal(root);
+
+	final TranslationsEn _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'Note';
+	@override String get edit => 'Edit';
+	@override String get save => 'Save';
+	@override String get delete => 'Delete';
+	@override String get empty => 'No notes yet';
+	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](entry://dictId/entryId/path)\nExample: [See definition](entry://oxford/en_123/sense.0.definition)';
+	@override String get addToNote => 'Add to Note';
+	@override String get linkAdded => 'Added to note';
+	@override String get returnToNote => 'Return to Note';
+	@override String get settings => 'Note Settings';
+	@override String get defaultExpanded => 'Expand Notes by Default';
+	@override String get defaultExpandedDesc => 'Note panel is expanded by default';
+	@override String get defaultCollapsedDesc => 'Note panel is collapsed by default';
+}
+
 // Path: groups
 class _TranslationsGroupsEn extends TranslationsGroupsZh {
 	_TranslationsGroupsEn._(TranslationsEn root) : this._root = root, super.internal(root);
@@ -1289,6 +1326,20 @@ extension on TranslationsEn {
 			'help.updateError' => 'Check failed, tap to retry',
 			'help.githubApiError' => ({required Object code}) => 'GitHub API error (status ${code})',
 			'help.checkUpdateError' => ({required Object error}) => 'Update check failed: ${error}',
+			'help.hiddenFeatures' => 'Hidden Features',
+			'help.hiddenFeaturesTitle' => 'Hidden Features',
+			'help.configDir' => 'Config Directory',
+			'help.debugLog' => 'Debug Log',
+			'help.debugLogDesc' => 'View the log file from this session',
+			'help.noLogFile' => 'No log file available',
+			'help.logReadError' => 'Failed to read log file',
+			'help.logDialogTitle' => 'Debug Log',
+			'help.wildcardSearch' => 'Wildcard Search',
+			'help.wildcardSearchDesc' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them',
+			'help.desktopNavTitle' => 'Desktop Navigation',
+			'help.desktopNavDesc' => '• Press Esc or long-press back to return to home\n• Use left/right arrow keys to navigate between words',
+			'help.mobileNavTitle' => 'Mobile Navigation',
+			'help.mobileNavDesc' => '• Swipe up on toolbar to return to home\n• Swipe left/right to navigate between words',
 			'langNames.zh' => 'Chinese',
 			'langNames.jp' => 'Japanese',
 			'langNames.ko' => 'Korean',
@@ -1536,6 +1587,8 @@ extension on TranslationsEn {
 			'dict.mediaDbWithSize' => ({required Object size}) => 'Media database (${size})',
 			'dict.mediaDbNotFound' => ({required Object id}) => 'Media database not found for dictionary: ${id}',
 			'dict.mediaDbNotExists' => 'Local file not exists, skip update',
+			_ => null,
+		} ?? switch (path) {
 			'dict.mediaDbNotExistsCanDownload' => 'Local file not exists, can download',
 			'dict.dictDbNotFound' => ({required Object id}) => 'Dictionary database not found for: ${id}',
 			'dict.getDictListFailed' => 'Failed to get dictionary list',
@@ -1550,8 +1603,6 @@ extension on TranslationsEn {
 			'dict.deleteConfirmTitle' => 'Confirm Delete',
 			'dict.deleteConfirmBody' => ({required Object name}) => 'Delete dictionary "${name}"?',
 			'dict.deleteSuccess' => 'Dictionary deleted',
-			_ => null,
-		} ?? switch (path) {
 			'dict.deleteFailed' => ({required Object error}) => 'Delete failed: ${error}',
 			'dict.dictNotFound' => 'Dictionary not found',
 			'dict.dictDeleteFailed' => 'Dictionary delete failed',
@@ -1770,6 +1821,19 @@ extension on TranslationsEn {
 			'entry.acronymLabel' => 'Acronym',
 			'entry.morphPluralForm' => 'Plural form',
 			'entry.morphThirdSingFull' => 'Third person singular',
+			'note.title' => 'Note',
+			'note.edit' => 'Edit',
+			'note.save' => 'Save',
+			'note.delete' => 'Delete',
+			'note.empty' => 'No notes yet',
+			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](entry://dictId/entryId/path)\nExample: [See definition](entry://oxford/en_123/sense.0.definition)',
+			'note.addToNote' => 'Add to Note',
+			'note.linkAdded' => 'Added to note',
+			'note.returnToNote' => 'Return to Note',
+			'note.settings' => 'Note Settings',
+			'note.defaultExpanded' => 'Expand Notes by Default',
+			'note.defaultExpandedDesc' => 'Note panel is expanded by default',
+			'note.defaultCollapsedDesc' => 'Note panel is collapsed by default',
 			'groups.title' => 'Group Management',
 			'groups.manageGroups' => 'Manage Groups',
 			'groups.createGroup' => 'Create Group',

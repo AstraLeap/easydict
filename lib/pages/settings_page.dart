@@ -447,6 +447,8 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   // 桌面功能设置
   bool _clipboardWatchEnabled = false;
   bool _minimizeToTray = false;
+  // 笔记设置
+  bool _noteDefaultExpanded = true;
 
   @override
   void initState() {
@@ -461,12 +463,14 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
     final clipboardWatchEnabled = await _preferencesService
         .isClipboardWatchEnabled();
     final minimizeToTray = await _preferencesService.shouldMinimizeToTray();
+    final noteDefaultExpanded = await _preferencesService.getNoteDefaultExpanded();
     setState(() {
       _neverAskAgain = neverAsk;
       _autoCheckDictUpdate = autoCheck;
       _englishDbExists = englishDbExists;
       _clipboardWatchEnabled = clipboardWatchEnabled;
       _minimizeToTray = minimizeToTray;
+      _noteDefaultExpanded = noteDefaultExpanded;
       _isLoading = false;
     });
   }
@@ -740,6 +744,48 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
               ),
             ),
           ],
+          // 笔记设置
+          const SizedBox(height: 24),
+          _buildSectionTitle(
+            context,
+            context.t.note.settings,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: colorScheme.outlineVariant.withOpacity(0.5),
+                width: 1,
+              ),
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              leading: Icon(
+                Icons.note_outlined,
+                color: colorScheme.primary,
+              ),
+              title: Text(
+                context.t.note.defaultExpanded,
+              ),
+              subtitle: Text(
+                _noteDefaultExpanded
+                    ? context.t.note.defaultExpandedDesc
+                    : context.t.note.defaultCollapsedDesc,
+              ),
+              trailing: Switch(
+                value: _noteDefaultExpanded,
+                onChanged: (value) async {
+                  await _preferencesService.setNoteDefaultExpanded(value);
+                  setState(() => _noteDefaultExpanded = value);
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );

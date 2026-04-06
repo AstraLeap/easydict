@@ -10,6 +10,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../components/component_renderer.dart';
+import '../components/note_panel.dart';
 import '../components/rendering/formatted_text_parser.dart' show TypeParser;
 import '../components/dictionary_logo.dart';
 import '../components/dictionary_navigation_panel.dart';
@@ -32,10 +33,12 @@ import '../services/english_search_service.dart';
 import '../services/entry_event_bus.dart';
 import '../services/font_loader_service.dart';
 import '../services/llm_client.dart';
+import '../services/note_service.dart';
 import '../services/preferences_service.dart';
 import '../services/search_history_service.dart';
 import '../services/user_dicts_service.dart';
 import '../widgets/path_navigator.dart';
+import '../widgets/note_editor_dialog.dart';
 import '../data/models/group_model.dart' as group_model;
 import '../services/group_service.dart';
 import 'json_editor_bottom_sheet.dart';
@@ -161,6 +164,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   final AiChatDatabaseService _aiChatDatabaseService = AiChatDatabaseService();
   late DictionaryEntryGroup _entryGroup;
   bool _isFavorite = false;
+
+  /// 笔记相关状态
+  final NoteService _noteService = NoteService();
+  bool _hasNote = false;
+  bool _noteDefaultExpanded = true;
+  bool _showReturnToNoteButton = false;
+  String _currentLanguage = 'en';  // 缓存当前语言
 
   /// 浏览列表相关状态
   BrowseList? _browseList;
@@ -358,8 +368,24 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       await _loadToolbarConfig();
       await _loadEntryGroups();
       await _loadExpansionStates();
+      await _loadNoteStatus();
     });
     // AI聊天历史只在需要时加载，不在初始化时加载
+  }
+
+  /// 加载笔记状态
+  Future<void> _loadNoteStatus() async {
+    final noteDefaultExpanded =
+        await _preferencesService.getNoteDefaultExpanded();
+    final language = await _getCurrentLanguage();
+    _currentLanguage = language;
+    final hasNote = await _noteService.hasNote(_currentWord, language);
+    if (mounted) {
+      setState(() {
+        _noteDefaultExpanded = noteDefaultExpanded;
+        _hasNote = hasNote;
+      });
+    }
   }
 
   /// 导航到下一个词（浏览列表）
@@ -390,6 +416,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 处理键盘事件
   void _handleKeyEvent(LogicalKeyboardKey key) {
+    // Esc 键返回主界面
+    if (key == LogicalKeyboardKey.escape) {
+      clearAllToasts();
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
     // 所有 browseList 都支持前进后退
     if (key == LogicalKeyboardKey.arrowLeft) {
       if (_canGoPrevious) _goToPreviousWord();
@@ -1599,6 +1631,77 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
   }
 
+  /// 显示笔记编辑器
+  Future<void> _showNoteEditor({String? linkToAppend}) async {
+    final language = await _getCurrentLanguage();
+    final result = await NoteEditorDialog.show(
+      context,
+      word: _currentWord,
+      language: language,
+      linkToAppend: linkToAppend,
+    );
+    if (result && mounted) {
+      setState(() {
+        _hasNote = true;
+      });
+    }
+  }
+
+  /// 处理笔记链接点击
+  /// 链接格式: dictId/entryId/json.path
+  void _handleNoteLinkTap(String path) {
+    final parts = path.split('/');
+    if (parts.length < 2) return;
+
+    final dictId = parts[0];
+    final entryId = parts[1];
+    final jsonPath = parts.length > 2 ? parts.sublist(2).join('.') : '';
+
+    // 查找对应的 entry
+    DictionaryEntry? targetEntry;
+    for (final entry in entries) {
+      if (entry.dictId == dictId && entry.id == entryId) {
+        targetEntry = entry;
+        break;
+      }
+    }
+
+    if (targetEntry == null) return;
+
+    // 滚动到该 entry
+    _scrollToEntry(targetEntry);
+
+    // 如果有 json path，滚动到具体元素
+    if (jsonPath.isNotEmpty) {
+      // 延迟一下让 entry 先滚动到位置
+      Future.delayed(const Duration(milliseconds: 300), () {
+        EntryEventBus().emitScrollToElement(
+          ScrollToElementEvent(
+            entryId: entryId,
+            path: jsonPath,
+          ),
+        );
+      });
+    }
+
+    // 显示返回按钮
+    setState(() {
+      _showReturnToNoteButton = true;
+    });
+  }
+
+  /// 从笔记跳转后返回笔记位置
+  void _returnToNote() {
+    setState(() {
+      _showReturnToNoteButton = false;
+    });
+    // 滚动回顶部（笔记面板在索引 0）
+    _itemScrollController.scrollTo(
+      index: 0,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
   Future<void> _resetCurrentEntry() async {
     final currentEntry = _entryGroup.currentDictionaryGroup.currentEntry;
     if (currentEntry == null) {
@@ -1664,10 +1767,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // item 0: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
+    // item 0: 笔记面板（如果有笔记）
+    // item 1: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
+    final noteOffset = _hasNote ? 1 : 0;
     const wordRelationsOffset = 1;
     // 搜索关系横幅现在内嵌在各词典的词典头部下方，不占独立 item
-    final totalCount = wordRelationsOffset + entries.length;
+    final totalOffset = noteOffset + wordRelationsOffset;
+    final totalCount = totalOffset + entries.length;
 
     final content = Scaffold(
       // 禁止键盘顶起页面，手动处理底部工具栏位置
@@ -1720,15 +1826,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   itemCount: totalCount,
                   minCacheExtent: 1500,
                   itemBuilder: (context, index) {
-                    // 索引 0: 单词形态关系横幅
-                    if (index == 0) {
+                    // 索引 0: 笔记面板（如果有笔记）
+                    if (index == 0 && noteOffset == 1) {
+                      return NotePanel(
+                        word: _currentWord,
+                        language: _currentLanguage,
+                        initiallyExpanded: _noteDefaultExpanded,
+                        onLinkTap: _handleNoteLinkTap,
+                      );
+                    }
+
+                    // 词形关系横幅
+                    final relationsIndex = noteOffset;
+                    if (index == relationsIndex) {
                       return Padding(
                         padding: const EdgeInsets.only(top: 16),
                         child: _buildWordRelationsBanner(),
                       );
                     }
 
-                    final entryIndex = index - wordRelationsOffset;
+                    final entryIndex = index - totalOffset;
                     final entry = entries[entryIndex];
 
                     // 仅在该词典第一条 entry 处显示词典 Logo+名称
@@ -1789,6 +1906,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   // 使用 opaque 确保拦截所有点击事件，不传递到下层
                   behavior: HitTestBehavior.opaque,
                   child: const SizedBox.expand(),
+                ),
+              ),
+            // 从笔记跳转后的返回按钮
+            if (_showReturnToNoteButton)
+              Positioned(
+                right: 16,
+                bottom: 120,
+                child: FloatingActionButton.small(
+                  onPressed: _returnToNote,
+                  tooltip: context.t.note.returnToNote,
+                  child: const Icon(Icons.note),
                 ),
               ),
             // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
@@ -2199,6 +2327,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         return _buildActionButton(
           icon: Icons.refresh,
           onPressed: _resetCurrentEntry,
+        );
+      case PreferencesService.actionNote:
+        return _buildActionButton(
+          icon: _hasNote ? Icons.note : Icons.note_outlined,
+          isActive: _hasNote,
+          onPressed: _showNoteEditor,
         );
       default:
         return const SizedBox.shrink();

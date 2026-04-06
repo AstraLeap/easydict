@@ -103,6 +103,7 @@ class PreferencesService {
   static const String actionToggleTranslate = 'toggle_translate';
   static const String actionAiHistory = 'ai_history';
   static const String actionResetEntry = 'reset_entry';
+  static const String actionNote = 'note';
 
   static const List<String> defaultActionOrder = [
     actionAiTranslate,
@@ -160,6 +161,8 @@ class PreferencesService {
         return 'AI 历史记录';
       case actionResetEntry:
         return '重置词条';
+      case actionNote:
+        return '笔记';
       default:
         return action;
     }
@@ -189,6 +192,8 @@ class PreferencesService {
         return Icons.auto_awesome;
       case actionResetEntry:
         return Icons.refresh;
+      case actionNote:
+        return Icons.note_outlined;
       default:
         return Icons.more_horiz;
     }
@@ -214,6 +219,7 @@ class PreferencesService {
     actionToggleTranslate,
     actionAiHistory,
     actionResetEntry,
+    actionNote,
   ];
 
   Future<void> setToolbarAndOverflowActions(
@@ -299,6 +305,19 @@ class PreferencesService {
   Future<void> setShowHeadwordSyllableByDefault(bool show) async {
     final p = await prefs;
     await p.setBool(_kShowHeadwordSyllableByDefault, show);
+  }
+
+  // 笔记默认展开设置
+  static const String _kNoteDefaultExpanded = 'note_default_expanded';
+
+  Future<bool> getNoteDefaultExpanded() async {
+    final p = await prefs;
+    return p.getBool(_kNoteDefaultExpanded) ?? true;
+  }
+
+  Future<void> setNoteDefaultExpanded(bool expanded) async {
+    final p = await prefs;
+    await p.setBool(_kNoteDefaultExpanded, expanded);
   }
 
   Future<LLMConfig?> getLLMConfig({bool isFast = false}) async {

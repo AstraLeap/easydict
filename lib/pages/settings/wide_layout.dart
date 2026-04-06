@@ -47,6 +47,14 @@ class _WideSettingsLayoutState extends State<WideSettingsLayout> {
   /// 上一次选中的菜单 ID（用于判断动画方向）
   String? _previousItemId;
 
+  /// 内容面板的 GlobalKey 缓存，用于在布局切换时保持子页面状态
+  final Map<String, GlobalKey> _contentPanelKeys = {};
+
+  /// 获取或创建内容面板的 GlobalKey
+  GlobalKey _getContentPanelKey(String id) {
+    return _contentPanelKeys.putIfAbsent(id, () => GlobalKey());
+  }
+
   @override
   void didUpdateWidget(WideSettingsLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -68,6 +76,11 @@ class _WideSettingsLayoutState extends State<WideSettingsLayout> {
     final currentItem = widget.selectedIndex >= 0 &&
             widget.selectedIndex < widget.menuItems.length
         ? widget.menuItems[widget.selectedIndex]
+        : null;
+
+    // 为当前内容面板获取 GlobalKey
+    final contentPanelKey = currentItem != null
+        ? _getContentPanelKey(currentItem.id)
         : null;
 
     return Scaffold(
@@ -153,7 +166,7 @@ class _WideSettingsLayoutState extends State<WideSettingsLayout> {
               },
               child: currentItem != null
                   ? SettingsContentPanel(
-                      key: ValueKey(currentItem.id),
+                      key: contentPanelKey,
                       currentItem: currentItem,
                       contentScaleNotifier: widget.contentScaleNotifier,
                       menuItems: widget.menuItems,
