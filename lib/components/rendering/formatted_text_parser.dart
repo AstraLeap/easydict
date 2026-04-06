@@ -8,6 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/logger.dart';
 import '../../core/utils/dict_typography.dart';
+import '../../core/utils/script_detector.dart';
 import '../../services/font_loader_service.dart';
 import 'custom_text_decoration.dart';
 import 'ruby_layout.dart';
@@ -793,15 +794,24 @@ bool isKnownLanguageCode(String key) {
 }
 
 /// Determines the effective language from various sources.
+///
+/// Priority:
+/// 1. Explicit [language] parameter
+/// 2. Language code from [path] (first element)
+/// 3. Auto-detect from [textContent] using [ScriptDetector]
+/// 4. Fallback to [sourceLanguage]
 String? determineEffectiveLanguage({
   String? language,
   List<String>? path,
   String? sourceLanguage,
+  String? textContent,
 }) {
+  // 1. Explicit language takes highest priority
   if (language != null && language.isNotEmpty) {
     return language;
   }
 
+  // 2. Try to extract language from JSON path
   if (path != null && path.isNotEmpty) {
     final firstKey = path.first;
     if (isKnownLanguageCode(firstKey)) {
@@ -809,6 +819,15 @@ String? determineEffectiveLanguage({
     }
   }
 
+  // 3. Auto-detect language from text content
+  if (textContent != null &&
+      textContent.isNotEmpty &&
+      sourceLanguage != null &&
+      sourceLanguage.isNotEmpty) {
+    return ScriptDetector.detectLanguage(textContent, sourceLanguage);
+  }
+
+  // 4. Fallback to sourceLanguage
   return sourceLanguage;
 }
 
@@ -943,7 +962,11 @@ class _FormattedTextParser {
       return FormattedTextResult.hiddenResult;
     }
 
-    final effectiveBaseStyle = _resolveEffectiveStyle(baseStyle, config);
+    final effectiveBaseStyle = _resolveEffectiveStyle(
+      baseStyle,
+      config,
+      text,
+    );
     final ctx = _ParseContext(text);
     final segments = SegmentParser.parse(ctx);
 
@@ -966,6 +989,7 @@ class _FormattedTextParser {
   static TextStyle _resolveEffectiveStyle(
     TextStyle baseStyle,
     FormattedTextConfig config,
+    String textContent,
   ) {
     TextStyle style = baseStyle;
 
@@ -973,6 +997,7 @@ class _FormattedTextParser {
       language: config.language,
       path: config.path,
       sourceLanguage: config.sourceLanguage,
+      textContent: textContent,
     );
 
     if (config.useCustomFont && effectiveLanguage != null) {

@@ -183,7 +183,7 @@ python auxi_tools/build_dictionary.py data/entries.jsonl zh-hant \
         "source": "Oxford 3000",
     }, // 可选，还没想好怎么实现
     "stroke": "3", // 可选，笔画数
-    "pos": "n", // 可选，词性
+    "pos": "n", // 可选，词性，仅在当前entry只有一个词性时使用！！否则请通过sense_group的group_name实现
     "pronunciation": [
         {
             "region": "US",

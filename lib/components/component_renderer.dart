@@ -5216,7 +5216,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontScales: _fontScales,
       color: colorScheme.primary,
       fontStyleOverride: FontStyle.italic,
-    );
+    ).copyWith(fontSize: 14.0);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -5243,25 +5243,76 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 3),
                       child: Builder(
-                        builder: (context) => _buildTappableWidget(
-                          context: context,
-                          pathData: _PathData([
+                        builder: (context) {
+                          final pathData = _PathData([
                             ...PathScope.of(context),
                             'usage_group',
-                          ], 'Usage Group'),
-                          text: usageGroup,
-                          textStyle: usageGroupStyle,
-                          child: Text.rich(
-                            TextSpan(
-                              children: _parseFormattedText(
-                                usageGroup,
-                                usageGroupStyle,
-                                context: context,
-                                elementType: DictElementType.exampleUsage,
-                              ).spans,
+                          ], 'Usage Group');
+                          final textKey = GlobalKey();
+                          final pathStr = _convertPathToString(pathData.path);
+
+                          final result = _parseFormattedText(
+                            usageGroup,
+                            usageGroupStyle,
+                            context: context,
+                            elementType: DictElementType.exampleUsage,
+                          );
+
+                          return _buildTappableWidget(
+                            context: context,
+                            pathData: pathData,
+                            text: usageGroup,
+                            textStyle: usageGroupStyle,
+                            customTextKey: textKey,
+                            child: GestureDetector(
+                              onSecondaryTapUp: (details) {
+                                _handleElementSecondaryTap(
+                                  pathStr,
+                                  pathData.label,
+                                  context,
+                                  details.globalPosition,
+                                );
+                              },
+                              onLongPress: () {
+                                _handleElementSecondaryTap(
+                                  pathStr,
+                                  pathData.label,
+                                  context,
+                                  Offset.zero,
+                                );
+                              },
+                              onTapDown: (details) {
+                                _lastTapPosition = details.globalPosition;
+                              },
+                              onTap: () {
+                                final now = DateTime.now();
+                                final isDoubleTap = _lastTapTime != null &&
+                                    now.difference(_lastTapTime!) <
+                                        const Duration(milliseconds: 300);
+
+                                if (isDoubleTap && _lastTapPosition != null) {
+                                  _handleDoubleTapOnText(
+                                    _lastTapPosition!,
+                                    usageGroup,
+                                    usageGroupStyle,
+                                    textKey,
+                                    context,
+                                  );
+                                  _lastTapTime = null;
+                                  _lastTapPosition = null;
+                                } else {
+                                  _lastTapTime = now;
+                                }
+                              },
+                              child: Builder(
+                                key: textKey,
+                                builder: (context) => Text.rich(
+                                  TextSpan(children: result.spans),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ),
                   ...subExamples.asMap().entries.map((entry) {
@@ -5996,17 +6047,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _buildTappableWidget(
       context: context,
       pathData: _PathData(PathScope.of(context), 'Index'),
-      child: Text.rich(
-        TextSpan(
-          children: _parseFormattedText(
-            indexStr,
-            DictTypography.getBaseStyle(
-              DictElementType.senseIndex,
-              color: colorScheme.primary,
-            ).copyWith(fontSize: baseFontSize),
-            context: context,
-            elementType: DictElementType.senseIndex,
-          ).spans,
+      child: Transform.translate(
+        offset: const Offset(0, -1.0),
+        child: Text.rich(
+          TextSpan(
+            children: _parseFormattedText(
+              indexStr,
+              DictTypography.getBaseStyle(
+                DictElementType.senseIndex,
+                color: colorScheme.primary,
+              ).copyWith(fontSize: baseFontSize),
+              context: context,
+              elementType: DictElementType.senseIndex,
+            ).spans,
+          ),
         ),
       ),
     );
@@ -6496,7 +6550,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     if (spans.isEmpty) return const SizedBox.shrink();
-    return Text.rich(TextSpan(children: spans), key: definitionTextKey);
+    return Text.rich(
+      strutStyle: const StrutStyle(
+        forceStrutHeight: true,
+        height: 1.8,
+        leading: 0,
+      ),
+      TextSpan(children: spans),
+      key: definitionTextKey,
+    );
   }
 
   /// 渲染 sense 层级的内联字段（synonym/antonym/related/tail 内字段等）
@@ -6903,7 +6965,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
-        child: Text.rich(TextSpan(children: result.spans), key: textKey),
+        child: Text.rich(
+          strutStyle: const StrutStyle(
+            forceStrutHeight: true,
+            height: 1.5,
+            leading: 0,
+          ),
+          TextSpan(children: result.spans),
+          key: textKey,
+        ),
       );
     }
 
@@ -7092,7 +7162,18 @@ class ComponentRendererState extends State<ComponentRenderer> {
       elementType: DictElementType.label,
     );
 
-    final richText = Text.rich(TextSpan(children: result.spans));
+    final richText = Text.rich(
+      strutStyle: const StrutStyle(
+        forceStrutHeight: true,
+        height: 1.3,
+        leading: 0,
+      ),
+      TextSpan(children: result.spans),
+    );
+
+    final pathKey = '$labelPrefix.signpost';
+    final path = [...PathScope.of(context), pathKey];
+    final pathData = _PathData(path, 'Signpost');
 
     final child = Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -7105,16 +7186,57 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     return PathScope.append(
       context,
-      key: '$labelPrefix.signpost',
+      key: pathKey,
       child: Builder(
         builder: (context) {
           return _buildTappableWidget(
             context: context,
-            pathData: _PathData(PathScope.of(context), 'Signpost'),
+            pathData: pathData,
             text: text,
             textStyle: textStyle,
             customTextKey: textKey,
-            child: child,
+            child: GestureDetector(
+              onSecondaryTapUp: (details) {
+                _handleElementSecondaryTap(
+                  _convertPathToString(path),
+                  'Signpost',
+                  context,
+                  details.globalPosition,
+                );
+              },
+              onLongPress: () {
+                _handleElementSecondaryTap(
+                  _convertPathToString(path),
+                  'Signpost',
+                  context,
+                  Offset.zero,
+                );
+              },
+              onTapDown: (details) {
+                _lastTapPosition = details.globalPosition;
+              },
+              onTap: () {
+                final now = DateTime.now();
+                final isDoubleTap = _lastTapTime != null &&
+                    now.difference(_lastTapTime!) <
+                        const Duration(milliseconds: 300);
+
+                if (isDoubleTap && _lastTapPosition != null) {
+                  _handleDoubleTapOnText(
+                    _lastTapPosition!,
+                    text,
+                    textStyle,
+                    textKey,
+                    context,
+                  );
+                  _lastTapTime = null;
+                  _lastTapPosition = null;
+                } else {
+                  _lastTapTime = now;
+                }
+              },
+              child: child,
+            ),
           );
         },
       ),
@@ -7198,7 +7320,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
             recognizer: recognizer,
             mouseCursor: SystemMouseCursors.click,
           );
-          final richText = Text.rich(TextSpan(children: result.spans));
+          final richText = Text.rich(
+            strutStyle: const StrutStyle(
+              forceStrutHeight: true,
+              height: 1.5,
+              leading: 0,
+            ),
+            TextSpan(children: result.spans),
+          );
 
           Widget child;
           if (!hasBackground) {
