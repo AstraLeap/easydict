@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_code_editor/flutter_code_editor.dart';
-import 'package:flutter_highlight/themes/github.dart';
-import 'package:flutter_highlight/themes/atom-one-dark.dart';
-import 'package:highlight/languages/markdown.dart';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/languages/markdown.dart';
+import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../i18n/strings.g.dart';
 import '../services/note_service.dart';
 
 /// 笔记编辑器底部弹窗
-/// 使用 flutter_code_editor 实现纯 Flutter 的 Markdown 编辑体验
+/// 使用 re_editor 实现纯 Flutter 的 Markdown 编辑体验
 class NoteEditorBottomSheet extends StatefulWidget {
   final String word;
   final String language;
@@ -50,7 +49,7 @@ class NoteEditorBottomSheet extends StatefulWidget {
 
 class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   final NoteService _noteService = NoteService();
-  late CodeController _controller;
+  late CodeLineEditingController _controller;
   String _initialContent = '';
   bool _isLoading = true;
   bool _isFullScreen = false;
@@ -64,10 +63,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   @override
   void initState() {
     super.initState();
-    _controller = CodeController(
-      text: '',
-      language: markdown,
-    );
+    _controller = CodeLineEditingController();
     _loadNote();
   }
 
@@ -149,9 +145,8 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   }
 
   void _insertMarkdownSyntax(String before, [String? after]) {
-    final text = _controller.text;
     final selection = _controller.selection;
-    final selectedText = selection.textInside(text);
+    final selectedText = _controller.selectedText;
 
     String newText;
     int newCursorOffset;
@@ -167,15 +162,30 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       newCursorOffset = before.length + selectedText.length;
     }
 
-    // 替换选中的文本
-    final start = selection.start;
-    final end = selection.end;
+    // 获取选区的起始和结束位置
+    final startIndex = selection.startIndex;
+    final startOffset = selection.startOffset;
+    final endIndex = selection.endIndex;
+    final endOffset = selection.endOffset;
 
     _isTrackingChanges = false;
-    _controller.text = text.replaceRange(start, end, newText);
-    _controller.selection = TextSelection.collapsed(
-      offset: start + newCursorOffset,
+
+    // 获取文本并替换
+    final fullText = _controller.text;
+    // 计算全局偏移量
+    int globalStart = _getGlobalOffset(startIndex, startOffset);
+    int globalEnd = _getGlobalOffset(endIndex, endOffset);
+
+    _controller.text = fullText.replaceRange(globalStart, globalEnd, newText);
+
+    // 设置新选区（光标位置）
+    int newGlobalOffset = globalStart + newCursorOffset;
+    var (newLineIndex, newLineOffset) = _getLinePosition(newGlobalOffset);
+    _controller.selection = CodeLineSelection.collapsed(
+      index: newLineIndex,
+      offset: newLineOffset,
     );
+
     _isTrackingChanges = true;
 
     // 手动更新撤销栈
@@ -186,6 +196,30 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     _currentEditPosition = _undoStack.length - 1;
     _redoStack.clear();
     setState(() {});
+  }
+
+  /// 计算全局字符偏移量
+  int _getGlobalOffset(int lineIndex, int lineOffset) {
+    final codeLines = _controller.codeLines;
+    int offset = 0;
+    for (int i = 0; i < lineIndex && i < codeLines.length; i++) {
+      offset += codeLines[i].text.length + 1; // +1 for newline
+    }
+    return offset + lineOffset;
+  }
+
+  /// 从全局偏移量计算行索引和行内偏移
+  (int lineIndex, int lineOffset) _getLinePosition(int globalOffset) {
+    final codeLines = _controller.codeLines;
+    int offset = 0;
+    for (int i = 0; i < codeLines.length; i++) {
+      final lineLength = codeLines[i].text.length;
+      if (offset + lineLength >= globalOffset) {
+        return (i, globalOffset - offset);
+      }
+      offset += lineLength + 1; // +1 for newline
+    }
+    return (codeLines.length - 1, codeLines.isEmpty ? 0 : codeLines.last.text.length);
   }
 
   @override
@@ -333,23 +367,28 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                             color: colorScheme.outlineVariant.withOpacity(0.5),
                           ),
                         ),
-                        child: CodeTheme(
-                          data: CodeThemeData(
-                            styles: isDark ? atomOneDarkTheme : githubTheme,
-                          ),
-                          child: CodeField(
-                            controller: _controller,
-                            textStyle: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 14,
+                        child: CodeEditor(
+                          controller: _controller,
+                          style: CodeEditorStyle(
+                            fontSize: 15,
+                            fontFamily: 'monospace',
+                            backgroundColor: isDark
+                                ? colorScheme.primaryContainer.withOpacity(0.3)
+                                : colorScheme.primaryContainer.withOpacity(0.15),
+                            codeTheme: CodeHighlightTheme(
+                              languages: {
+                                'markdown': CodeHighlightThemeMode(mode: langMarkdown)
+                              },
+                              theme: isDark
+                                  ? builtThemes['atom-one-dark']!
+                                  : builtThemes['github']!,
                             ),
-                            expands: true,
-                            gutterStyle: const GutterStyle(
-                              showLineNumbers: false,
-                              showFoldingHandles: false,
-                              showErrors: false,
-                            ),
                           ),
+                          wordWrap: true,
+                          indicatorBuilder: (context, editingController, chunkController, notifier) {
+                            // 不显示行号和折叠指示器
+                            return const SizedBox.shrink();
+                          },
                         ),
                       ),
                     ),
