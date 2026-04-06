@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_code_editor/flutter_code_editor.dart';
+import 'package:flutter_highlight/themes/github.dart';
+import 'package:flutter_highlight/themes/atom-one-dark.dart';
+import 'package:highlight/languages/markdown.dart';
 import '../i18n/strings.g.dart';
 import '../services/note_service.dart';
 
 /// 笔记编辑器底部弹窗
-/// 支持底部弹出、全屏切换、实时 Markdown 预览
+/// 使用 flutter_code_editor 实现纯 Flutter 的 Markdown 编辑体验
 class NoteEditorBottomSheet extends StatefulWidget {
   final String word;
   final String language;
@@ -46,22 +50,24 @@ class NoteEditorBottomSheet extends StatefulWidget {
 
 class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   final NoteService _noteService = NoteService();
-  late TextEditingController _controller;
-  late FocusNode _focusNode;
+  late CodeController _controller;
+  String _initialContent = '';
   bool _isLoading = true;
   bool _isFullScreen = false;
-  bool _isPreviewMode = false;
 
   // 撤销/重做栈
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
   int _currentEditPosition = 0;
+  bool _isTrackingChanges = true;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController();
-    _focusNode = FocusNode();
+    _controller = CodeController(
+      text: '',
+      language: markdown,
+    );
     _loadNote();
   }
 
@@ -78,6 +84,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       }
     }
 
+    _initialContent = content;
     _controller.text = content;
     _undoStack.add(content);
     _controller.addListener(_trackChanges);
@@ -87,8 +94,10 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   }
 
   void _trackChanges() {
+    if (!_isTrackingChanges) return;
+
     final currentText = _controller.text;
-    if (_undoStack[_currentEditPosition] != currentText) {
+    if (_undoStack.isNotEmpty && _undoStack[_currentEditPosition] != currentText) {
       if (_currentEditPosition < _undoStack.length - 1) {
         _undoStack.removeRange(_currentEditPosition + 1, _undoStack.length);
       }
@@ -103,9 +112,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     if (_currentEditPosition > 0) {
       setState(() {
         _currentEditPosition--;
-        _controller.removeListener(_trackChanges);
+        _isTrackingChanges = false;
         _controller.text = _undoStack[_currentEditPosition];
-        _controller.addListener(_trackChanges);
+        _isTrackingChanges = true;
       });
     }
   }
@@ -114,14 +123,15 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     if (_currentEditPosition < _undoStack.length - 1) {
       setState(() {
         _currentEditPosition++;
-        _controller.removeListener(_trackChanges);
+        _isTrackingChanges = false;
         _controller.text = _undoStack[_currentEditPosition];
-        _controller.addListener(_trackChanges);
+        _isTrackingChanges = true;
       });
     }
   }
 
   Future<void> _save() async {
+    final content = _controller.text;
     final existingNote = await _noteService.getNote(
       widget.word,
       widget.language,
@@ -129,7 +139,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     final note = Note(
       word: widget.word,
       language: widget.language,
-      content: _controller.text,
+      content: content,
       createdAt: existingNote?.createdAt,
     );
     await _noteService.saveNote(note);
@@ -144,41 +154,45 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     final selectedText = selection.textInside(text);
 
     String newText;
-    TextPosition newCursorPos;
+    int newCursorOffset;
 
     if (selectedText.isEmpty) {
       // 没有选中文本，插入占位符
-      final placeholder = after != null ? 'text' : 'text';
-      newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '$before$placeholder${after ?? ''}',
-      );
-      newCursorPos = TextPosition(
-        offset: selection.start + before.length,
-      );
+      final placeholder = 'text';
+      newText = '$before$placeholder${after ?? ''}';
+      newCursorOffset = before.length;
     } else {
       // 有选中文本，包裹选中的文本
-      newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '$before$selectedText${after ?? ''}',
-      );
-      newCursorPos = TextPosition(
-        offset: selection.start + before.length + selectedText.length + (after?.length ?? 0),
-      );
+      newText = '$before$selectedText${after ?? ''}';
+      newCursorOffset = before.length + selectedText.length;
     }
 
-    _controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newCursorPos.offset),
+    // 替换选中的文本
+    final start = selection.start;
+    final end = selection.end;
+
+    _isTrackingChanges = false;
+    _controller.text = text.replaceRange(start, end, newText);
+    _controller.selection = TextSelection.collapsed(
+      offset: start + newCursorOffset,
     );
+    _isTrackingChanges = true;
+
+    // 手动更新撤销栈
+    if (_currentEditPosition < _undoStack.length - 1) {
+      _undoStack.removeRange(_currentEditPosition + 1, _undoStack.length);
+    }
+    _undoStack.add(_controller.text);
+    _currentEditPosition = _undoStack.length - 1;
+    _redoStack.clear();
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final screenSize = MediaQuery.of(context).size;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return DraggableScrollableSheet(
       initialChildSize: _isFullScreen ? 1.0 : 0.7,
@@ -286,12 +300,6 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                           tooltip: context.t.note.code,
                         ),
                         const Spacer(),
-                        // 预览切换
-                        _buildToolbarButton(
-                          icon: _isPreviewMode ? Icons.edit : Icons.visibility,
-                          onPressed: () => setState(() => _isPreviewMode = !_isPreviewMode),
-                          tooltip: _isPreviewMode ? context.t.note.edit : context.t.note.preview,
-                        ),
                         // 全屏
                         IconButton(
                           onPressed: () => setState(() => _isFullScreen = !_isFullScreen),
@@ -313,11 +321,37 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    // 编辑区域
+                    // 代码编辑器
                     Expanded(
-                      child: _isPreviewMode
-                          ? _buildPreview(colorScheme)
-                          : _buildEditor(colorScheme),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? colorScheme.surfaceContainerHighest
+                              : colorScheme.surfaceContainerLowest,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withOpacity(0.5),
+                          ),
+                        ),
+                        child: CodeTheme(
+                          data: CodeThemeData(
+                            styles: isDark ? atomOneDarkTheme : githubTheme,
+                          ),
+                          child: CodeField(
+                            controller: _controller,
+                            textStyle: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 14,
+                            ),
+                            expands: true,
+                            gutterStyle: const GutterStyle(
+                              showLineNumbers: false,
+                              showFoldingHandles: false,
+                              showErrors: false,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -349,164 +383,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     );
   }
 
-  Widget _buildEditor(ColorScheme colorScheme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
-      ),
-      child: TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        maxLines: null,
-        expands: true,
-        textAlignVertical: TextAlignVertical.top,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 14,
-          color: colorScheme.onSurface,
-        ),
-        decoration: InputDecoration(
-          hintText: context.t.note.placeholder,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.all(12),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPreview(ColorScheme colorScheme) {
-    // 使用简单的文本显示，保留换行
-    final text = _controller.text;
-    if (text.isEmpty) {
-      return Center(
-        child: Text(
-          context.t.note.previewEmpty,
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
-      ),
-      child: SingleChildScrollView(
-        child: _buildMarkdownPreview(text, colorScheme),
-      ),
-    );
-  }
-
-  /// 简单的 Markdown 预览渲染
-  Widget _buildMarkdownPreview(String text, ColorScheme colorScheme) {
-    final lines = text.split('\n');
-    final spans = <InlineSpan>[];
-
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      spans.addAll(_parseLine(line, colorScheme));
-      if (i < lines.length - 1) {
-        spans.add(const TextSpan(text: '\n'));
-      }
-    }
-
-    return RichText(
-      text: TextSpan(
-        children: spans,
-        style: TextStyle(
-          fontSize: 14,
-          color: colorScheme.onSurface,
-        ),
-      ),
-    );
-  }
-
-  /// 解析单行文本，返回 InlineSpan 列表
-  List<InlineSpan> _parseLine(String line, ColorScheme colorScheme) {
-    final spans = <InlineSpan>[];
-    var remaining = line;
-
-    while (remaining.isNotEmpty) {
-      // 检查链接格式 [text](url)
-      final linkMatch = RegExp(r'\[([^\]]+)\]\(([^)]+)\)').firstMatch(remaining);
-      if (linkMatch != null) {
-        // 添加链接前的普通文本
-        if (linkMatch.start > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, linkMatch.start)));
-        }
-        // 添加链接
-        spans.add(TextSpan(
-          text: linkMatch.group(1),
-          style: TextStyle(
-            color: colorScheme.primary,
-            decoration: TextDecoration.underline,
-          ),
-        ));
-        remaining = remaining.substring(linkMatch.end);
-        continue;
-      }
-
-      // 检查加粗 **text**
-      final boldMatch = RegExp(r'\*\*([^*]+)\*\*').firstMatch(remaining);
-      if (boldMatch != null) {
-        if (boldMatch.start > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, boldMatch.start)));
-        }
-        spans.add(TextSpan(
-          text: boldMatch.group(1),
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ));
-        remaining = remaining.substring(boldMatch.end);
-        continue;
-      }
-
-      // 检查斜体 *text*
-      final italicMatch = RegExp(r'\*([^*]+)\*').firstMatch(remaining);
-      if (italicMatch != null) {
-        if (italicMatch.start > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, italicMatch.start)));
-        }
-        spans.add(TextSpan(
-          text: italicMatch.group(1),
-          style: const TextStyle(fontStyle: FontStyle.italic),
-        ));
-        remaining = remaining.substring(italicMatch.end);
-        continue;
-      }
-
-      // 检查行内代码 `code`
-      final codeMatch = RegExp(r'`([^`]+)`').firstMatch(remaining);
-      if (codeMatch != null) {
-        if (codeMatch.start > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, codeMatch.start)));
-        }
-        spans.add(TextSpan(
-          text: codeMatch.group(1),
-          style: TextStyle(
-            fontFamily: 'monospace',
-            backgroundColor: colorScheme.surfaceContainerHighest,
-          ),
-        ));
-        remaining = remaining.substring(codeMatch.end);
-        continue;
-      }
-
-      // 没有匹配，添加剩余文本
-      spans.add(TextSpan(text: remaining));
-      break;
-    }
-
-    return spans;
-  }
-
   @override
   void dispose() {
     _controller.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 }
