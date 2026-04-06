@@ -593,12 +593,15 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
+  /// 是否显示底部导航栏（窄屏模式下进入设置子页面时隐藏）
+  bool _showBottomNav = true;
+
   final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
 
   List<Widget> get _pages => [
     const DictionarySearchPage(),
     WordBankPage(key: _wordBankPageKey),
-    const SettingsPage(),
+    SettingsPage(onSubPageChanged: _onSettingsSubPageChanged),
   ];
 
   @override
@@ -636,12 +639,21 @@ class _MainScreenState extends State<MainScreen> {
     if (_selectedIndex != index) {
       setState(() {
         _selectedIndex = index;
+        _showBottomNav = true; // 切换 tab 时恢复显示
       });
       // 切换页面时清除所有 toast，避免位置错乱
       clearAllToasts();
       if (index == 1) {
         _wordBankPageKey.currentState?.loadWordsIfNeeded();
       }
+    }
+  }
+
+  /// 处理设置页子页面状态变化
+  /// [isMainPage] true 表示在主页，false 表示在子页面
+  void _onSettingsSubPageChanged(bool isMainPage) {
+    if (_selectedIndex == 2) {
+      setState(() => _showBottomNav = isMainPage);
     }
   }
 
@@ -719,7 +731,7 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       body: IndexedStack(index: _selectedIndex, children: _pages),
-      bottomNavigationBar: bottomNav,
+      bottomNavigationBar: _showBottomNav ? bottomNav : null,
     );
   }
 }

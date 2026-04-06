@@ -39,10 +39,13 @@ import 'settings/wide_layout.dart';
 // ─────────────────────────────────────────────
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, this.contentScaleNotifier});
+  const SettingsPage({super.key, this.contentScaleNotifier, this.onSubPageChanged});
 
   /// 通知父级刷新内容缩放比例（从字体配置页返回时使用）
   final ValueNotifier<double>? contentScaleNotifier;
+
+  /// 子页面状态变化回调（true=主页，false=子页面）
+  final ValueChanged<bool>? onSubPageChanged;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -309,6 +312,29 @@ class _SettingsPageState extends State<SettingsPage> {
       // 子页面/内嵌类型切换右侧内容
       setState(() => _selectedMenuIndex = index);
     }
+
+    // 通知父组件 tab 可见性
+    _notifySubPageState();
+  }
+
+  /// 通知父组件子页面状态（用于控制底部 tab 栏可见性）
+  void _notifySubPageState() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideLayout = screenWidth >= _wideLayoutThreshold;
+
+    if (isWideLayout) {
+      // 宽屏模式始终显示 tab
+      widget.onSubPageChanged?.call(true);
+      return;
+    }
+
+    // 窄屏模式：主页显示 tab，子页面隐藏 tab
+    // _selectedMenuIndex <= 0 表示主页，> 0 表示子页面
+    final isHomePage = _selectedMenuIndex <= 0 ||
+        (_menuItems != null &&
+         _selectedMenuIndex < _menuItems!.length &&
+         _menuItems![_selectedMenuIndex].type == SettingsContentType.homePage);
+    widget.onSubPageChanged?.call(isHomePage);
   }
 
   String _getThemeColorName(BuildContext context, Color color) {
@@ -365,6 +391,7 @@ class _SettingsPageState extends State<SettingsPage> {
           if (mounted && _selectedMenuIndex == -1) {
             setState(() => _selectedMenuIndex = 0);
           }
+          _notifySubPageState();
         });
       } else {
         // 从窄屏切换到宽屏：如果当前是主页，显示空白占位
@@ -372,6 +399,7 @@ class _SettingsPageState extends State<SettingsPage> {
           if (mounted && _selectedMenuIndex == 0) {
             setState(() => _selectedMenuIndex = -1);
           }
+          _notifySubPageState();
         });
       }
     }
