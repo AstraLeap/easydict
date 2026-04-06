@@ -1,0 +1,16 @@
+name: zstd_ffi
+description: A new Flutter FFI plugin project for macOS.
+version: 0.0.1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      macos:
+        pluginClass: ZstdFfiPlugin

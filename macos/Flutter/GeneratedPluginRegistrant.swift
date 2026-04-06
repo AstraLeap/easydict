@@ -15,6 +15,7 @@ import sqflite_darwin
 import tray_manager
 import url_launcher_macos
 import window_manager
+import zstd_ffi
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   ClipboardWatcherPlugin.register(with: registry.registrar(forPlugin: "ClipboardWatcherPlugin"))
@@ -27,4 +28,5 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   TrayManagerPlugin.register(with: registry.registrar(forPlugin: "TrayManagerPlugin"))
   UrlLauncherPlugin.register(with: registry.registrar(forPlugin: "UrlLauncherPlugin"))
   WindowManagerPlugin.register(with: registry.registrar(forPlugin: "WindowManagerPlugin"))
+  ZstdFfiPlugin.register(with: registry.registrar(forPlugin: "ZstdFfiPlugin"))
 }
