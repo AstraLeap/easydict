@@ -169,8 +169,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 笔记相关状态
   final NoteService _noteService = NoteService();
   bool _hasNote = false;
+  bool _isNoteStatusLoading = true;
   bool _noteDefaultExpanded = true;
-  bool _showReturnToNoteButton = false;
   String _currentLanguage = 'en';  // 缓存当前语言
   int _notePanelRefreshVersion = 0;  // 用于通知笔记面板刷新内容
 
@@ -331,6 +331,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _loadNavPanelPosition();
     // 初始化单词关系搜索（缓存 Future，所有词典共享）
     _initWordRelationsSearch();
+    // 顶部区块优先加载，避免首屏内容出来后再插入顶部模块。
+    _loadNoteStatus();
     // 非关键数据延迟加载
     _loadDeferredData();
     // 软件布局缩放已从 FontLoaderService 同步获取，无需异步加载
@@ -374,7 +376,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       await _loadToolbarConfig();
       await _loadEntryGroups();
       await _loadExpansionStates();
-      await _loadNoteStatus();
     });
     // AI聊天历史只在需要时加载，不在初始化时加载
   }
@@ -390,6 +391,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       setState(() {
         _noteDefaultExpanded = noteDefaultExpanded;
         _hasNote = hasNote;
+        _isNoteStatusLoading = false;
       });
     }
   }
@@ -1196,12 +1198,136 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     return fullId;
   }
 
+  /// 在所有词典/页面/section 中定位目标 entry。
+  /// 优先按完整 id 命中，兜底按 dictId + numeric entry_id 命中。
+  ({int dictIndex, int pageIndex, int sectionIndex, DictionaryEntry entry})?
+  _findEntryLocation(DictionaryEntry target) {
+    final targetDictId = target.dictId ?? '';
+    final targetNumericId = _extractNumericId(target.id);
+
+    for (int dictIndex = 0; dictIndex < _entryGroup.dictionaryGroups.length; dictIndex++) {
+      final dict = _entryGroup.dictionaryGroups[dictIndex];
+      if (targetDictId.isNotEmpty && dict.dictionaryId != targetDictId) {
+        continue;
+      }
+
+      for (int pageIndex = 0; pageIndex < dict.pageGroups.length; pageIndex++) {
+        final page = dict.pageGroups[pageIndex];
+        for (int sectionIndex = 0; sectionIndex < page.sections.length; sectionIndex++) {
+          final sectionEntry = page.sections[sectionIndex].entry;
+          final isExactMatch = sectionEntry.id == target.id;
+          final isNumericMatch =
+              sectionEntry.dictId == targetDictId &&
+              _extractNumericId(sectionEntry.id) == targetNumericId;
+          if (isExactMatch || isNumericMatch) {
+            return (
+              dictIndex: dictIndex,
+              pageIndex: pageIndex,
+              sectionIndex: sectionIndex,
+              entry: sectionEntry,
+            );
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// 按 dictId + numeric entry_id 在所有词典/页面/section 中查找词条。
+  DictionaryEntry? _findEntryAcrossAllPages(String dictId, String entryId) {
+    for (final dict in _entryGroup.dictionaryGroups) {
+      if (dictId.isNotEmpty && dict.dictionaryId != dictId) {
+        continue;
+      }
+      for (final page in dict.pageGroups) {
+        for (final section in page.sections) {
+          final sectionEntry = section.entry;
+          if (sectionEntry.dictId == dictId &&
+              sectionEntry.entryIdAsInt.toString() == entryId) {
+            return sectionEntry;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 统一的按 ID 滚动入口：跨 page 定位后复用 _scrollToEntry。
+  void _scrollToEntryByIds(
+    String dictId,
+    String entryId, {
+    String? targetPath,
+  }) {
+    final targetEntry = _findEntryAcrossAllPages(dictId, entryId);
+    if (targetEntry == null) {
+      Logger.w(
+        'Target entry not found across pages: $dictId/$entryId',
+        tag: 'EntryDetail',
+      );
+      return;
+    }
+    _scrollToEntry(targetEntry, targetPath: targetPath);
+  }
+
+  /// 当目标 entry 位于非活跃 page/section（或非当前词典）时，先切换导航状态。
+  /// 返回 true 表示发生了切换，需要在下一帧重试滚动。
+  Future<bool> _activateEntryForScroll(DictionaryEntry target) async {
+    final location = _findEntryLocation(target);
+    if (location == null) return false;
+
+    bool changed = false;
+
+    if (_entryGroup.currentDictionaryIndex != location.dictIndex) {
+      _entryGroup.setCurrentDictionaryIndex(location.dictIndex);
+      _lastDictionaryChangeTime = DateTime.now();
+      changed = true;
+      // 通知导航面板切换到目标词典。
+      _navPanelVersionNotifier.value++;
+    }
+
+    final dict = _entryGroup.dictionaryGroups[location.dictIndex];
+
+    if (dict.currentPageIndex != location.pageIndex) {
+      dict.setCurrentPageIndex(location.pageIndex);
+      changed = true;
+      _onPageChanged();
+    }
+
+    if (dict.currentSectionIndex != location.sectionIndex) {
+      dict.setCurrentSectionIndex(location.sectionIndex);
+      changed = true;
+      _onSectionChanged();
+    }
+
+    if (!changed) return false;
+
+    // 目录气泡如果打开，需要同步到新的活跃 section。
+    _navPanelKey.currentState?.handleActiveSectionChanged();
+    await WidgetsBinding.instance.endOfFrame;
+    return true;
+  }
+
   void _scrollToEntry(DictionaryEntry entry, {String? targetPath}) async {
+    // 统一解析为结构中的真实 entry，避免调用方传入非活跃 page 的副本对象。
+    final effectiveEntry =
+        _findEntryAcrossAllPages(entry.dictId ?? '', entry.entryIdAsInt.toString()) ??
+        entry;
+
+    final targetDictId = effectiveEntry.dictId ?? '';
+    if (targetDictId.isNotEmpty && _collapsedDicts.contains(targetDictId)) {
+      setState(() {
+        _collapsedDicts.remove(targetDictId);
+      });
+      // 等待词典内容重新构建后再执行定位，避免目标 entry 仍处于未渲染状态。
+      await WidgetsBinding.instance.endOfFrame;
+    }
+
     final entries = _getAllEntriesInOrder();
-    int index = entries.indexWhere((e) => e.id == entry.id);
+    int index = entries.indexWhere((e) => e.id == effectiveEntry.id);
 
     Logger.d(
-      'Scrolling to entry: ${entry.headword}, index: $index, total entries: ${entries.length}, targetPath: $targetPath',
+      'Scrolling to entry: ${effectiveEntry.headword}, index: $index, total entries: ${entries.length}, targetPath: $targetPath',
       tag: 'EntryDetail',
     );
 
@@ -1230,7 +1356,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           // 等待帧渲染后执行元素滚动
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _scrollToElement(entry.id, targetPath);
+              // _scrollToElement 使用当前激活 entry 的 id + path
+              // 才能让 ComponentRenderer 订阅事件后正确命中。
+              _scrollToElement(effectiveEntry.id, targetPath);
               Future.delayed(const Duration(milliseconds: 400), () {
                 if (mounted) {
                   _isProgrammaticScroll = false;
@@ -1283,7 +1411,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               // 等待帧渲染后执行元素滚动
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
-                  _scrollToElement(entry.id, targetPath);
+                  _scrollToElement(effectiveEntry.id, targetPath);
                   Future.delayed(const Duration(milliseconds: 400), () {
                     if (mounted) {
                       _isProgrammaticScroll = false;
@@ -1319,6 +1447,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         });
       }
     } else {
+      // 目标可能位于同词典的其他 page，先切换导航状态后重试滚动。
+      final switched = await _activateEntryForScroll(effectiveEntry);
+      if (switched && mounted) {
+        _scrollToEntry(effectiveEntry, targetPath: targetPath);
+        return;
+      }
+
       Logger.w('Entry not found in current list', tag: 'EntryDetail');
     }
   }
@@ -1720,6 +1855,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
   }
 
+  /// 滚动到笔记面板
+  void _scrollToNote() {
+    if (!_hasNote) {
+      // 如果没有笔记，打开编辑器
+      _showNoteEditor();
+      return;
+    }
+    // 滚动到笔记面板（索引 0）
+    _itemScrollController.scrollTo(
+      index: 0,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
   /// 处理添加到笔记的回调
   /// 注意：word 和 language 参数来自 component_renderer，但我们使用 _currentWord 和 _currentLanguage
   Future<void> _handleAddToNote(String word, String language, String link) async {
@@ -1739,49 +1888,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 处理笔记链接点击
   /// 链接格式: dictId/entryId/json.path
   void _handleNoteLinkTap(String path) {
-    final parts = path.split('/');
+    final decodedPath = Uri.decodeComponent(path);
+    final parts = decodedPath.split('/');
     if (parts.length < 2) return;
 
     // 第一部分是 dictId，第二部分是 entryId
     final dictId = parts[0];
     final entryId = parts[1];
-    // 拼接为完整的 entry.id: dictId_entryId
-    final fullEntryId = '${dictId}_$entryId';
     final jsonPath = parts.length > 2 ? parts.sublist(2).join('.') : '';
 
-    // 查找对应的 entry
-    DictionaryEntry? targetEntry;
-    for (final entry in entries) {
-      // 调试：打印实际的 entry.id 和目标 fullEntryId
-      if (entry.dictId == dictId) {
-        // 匹配 dictId 时，检查 entryIdAsInt
-        if (entry.entryIdAsInt.toString() == entryId) {
-          targetEntry = entry;
-          break;
-        }
-      }
-    }
-
-    if (targetEntry == null) return;
-
-    // 直接滚动到目标位置（如果有 json path 就滚动到具体元素，否则滚动到 entry 顶部）
-    _scrollToEntry(targetEntry, targetPath: jsonPath.isNotEmpty ? jsonPath : null);
-
-    // 显示返回按钮
-    setState(() {
-      _showReturnToNoteButton = true;
-    });
-  }
-
-  /// 从笔记跳转后返回笔记位置
-  void _returnToNote() {
-    setState(() {
-      _showReturnToNoteButton = false;
-    });
-    // 滚动回顶部（笔记面板在索引 0）
-    _itemScrollController.scrollTo(
-      index: 0,
-      duration: const Duration(milliseconds: 300),
+    // 统一走滚动层入口：自动处理跨 page 定位、切页与元素滚动。
+    _scrollToEntryByIds(
+      dictId,
+      entryId,
+      targetPath: jsonPath.isNotEmpty ? jsonPath : null,
     );
   }
 
@@ -1850,9 +1970,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // item 0: 笔记面板（如果有笔记）
-    // item noteOffset: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
-    final noteOffset = _hasNote ? 1 : 0;
+    // item 0: 笔记面板（有笔记或仍在检测笔记状态时占位）
+    // item noteOffset: 词形关系横幅（始终占一个位置）
+    final noteOffset = (_hasNote || _isNoteStatusLoading) ? 1 : 0;
     const wordRelationsOffset = 1;
     final totalOffset = noteOffset + wordRelationsOffset;
     final totalCount = totalOffset + entries.length;
@@ -1910,6 +2030,37 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   itemBuilder: (context, index) {
                     // 索引 0: 笔记面板（如果有笔记）
                     if (index == 0 && noteOffset == 1) {
+                      if (_isNoteStatusLoading) {
+                        return Container(
+                          margin: const EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            bottom: 16,
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withOpacity(0.35),
+                          ),
+                          child: const SizedBox(
+                            height: 20,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
                       return NotePanel(
                         word: _currentWord,
                         language: _currentLanguage,
@@ -1972,6 +2123,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                     await WidgetsBinding.instance.endOfFrame;
                   }
                 },
+                onNoteTap: _scrollToNote,
               ),
             // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
             if (_isSearchMode)
@@ -1986,17 +2138,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   // 使用 opaque 确保拦截所有点击事件，不传递到下层
                   behavior: HitTestBehavior.opaque,
                   child: const SizedBox.expand(),
-                ),
-              ),
-            // 从笔记跳转后的返回按钮
-            if (_showReturnToNoteButton)
-              Positioned(
-                right: 16,
-                bottom: 120,
-                child: FloatingActionButton.small(
-                  onPressed: _returnToNote,
-                  tooltip: context.t.note.returnToNote,
-                  child: const Icon(Icons.sticky_note_2),
                 ),
               ),
             // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
@@ -4214,6 +4355,39 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     return FutureBuilder<List<WordRelationRow>>(
       future: _wordRelationsFuture,
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withOpacity(0.35),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  context.t.common.loading,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
         final rows = snapshot.data;
 
         if (rows == null || rows.isEmpty) {

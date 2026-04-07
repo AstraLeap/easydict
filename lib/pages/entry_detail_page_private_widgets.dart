@@ -14,6 +14,7 @@ class _DraggableNavPanel extends StatefulWidget {
   final GlobalKey<DictionaryNavigationPanelState>? navPanelKey;
   final ValueNotifier<int>? navPanelVersionNotifier;
   final Future<void> Function(String dictId)? onExpandDictionary;
+  final VoidCallback? onNoteTap;
 
   const _DraggableNavPanel({
     required this.entryGroup,
@@ -25,6 +26,7 @@ class _DraggableNavPanel extends StatefulWidget {
     this.navPanelKey,
     this.navPanelVersionNotifier,
     this.onExpandDictionary,
+    this.onNoteTap,
   });
 
   @override
@@ -152,6 +154,7 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
       maxHeight: maxNavHeight,
       onOverflowChanged: _onOverflowChanged,
       onExpandDictionary: widget.onExpandDictionary,
+      onNoteTap: widget.onNoteTap,
     );
 
     // 固定在右边缘，手机端更贴近边缘

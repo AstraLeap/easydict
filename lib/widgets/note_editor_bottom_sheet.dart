@@ -282,14 +282,12 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                           tooltip: context.t.common.save,
                           color: colorScheme.primary,
                         ),
-                        const SizedBox(width: 8),
                         // 撤销
                         _buildToolbarButton(
                           icon: Icons.undo,
                           onPressed: _currentEditPosition > 0 ? _undo : null,
                           tooltip: context.t.common.undo,
                         ),
-                        const SizedBox(width: 8),
                         // 重做
                         _buildToolbarButton(
                           icon: Icons.redo,
@@ -304,17 +302,14 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                             _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
                             size: 20,
                           ),
-                          visualDensity: VisualDensity.compact,
                           tooltip: _isFullScreen
                               ? context.t.common.exitFullscreen
                               : context.t.common.fullscreen,
                         ),
-                        const SizedBox(width: 8),
                         // 关闭
                         IconButton(
                           onPressed: () => Navigator.pop(context, false),
                           icon: const Icon(Icons.close, size: 20),
-                          visualDensity: VisualDensity.compact,
                         ),
                       ],
                     ),
@@ -378,8 +373,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       ),
       tooltip: tooltip,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
     );
   }
 

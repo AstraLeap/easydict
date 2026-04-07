@@ -407,19 +407,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   /// 边打边搜 - 立即前置匹配，无防抖
   void _onSearchTextChanged(String text) {
-    Logger.d(
-      '_onSearchTextChanged called: text=|$text| _isSearchingWord=$_isSearchingWord',
-      tag: 'PrefixSearch',
-    );
-
-    if (_isSearchingWord) {
-      Logger.d('_onSearchTextChanged: 跳过，正在搜索中', tag: 'PrefixSearch');
-      return;
-    }
+    if (_isSearchingWord) return;
 
     final trimmedText = text.trim();
     if (trimmedText.isEmpty) {
-      Logger.d('_onSearchTextChanged: 空文本，清空结果', tag: 'PrefixSearch');
       _prefixSearchToken++;
       setState(() {
         _searchResults = [];
@@ -431,13 +422,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
     // 字母文字 / auto 模式：至少2个字符才触发（表意文字单字符除外）
     final needsMinTwo = _prefixSearchNeedsMinTwoChars(trimmedText);
-    Logger.d(
-      '_onSearchTextChanged: trimmedText=|$trimmedText| length=${trimmedText.length} needsMinTwo=$needsMinTwo selectedGroup=$_selectedGroup',
-      tag: 'PrefixSearch',
-    );
-
     if (needsMinTwo && trimmedText.length < 2) {
-      Logger.d('_onSearchTextChanged: 字母文字需要至少2个字符，跳过', tag: 'PrefixSearch');
       _prefixSearchToken++;
       setState(() {
         _searchResults = [];
@@ -448,23 +433,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     }
 
     final currentToken = ++_prefixSearchToken;
-    Logger.i(
-      '_onSearchTextChanged → getPreSearchCandidates text=|$text| lang=$_selectedGroup exactMatch=$_exactMatch token=$currentToken',
-      tag: 'PrefixSearch',
-    );
 
     () async {
-      if (currentToken != _prefixSearchToken) {
-        Logger.d(
-          '_onSearchTextChanged: token不匹配，跳过 (current=$currentToken, latest=$_prefixSearchToken)',
-          tag: 'PrefixSearch',
-        );
-        return;
-      }
+      if (currentToken != _prefixSearchToken) return;
 
       // 传入原始文本（含大小写、尾部空格），供 Dart 层 startsWith 比较；
       // DatabaseService 内部会 trim 后再用于 SQL 查询。
-      final stopwatch = Stopwatch()..start();
       final results = await _dbService.getPreSearchCandidates(
         text,
         sourceLanguage: _selectedGroup,
@@ -472,31 +446,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         biaoyiExactMatch: _exactMatch,
         limit: 8,
       );
-      stopwatch.stop();
 
-      Logger.i(
-        '_onSearchTextChanged ← getPreSearchCandidates 返回 ${results.length} 条结果，耗时 ${stopwatch.elapsedMilliseconds}ms: $results',
-        tag: 'PrefixSearch',
-      );
-
-      if (!mounted || currentToken != _prefixSearchToken) {
-        Logger.d(
-          '_onSearchTextChanged: 组件已卸载或token不匹配，跳过更新UI',
-          tag: 'PrefixSearch',
-        );
-        return;
-      }
+      if (!mounted || currentToken != _prefixSearchToken) return;
 
       setState(() {
         _searchResults = results;
         _showSearchResults = results.isNotEmpty;
         _selectedResultIndex = -1;
       });
-
-      Logger.d(
-        '_onSearchTextChanged: UI已更新，showSearchResults=$_showSearchResults',
-        tag: 'PrefixSearch',
-      );
     }();
   }
 

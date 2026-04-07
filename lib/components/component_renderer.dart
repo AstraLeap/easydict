@@ -1469,12 +1469,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
   // 折叠的 child_xxxx 条目路径集合（默认展开，点击后折叠）
   Set<String> _collapsedChildPaths = {};
 
+  // data tab 强制选中映射：key=data路径（到 data 为止），value=需要展开的tab key
+  final Map<String, String> _forcedDataTabSelections = {};
+
   /// ASCII 字母判断助手（替代循环内 RegExp 创建）
   static bool _isAsciiLetter(int cu) =>
       (cu >= 65 && cu <= 90) || (cu >= 97 && cu <= 122);
 
   // 用于存储元素 Key 的 Map，用于精确滚动
   final Map<String, GlobalKey> _elementKeys = {};
+  // 记录当前已渲染的可点击路径，用于更精确的高亮定位。
+  final Set<String> _renderedTappablePaths = {};
   // 待处理的滚动请求队列
   final List<_PendingScrollRequest> _pendingScrollRequests = [];
 
@@ -1947,12 +1952,17 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _hiddenLanguagesNotifier.value = [];
       }
       _elementKeys.clear();
+      _sectionKeys.clear();
+      _renderedTappablePaths.clear();
       _pendingScrollRequests.clear();
       _isVisible = false;
       _hasBeenVisible = false;
       _initSourceLanguage();
     } else if (!identical(oldWidget.entry, widget.entry)) {
-      // 同一条目内容被更新（如编辑 JSON 后），同步 _localEntry 但保留其余是态
+      // 同一条目内容被更新（如编辑 JSON 后），同步 _localEntry 并清理 GlobalKey 避免重复
+      _elementKeys.clear();
+      _sectionKeys.clear();
+      _renderedTappablePaths.clear();
       setState(() {
         _localEntry = widget.entry;
       });
@@ -1961,6 +1971,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   /// 滚动到指定路径的元素
   void scrollToElement(String path, {int retryCount = 0}) {
+    // 外部传入的路径不带前缀，需要加上前缀才能在 _elementKeys 中找到
+    final prefixedPath = '$_pathPrefix.$path';
+    // 若目标在 data.<tab> 内，先确保对应 tab 展开，避免目标节点尚未构建导致滚动失败
+    final dataTabSelectionChanged = _ensureDataTabExpandedForPath(prefixedPath);
+
     // 如果组件还没有可见，将请求加入队列等待处理
     if (!_hasBeenVisible) {
       Logger.d(
@@ -1971,10 +1986,45 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
-    // 外部传入的路径不带前缀，需要加上前缀才能在 _elementKeys 中找到
-    final prefixedPath = '$_pathPrefix.$path';
+    if (dataTabSelectionChanged) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _executeScrollToElement(prefixedPath, retryCount: retryCount);
+        }
+      });
+      return;
+    }
+
     // 直接执行滚动，GlobalKey 会在 _getElementKey 中按需创建
     _executeScrollToElement(prefixedPath, retryCount: retryCount);
+  }
+
+  /// 解析路径中的 data.<tabKey> 并确保对应 tab 已展开。
+  /// 返回 true 表示选择发生变化，需要等待一帧后再滚动。
+  bool _ensureDataTabExpandedForPath(String prefixedPath) {
+    final parts = prefixedPath.split('.');
+    if (parts.length < 2) return false;
+
+    for (int i = parts.length - 2; i >= 0; i--) {
+      if (parts[i] == 'data') {
+        final tabKey = parts[i + 1];
+        if (tabKey.isEmpty) return false;
+        final dataPath = parts.sublist(0, i + 1).join('.');
+        final previous = _forcedDataTabSelections[dataPath];
+        if (previous == tabKey) return false;
+
+        if (mounted) {
+          setState(() {
+            _forcedDataTabSelections[dataPath] = tabKey;
+          });
+        } else {
+          _forcedDataTabSelections[dataPath] = tabKey;
+        }
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /// 执行实际的滚动操作
@@ -2002,9 +2052,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
           curve: Curves.easeInOut,
           alignment: 0.1,
         ).then((_) {
-          // 滚动完成后触发闪烁效果
+          // 滚动完成后优先高亮最精确的已渲染目标路径。
           if (mounted) {
-            _triggerHighlight(foundPath);
+            final highlightPath = _resolveBestHighlightPath(
+              requestedPath: path,
+              fallbackPath: foundPath,
+            );
+            _triggerHighlight(highlightPath);
           }
         });
         return;
@@ -2118,17 +2172,48 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _highlightingPaths.contains(path);
   }
 
+  /// 在已渲染路径里，选择与 requestedPath 最匹配（最长前缀）的路径用于高亮。
+  /// 若找不到匹配则回退到 fallbackPath。
+  String _resolveBestHighlightPath({
+    required String requestedPath,
+    required String fallbackPath,
+  }) {
+    String? best;
+    for (final candidate in _renderedTappablePaths) {
+      if (candidate == requestedPath || requestedPath.startsWith('$candidate.')) {
+        if (best == null || candidate.length > best.length) {
+          best = candidate;
+        }
+      }
+    }
+    return best ?? fallbackPath;
+  }
+
   /// 判断路径是否需要生成 GlobalKey（只有释义条目、phrase、board和child_xxxx需要）
   bool _shouldGenerateGlobalKey(String path) {
-    // 释义条目路径: sense_group.x.sense.y 或 sense.x
-    if (path.contains('sense_group') && path.contains('sense')) return true;
-    if (RegExp(r'^sense\.\d+$').hasMatch(path)) return true;
+    final normalizedPath = _stripPathPrefix(path);
 
-    // phrase
-    if (path == 'phrase') return true;
+    // 释义条目路径: sense_group.x.sense.y 或 sense.x
+    if (normalizedPath.contains('sense_group') &&
+        normalizedPath.contains('sense')) {
+      return true;
+    }
+    if (RegExp(r'^sense\.\d+$').hasMatch(normalizedPath)) return true;
+
+    // phrase（支持顶层 phrase 和嵌套路径 *.phrase）
+    if (normalizedPath == 'phrase' || normalizedPath.endsWith('.phrase')) {
+      return true;
+    }
+
+    // example（支持 example、example.n 以及其下级路径回退）
+    if (normalizedPath == 'example' ||
+        normalizedPath.endsWith('.example') ||
+        normalizedPath.contains('.example.')) {
+      return true;
+    }
 
     // child_xxxx 元素（顶层 child_xxxx key 或 child_xxxx.0, child_xxxx.1 等索引路径）
-    final parts = path.split('.');
+    final parts = normalizedPath.split('.');
     if (parts.isNotEmpty && _isChildKey(parts[0])) {
       // 支持 child_xxxx 或 child_xxxx.n 格式
       if (parts.length == 1) return true; // 单个 Map 格式
@@ -2174,6 +2259,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final textKey = customTextKey ?? GlobalKey();
     final pathStr = _convertPathToString(pathData.path);
 
+    // 记录当前已渲染的路径，供滚动后精确高亮使用。
+    _renderedTappablePaths.add(pathStr);
+
     // 延迟加载 GlobalKey：只有在需要精确滚动时才创建
     final elementKey = _getElementKey(pathStr);
 
@@ -2182,7 +2270,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // 使用 Listener 包装以支持手机端文本选择菜单
     // onPointerDown 记录路径数据，用于菜单操作
-    return _HighlightWrapper(
+    Widget tappableChild = _HighlightWrapper(
       isHighlighting: isHighlighting,
       child: _TappableWrapper(
         pathData: pathData,
@@ -2197,6 +2285,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
         ),
       ),
     );
+
+    // 将 GlobalKey 实际挂载到 widget 树，确保可通过 currentContext 精确定位。
+    if (elementKey != null) {
+      tappableChild = Container(key: elementKey, child: tappableChild);
+    }
+
+    return tappableChild;
   }
 
   void _handleDoubleTapOnText(
@@ -2847,27 +2942,32 @@ class ComponentRendererState extends State<ComponentRenderer> {
       );
     }
 
-    // 如果有来源引用或 comment，使用 Column 布局
-    if (sourceWidget != null || commentWidget != null) {
-      return Container(
-        margin: EdgeInsets.only(bottom: 6, left: leftMargin),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text.rich(TextSpan(children: spans), key: exampleTextKey),
-            if (sourceWidget != null) ...[
-              const SizedBox(height: 2),
-              Align(alignment: Alignment.centerRight, child: sourceWidget),
-            ],
-            if (commentWidget != null) commentWidget,
-          ],
-        ),
-      );
-    }
+    final exampleBody = sourceWidget != null || commentWidget != null
+        ? Container(
+            margin: EdgeInsets.only(bottom: 6, left: leftMargin),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(TextSpan(children: spans), key: exampleTextKey),
+                if (sourceWidget != null) ...[
+                  const SizedBox(height: 2),
+                  Align(alignment: Alignment.centerRight, child: sourceWidget),
+                ],
+                if (commentWidget != null) commentWidget,
+              ],
+            ),
+          )
+        : Container(
+            margin: EdgeInsets.only(bottom: 6, left: leftMargin),
+            child: Text.rich(TextSpan(children: spans), key: exampleTextKey),
+          );
 
-    return Container(
-      margin: EdgeInsets.only(bottom: 6, left: leftMargin),
-      child: Text.rich(TextSpan(children: spans), key: exampleTextKey),
+    // 为 example 行注册可滚动/可高亮路径，确保 example.n.en 可回退到 example.n 精确闪烁。
+    return _buildTappableWidget(
+      context: context,
+      pathData: _PathData(basePath, 'Example'),
+      customTextKey: exampleTextKey,
+      child: exampleBody,
     );
   }
 
@@ -2957,7 +3057,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
   }
 
-  final Map<int, GlobalKey> _sectionKeys = {};
+  final Map<String, GlobalKey> _sectionKeys = {};
   String? _sourceLanguage;
   Map<String, Map<String, double>> _fontScales = {};
   List<String> _targetLanguages = [];
@@ -3016,7 +3116,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   void _scrollToSection(int sectionIndex) {
-    final key = _sectionKeys[sectionIndex];
+    final key = _sectionKeys['$_pathPrefix.sense_group.$sectionIndex'];
     if (key == null) return;
     final elementContext = key.currentContext;
     if (elementContext == null) return;
@@ -5480,6 +5580,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final keys = value.keys.toList();
+    final dataPath = path ?? PathScope.of(context);
+    final dataPathStr = _convertPathToString(dataPath);
 
     if (keys.isEmpty) {
       return const SizedBox.shrink();
@@ -5488,13 +5590,30 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _DataTabWidget(
       keys: keys,
       value: value,
-      path: path ?? PathScope.of(context),
+      path: dataPath,
       colorScheme: colorScheme,
       contentBuilder: (board, p) => _buildBoardContent(context, board, p),
       onElementTap: _handleElementTap,
       onElementSecondaryTap: _handleElementSecondaryTap,
       sourceLanguage: _sourceLanguage,
       fontScales: _fontScales,
+      forcedSelectedKey: _forcedDataTabSelections[dataPathStr],
+      onTabSelectionChanged: (selectedKey) {
+        final previous = _forcedDataTabSelections[dataPathStr];
+        if (selectedKey == null) {
+          if (previous != null) {
+            setState(() {
+              _forcedDataTabSelections.remove(dataPathStr);
+            });
+          }
+          return;
+        }
+        if (previous != selectedKey) {
+          setState(() {
+            _forcedDataTabSelections[dataPathStr] = selectedKey;
+          });
+        }
+      },
     );
   }
 
@@ -7936,7 +8055,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
         final groupPath = 'sense_group.$groupIndex';
 
         return Column(
-          key: _sectionKeys.putIfAbsent(groupIndex, () => GlobalKey()),
+          key: _sectionKeys.putIfAbsent(
+            _convertPathToString([
+              ...PathScope.of(context),
+              'sense_group.$groupIndex',
+            ]),
+            () => GlobalKey(),
+          ),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (groupName.isNotEmpty || groupSubName.isNotEmpty)
@@ -8129,9 +8254,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       fontScales: _fontScales,
     );
 
-    // 获取 phrases 的 GlobalKey 用于滚动定位
-    final phrasesKey = _getElementKey('phrase');
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -8141,6 +8263,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
           key: 'phrases',
           child: Builder(
             builder: (context) {
+              // 统一注册为 *.phrase，确保与导航侧 targetPath=phrase/child_xxxx.n 一致
+              final currentPath = PathScope.of(context);
+              final basePath = List<String>.from(currentPath);
+              if (basePath.isNotEmpty && basePath.last == 'phrases') {
+                basePath.removeLast();
+              }
+              final phrasePath = [...basePath, 'phrase'];
+              final phrasesKey = _getElementKey(
+                _convertPathToString(phrasePath),
+              );
               return Container(
                 key: phrasesKey, // 绑定 GlobalKey 用于滚动定位
                 padding: const EdgeInsets.symmetric(
@@ -8312,14 +8444,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 默认展开：只有明确标记为折叠时才折叠
     final isExpanded = !_collapsedChildPaths.contains(pathStr);
 
-    // 使用 key 作为 GlobalKey 路径
-    final elementKey = _getElementKey(pathStr);
-
     return PathScope.append(
       context,
       key: key,
       child: Builder(
         builder: (context) {
+          // 使用完整路径生成唯一 GlobalKey，避免前缀不一致导致无法定位
+          final childPath = _convertPathToString(PathScope.of(context));
+          final elementKey = _getElementKey(childPath);
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             child: Column(
@@ -8404,14 +8536,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // 默认展开：只有明确标记为折叠时才折叠
     final isExpanded = !_collapsedChildPaths.contains(pathStr);
 
-    // 使用 key 作为 GlobalKey 路径
-    final elementKey = _getElementKey(pathStr);
-
     return PathScope.append(
       context,
       key: key,
       child: Builder(
         builder: (context) {
+          // 使用完整路径生成唯一 GlobalKey，避免前缀不一致导致无法定位
+          final childPath = _convertPathToString(PathScope.of(context));
+          final elementKey = _getElementKey(childPath);
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             child: Column(
@@ -8523,7 +8655,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   // headword + pos + pronunciation 同一行 - GlobalKey 绑定在 headword 行
                   if (displayText.isNotEmpty)
                     Padding(
-                      key: _getElementKey(pathStr), // GlobalKey 绑定在 headword 行
+                      key: _getElementKey(
+                        _convertPathToString(PathScope.of(context)),
+                      ), // GlobalKey 绑定在 headword 行
                       padding: EdgeInsets.zero,
                       child: Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
@@ -8855,8 +8989,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
         }
       }
 
-      // 获取 board 的 GlobalKey 用于滚动定位
-      final boardKey = _getElementKey(key);
+      // 获取 board 的 GlobalKey 用于滚动定位（使用完整路径）
+      final boardKey = _getElementKey(
+        _convertPathToString([...PathScope.of(context), key]),
+      );
 
       if (predefinedRenderers.containsKey(key)) {
         // 预定义渲染器优先
@@ -10259,6 +10395,8 @@ class _DataTabWidget extends StatefulWidget {
   onElementSecondaryTap;
   final String? sourceLanguage;
   final Map<String, Map<String, double>> fontScales;
+  final String? forcedSelectedKey;
+  final void Function(String? selectedKey)? onTabSelectionChanged;
 
   const _DataTabWidget({
     required this.keys,
@@ -10270,6 +10408,8 @@ class _DataTabWidget extends StatefulWidget {
     this.onElementSecondaryTap,
     this.sourceLanguage,
     required this.fontScales,
+    this.forcedSelectedKey,
+    this.onTabSelectionChanged,
   });
 
   @override
@@ -10310,6 +10450,31 @@ class _ChamferCornerClipper extends CustomClipper<Path> {
 class _DataTabWidgetState extends State<_DataTabWidget> {
   int? _selectedIndex;
 
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = _resolveIndexByKey(widget.forcedSelectedKey);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DataTabWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.forcedSelectedKey != widget.forcedSelectedKey) {
+      final forcedIndex = _resolveIndexByKey(widget.forcedSelectedKey);
+      if (_selectedIndex != forcedIndex) {
+        setState(() {
+          _selectedIndex = forcedIndex;
+        });
+      }
+    }
+  }
+
+  int? _resolveIndexByKey(String? key) {
+    if (key == null || key.isEmpty) return null;
+    final index = widget.keys.indexOf(key);
+    return index >= 0 ? index : null;
+  }
+
   void _selectTab(int? index, String key) {
     setState(() {
       if (_selectedIndex == index) {
@@ -10318,6 +10483,10 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
         _selectedIndex = index;
       }
     });
+    final selectedKey = _selectedIndex != null
+        ? widget.keys[_selectedIndex!]
+        : null;
+    widget.onTabSelectionChanged?.call(selectedKey);
   }
 
   @override

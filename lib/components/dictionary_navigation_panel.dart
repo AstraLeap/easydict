@@ -18,6 +18,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
   final double maxHeight; // 最大高度，传入屏幕高度的 70%
   final void Function(bool isOverflow)? onOverflowChanged; // 溢出状态变化回调
   final Future<void> Function(String dictId)? onExpandDictionary; // 展开词典回调（异步）
+  final VoidCallback? onNoteTap; // 用户笔记按钮点击回调
 
   const DictionaryNavigationPanel({
     super.key,
@@ -29,6 +30,7 @@ class DictionaryNavigationPanel extends StatefulWidget {
     this.maxHeight = double.infinity,
     this.onOverflowChanged,
     this.onExpandDictionary,
+    this.onNoteTap,
   });
 
   @override
@@ -404,6 +406,11 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
 
     final List<Widget> mixedItems = [];
 
+    // 添加用户笔记按钮（放在最前面）
+    if (widget.onNoteTap != null) {
+      mixedItems.add(_buildNoteButton(context));
+    }
+
     // 添加上方词典（只显示logo，不显示section按钮）
     for (int i = 0; i < currentDictIndex; i++) {
       final dict = allDicts[i];
@@ -533,6 +540,38 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
           child: child,
         );
       },
+    );
+  }
+
+  // 构建用户笔记按钮
+  Widget _buildNoteButton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      child: InkWell(
+        onTap: widget.onNoteTap,
+        borderRadius: BorderRadius.circular(20),
+        mouseCursor: SystemMouseCursors.click,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: colorScheme.primary.withOpacity(0.65),
+              width: 1.5,
+            ),
+          ),
+          child: Center(
+            child: Icon(
+              Icons.sticky_note_2,
+              size: 20,
+              color: colorScheme.primary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 

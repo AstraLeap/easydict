@@ -782,13 +782,22 @@ class DictionaryEntry {
             : {},
         pronunciations: _parsePronunciations(json['pronunciation']),
         groups: _parseGroups(json['groups']),
-        sense: json['sense'] != null
-            ? (json['sense'] as List<dynamic>)
-                  .map((e) => e as Map<String, dynamic>?)
-                  .where((e) => e != null)
-                  .map((e) => e!)
-                  .toList()
-            : [],
+        sense: () {
+          final s = json['sense'];
+          if (s == null) return <Map<String, dynamic>>[];
+          if (s is List<dynamic>) {
+            return s
+                .map((e) => e as Map<String, dynamic>?)
+                .where((e) => e != null)
+                .map((e) => e!)
+                .toList();
+          }
+          // 如果是 Map 格式，转换为单元素列表
+          if (s is Map<String, dynamic>) {
+            return [s];
+          }
+          return <Map<String, dynamic>>[];
+        }(),
         phrase: () {
           // 只支持 'phrases' 字段（唯一正确形式）
           final p = json['phrases'];
@@ -807,13 +816,22 @@ class DictionaryEntry {
               .where((e) => e.isNotEmpty)
               .toList();
         }(),
-        senseGroup: json['sense_group'] != null
-            ? (json['sense_group'] as List<dynamic>)
-                  .map((e) => e as Map<String, dynamic>?)
-                  .where((e) => e != null)
-                  .map((e) => e!)
-                  .toList()
-            : [],
+        senseGroup: () {
+          final sg = json['sense_group'];
+          if (sg == null) return <Map<String, dynamic>>[];
+          if (sg is List<dynamic>) {
+            return sg
+                .map((e) => e as Map<String, dynamic>?)
+                .where((e) => e != null)
+                .map((e) => e!)
+                .toList();
+          }
+          // 如果是 Map 格式，转换为单元素列表
+          if (sg is Map<String, dynamic>) {
+            return [sg];
+          }
+          return <Map<String, dynamic>>[];
+        }(),
         hiddenLanguages: json['hidden_languages'] != null
             ? (json['hidden_languages'] as List<dynamic>)
                   .map((e) => e?.toString() ?? '')
@@ -1799,22 +1817,9 @@ class DatabaseService {
   }) async {
     // query 保留原始输入（含大小写、尾部空格），用于 Dart 层 startsWith 比较。
     // SQL 使用预计算的标准化结果进行索引查找。
-    Logger.i(
-      'getPreSearchCandidates 开始: query=|$query| lang=$sourceLanguage exactMatch=$exactMatch '
-      'biaoyiExactMatch=$biaoyiExactMatch limit=$limit',
-      tag: 'PrefixSearch',
-    );
-
-    if (query.isEmpty) {
-      Logger.d('getPreSearchCandidates: 查询为空，返回空列表', tag: 'PrefixSearch');
-      return [];
-    }
+    if (query.isEmpty) return [];
 
     final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
-    Logger.i(
-      'getPreSearchCandidates: 启用的词典数量=${enabledDicts.length}',
-      tag: 'PrefixSearch',
-    );
 
     // ── 过滤要搜索的词典 ────────────────────────────────────────────
     // auto 模式：搜索所有启用词典（表音 + 表意），不按语言过滤
@@ -1828,19 +1833,7 @@ class DatabaseService {
               )
               .toList();
 
-    Logger.i(
-      'getPreSearchCandidates: sourceLanguage=$sourceLanguage 过滤后词典数量=${filteredDicts.length}',
-      tag: 'PrefixSearch',
-    );
-
-    for (final m in filteredDicts) {
-      Logger.d('  - 将搜索词典: ${m.id} (${m.sourceLanguage})', tag: 'PrefixSearch');
-    }
-
-    if (filteredDicts.isEmpty) {
-      Logger.w('getPreSearchCandidates: 过滤后无词典可搜索，返回空列表', tag: 'PrefixSearch');
-      return [];
-    }
+    if (filteredDicts.isEmpty) return [];
 
     // ── 预计算所有涉及语言的标准化结果 ──────────────────────────────────────
     final languageCodes = filteredDicts
@@ -1855,11 +1848,6 @@ class DatabaseService {
       originalLanguageCodes,
     );
 
-    Logger.d(
-      'getPreSearchCandidates: 预计算 ${languageCodes.length} 种语言的标准化结果',
-      tag: 'PrefixSearch',
-    );
-
     // ── 并行搜索各词典 ──────────────────────────────────────────────
     final futures = filteredDicts.map((metadata) async {
       try {
@@ -1869,11 +1857,6 @@ class DatabaseService {
           metadata.sourceLanguage,
         );
         final normQuery = normQueries[langCode]!;
-
-        Logger.d(
-          'dict=${metadata.id}(${metadata.sourceLanguage}) isbiaoyi=$isbiaoyi sourceLanguage=$sourceLanguage',
-          tag: 'PrefixSearch',
-        );
 
         if (sourceLanguage == 'auto') {
           // auto 模式：表意词典搜 headword_normalized + phonetic；表音词典搜 headword_normalized
@@ -1911,12 +1894,6 @@ class DatabaseService {
           );
         }
       } catch (e, st) {
-        Logger.e(
-          'dict=${metadata.id} 搜索异常: $e',
-          tag: 'PrefixSearch',
-          error: e,
-          stackTrace: st,
-        );
         return <_Candidate>[];
       }
     }).toList();
@@ -2108,21 +2085,11 @@ class DatabaseService {
         .cast<String>()
         .toList();
 
-    Logger.d(
-      '[exactSearch][auto] query=|$query| headwordNorm=|$headwordNorm| qMode=$qMode '
-      'SQL raw(${headwords.length})=${headwords.take(20).toList()}',
-      tag: 'PrefixSearch',
-    );
-
     if (exactMatch && isNormalMode) {
       final filtered = headwords
           .where((h) => h.startsWith(query))
           .take(limit)
           .toList();
-      Logger.d(
-        '[exactSearch][auto] filtered(${filtered.length})=$filtered',
-        tag: 'PrefixSearch',
-      );
       return filtered.map((h) => _Candidate(h, '', 1)).toList();
     }
 
@@ -2285,21 +2252,11 @@ class DatabaseService {
         .cast<String>()
         .toList();
 
-    Logger.d(
-      '[exactSearch] query=|$query| headwordNorm=|$headwordNorm| qMode=$qMode '
-      'SQL raw(${headwords.length})=${headwords.take(20).toList()}',
-      tag: 'PrefixSearch',
-    );
-
     if (exactMatch && isNormalMode) {
-      final filtered = headwords
+final filtered = headwords
           .where((h) => h.startsWith(query))
           .take(limit)
           .toList();
-      Logger.d(
-        '[exactSearch] filtered(${filtered.length})=$filtered',
-        tag: 'PrefixSearch',
-      );
       return filtered.map((h) => _Candidate(h, '', 1)).toList();
     }
 

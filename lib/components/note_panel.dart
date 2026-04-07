@@ -96,6 +96,21 @@ class _NotePanelState extends State<NotePanel> {
     widget.onLinkTap?.call(href);
   }
 
+  /// Encode whitespace in markdown link destinations so markdown parser
+  /// treats links with spaces (e.g. `More examples`) as valid hrefs.
+  String _normalizeMarkdownLinks(String markdown) {
+    final linkPattern = RegExp(r'\[([^\]]+)\]\(([^)\r\n]+)\)');
+    return markdown.replaceAllMapped(linkPattern, (match) {
+      final label = match.group(1)!;
+      final href = match.group(2)!;
+      if (!href.contains(' ')) {
+        return match.group(0)!;
+      }
+      final encodedHref = href.replaceAll(' ', '%20');
+      return '[$label]($encodedHref)';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // 如果正在加载，显示加载指示器
@@ -178,10 +193,11 @@ class _NotePanelState extends State<NotePanel> {
   }
 
   Widget _buildMarkdownView(ColorScheme colorScheme) {
+    final normalizedContent = _normalizeMarkdownLinks(_note?.content ?? '');
     return Padding(
       padding: const EdgeInsets.all(12),
       child: MarkdownBody(
-        data: _note?.content ?? '',
+        data: normalizedContent,
         styleSheet: MarkdownStyleSheet(
           p: TextStyle(color: colorScheme.onSurface),
           a: TextStyle(color: colorScheme.primary),
