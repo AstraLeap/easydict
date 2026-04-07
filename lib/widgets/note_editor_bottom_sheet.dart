@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/markdown.dart';
 import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../i18n/strings.g.dart';
 import '../services/note_service.dart';
+import '../services/preferences_service.dart';
 
 /// 笔记编辑器底部弹窗
 /// 使用 re_editor 实现纯 Flutter 的 Markdown 编辑体验
@@ -12,6 +14,7 @@ class NoteEditorBottomSheet extends StatefulWidget {
   final String language;
   final String? linkToAppend;
   final double statusBarHeight;
+  final void Function(String path)? onLinkTap;
 
   const NoteEditorBottomSheet({
     super.key,
@@ -19,6 +22,7 @@ class NoteEditorBottomSheet extends StatefulWidget {
     required this.language,
     this.linkToAppend,
     required this.statusBarHeight,
+    this.onLinkTap,
   });
 
   /// 显示笔记编辑器底部弹窗
@@ -27,6 +31,7 @@ class NoteEditorBottomSheet extends StatefulWidget {
     required String word,
     required String language,
     String? linkToAppend,
+    void Function(String path)? onLinkTap,
   }) async {
     final statusBarHeight = MediaQuery.of(context).viewPadding.top;
     final result = await showModalBottomSheet<bool>(
@@ -38,6 +43,7 @@ class NoteEditorBottomSheet extends StatefulWidget {
         language: language,
         linkToAppend: linkToAppend,
         statusBarHeight: statusBarHeight,
+        onLinkTap: onLinkTap,
       ),
     );
     return result ?? false;
@@ -49,10 +55,11 @@ class NoteEditorBottomSheet extends StatefulWidget {
 
 class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   final NoteService _noteService = NoteService();
+  final PreferencesService _preferencesService = PreferencesService();
   late CodeLineEditingController _controller;
-  String _initialContent = '';
   bool _isLoading = true;
   bool _isFullScreen = false;
+  bool _isPreviewMode = false;
 
   // 撤销/重做栈
   final List<String> _undoStack = [];
@@ -64,10 +71,11 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   void initState() {
     super.initState();
     _controller = CodeLineEditingController();
-    _loadNote();
+    _loadInitialState();
   }
 
-  Future<void> _loadNote() async {
+  Future<void> _loadInitialState() async {
+    final previewMode = await _preferencesService.getNoteEditorPreviewMode();
     final note = await _noteService.getNote(widget.word, widget.language);
     String content = note?.content ?? '';
 
@@ -80,11 +88,11 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       }
     }
 
-    _initialContent = content;
     _controller.text = content;
     _undoStack.add(content);
     _controller.addListener(_trackChanges);
     setState(() {
+      _isPreviewMode = previewMode;
       _isLoading = false;
     });
   }
@@ -142,6 +150,33 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     if (mounted) {
       Navigator.of(context).pop(true);
     }
+  }
+
+  Future<void> _togglePreviewMode() async {
+    final newValue = !_isPreviewMode;
+    setState(() {
+      _isPreviewMode = newValue;
+    });
+    await _preferencesService.setNoteEditorPreviewMode(newValue);
+  }
+
+  String _normalizeMarkdownLinks(String markdown) {
+    final linkPattern = RegExp(r'\[([^\]]+)\]\(([^)\r\n]+)\)');
+    return markdown.replaceAllMapped(linkPattern, (match) {
+      final label = match.group(1)!;
+      final href = match.group(2)!;
+      if (!href.contains(' ')) {
+        return match.group(0)!;
+      }
+      final encodedHref = href.replaceAll(' ', '%20');
+      return '[$label]($encodedHref)';
+    });
+  }
+
+  void _handlePreviewLinkTap(String href) {
+    final decoded = Uri.decodeComponent(href);
+    Navigator.of(context).pop(false);
+    widget.onLinkTap?.call(decoded);
   }
 
   void _insertMarkdownSyntax(String before, [String? after]) {
@@ -227,6 +262,8 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     final colorScheme = Theme.of(context).colorScheme;
     final screenSize = MediaQuery.of(context).size;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final noteFontSize = Theme.of(context).textTheme.bodyMedium?.fontSize ?? 15;
+    final previewBackground = colorScheme.surface;
 
     return DraggableScrollableSheet(
       initialChildSize: _isFullScreen ? 1.0 : 0.7,
@@ -255,23 +292,6 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
               ? const Center(child: CircularProgressIndicator())
               : Column(
                   children: [
-                    // 标题栏
-                    Row(
-                      children: [
-                        Icon(Icons.sticky_note_2_outlined, color: colorScheme.primary, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            widget.word,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     // 工具栏
                     Row(
                       children: [
@@ -294,7 +314,15 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                           onPressed: _currentEditPosition < _undoStack.length - 1 ? _redo : null,
                           tooltip: context.t.common.redo,
                         ),
-                        const Spacer(),
+                         const Spacer(),
+                        IconButton(
+                          onPressed: _togglePreviewMode,
+                          icon: Icon(
+                            _isPreviewMode ? Icons.edit_note : Icons.preview,
+                            size: 20,
+                          ),
+                          tooltip: context.t.note.preview,
+                        ),
                         // 全屏
                         IconButton(
                           onPressed: () => setState(() => _isFullScreen = !_isFullScreen),
@@ -313,40 +341,96 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    // 代码编辑器
+                    const SizedBox(height: 8),
+                    // 编辑器 / 预览
                     Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: colorScheme.outlineVariant.withOpacity(0.5),
-                          ),
-                        ),
-                        child: CodeEditor(
-                          controller: _controller,
-                          style: CodeEditorStyle(
-                            fontSize: 15,
-                            fontFamily: 'monospace',
-                            backgroundColor: isDark
-                                ? colorScheme.primaryContainer.withOpacity(0.05)
-                                : colorScheme.primaryContainer.withOpacity(0.08),
-                            codeTheme: CodeHighlightTheme(
-                              languages: {
-                                'markdown': CodeHighlightThemeMode(mode: langMarkdown)
-                              },
-                              theme: isDark
-                                  ? builtThemes['atom-one-dark']!
-                                  : builtThemes['atom-one-light']!,
+                      child: _isPreviewMode
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: previewBackground,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                                ),
+                              ),
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  return SingleChildScrollView(
+                                    padding: const EdgeInsets.all(12),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minWidth: constraints.maxWidth,
+                                      ),
+                                      child: _controller.text.trim().isEmpty
+                                          ? SizedBox(
+                                              height: 220,
+                                              child: Center(
+                                                child: Text(
+                                                  context.t.note.previewEmpty,
+                                                  style: TextStyle(
+                                                    color: colorScheme.onSurfaceVariant,
+                                                    fontSize: noteFontSize,
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                          : MarkdownBody(
+                                              data: _normalizeMarkdownLinks(_controller.text),
+                                              styleSheet: MarkdownStyleSheet(
+                                                p: TextStyle(
+                                                  color: colorScheme.onSurface,
+                                                  fontSize: noteFontSize,
+                                                ),
+                                                a: TextStyle(
+                                                  color: colorScheme.primary,
+                                                  fontSize: noteFontSize,
+                                                ),
+                                              ),
+                                              onTapLink: (text, href, title) {
+                                                if (href != null) {
+                                                  _handlePreviewLinkTap(href);
+                                                }
+                                              },
+                                            ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            )
+                          : Container(
+                              decoration: BoxDecoration(
+                                color: previewBackground,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                                ),
+                              ),
+                              child: CodeEditor(
+                                controller: _controller,
+                                style: CodeEditorStyle(
+                                  fontSize: noteFontSize,
+                                  fontFamily: 'monospace',
+                                  backgroundColor: previewBackground,
+                                  codeTheme: CodeHighlightTheme(
+                                    languages: {
+                                      'markdown': CodeHighlightThemeMode(mode: langMarkdown)
+                                    },
+                                    theme: isDark
+                                        ? builtThemes['atom-one-dark']!
+                                        : builtThemes['atom-one-light']!,
+                                  ),
+                                ),
+                                wordWrap: true,
+                                indicatorBuilder: (
+                                  context,
+                                  editingController,
+                                  chunkController,
+                                  notifier,
+                                ) {
+                                  return const SizedBox.shrink();
+                                },
+                              ),
                             ),
-                          ),
-                          wordWrap: true,
-                          indicatorBuilder: (context, editingController, chunkController, notifier) {
-                            // 不显示行号和折叠指示器
-                            return const SizedBox.shrink();
-                          },
-                        ),
-                      ),
                     ),
                   ],
                 ),

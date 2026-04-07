@@ -1845,6 +1845,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       word: _currentWord,
       language: language,
       linkToAppend: linkToAppend,
+      onLinkTap: _handleNoteLinkTap,
     );
     if (result && mounted) {
       setState(() {
@@ -1853,20 +1854,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         _notePanelRefreshVersion++;
       });
     }
-  }
-
-  /// 滚动到笔记面板
-  void _scrollToNote() {
-    if (!_hasNote) {
-      // 如果没有笔记，打开编辑器
-      _showNoteEditor();
-      return;
-    }
-    // 滚动到笔记面板（索引 0）
-    _itemScrollController.scrollTo(
-      index: 0,
-      duration: const Duration(milliseconds: 300),
-    );
   }
 
   /// 处理添加到笔记的回调
@@ -2123,7 +2110,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                     await WidgetsBinding.instance.endOfFrame;
                   }
                 },
-                onNoteTap: _scrollToNote,
               ),
             // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
             if (_isSearchMode)

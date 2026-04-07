@@ -150,6 +150,7 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final notePreviewBackground = colorScheme.surface;
     // 使用从父级传入的状态栏高度，因为底部弹出层的 context 中 viewPadding.top 为 0
     final statusBarHeight = widget.statusBarHeight;
     final screenSize = MediaQuery.of(context).size;
@@ -362,9 +363,7 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                     style: CodeEditorStyle(
                       fontSize: 14,
                       fontFamily: 'Consolas',
-                      backgroundColor: isDark
-                          ? colorScheme.primaryContainer.withOpacity(0.05)
-                          : colorScheme.primaryContainer.withOpacity(0.08),
+                      backgroundColor: notePreviewBackground,
                       codeTheme: CodeHighlightTheme(
                         languages: {
                           'json': CodeHighlightThemeMode(mode: langJson)

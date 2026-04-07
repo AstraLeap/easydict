@@ -320,6 +320,7 @@ class PreferencesService {
 
   // 笔记默认展开设置
   static const String _kNoteDefaultExpanded = 'note_default_expanded';
+  static const String _kNoteEditorPreviewMode = 'note_editor_preview_mode';
 
   Future<bool> getNoteDefaultExpanded() async {
     final p = await prefs;
@@ -329,6 +330,16 @@ class PreferencesService {
   Future<void> setNoteDefaultExpanded(bool expanded) async {
     final p = await prefs;
     await p.setBool(_kNoteDefaultExpanded, expanded);
+  }
+
+  Future<bool> getNoteEditorPreviewMode() async {
+    final p = await prefs;
+    return p.getBool(_kNoteEditorPreviewMode) ?? false;
+  }
+
+  Future<void> setNoteEditorPreviewMode(bool enabled) async {
+    final p = await prefs;
+    await p.setBool(_kNoteEditorPreviewMode, enabled);
   }
 
   Future<LLMConfig?> getLLMConfig({bool isFast = false}) async {

@@ -84,6 +84,7 @@ class _NotePanelState extends State<NotePanel> {
       context,
       word: widget.word,
       language: widget.language,
+      onLinkTap: _handleLinkTap,
     );
     if (result && mounted) {
       // 重新加载笔记

@@ -3403,7 +3403,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final dictId = entry.dictId ?? '';
     // entry.entryIdAsInt 返回纯数字的 entry_id
     final entryId = entry.entryIdAsInt;
-    final jsonPath = pathData.path.join('.');
+    final jsonPath = _stripPathPrefix(pathData.path.join('.'));
 
     // 获取标签：
     // 1. 如果有选中文本，使用选中文本
@@ -3930,6 +3930,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     required SelectableRegionState? selectableState,
     required String? selectedText,
   }) {
+    final actionPath = pathData == null
+        ? null
+        : _stripPathPrefix(pathData.path.join('.'));
+
     switch (action) {
       case PreferencesService.actionAiTranslate:
         return ListTile(
@@ -3939,8 +3943,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onTap: () {
             closeMenu();
             selectableState?.clearSelection();
-            if (pathData != null) {
-              _performAiTranslate(pathData.path.join('.'), pathData.label);
+            if (pathData != null && actionPath != null) {
+              _performAiTranslate(actionPath, pathData.label);
             }
           },
         );
@@ -3952,9 +3956,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onTap: () {
             closeMenu();
             selectableState?.clearSelection();
-            if (pathData != null) {
+            if (pathData != null && actionPath != null) {
               widget.onEditElement?.call(
-                pathData.path.join('.'),
+                actionPath,
                 pathData.label,
               );
             }
@@ -3968,8 +3972,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onTap: () {
             closeMenu();
             selectableState?.clearSelection();
-            if (pathData != null) {
-              widget.onAiAsk?.call(pathData.path.join('.'), pathData.label);
+            if (pathData != null && actionPath != null) {
+              widget.onAiAsk?.call(actionPath, pathData.label);
             }
           },
         );
@@ -3983,8 +3987,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
             selectableState?.clearSelection();
             if (selectedText != null && selectedText.isNotEmpty) {
               Clipboard.setData(ClipboardData(text: selectedText));
-            } else if (pathData != null) {
-              _performCopy(pathData.path.join('.'), pathData.label);
+            } else if (pathData != null && actionPath != null) {
+              _performCopy(actionPath, pathData.label);
             }
           },
         );
@@ -3996,8 +4000,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onTap: () {
             closeMenu();
             selectableState?.clearSelection();
-            if (pathData != null) {
-              _performSpeak(pathData.path.join('.'), pathData.label);
+            if (pathData != null && actionPath != null) {
+              _performSpeak(actionPath, pathData.label);
             }
           },
         );
