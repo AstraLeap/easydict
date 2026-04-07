@@ -496,20 +496,7 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
           ? const Center(child: CircularProgressIndicator())
           : PageScaleWrapper(
               scale: _contentScale,
-              child: CustomScrollView(
-                slivers: [
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 800),
-                          child: _buildContent(context, colorScheme),
-                        ),
-                      );
-                    }, childCount: 1),
-                  ),
-                ],
-              ),
+              child: _buildContent(context, colorScheme),
             ),
     );
 
@@ -530,277 +517,146 @@ class _MiscSettingsPageState extends State<MiscSettingsPage> {
   }
 
   Widget _buildContent(BuildContext context, ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionTitle(
-            context,
-            context.t.settings.misc_page.auxDbTitle,
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      children: [
+        // 跳过询问跳转
+        ListTile(
+          leading: const Icon(Icons.translate),
+          title: Text(context.t.settings.misc_page.skipAskRedirect),
+          trailing: Switch(
+            value: _neverAskAgain,
+            onChanged: (value) async {
+              if (value) {
+                await _englishDbService.setNeverAskAgain(true);
+                setState(() => _neverAskAgain = true);
+              } else {
+                await _englishDbService.resetNeverAskAgain();
+                setState(() => _neverAskAgain = false);
+              }
+            },
           ),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              children: [
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  leading: Icon(
-                    Icons.translate,
-                    color: colorScheme.primary,
-                  ),
-                  title: Text(
-                    context.t.settings.misc_page.skipAskRedirect,
-                  ),
-                  subtitle: Text(
-                    _neverAskAgain
-                        ? context.t.settings.misc_page.skipAskEnabled
-                        : context.t.settings.misc_page.skipAskDisabled,
-                  ),
-                  trailing: Switch(
-                    value: _neverAskAgain,
-                    onChanged: (value) async {
-                      if (value) {
-                        await _englishDbService.setNeverAskAgain(true);
-                        setState(() => _neverAskAgain = true);
-                      } else {
-                        await _englishDbService.resetNeverAskAgain();
-                        setState(() => _neverAskAgain = false);
-                      }
-                    },
-                  ),
-                ),
-                Divider(
-                  height: 1,
-                  indent: 56,
-                  color: colorScheme.outlineVariant.withOpacity(0.3),
-                ),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  leading: Icon(
-                    Icons.storage_outlined,
-                    color:
-                        _englishDbExists ? colorScheme.error : colorScheme.outline,
-                  ),
-                  title: Text(
-                    context.t.settings.misc_page.deleteAuxDb,
-                    style: TextStyle(
-                      color: _englishDbExists
-                          ? colorScheme.error
-                          : colorScheme.outline,
-                    ),
-                  ),
-                  subtitle: Text(
-                    _englishDbExists
-                        ? context.t.settings.misc_page.auxDbInstalled
-                        : context.t.settings.misc_page.auxDbNotInstalled,
-                  ),
-                  onTap:
-                      _englishDbExists ? () => _showDeleteAuxDbDialog() : null,
-                ),
-              ],
+          onTap: () async {
+            final newValue = !_neverAskAgain;
+            if (newValue) {
+              await _englishDbService.setNeverAskAgain(true);
+            } else {
+              await _englishDbService.resetNeverAskAgain();
+            }
+            setState(() => _neverAskAgain = newValue);
+          },
+        ),
+        // 删除辅助词典
+        ListTile(
+          leading: Icon(
+            Icons.storage_outlined,
+            color: _englishDbExists ? colorScheme.error : colorScheme.outline,
+          ),
+          title: Text(
+            context.t.settings.misc_page.deleteAuxDb,
+            style: TextStyle(
+              color: _englishDbExists
+                  ? colorScheme.error
+                  : colorScheme.outline,
             ),
           ),
-          const SizedBox(height: 24),
-          _buildSectionTitle(
-            context,
-            context.t.settings.misc_page.dictUpdateTitle,
+          trailing: _englishDbExists
+              ? const Icon(Icons.chevron_right, size: 20)
+              : null,
+          onTap: _englishDbExists ? () => _showDeleteAuxDbDialog() : null,
+        ),
+        // 自动检查词典更新
+        ListTile(
+          leading: const Icon(Icons.update),
+          title: Text(context.t.settings.misc_page.autoCheckDictUpdate),
+          trailing: Switch(
+            value: _autoCheckDictUpdate,
+            onChanged: (value) async {
+              await _preferencesService.setAutoCheckDictUpdate(value);
+              setState(() => _autoCheckDictUpdate = value);
+              final updateCheckService = context.read<DictUpdateCheckService>();
+              if (value) {
+                updateCheckService.startDailyCheck();
+              } else {
+                updateCheckService.stopDailyCheck();
+                updateCheckService.clearAllUpdates();
+              }
+            },
           ),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
+          onTap: () async {
+            final newValue = !_autoCheckDictUpdate;
+            await _preferencesService.setAutoCheckDictUpdate(newValue);
+            setState(() => _autoCheckDictUpdate = newValue);
+            final updateCheckService = context.read<DictUpdateCheckService>();
+            if (newValue) {
+              updateCheckService.startDailyCheck();
+            } else {
+              updateCheckService.stopDailyCheck();
+              updateCheckService.clearAllUpdates();
+            }
+          },
+        ),
+        // 桌面功能设置（仅桌面平台显示）
+        if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) ...[
+          ListTile(
+            leading: const Icon(Icons.content_paste_search),
+            title: Text(context.t.settings.clipboardWatch),
+            trailing: Switch(
+              value: _clipboardWatchEnabled,
+              onChanged: (value) async {
+                await _preferencesService.setClipboardWatchEnabled(value);
+                await ClipboardWatcherService().setEnabled(value);
+                await SystemTrayService().updateClipboardWatchState(value);
+                setState(() => _clipboardWatchEnabled = value);
+              },
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              leading: Icon(
-                Icons.update,
-                color: colorScheme.primary,
-              ),
-              title: Text(
-                context.t.settings.misc_page.autoCheckDictUpdate,
-              ),
-              subtitle: Text(
-                context.t.settings.misc_page.autoCheckDictUpdateSubtitle,
-              ),
-              trailing: Switch(
-                value: _autoCheckDictUpdate,
-                onChanged: (value) async {
-                  await _preferencesService.setAutoCheckDictUpdate(value);
-                  setState(() => _autoCheckDictUpdate = value);
-                  final updateCheckService =
-                      context.read<DictUpdateCheckService>();
-                  if (value) {
-                    updateCheckService.startDailyCheck();
-                  } else {
-                    updateCheckService.stopDailyCheck();
-                    updateCheckService.clearAllUpdates();
-                  }
-                },
-              ),
-            ),
+            onTap: () async {
+              final newValue = !_clipboardWatchEnabled;
+              await _preferencesService.setClipboardWatchEnabled(newValue);
+              await ClipboardWatcherService().setEnabled(newValue);
+              await SystemTrayService().updateClipboardWatchState(newValue);
+              setState(() => _clipboardWatchEnabled = newValue);
+            },
           ),
-          // 桌面功能设置组（仅桌面平台显示）
-          if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) ...[
-            const SizedBox(height: 24),
-            _buildSectionTitle(
-              context,
-              context.t.settings.misc_page.desktopFeaturesTitle,
+          ListTile(
+            leading: const Icon(Icons.remove_circle_outline),
+            title: Text(context.t.settings.minimizeToTray),
+            trailing: Switch(
+              value: _minimizeToTray,
+              onChanged: (value) async {
+                await _preferencesService.setMinimizeToTray(value);
+                await windowManager.setPreventClose(value);
+                await SystemTrayService().updateMinimizeToTrayState(value);
+                setState(() => _minimizeToTray = value);
+              },
             ),
-            const SizedBox(height: 8),
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: colorScheme.outlineVariant.withOpacity(0.5),
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    leading: Icon(
-                      Icons.content_paste_search,
-                      color: colorScheme.primary,
-                    ),
-                    title: Text(
-                      context.t.settings.clipboardWatch,
-                    ),
-                    subtitle: Text(
-                      _clipboardWatchEnabled
-                          ? context.t.settings.clipboardWatchEnabled
-                          : context.t.settings.clipboardWatchDisabled,
-                    ),
-                    trailing: Switch(
-                      value: _clipboardWatchEnabled,
-                      onChanged: (value) async {
-                        await _preferencesService.setClipboardWatchEnabled(value);
-                        await ClipboardWatcherService().setEnabled(value);
-                        await SystemTrayService().updateClipboardWatchState(value);
-                        setState(() => _clipboardWatchEnabled = value);
-                      },
-                    ),
-                  ),
-                  Divider(
-                    height: 1,
-                    indent: 56,
-                    color: colorScheme.outlineVariant.withOpacity(0.3),
-                  ),
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    leading: Icon(
-                      Icons.remove_circle_outline,
-                      color: colorScheme.primary,
-                    ),
-                    title: Text(
-                      context.t.settings.minimizeToTray,
-                    ),
-                    subtitle: Text(
-                      context.t.settings.minimizeToTrayDesc,
-                    ),
-                    trailing: Switch(
-                      value: _minimizeToTray,
-                      onChanged: (value) async {
-                        await _preferencesService.setMinimizeToTray(value);
-                        // 更新窗口管理器的 preventClose 设置
-                        await windowManager.setPreventClose(value);
-                        // 更新托盘菜单
-                        await SystemTrayService().updateMinimizeToTrayState(value);
-                        setState(() => _minimizeToTray = value);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          // 笔记设置
-          const SizedBox(height: 24),
-          _buildSectionTitle(
-            context,
-            context.t.note.settings,
-          ),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: colorScheme.outlineVariant.withOpacity(0.5),
-                width: 1,
-              ),
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              leading: Icon(
-                Icons.note_outlined,
-                color: colorScheme.primary,
-              ),
-              title: Text(
-                context.t.note.defaultExpanded,
-              ),
-              subtitle: Text(
-                _noteDefaultExpanded
-                    ? context.t.note.defaultExpandedDesc
-                    : context.t.note.defaultCollapsedDesc,
-              ),
-              trailing: Switch(
-                value: _noteDefaultExpanded,
-                onChanged: (value) async {
-                  await _preferencesService.setNoteDefaultExpanded(value);
-                  setState(() => _noteDefaultExpanded = value);
-                },
-              ),
-            ),
+            onTap: () async {
+              final newValue = !_minimizeToTray;
+              await _preferencesService.setMinimizeToTray(newValue);
+              await windowManager.setPreventClose(newValue);
+              await SystemTrayService().updateMinimizeToTrayState(newValue);
+              setState(() => _minimizeToTray = newValue);
+            },
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.w600,
+        // 笔记默认展开
+        ListTile(
+          leading: const Icon(Icons.sticky_note_2_outlined),
+          title: Text(context.t.note.defaultExpanded),
+          trailing: Switch(
+            value: _noteDefaultExpanded,
+            onChanged: (value) async {
+              await _preferencesService.setNoteDefaultExpanded(value);
+              setState(() => _noteDefaultExpanded = value);
+            },
+          ),
+          onTap: () async {
+            final newValue = !_noteDefaultExpanded;
+            await _preferencesService.setNoteDefaultExpanded(newValue);
+            setState(() => _noteDefaultExpanded = newValue);
+          },
         ),
-      ),
+      ],
     );
   }
 

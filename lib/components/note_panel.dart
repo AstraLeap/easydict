@@ -9,6 +9,7 @@ class NotePanel extends StatefulWidget {
   final String word;
   final String language;
   final bool initiallyExpanded;
+  final int refreshVersion;  // 刷新版本号，变化时重新加载内容
   final void Function(String path)? onLinkTap;
 
   const NotePanel({
@@ -16,6 +17,7 @@ class NotePanel extends StatefulWidget {
     required this.word,
     required this.language,
     this.initiallyExpanded = true,
+    this.refreshVersion = 0,
     this.onLinkTap,
   });
 
@@ -29,17 +31,29 @@ class _NotePanelState extends State<NotePanel> {
   bool _isExpanded = true;
   bool _isLoading = true;
   String _loadedWord = '';
+  int _loadedRefreshVersion = -1;
+  bool _hasInitializedExpanded = false;  // 标记是否已初始化展开状态
 
   @override
   void initState() {
     super.initState();
-    _isExpanded = widget.initiallyExpanded;
     _loadNote();
   }
 
+  @override
+  void didUpdateWidget(NotePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 当 refreshVersion 变化时，重新加载笔记内容
+    if (oldWidget.refreshVersion != widget.refreshVersion) {
+      _loadedWord = '';  // 重置以允许重新加载
+      _loadNote();
+    }
+  }
+
   Future<void> _loadNote() async {
-    // 防止重复加载同一个单词
-    if (_loadedWord == '${widget.word}_${widget.language}') {
+    // 防止重复加载（同一个单词且同一个刷新版本）
+    final loadKey = '${widget.word}_${widget.language}_${widget.refreshVersion}';
+    if (_loadedWord == loadKey) {
       return;
     }
 
@@ -48,7 +62,12 @@ class _NotePanelState extends State<NotePanel> {
       setState(() {
         _note = note;
         _isLoading = false;
-        _loadedWord = '${widget.word}_${widget.language}';
+        _loadedWord = loadKey;
+        // 只在首次加载时设置展开状态
+        if (!_hasInitializedExpanded) {
+          _isExpanded = widget.initiallyExpanded;
+          _hasInitializedExpanded = true;
+        }
       });
     }
   }
@@ -101,7 +120,7 @@ class _NotePanelState extends State<NotePanel> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
         borderRadius: BorderRadius.circular(12),
@@ -121,7 +140,7 @@ class _NotePanelState extends State<NotePanel> {
               child: Row(
                 children: [
                   Icon(
-                    Icons.note_outlined,
+                    Icons.sticky_note_2_outlined,
                     size: 18,
                     color: colorScheme.primary,
                   ),

@@ -676,9 +676,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              context.t.settings.toolbarDialog.hint(
-                max: PreferencesService.maxToolbarItems,
-              ),
+              context.t.settings.toolbarDialog.hint,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),

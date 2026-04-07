@@ -97,11 +97,18 @@
     },
     "toolbarDialog": {
       "title": "Bottom Toolbar Settings",
-      "hint": "Drag to reorder; items below the divider go to the overflow menu; max {max} toolbar icons",
+      "hint": "Drag to reorder; items below the divider go to the overflow menu",
       "dividerLabel": "Divider (drag to adjust)",
       "toolbar": "Toolbar",
       "overflow": "More Menu",
-      "maxItemsError": "The toolbar can have at most {max} items"
+      "maxItemsError": "The toolbar can have at most {max} items",
+      "actionBack": "Back",
+      "actionSearch": "Search",
+      "actionFavorite": "Favorite",
+      "actionToggleTranslate": "Toggle Translation",
+      "actionAiHistory": "AI History",
+      "actionResetEntry": "Reset Entry",
+      "actionNote": "Note"
     },
     "misc_page": {
       "title": "Other Settings",
@@ -146,7 +153,8 @@
       "favorite": "Favorite",
       "toggleTranslate": "Show/Hide Translation",
       "aiHistory": "AI History",
-      "resetEntry": "Reset Entry"
+      "resetEntry": "Reset Entry",
+      "note": "Note"
     },
     "clipboardWatch": "Clipboard Watch",
     "clipboardWatchEnabled": "Enabled, auto-search when copying text",

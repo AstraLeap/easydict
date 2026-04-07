@@ -983,11 +983,18 @@ class _TranslationsSettingsToolbarDialogEn extends TranslationsSettingsToolbarDi
 
 	// Translations
 	@override String get title => 'Bottom Toolbar Settings';
-	@override String hint({required Object max}) => 'Drag to reorder; items below the divider go to the overflow menu; max ${max} toolbar icons';
+	@override String get hint => 'Drag to reorder; items below the divider go to the overflow menu';
 	@override String get dividerLabel => 'Divider (drag to adjust)';
 	@override String get toolbar => 'Toolbar';
 	@override String get overflow => 'More Menu';
 	@override String maxItemsError({required Object max}) => 'The toolbar can have at most ${max} items';
+	@override String get actionBack => 'Back';
+	@override String get actionSearch => 'Search';
+	@override String get actionFavorite => 'Favorite';
+	@override String get actionToggleTranslate => 'Toggle Translation';
+	@override String get actionAiHistory => 'AI History';
+	@override String get actionResetEntry => 'Reset Entry';
+	@override String get actionNote => 'Note';
 }
 
 // Path: settings.misc_page
@@ -1047,6 +1054,7 @@ class _TranslationsSettingsActionLabelEn extends TranslationsSettingsActionLabel
 	@override String get toggleTranslate => 'Show/Hide Translation';
 	@override String get aiHistory => 'AI History';
 	@override String get resetEntry => 'Reset Entry';
+	@override String get note => 'Note';
 }
 
 // Path: theme.colorNames
@@ -1165,11 +1173,18 @@ extension on TranslationsEn {
 			'settings.clickActionDialog.hint' => 'The first item is the tap action; others are triggered via right-click/long-press',
 			'settings.clickActionDialog.primaryLabel' => 'Tap Action',
 			'settings.toolbarDialog.title' => 'Bottom Toolbar Settings',
-			'settings.toolbarDialog.hint' => ({required Object max}) => 'Drag to reorder; items below the divider go to the overflow menu; max ${max} toolbar icons',
+			'settings.toolbarDialog.hint' => 'Drag to reorder; items below the divider go to the overflow menu',
 			'settings.toolbarDialog.dividerLabel' => 'Divider (drag to adjust)',
 			'settings.toolbarDialog.toolbar' => 'Toolbar',
 			'settings.toolbarDialog.overflow' => 'More Menu',
 			'settings.toolbarDialog.maxItemsError' => ({required Object max}) => 'The toolbar can have at most ${max} items',
+			'settings.toolbarDialog.actionBack' => 'Back',
+			'settings.toolbarDialog.actionSearch' => 'Search',
+			'settings.toolbarDialog.actionFavorite' => 'Favorite',
+			'settings.toolbarDialog.actionToggleTranslate' => 'Toggle Translation',
+			'settings.toolbarDialog.actionAiHistory' => 'AI History',
+			'settings.toolbarDialog.actionResetEntry' => 'Reset Entry',
+			'settings.toolbarDialog.actionNote' => 'Note',
 			'settings.misc_page.title' => 'Other Settings',
 			'settings.misc_page.aiChatTitle' => 'AI Chat History',
 			'settings.misc_page.recordCount' => 'Total Records',
@@ -1211,6 +1226,7 @@ extension on TranslationsEn {
 			'settings.actionLabel.toggleTranslate' => 'Show/Hide Translation',
 			'settings.actionLabel.aiHistory' => 'AI History',
 			'settings.actionLabel.resetEntry' => 'Reset Entry',
+			'settings.actionLabel.note' => 'Note',
 			'settings.clipboardWatch' => 'Clipboard Watch',
 			'settings.clipboardWatchEnabled' => 'Enabled, auto-search when copying text',
 			'settings.clipboardWatchDisabled' => 'Disabled',
@@ -1585,6 +1601,8 @@ extension on TranslationsEn {
 			'dict.checking' => 'Checking...',
 			'dict.downloadDict' => ({required Object name}) => 'Download: ${name}',
 			'dict.selectContent' => 'Select content to download:',
+			_ => null,
+		} ?? switch (path) {
 			'dict.dictMeta' => '[Required] Dict metadata',
 			'dict.dictIcon' => '[Required] Dict icon',
 			'dict.dictDb' => '[Required] Dictionary database',
@@ -1593,8 +1611,6 @@ extension on TranslationsEn {
 			'dict.mediaDbWithSize' => ({required Object size}) => 'Media database (${size})',
 			'dict.mediaDbNotFound' => ({required Object id}) => 'Media database not found for dictionary: ${id}',
 			'dict.mediaDbNotExists' => 'Local file not exists, skip update',
-			_ => null,
-		} ?? switch (path) {
 			'dict.mediaDbNotExistsCanDownload' => 'Local file not exists, can download',
 			'dict.dictDbNotFound' => ({required Object id}) => 'Dictionary database not found for: ${id}',
 			'dict.getDictListFailed' => 'Failed to get dictionary list',

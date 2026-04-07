@@ -1365,6 +1365,10 @@ class ComponentRenderer extends StatefulWidget {
   /// 添加到笔记回调，参数：(word, language, link)
   final void Function(String word, String language, String link)? onAddToNote;
 
+  /// 外部提供的隐藏语言通知器。如果提供，则使用此通知器而不是内部创建。
+  /// 这允许多个 ComponentRenderer 共享同一个隐藏状态。
+  final HiddenLanguagesNotifier? hiddenLanguagesNotifier;
+
   const ComponentRenderer({
     super.key,
     required this.entry,
@@ -1382,6 +1386,7 @@ class ComponentRenderer extends StatefulWidget {
     this.onExactJump,
     this.onPathJump,
     this.onAddToNote,
+    this.hiddenLanguagesNotifier,
   });
 
   @override
@@ -1453,7 +1458,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   void initState() {
     super.initState();
     _localEntry = widget.entry;
-    _hiddenLanguagesNotifier = HiddenLanguagesNotifier([]);
+    // 如果提供了外部的通知器，则使用它；否则创建内部的
+    _hiddenLanguagesNotifier = widget.hiddenLanguagesNotifier ?? HiddenLanguagesNotifier([]);
     _initSourceLanguage();
     _loadClickAction();
     _loadHeadwordSyllableSetting();
@@ -1888,7 +1894,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.entry.id != widget.entry.id) {
       _localEntry = widget.entry;
-      _hiddenLanguagesNotifier.value = [];
+      // 只有在使用内部通知器时才重置
+      if (widget.hiddenLanguagesNotifier == null) {
+        _hiddenLanguagesNotifier.value = [];
+      }
       _elementKeys.clear();
       _pendingScrollRequests.clear();
       _isVisible = false;
@@ -3231,14 +3240,15 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final word = entry.headword;
     final language = _sourceLanguage ?? 'en';
 
-    // 构建链接格式：[label](dictId_entryId/json.path)
+    // 构建链接格式：[label](dictId/entryId/json.path)
     final dictId = entry.dictId ?? '';
-    final entryId = entry.id; // 使用完整 id (dictId_entryId 格式)
+    // entry.entryIdAsInt 返回纯数字的 entry_id
+    final entryId = entry.entryIdAsInt;
     final jsonPath = pathData.path.join('.');
     final label = pathData.label;
 
-    // 格式: [label](dictId_entryId/json.path)
-    final link = '[$label]($entryId/$jsonPath)';
+    // 格式: [label](dictId/entryId/json.path)
+    final link = '[$label]($dictId/$entryId/$jsonPath)';
 
     // 调用外部提供的回调来处理笔记
     widget.onAddToNote?.call(word, language, link);
@@ -3729,7 +3739,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (pathData != null) {
       menuItems.add(
         ListTile(
-          leading: const Icon(Icons.note_add_outlined, size: 20),
+          leading: const Icon(Icons.note_add, size: 20),
           title: Text(context.t.note.addToNote),
           dense: true,
           onTap: () {
@@ -4516,7 +4526,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
     _translationInsertSubscription?.cancel();
     _toggleHiddenSubscription?.cancel();
     _batchToggleHiddenSubscription?.cancel();
-    _hiddenLanguagesNotifier.dispose();
+    // 只有在使用内部通知器时才销毁
+    if (widget.hiddenLanguagesNotifier == null) {
+      _hiddenLanguagesNotifier.dispose();
+    }
     for (final recognizer in _recognizers) {
       recognizer.dispose();
     }

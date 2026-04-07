@@ -113,7 +113,7 @@ class NoteService {
       ));
     } else {
       final newContent = existing.content.isNotEmpty
-          ? '${existing.content}\n\n$content'
+          ? '${existing.content}  \n$content'
           : content;
       await saveNote(existing.copyWith(content: newContent));
     }

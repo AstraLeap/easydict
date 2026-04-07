@@ -599,7 +599,56 @@ class _FontConfigPageState extends State<FontConfigPage>
     if (_isLoading) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_languages.isEmpty || _tabController == null) {
-      body = Center(child: Text(context.t.font.noDicts));
+      // 即使没有词典，也显示字体目录选择组件
+      body = Column(
+        children: [
+          // 字体文件夹设置卡片
+          Card(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: Text(context.t.font.folderLabel),
+              subtitle: Text(
+                _fontFolderPath ?? context.t.font.folderNotSet,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _fontFolderPath == null
+                      ? colorScheme.outline
+                      : null,
+                ),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: _selectFolder,
+                tooltip: _fontFolderPath == null
+                    ? context.t.font.folderSet
+                    : context.t.font.folderChange,
+              ),
+            ),
+          ),
+          // 空状态提示
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.font_download_outlined,
+                    size: 64,
+                    color: colorScheme.outline,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    context.t.font.noDicts,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
     } else {
       body = Column(
         children: [

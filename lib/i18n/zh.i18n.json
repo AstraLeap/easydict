@@ -99,11 +99,18 @@
     },
     "toolbarDialog": {
       "title": "底部工具栏设置",
-      "hint": "拖动调整，分割线以下合并到菜单中，工具栏至多{max}个图标",
+      "hint": "拖动调整，分割线以下合并到菜单中",
       "dividerLabel": "分割线 (拖动调整)",
       "toolbar": "工具栏",
       "overflow": "更多菜单",
-      "maxItemsError": "工具栏最多只能有 {max} 个功能"
+      "maxItemsError": "工具栏最多只能有 {max} 个功能",
+      "actionBack": "返回",
+      "actionSearch": "搜索",
+      "actionFavorite": "收藏",
+      "actionToggleTranslate": "显示/隐藏翻译",
+      "actionAiHistory": "AI 历史记录",
+      "actionResetEntry": "重置词条",
+      "actionNote": "笔记"
     },
     "misc_page": {
       "title": "其它设置",
@@ -148,7 +155,8 @@
       "favorite": "收藏",
       "toggleTranslate": "显示/隐藏翻译",
       "aiHistory": "AI 历史记录",
-      "resetEntry": "重置词条"
+      "resetEntry": "重置词条",
+      "note": "笔记"
     },
     "clipboardWatch": "剪切板监听",
     "clipboardWatchEnabled": "已开启，复制文本后自动查词",

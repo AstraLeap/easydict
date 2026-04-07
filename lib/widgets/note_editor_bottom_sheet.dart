@@ -258,22 +258,15 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                     // 标题栏
                     Row(
                       children: [
-                        Icon(Icons.note_outlined, color: colorScheme.primary, size: 20),
+                        Icon(Icons.sticky_note_2_outlined, color: colorScheme.primary, size: 20),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            context.t.note.title,
+                            widget.word,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ),
-                        Text(
-                          widget.word,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -289,49 +282,19 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                           tooltip: context.t.common.save,
                           color: colorScheme.primary,
                         ),
+                        const SizedBox(width: 8),
                         // 撤销
                         _buildToolbarButton(
                           icon: Icons.undo,
                           onPressed: _currentEditPosition > 0 ? _undo : null,
                           tooltip: context.t.common.undo,
                         ),
+                        const SizedBox(width: 8),
                         // 重做
                         _buildToolbarButton(
                           icon: Icons.redo,
                           onPressed: _currentEditPosition < _undoStack.length - 1 ? _redo : null,
                           tooltip: context.t.common.redo,
-                        ),
-                        const SizedBox(width: 8),
-                        // 分隔线
-                        Container(
-                          width: 1,
-                          height: 24,
-                          color: colorScheme.outlineVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        // 加粗
-                        _buildToolbarButton(
-                          icon: Icons.format_bold,
-                          onPressed: () => _insertMarkdownSyntax('**', '**'),
-                          tooltip: context.t.note.bold,
-                        ),
-                        // 斜体
-                        _buildToolbarButton(
-                          icon: Icons.format_italic,
-                          onPressed: () => _insertMarkdownSyntax('*', '*'),
-                          tooltip: context.t.note.italic,
-                        ),
-                        // 链接
-                        _buildToolbarButton(
-                          icon: Icons.link,
-                          onPressed: () => _insertMarkdownSyntax('[', '](url)'),
-                          tooltip: context.t.note.link,
-                        ),
-                        // 代码
-                        _buildToolbarButton(
-                          icon: Icons.code,
-                          onPressed: () => _insertMarkdownSyntax('`', '`'),
-                          tooltip: context.t.note.code,
                         ),
                         const Spacer(),
                         // 全屏
@@ -346,6 +309,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                               ? context.t.common.exitFullscreen
                               : context.t.common.fullscreen,
                         ),
+                        const SizedBox(width: 8),
                         // 关闭
                         IconButton(
                           onPressed: () => Navigator.pop(context, false),
@@ -359,9 +323,6 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: isDark
-                              ? colorScheme.surfaceContainerHighest
-                              : colorScheme.surfaceContainerLowest,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: colorScheme.outlineVariant.withOpacity(0.5),
@@ -373,15 +334,15 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                             fontSize: 15,
                             fontFamily: 'monospace',
                             backgroundColor: isDark
-                                ? colorScheme.primaryContainer.withOpacity(0.3)
-                                : colorScheme.primaryContainer.withOpacity(0.15),
+                                ? colorScheme.primaryContainer.withOpacity(0.05)
+                                : colorScheme.primaryContainer.withOpacity(0.08),
                             codeTheme: CodeHighlightTheme(
                               languages: {
                                 'markdown': CodeHighlightThemeMode(mode: langMarkdown)
                               },
                               theme: isDark
                                   ? builtThemes['atom-one-dark']!
-                                  : builtThemes['github']!,
+                                  : builtThemes['atom-one-light']!,
                             ),
                           ),
                           wordWrap: true,

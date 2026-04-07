@@ -10,6 +10,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../components/component_renderer.dart';
+import '../components/hidden_languages_scope.dart';
 import '../components/note_panel.dart';
 import '../components/rendering/formatted_text_parser.dart' show TypeParser;
 import '../components/dictionary_logo.dart';
@@ -171,7 +172,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _noteDefaultExpanded = true;
   bool _showReturnToNoteButton = false;
   String _currentLanguage = 'en';  // 缓存当前语言
-  Key _notePanelRefreshKey = UniqueKey();  // 用于强制刷新笔记面板
+  int _notePanelRefreshVersion = 0;  // 用于通知笔记面板刷新内容
 
   /// 浏览列表相关状态
   BrowseList? _browseList;
@@ -220,6 +221,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       GlobalKey<DictionaryNavigationPanelState>();
 
   bool? _areNonTargetLanguagesVisible;
+
+  /// 全局翻译隐藏状态通知器，所有 ComponentRenderer 共享
+  final HiddenLanguagesNotifier _globalHiddenLanguagesNotifier =
+      HiddenLanguagesNotifier([]);
 
   /// 折叠状态：存储已折叠的词典 dictId
   final Set<String> _collapsedDicts = {};
@@ -500,6 +505,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       // 重新加载收藏状态
       await _loadFavoriteStatus();
 
+      // 等待一帧让 ComponentRenderer 完成更新（包括重置 hiddenLanguages）
+      await WidgetsBinding.instance.endOfFrame;
+
+      // 重新应用全局翻译显示状态
+      if (_areNonTargetLanguagesVisible != null) {
+        _applyGlobalTranslationVisibility(_isNonTargetLanguagesVisible);
+      }
+
       // 滚动到顶部
       _isProgrammaticScroll = true;
       _itemScrollController
@@ -728,7 +741,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     if (visiblePositions.isEmpty) return;
 
-    int lastFullyVisibleIndex = -1;
+    // 找到第一个完全可见的 item（屏幕顶部的 section）
+    // 和可见高度最大的 item（作为备选）
+    int firstFullyVisibleIndex = -1;
     double maxVisibleHeight = 0;
     int targetVisibleIndex = -1;
 
@@ -744,10 +759,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         visibleHeight = pos.itemTrailingEdge - pos.itemLeadingEdge;
       }
 
-      bool isFullyVisible =
-          pos.itemLeadingEdge >= 0 && pos.itemTrailingEdge <= 1;
-      if (isFullyVisible && pos.index > lastFullyVisibleIndex) {
-        lastFullyVisibleIndex = pos.index;
+      // 记录第一个完全可见的 item
+      if (firstFullyVisibleIndex < 0 &&
+          pos.itemLeadingEdge >= 0 &&
+          pos.itemTrailingEdge <= 1) {
+        firstFullyVisibleIndex = pos.index;
       }
 
       if (visibleHeight > maxVisibleHeight) {
@@ -756,13 +772,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       }
     }
 
-    int targetIndex = lastFullyVisibleIndex >= 0
-        ? lastFullyVisibleIndex
+    // 优先使用第一个完全可见的 item，这样屏幕顶部的内容是"活跃"的
+    // 如果没有完全可见的 item，则使用可见高度最大的
+    int targetIndex = firstFullyVisibleIndex >= 0
+        ? firstFullyVisibleIndex
         : targetVisibleIndex;
     if (targetIndex < 0) return;
 
-    // 索引 0: 词形关系横幅（始终存在）
-    int entryIndex = targetIndex - 1;
+    // 计算偏移量：笔记面板(如果有) + 词形关系横幅
+    final noteOffset = _hasNote ? 1 : 0;
+    const wordRelationsOffset = 1;
+    final totalOffset = noteOffset + wordRelationsOffset;
+
+    int entryIndex = targetIndex - totalOffset;
 
     if (entryIndex < 0 || entryIndex >= entries.length) return;
 
@@ -838,11 +860,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 应用全局翻译显示状态到 ComponentRenderer
-  /// 每个词典独立处理自己的目标语言隐藏状态
+  /// 直接更新全局通知器，所有 ComponentRenderer 会自动响应
   Future<void> _applyGlobalTranslationVisibility(bool visible) async {
     try {
       final allDicts = _entryGroup.dictionaryGroups;
       if (allDicts.isEmpty) return;
+
+      // 收集所有词典的语言路径
+      final Set<String> allLanguagePaths = {};
 
       // 遍历每个词典，使用各自的元数据收集语言路径
       for (final dictGroup in allDicts) {
@@ -859,32 +884,27 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         final targetLangs = metadata.targetLanguages;
 
         // 收集该词典的语言路径
-        final Set<String> dictLanguagePaths = {};
         for (final pageGroup in dictGroup.pageGroups) {
           for (final section in pageGroup.sections) {
             final json = section.entry.toJson();
             _collectLanguagePaths(
               json,
               '',
-              dictLanguagePaths,
+              allLanguagePaths,
               sourceLang,
               targetLangs,
             );
           }
         }
+      }
 
-        // 为每个词典条目单独发送事件，确保每个 ComponentRenderer 只处理属于自己的隐藏路径
-        for (final pageGroup in dictGroup.pageGroups) {
-          for (final section in pageGroup.sections) {
-            EntryEventBus().emitBatchToggleHiddenLanguages(
-              BatchToggleHiddenLanguagesEvent(
-                entryId: section.entry.id,
-                pathsToHide: visible ? [] : dictLanguagePaths.toList(),
-                pathsToShow: visible ? dictLanguagePaths.toList() : [],
-              ),
-            );
-          }
-        }
+      // 直接更新全局通知器
+      if (visible) {
+        // 显示翻译：移除所有隐藏路径
+        _globalHiddenLanguagesNotifier.value = [];
+      } else {
+        // 隐藏翻译：添加所有语言路径到隐藏列表
+        _globalHiddenLanguagesNotifier.value = allLanguagePaths.toList();
       }
     } catch (e) {
       Logger.d(
@@ -965,6 +985,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       _entryGroup = widget.entryGroup;
       _loadFavoriteStatus();
       _initWordRelationsSearch();
+      // 重新应用全局翻译显示状态
+      if (_areNonTargetLanguagesVisible != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _applyGlobalTranslationVisibility(_isNonTargetLanguagesVisible);
+        });
+      }
     }
   }
 
@@ -1178,14 +1204,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     );
 
     if (index != -1) {
-      // 始终 +1 跳过词形关系横幅 (index 0)
-      index += 1;
-
-      // 如果有 targetPath，直接滚动到精确位置，不再先滚动到 entry 顶部
-      if (targetPath != null) {
-        _scrollToElement(entry.id, targetPath);
-        return;
-      }
+      // 计算偏移量：笔记面板(如果有) + 词形关系横幅
+      final noteOffset = _hasNote ? 1 : 0;
+      const wordRelationsOffset = 1;
+      final totalOffset = noteOffset + wordRelationsOffset;
+      index += totalOffset;
 
       // SafeArea 已处理状态栏偏移，滚动 alignment 直接对齐视口顶部
       const scrollAlignment = 0.0;
@@ -1194,22 +1217,44 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         Logger.d('Controller attached, scrolling now', tag: 'EntryDetail');
 
         _isProgrammaticScroll = true;
-        _itemScrollController
-            .scrollTo(
-              index: index,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              alignment: scrollAlignment,
-            )
-            .then((_) {
-              // 动画结束后额外缓冲，防止位置监听器在动画完成后触发误判
+
+        if (targetPath != null) {
+          // 有目标元素时：极短动画快速定位，然后执行元素滚动（一次性跳转）
+          _itemScrollController.scrollTo(
+            index: index,
+            duration: const Duration(milliseconds: 1),
+            alignment: scrollAlignment,
+          );
+          // 等待帧渲染后执行元素滚动
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _scrollToElement(entry.id, targetPath);
               Future.delayed(const Duration(milliseconds: 400), () {
                 if (mounted) {
                   _isProgrammaticScroll = false;
-                  _waitForUserScroll = true; // 等待用户手动滚动
+                  _waitForUserScroll = true;
                 }
               });
-            });
+            }
+          });
+        } else {
+          // 无目标元素时：保持原有动画
+          _itemScrollController
+              .scrollTo(
+                index: index,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                alignment: scrollAlignment,
+              )
+              .then((_) {
+                Future.delayed(const Duration(milliseconds: 400), () {
+                  if (mounted) {
+                    _isProgrammaticScroll = false;
+                    _waitForUserScroll = true;
+                  }
+                });
+              });
+        }
       } else {
         Logger.d(
           'Controller not attached, waiting for post frame',
@@ -1225,21 +1270,44 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             );
 
             _isProgrammaticScroll = true;
-            _itemScrollController
-                .scrollTo(
-                  index: index,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  alignment: scrollAlignment,
-                )
-                .then((_) {
+
+            if (targetPath != null) {
+              // 有目标元素时：极短动画快速定位，然后执行元素滚动（一次性跳转）
+              _itemScrollController.scrollTo(
+                index: index,
+                duration: const Duration(milliseconds: 1),
+                alignment: scrollAlignment,
+              );
+              // 等待帧渲染后执行元素滚动
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  _scrollToElement(entry.id, targetPath);
                   Future.delayed(const Duration(milliseconds: 400), () {
                     if (mounted) {
                       _isProgrammaticScroll = false;
-                      _waitForUserScroll = true; // 等待用户手动滚动
+                      _waitForUserScroll = true;
                     }
                   });
-                });
+                }
+              });
+            } else {
+              // 无目标元素时：保持原有动画
+              _itemScrollController
+                  .scrollTo(
+                    index: index,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: scrollAlignment,
+                  )
+                  .then((_) {
+                    Future.delayed(const Duration(milliseconds: 400), () {
+                      if (mounted) {
+                        _isProgrammaticScroll = false;
+                        _waitForUserScroll = true;
+                      }
+                    });
+                  });
+            }
           } else {
             Logger.w(
               'Controller still not attached after post frame',
@@ -1644,8 +1712,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     if (result && mounted) {
       setState(() {
         _hasNote = true;
-        // 更新笔记面板的 key 强制刷新
-        _notePanelRefreshKey = UniqueKey();
+        // 通知笔记面板刷新内容
+        _notePanelRefreshVersion++;
       });
     }
   }
@@ -1655,33 +1723,40 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Future<void> _handleAddToNote(String word, String language, String link) async {
     // 使用当前查词的单词和语言，而不是词条的 headword
     final noteService = NoteService();
-    await noteService.appendToNote(_currentWord, _currentLanguage, '\n$link');
+    await noteService.appendToNote(_currentWord, _currentLanguage, link);
     if (mounted) {
       showToast(context, context.t.note.linkAdded);
       setState(() {
         _hasNote = true;
-        // 更新笔记面板的 key 强制刷新
-        _notePanelRefreshKey = UniqueKey();
+        // 通知笔记面板刷新内容
+        _notePanelRefreshVersion++;
       });
     }
   }
 
   /// 处理笔记链接点击
-  /// 链接格式: dictId_entryId/json.path
+  /// 链接格式: dictId/entryId/json.path
   void _handleNoteLinkTap(String path) {
     final parts = path.split('/');
-    if (parts.length < 1) return;
+    if (parts.length < 2) return;
 
-    // 第一部分是完整的 entryId (dictId_entryId 格式)
-    final entryId = parts[0];
-    final jsonPath = parts.length > 1 ? parts.sublist(1).join('.') : '';
+    // 第一部分是 dictId，第二部分是 entryId
+    final dictId = parts[0];
+    final entryId = parts[1];
+    // 拼接为完整的 entry.id: dictId_entryId
+    final fullEntryId = '${dictId}_$entryId';
+    final jsonPath = parts.length > 2 ? parts.sublist(2).join('.') : '';
 
     // 查找对应的 entry
     DictionaryEntry? targetEntry;
     for (final entry in entries) {
-      if (entry.id == entryId) {
-        targetEntry = entry;
-        break;
+      // 调试：打印实际的 entry.id 和目标 fullEntryId
+      if (entry.dictId == dictId) {
+        // 匹配 dictId 时，检查 entryIdAsInt
+        if (entry.entryIdAsInt.toString() == entryId) {
+          targetEntry = entry;
+          break;
+        }
       }
     }
 
@@ -1774,10 +1849,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // item 0: 笔记面板（如果有笔记）
-    // item 1: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
+    // item noteOffset: 词形关系横幅（始终占一个位置，无结果时 FutureBuilder 返回 SizedBox.shrink()）
     final noteOffset = _hasNote ? 1 : 0;
     const wordRelationsOffset = 1;
-    // 搜索关系横幅现在内嵌在各词典的词典头部下方，不占独立 item
     final totalOffset = noteOffset + wordRelationsOffset;
     final totalCount = totalOffset + entries.length;
 
@@ -1828,17 +1902,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   scrollOffsetController: _scrollOffsetController,
                   padding: _getDynamicPadding(
                     context,
-                  ).copyWith(top: 0, bottom: 100),
+                  ).copyWith(top: 16, bottom: 100),
                   itemCount: totalCount,
                   minCacheExtent: 1500,
                   itemBuilder: (context, index) {
                     // 索引 0: 笔记面板（如果有笔记）
                     if (index == 0 && noteOffset == 1) {
                       return NotePanel(
-                        key: _notePanelRefreshKey,
                         word: _currentWord,
                         language: _currentLanguage,
                         initiallyExpanded: _noteDefaultExpanded,
+                        refreshVersion: _notePanelRefreshVersion,
                         onLinkTap: _handleNoteLinkTap,
                       );
                     }
@@ -1846,10 +1920,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                     // 词形关系横幅
                     final relationsIndex = noteOffset;
                     if (index == relationsIndex) {
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: _buildWordRelationsBanner(),
-                      );
+                      return _buildWordRelationsBanner();
                     }
 
                     final entryIndex = index - totalOffset;
@@ -1923,7 +1994,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 child: FloatingActionButton.small(
                   onPressed: _returnToNote,
                   tooltip: context.t.note.returnToNote,
-                  child: const Icon(Icons.note),
+                  child: const Icon(Icons.sticky_note_2),
                 ),
               ),
             // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
@@ -2337,7 +2408,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         );
       case PreferencesService.actionNote:
         return _buildActionButton(
-          icon: _hasNote ? Icons.note : Icons.note_outlined,
+          icon: _hasNote ? Icons.sticky_note_2 : Icons.sticky_note_2_outlined,
           isActive: _hasNote,
           onPressed: _showNoteEditor,
         );
@@ -2495,6 +2566,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         return t.aiHistory;
       case PreferencesService.actionResetEntry:
         return t.resetEntry;
+      case PreferencesService.actionNote:
+        return t.note;
       default:
         return action;
     }
@@ -2505,6 +2578,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       case PreferencesService.actionBack:
         clearAllToasts();
         Navigator.of(context).pop();
+        break;
+      case PreferencesService.actionSearch:
+        setState(() {
+          _isSearchMode = true;
+        });
+        _searchFocusNode.requestFocus();
         break;
       case PreferencesService.actionFavorite:
         _toggleFavorite();
@@ -2517,6 +2596,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         break;
       case PreferencesService.actionResetEntry:
         _resetCurrentEntry();
+        break;
+      case PreferencesService.actionNote:
+        _showNoteEditor();
         break;
     }
   }
@@ -2780,6 +2862,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               key: ValueKey(entry.id),
               entry: displayEntry,
               topPadding: 12,
+              hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
               onElementTap: (path, label) {
                 _handleTranslationTap(displayEntry, path, label);
               },
@@ -3124,6 +3207,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         leftPadding: 0,
         rightPadding: 0,
         enableElementActions: true,
+        hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
         onElementTap: (path, label) {
           // 可以添加元素点击处理
         },
@@ -3707,6 +3791,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 bottomPadding: 0,
                 leftPadding: 0,
                 rightPadding: 0,
+                hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
                 onElementTap: (path, label) {
                   _handleTranslationTap(entry, path, label);
                 },
@@ -3851,6 +3936,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         key: ValueKey('group_entry_${entry.id}'),
         entry: entry,
         topPadding: 0,
+        hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
         onElementTap: (path, label) {
           _handleTranslationTap(entry, path, label);
         },
@@ -3895,6 +3981,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             key: ValueKey('group_entry_${loadedEntry.id}'),
             entry: loadedEntry,
             topPadding: 0,
+            hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
             onElementTap: (path, label) {
               _handleTranslationTap(loadedEntry, path, label);
             },
@@ -4164,8 +4251,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         // 用 Table 代替 Column+Row，第一列宽度由内容决定，第二列占满剩余空间
         return Container(
           width: double.infinity,
-          color: colorScheme.surface,
-          padding: EdgeInsets.only(left: hPad, right: hPad, top: 6, bottom: 28),
+          margin: EdgeInsets.only(left: hPad, right: hPad, bottom: 16),
           child: Table(
             defaultVerticalAlignment: TableCellVerticalAlignment.top,
             columnWidths: const {

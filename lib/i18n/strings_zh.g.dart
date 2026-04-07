@@ -2475,8 +2475,8 @@ class TranslationsSettingsToolbarDialogZh {
 	/// zh: '底部工具栏设置'
 	String get title => '底部工具栏设置';
 
-	/// zh: '拖动调整，分割线以下合并到菜单中，工具栏至多{max}个图标'
-	String hint({required Object max}) => '拖动调整，分割线以下合并到菜单中，工具栏至多${max}个图标';
+	/// zh: '拖动调整，分割线以下合并到菜单中'
+	String get hint => '拖动调整，分割线以下合并到菜单中';
 
 	/// zh: '分割线 (拖动调整)'
 	String get dividerLabel => '分割线 (拖动调整)';
@@ -2489,6 +2489,27 @@ class TranslationsSettingsToolbarDialogZh {
 
 	/// zh: '工具栏最多只能有 {max} 个功能'
 	String maxItemsError({required Object max}) => '工具栏最多只能有 ${max} 个功能';
+
+	/// zh: '返回'
+	String get actionBack => '返回';
+
+	/// zh: '搜索'
+	String get actionSearch => '搜索';
+
+	/// zh: '收藏'
+	String get actionFavorite => '收藏';
+
+	/// zh: '显示/隐藏翻译'
+	String get actionToggleTranslate => '显示/隐藏翻译';
+
+	/// zh: 'AI 历史记录'
+	String get actionAiHistory => 'AI 历史记录';
+
+	/// zh: '重置词条'
+	String get actionResetEntry => '重置词条';
+
+	/// zh: '笔记'
+	String get actionNote => '笔记';
 }
 
 // Path: settings.misc_page
@@ -2630,6 +2651,9 @@ class TranslationsSettingsActionLabelZh {
 
 	/// zh: '重置词条'
 	String get resetEntry => '重置词条';
+
+	/// zh: '笔记'
+	String get note => '笔记';
 }
 
 // Path: theme.colorNames
@@ -2780,11 +2804,18 @@ extension on Translations {
 			'settings.clickActionDialog.hint' => '列表第一项将作为点击时的功能，其它通过右键/长按触发',
 			'settings.clickActionDialog.primaryLabel' => '点击功能',
 			'settings.toolbarDialog.title' => '底部工具栏设置',
-			'settings.toolbarDialog.hint' => ({required Object max}) => '拖动调整，分割线以下合并到菜单中，工具栏至多${max}个图标',
+			'settings.toolbarDialog.hint' => '拖动调整，分割线以下合并到菜单中',
 			'settings.toolbarDialog.dividerLabel' => '分割线 (拖动调整)',
 			'settings.toolbarDialog.toolbar' => '工具栏',
 			'settings.toolbarDialog.overflow' => '更多菜单',
 			'settings.toolbarDialog.maxItemsError' => ({required Object max}) => '工具栏最多只能有 ${max} 个功能',
+			'settings.toolbarDialog.actionBack' => '返回',
+			'settings.toolbarDialog.actionSearch' => '搜索',
+			'settings.toolbarDialog.actionFavorite' => '收藏',
+			'settings.toolbarDialog.actionToggleTranslate' => '显示/隐藏翻译',
+			'settings.toolbarDialog.actionAiHistory' => 'AI 历史记录',
+			'settings.toolbarDialog.actionResetEntry' => '重置词条',
+			'settings.toolbarDialog.actionNote' => '笔记',
 			'settings.misc_page.title' => '其它设置',
 			'settings.misc_page.aiChatTitle' => 'AI 聊天记录管理',
 			'settings.misc_page.recordCount' => '聊天记录总数',
@@ -2826,6 +2857,7 @@ extension on Translations {
 			'settings.actionLabel.toggleTranslate' => '显示/隐藏翻译',
 			'settings.actionLabel.aiHistory' => 'AI 历史记录',
 			'settings.actionLabel.resetEntry' => '重置词条',
+			'settings.actionLabel.note' => '笔记',
 			'settings.clipboardWatch' => '剪切板监听',
 			'settings.clipboardWatchEnabled' => '已开启，复制文本后自动查词',
 			'settings.clipboardWatchDisabled' => '已关闭',
@@ -3198,6 +3230,8 @@ extension on Translations {
 			'dict.refreshLocal' => '刷新本地',
 			'dict.refreshLocalSuccess' => '本地词典已刷新',
 			'dict.checking' => '检查中...',
+			_ => null,
+		} ?? switch (path) {
 			'dict.downloadDict' => ({required Object name}) => '下载: ${name}',
 			'dict.selectContent' => '选择要下载的内容:',
 			'dict.dictMeta' => '[必选]词典元数据',
@@ -3206,8 +3240,6 @@ extension on Translations {
 			'dict.dictDbWithSize' => ({required Object size}) => '[必选]词典数据库（${size}）',
 			'dict.mediaDb' => '媒体数据库',
 			'dict.mediaDbWithSize' => ({required Object size}) => '媒体数据库（${size}）',
-			_ => null,
-		} ?? switch (path) {
 			'dict.mediaDbNotFound' => ({required Object id}) => '找不到词典 ${id} 的媒体数据库',
 			'dict.mediaDbNotExists' => '本地无此文件，无需更新',
 			'dict.mediaDbNotExistsCanDownload' => '本地无此文件，可下载',

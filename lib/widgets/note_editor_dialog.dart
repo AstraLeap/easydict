@@ -92,7 +92,7 @@ class _NoteEditorDialogState extends State<NoteEditorDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.note_outlined, color: colorScheme.primary),
+          Icon(Icons.sticky_note_2_outlined, color: colorScheme.primary),
           const SizedBox(width: 8),
           Text(context.t.note.title),
           const Spacer(),

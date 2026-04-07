@@ -1,56 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/languages/json.dart';
+import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../data/database_service.dart';
 import '../core/utils/toast_utils.dart';
 import '../i18n/strings.g.dart';
 import '../widgets/path_navigator.dart';
-
-/// 表示 JSON 编辑器中可折叠的行范围。
-class _FoldRange {
-  final int startLine;
-  final int endLine;
-  const _FoldRange(this.startLine, this.endLine);
-}
-
-/// 解析 JSON 文本中匹配括号对形成的折叠范围。
-List<_FoldRange> _computeFoldRanges(String text) {
-  final lines = text.split('\n');
-  final ranges = <_FoldRange>[];
-  final stack = <int>[];
-  for (int i = 0; i < lines.length; i++) {
-    final line = lines[i];
-    bool inString = false;
-    bool escaped = false;
-    for (int j = 0; j < line.length; j++) {
-      final ch = line[j];
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (ch == '\\' && inString) {
-        escaped = true;
-        continue;
-      }
-      if (ch == '"') {
-        inString = !inString;
-        continue;
-      }
-      if (inString) continue;
-      if (ch == '{' || ch == '[') {
-        stack.add(i);
-      } else if (ch == '}' || ch == ']') {
-        if (stack.isNotEmpty) {
-          final startLine = stack.removeLast();
-          if (i > startLine + 1) {
-            ranges.add(_FoldRange(startLine, i));
-          }
-        }
-      }
-    }
-  }
-  return ranges;
-}
 
 /// JSON 编辑器底部弹出面板，用于在词条详情页中直接编辑 JSON 元素
 class JsonEditorBottomSheet extends StatefulWidget {
@@ -84,23 +40,23 @@ class JsonEditorBottomSheet extends StatefulWidget {
 }
 
 class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
-  late TextEditingController _controller;
+  late CodeLineEditingController _controller;
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
   int _currentEditPosition = 0;
   bool _hasSyntaxError = false;
   String? _errorMessage;
   bool _isFullScreen = false;
-  List<String> _currentPath = [];
-  final GlobalKey<_FoldableCodeEditorState> _editorKey = GlobalKey();
+  final List<String> _currentPath = [];
   final GlobalKey<PathNavigatorState> _pathNavigatorKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.initialText);
+    _controller = CodeLineEditingController.fromText(widget.initialText);
     _undoStack.add(widget.initialText);
     _controller.addListener(_trackChanges);
+    _validateJson();
   }
 
   @override
@@ -191,16 +147,13 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
     }
   }
 
-  void _scrollToPathLine(List<String> cursorPath) {
-    _editorKey.currentState?.scrollToPath(cursorPath);
-  }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     // 使用从父级传入的状态栏高度，因为底部弹出层的 context 中 viewPadding.top 为 0
     final statusBarHeight = widget.statusBarHeight;
     final screenSize = MediaQuery.of(context).size;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return DraggableScrollableSheet(
       initialChildSize: _isFullScreen ? 1.0 : 0.7,
@@ -268,7 +221,7 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                         widget.onNavigate([], json);
                       },
                       onCursorPathTap: (cursorPath) {
-                        _scrollToPathLine(cursorPath);
+                        // re_editor 不支持路径跳转
                       },
                       showReturnToStart:
                           widget.initialPath != null &&
@@ -394,18 +347,50 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                 ),
               const SizedBox(height: 12),
               Expanded(
-                child: _FoldableCodeEditor(
-                  key: _editorKey,
-                  controller: _controller,
-                  hasSyntaxError: _hasSyntaxError,
-                  onTopLinePathChanged: (path) {
-                    setState(() {
-                      _currentPath = path;
-                    });
-                  },
-                  onTap: () {
-                    _pathNavigatorKey.currentState?.stopEditing();
-                  },
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _hasSyntaxError
+                          ? colorScheme.error
+                          : colorScheme.outlineVariant.withOpacity(0.5),
+                    ),
+                  ),
+                  child: CodeEditor(
+                    controller: _controller,
+                    chunkAnalyzer: const DefaultCodeChunkAnalyzer(),
+                    style: CodeEditorStyle(
+                      fontSize: 14,
+                      fontFamily: 'Consolas',
+                      backgroundColor: isDark
+                          ? colorScheme.primaryContainer.withOpacity(0.05)
+                          : colorScheme.primaryContainer.withOpacity(0.08),
+                      codeTheme: CodeHighlightTheme(
+                        languages: {
+                          'json': CodeHighlightThemeMode(mode: langJson)
+                        },
+                        theme: isDark
+                            ? builtThemes['atom-one-dark']!
+                            : builtThemes['atom-one-light']!,
+                      ),
+                    ),
+                    wordWrap: true,
+                    indicatorBuilder: (context, editingController, chunkController, notifier) {
+                      return Row(
+                        children: [
+                          DefaultCodeLineNumber(
+                            controller: editingController,
+                            notifier: notifier,
+                          ),
+                          DefaultCodeChunkIndicator(
+                            width: 20,
+                            controller: chunkController,
+                            notifier: notifier,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ],
@@ -435,941 +420,6 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
       tooltip: tooltip,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// VS Code-like foldable code editor
-// ─────────────────────────────────────────────────────────────────
-
-// ── Tab Intent and Actions ───────────────────────────────────────
-
-class _InsertTabIntent extends Intent {
-  const _InsertTabIntent();
-}
-
-class _RemoveTabIntent extends Intent {
-  const _RemoveTabIntent();
-}
-
-class _InsertTabAction extends Action<_InsertTabIntent> {
-  final _FoldableCodeEditorState state;
-  _InsertTabAction(this.state);
-
-  @override
-  Object? invoke(_InsertTabIntent intent) {
-    state.insertTab();
-    return null;
-  }
-}
-
-class _RemoveTabAction extends Action<_RemoveTabIntent> {
-  final _FoldableCodeEditorState state;
-  _RemoveTabAction(this.state);
-
-  @override
-  Object? invoke(_RemoveTabIntent intent) {
-    state.removeTab();
-    return null;
-  }
-}
-
-/// A single node in the editor's logical line list.
-/// When [folded] is non-null this is a fold anchor and [folded] contains the
-/// hidden lines (in order) that were collapsed beneath it.
-class _LineNode {
-  String content;
-  List<String>? folded;
-  _LineNode(this.content);
-  bool get isFolded => folded != null;
-}
-
-class _PathStackEntry {
-  final String key;
-  final String bracket;
-  int arrayIndex;
-
-  _PathStackEntry({
-    required this.key,
-    required this.bracket,
-    this.arrayIndex = 0,
-  });
-}
-
-class _FoldableCodeEditor extends StatefulWidget {
-  final TextEditingController controller;
-  final bool hasSyntaxError;
-  final void Function(List<String> path)? onTopLinePathChanged;
-  final VoidCallback? onTap;
-
-  const _FoldableCodeEditor({
-    super.key,
-    required this.controller,
-    required this.hasSyntaxError,
-    this.onTopLinePathChanged,
-    this.onTap,
-  });
-
-  @override
-  State<_FoldableCodeEditor> createState() => _FoldableCodeEditorState();
-}
-
-class _FoldableCodeEditorState extends State<_FoldableCodeEditor> {
-  final List<_LineNode> _nodes = [];
-
-  late TextEditingController _displayCtrl;
-
-  final ScrollController _textScrollCtrl = ScrollController();
-  final ScrollController _horizontalScrollCtrl = ScrollController();
-
-  Map<int, int> _foldRanges = {};
-
-  bool _syncing = false;
-  List<String> _currentPath = [];
-  int _cursorLine = -1;
-  bool _isProgrammaticScrolling = false;
-
-  static const double _lineHeight = 21.0;
-  static const TextStyle _lineStyle = TextStyle(
-    fontFamily: 'Consolas',
-    fontSize: 14,
-    height: 1.5,
-  );
-
-  // ── Life-cycle ──────────────────────────────────────────────────
-
-  @override
-  void initState() {
-    super.initState();
-    _loadText(widget.controller.text);
-    _displayCtrl = TextEditingController(text: _displayText);
-    _displayCtrl.addListener(_onDisplayChanged);
-    _recomputeFoldRanges();
-    widget.controller.addListener(_onParentChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _cursorLine = 0;
-      _displayCtrl.selection = const TextSelection.collapsed(offset: 0);
-      _updateCurrentPath();
-    });
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onParentChanged);
-    _displayCtrl.removeListener(_onDisplayChanged);
-    _displayCtrl.dispose();
-    _textScrollCtrl.dispose();
-    _horizontalScrollCtrl.dispose();
-    super.dispose();
-  }
-
-  // ── State helpers ───────────────────────────────────────────────
-
-  void _loadText(String text) {
-    _nodes.clear();
-    for (final l in text.split('\n')) _nodes.add(_LineNode(l));
-    if (_nodes.isEmpty) _nodes.add(_LineNode(''));
-  }
-
-  /// Text shown in the TextField (visible lines only).
-  String get _displayText => _nodes.map((n) => n.content).join('\n');
-
-  /// Full text including all folded content (used for widget.controller).
-  String get _fullText {
-    final parts = <String>[];
-    for (final node in _nodes) {
-      parts.add(node.content);
-      if (node.folded != null) parts.addAll(node.folded!);
-    }
-    return parts.join('\n');
-  }
-
-  void _recomputeFoldRanges() {
-    final ranges = _computeFoldRanges(_displayText);
-    _foldRanges = {for (final r in ranges) r.startLine: r.endLine};
-  }
-
-  // ── Sync: display → parent ──────────────────────────────────────
-
-  void _onDisplayChanged() {
-    if (_syncing) return;
-    _reconcileNodes(_displayCtrl.text.split('\n'));
-    _syncing = true;
-    widget.controller.text = _fullText;
-    _syncing = false;
-    final ranges = _computeFoldRanges(_displayText);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        setState(() {
-          _foldRanges = {for (final r in ranges) r.startLine: r.endLine};
-        });
-        _onSelectionChanged();
-      }
-    });
-  }
-
-  // ── Sync: parent → display ──────────────────────────────────────
-
-  void _onParentChanged() {
-    if (_syncing) return;
-    final newFull = widget.controller.text;
-    if (newFull == _fullText) return;
-    _loadText(newFull);
-    _syncing = true;
-    _displayCtrl.text = _displayText;
-    _syncing = false;
-    _recomputeFoldRanges();
-    if (mounted) {
-      _updateCurrentPath();
-    }
-  }
-
-  // ── Text reconciliation ─────────────────────────────────────────
-
-  /// Merges [newLines] (from the display TextField) back into [_nodes],
-  /// preserving fold anchors where possible.
-  void _reconcileNodes(List<String> newLines) {
-    if (newLines.length == _nodes.length) {
-      for (int i = 0; i < _nodes.length; i++) _nodes[i].content = newLines[i];
-      return;
-    }
-    // Find first differing position from start.
-    int start = 0;
-    while (start < _nodes.length &&
-        start < newLines.length &&
-        _nodes[start].content == newLines[start]) {
-      start++;
-    }
-    // Find first differing position from end.
-    int oldEnd = _nodes.length - 1;
-    int newEnd = newLines.length - 1;
-    while (oldEnd > start &&
-        newEnd > start &&
-        _nodes[oldEnd].content == newLines[newEnd]) {
-      oldEnd--;
-      newEnd--;
-    }
-    // Replace the differing range.
-    final replacement = newLines
-        .sublist(start, newEnd + 1)
-        .map(_LineNode.new)
-        .toList();
-    _nodes.replaceRange(start, oldEnd + 1, replacement);
-  }
-
-  void _onTextFieldScrollNotification(ScrollNotification notification) {
-    if (!mounted) return;
-    _updateCurrentPath();
-    setState(() {}); // 触发重绘以更新行号位置
-  }
-
-  void _onSelectionChanged() {
-    if (!mounted) return;
-    final selection = _displayCtrl.selection;
-    if (selection.isValid) {
-      final cursorPos = selection.baseOffset;
-      final textBeforeCursor = _displayCtrl.text.substring(0, cursorPos);
-      final newCursorLine = '\n'.allMatches(textBeforeCursor).length;
-      if (newCursorLine != _cursorLine) {
-        _cursorLine = newCursorLine;
-        _updateCurrentPath();
-      }
-    } else if (_cursorLine != -1) {
-      _cursorLine = -1;
-      _updateCurrentPath();
-    }
-  }
-
-  void _setCursorToLineStart(int lineIndex) {
-    if (lineIndex < 0 || lineIndex >= _nodes.length) return;
-
-    int offset = 0;
-    for (int i = 0; i < lineIndex; i++) {
-      offset += _nodes[i].content.length + 1;
-    }
-
-    _displayCtrl.selection = TextSelection.collapsed(offset: offset);
-    _cursorLine = lineIndex;
-    _updateCurrentPath();
-  }
-
-  void scrollToPath(List<String> targetPath) {
-    if (targetPath.isEmpty || _nodes.isEmpty) return;
-
-    final targetLine = _findLineForPath(targetPath);
-    if (targetLine < 0) return;
-
-    const topPadding = 8.0;
-    final targetOffset = topPadding + targetLine * _lineHeight;
-
-    if (_textScrollCtrl.hasClients) {
-      _isProgrammaticScrolling = true;
-      _textScrollCtrl
-          .animateTo(
-            targetOffset,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          )
-          .then((_) {
-            if (mounted) {
-              _isProgrammaticScrolling = false;
-              _setCursorToLineStart(targetLine);
-            }
-          });
-    } else {
-      _setCursorToLineStart(targetLine);
-    }
-  }
-
-  int _findLineForPath(List<String> targetPath) {
-    if (targetPath.isEmpty) return -1;
-
-    final path = <String>[];
-    final stack = <_PathStackEntry>[];
-
-    for (int i = 0; i < _nodes.length; i++) {
-      final node = _nodes[i];
-      final line = node.content;
-
-      _parseLineForPath(line, stack, path, false);
-
-      if (_pathEquals(path, targetPath)) {
-        return i;
-      }
-
-      if (node.isFolded && node.folded != null) {
-        for (final hiddenLine in node.folded!) {
-          _parseLineForPath(hiddenLine, stack, path, false);
-          if (_pathEquals(path, targetPath)) {
-            return i;
-          }
-        }
-      }
-    }
-
-    return -1;
-  }
-
-  void _updateCurrentPath() {
-    final newPath = _computePathForLine(_cursorLine);
-    if (!_pathEquals(newPath, _currentPath)) {
-      _currentPath = newPath;
-      widget.onTopLinePathChanged?.call(newPath);
-    }
-  }
-
-  bool _pathEquals(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
-  List<String> _computePathForLine(int? targetLine) {
-    final offset = _textScrollCtrl.hasClients ? _textScrollCtrl.offset : 0.0;
-    const topPadding = 8.0;
-    final topLineIndex = ((offset - topPadding) / _lineHeight).floor().clamp(
-      0,
-      _nodes.length - 1,
-    );
-
-    final lineToCompute = targetLine ?? topLineIndex;
-    if (lineToCompute < 0 || _nodes.isEmpty) return [];
-
-    final path = <String>[];
-    final stack = <_PathStackEntry>[];
-
-    for (int i = 0; i <= lineToCompute && i < _nodes.length; i++) {
-      final node = _nodes[i];
-      final line = node.content;
-
-      _parseLineForPath(line, stack, path, i == lineToCompute);
-
-      if (node.isFolded && node.folded != null) {
-        for (final hiddenLine in node.folded!) {
-          _parseLineForPath(hiddenLine, stack, path, false);
-        }
-      }
-    }
-
-    return path;
-  }
-
-  void _parseLineForPath(
-    String line,
-    List<_PathStackEntry> stack,
-    List<String> path,
-    bool isTargetLine,
-  ) {
-    bool inString = false;
-    bool escaped = false;
-    String? currentKey;
-    bool afterColon = false;
-    int charIndex = 0;
-
-    void processOpenBracket(String bracket) {
-      if (bracket == '{') {
-        if (currentKey != null) {
-          stack.add(_PathStackEntry(key: currentKey!, bracket: '{'));
-          path.add(currentKey!);
-        } else if (stack.isNotEmpty && stack.last.bracket == '[') {
-          final idx = stack.last.arrayIndex;
-          stack.add(_PathStackEntry(key: '$idx', bracket: '{'));
-          path.add('$idx');
-        }
-      } else {
-        if (currentKey != null) {
-          stack.add(
-            _PathStackEntry(key: currentKey!, bracket: '[', arrayIndex: 0),
-          );
-          path.add(currentKey!);
-        } else if (stack.isNotEmpty && stack.last.bracket == '[') {
-          final idx = stack.last.arrayIndex;
-          stack.add(_PathStackEntry(key: '$idx', bracket: '[', arrayIndex: 0));
-          path.add('$idx');
-        } else if (stack.isEmpty) {
-          stack.add(_PathStackEntry(key: '', bracket: '[', arrayIndex: 0));
-        }
-      }
-      currentKey = null;
-      afterColon = false;
-    }
-
-    void processCloseBracket() {
-      if (stack.isNotEmpty) {
-        stack.removeLast();
-        if (path.isNotEmpty) {
-          path.removeLast();
-        }
-        if (stack.isNotEmpty && stack.last.bracket == '[') {
-          stack.last.arrayIndex++;
-        }
-      }
-    }
-
-    void processCloseBracketForTargetLine() {
-      if (stack.isNotEmpty) {
-        stack.removeLast();
-        if (stack.isNotEmpty && stack.last.bracket == '[') {
-          stack.last.arrayIndex++;
-        }
-      }
-    }
-
-    void processValue() {
-      if (isTargetLine && stack.isNotEmpty) {
-        if (currentKey != null && stack.last.bracket == '{') {
-          path.add(currentKey!);
-        } else if (currentKey == null && stack.last.bracket == '[') {
-          path.add('${stack.last.arrayIndex}');
-        }
-      }
-      if (stack.isNotEmpty && stack.last.bracket == '[' && currentKey == null) {
-        stack.last.arrayIndex++;
-      }
-      currentKey = null;
-      afterColon = false;
-    }
-
-    while (charIndex < line.length) {
-      final ch = line[charIndex];
-
-      if (escaped) {
-        escaped = false;
-        charIndex++;
-        continue;
-      }
-
-      if (ch == '\\' && inString) {
-        escaped = true;
-        charIndex++;
-        continue;
-      }
-
-      if (ch == '"') {
-        if (!inString && !afterColon) {
-          if (stack.isNotEmpty && stack.last.bracket == '[') {
-            processValue();
-          } else {
-            final keyStart = charIndex + 1;
-            int keyEnd = keyStart;
-            bool keyEscaped = false;
-            while (keyEnd < line.length) {
-              final keyCh = line[keyEnd];
-              if (keyEscaped) {
-                keyEscaped = false;
-              } else if (keyCh == '\\') {
-                keyEscaped = true;
-              } else if (keyCh == '"') {
-                break;
-              }
-              keyEnd++;
-            }
-            if (keyEnd > keyStart) {
-              final keyBuilder = StringBuffer();
-              bool kEscaped = false;
-              for (int k = keyStart; k < keyEnd; k++) {
-                final keyCh = line[k];
-                if (kEscaped) {
-                  keyBuilder.write(keyCh);
-                  kEscaped = false;
-                } else if (keyCh == '\\') {
-                  kEscaped = true;
-                } else {
-                  keyBuilder.write(keyCh);
-                }
-              }
-              currentKey = keyBuilder.toString();
-            }
-          }
-        } else if (inString && afterColon) {
-          processValue();
-        }
-        inString = !inString;
-        charIndex++;
-        continue;
-      }
-
-      if (inString) {
-        charIndex++;
-        continue;
-      }
-
-      if (ch == ':') {
-        afterColon = true;
-        charIndex++;
-        continue;
-      }
-
-      if (ch == '{') {
-        processOpenBracket('{');
-        charIndex++;
-        continue;
-      }
-
-      if (ch == '[') {
-        processOpenBracket('[');
-        charIndex++;
-        continue;
-      }
-
-      if (ch == '}') {
-        if (isTargetLine) {
-          processCloseBracketForTargetLine();
-        } else {
-          processCloseBracket();
-        }
-        charIndex++;
-        continue;
-      }
-
-      if (ch == ']') {
-        if (isTargetLine) {
-          processCloseBracketForTargetLine();
-        } else {
-          processCloseBracket();
-        }
-        charIndex++;
-        continue;
-      }
-
-      if (ch == ',') {
-        currentKey = null;
-        afterColon = false;
-        charIndex++;
-        continue;
-      }
-
-      if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
-        if (afterColon) {
-          if (ch == 'n' &&
-              charIndex + 3 < line.length &&
-              line.substring(charIndex, charIndex + 4) == 'null') {
-            processValue();
-            charIndex += 4;
-            continue;
-          }
-          if (ch == 't' &&
-              charIndex + 3 < line.length &&
-              line.substring(charIndex, charIndex + 4) == 'true') {
-            processValue();
-            charIndex += 4;
-            continue;
-          }
-          if (ch == 'f' &&
-              charIndex + 4 < line.length &&
-              line.substring(charIndex, charIndex + 5) == 'false') {
-            processValue();
-            charIndex += 5;
-            continue;
-          }
-          final code = ch.codeUnitAt(0);
-          if (ch == '-' || (code >= 48 && code <= 57)) {
-            processValue();
-            int endIdx = charIndex + 1;
-            while (endIdx < line.length) {
-              final numCh = line[endIdx];
-              final numCode = numCh.codeUnitAt(0);
-              if ((numCode >= 48 && numCode <= 57) ||
-                  numCh == '.' ||
-                  numCh == 'e' ||
-                  numCh == 'E' ||
-                  numCh == '+' ||
-                  numCh == '-') {
-                endIdx++;
-              } else {
-                break;
-              }
-            }
-            charIndex = endIdx;
-            continue;
-          }
-        }
-      }
-
-      charIndex++;
-    }
-  }
-
-  // ── Fold / unfold ───────────────────────────────────────────────
-
-  void _toggleFold(int i) {
-    final node = _nodes[i];
-    if (node.isFolded) {
-      // Unfold: restore hidden lines as plain nodes.
-      final hidden = node.folded!;
-      node.folded = null;
-      _nodes.insertAll(i + 1, hidden.map(_LineNode.new).toList());
-    } else {
-      // Fold: collapse nodes[i+1..endLine-1] under node[i].
-      // Keep the closing bracket line (endLine) visible.
-      final endLine = _foldRanges[i];
-      if (endLine == null) return;
-      final hidden = <String>[];
-      for (int k = i + 1; k < endLine; k++) {
-        hidden.add(_nodes[k].content);
-        if (_nodes[k].folded != null) hidden.addAll(_nodes[k].folded!);
-      }
-      node.folded = hidden;
-      _nodes.removeRange(i + 1, endLine);
-    }
-    _syncing = true;
-    _displayCtrl.text = _displayText;
-    widget.controller.text = _fullText;
-    _syncing = false;
-    _recomputeFoldRanges();
-    setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _updateCurrentPath();
-    });
-  }
-
-  // ── Tab indentation ─────────────────────────────────────────────
-
-  void insertTab() {
-    final selection = _displayCtrl.selection;
-    final text = _displayCtrl.text;
-
-    if (selection.isCollapsed) {
-      // 无选区：在光标位置插入两个空格
-      final offset = selection.baseOffset;
-      final newText = text.substring(0, offset) + '  ' + text.substring(offset);
-      _displayCtrl.text = newText;
-      _displayCtrl.selection = TextSelection.collapsed(offset: offset + 2);
-    } else {
-      // 有选区：在选区内的每行开头添加两个空格
-      final lines = text.split('\n');
-      final startOffset = selection.start;
-      final endOffset = selection.end;
-
-      // 计算起始和结束行号
-      int startLine = 0;
-      int endLine = 0;
-      int currentOffset = 0;
-      for (int i = 0; i < lines.length; i++) {
-        if (currentOffset <= startOffset) startLine = i;
-        if (currentOffset <= endOffset) endLine = i;
-        currentOffset += lines[i].length + 1; // +1 for newline
-      }
-
-      // 在每行开头添加两个空格
-      for (int i = startLine; i <= endLine; i++) {
-        lines[i] = '  ' + lines[i];
-      }
-
-      final newText = lines.join('\n');
-      _displayCtrl.text = newText;
-
-      // 更新选区
-      final addedSpaces = (endLine - startLine + 1) * 2;
-      _displayCtrl.selection = TextSelection(
-        baseOffset: startOffset + 2,
-        extentOffset: endOffset + addedSpaces,
-      );
-    }
-  }
-
-  void removeTab() {
-    final selection = _displayCtrl.selection;
-    final text = _displayCtrl.text;
-
-    if (selection.isCollapsed) {
-      // 无选区：删除光标前的空格（如果有）
-      final offset = selection.baseOffset;
-      if (offset >= 2 && text.substring(offset - 2, offset) == '  ') {
-        final newText = text.substring(0, offset - 2) + text.substring(offset);
-        _displayCtrl.text = newText;
-        _displayCtrl.selection = TextSelection.collapsed(offset: offset - 2);
-      } else if (offset >= 1 && text.substring(offset - 1, offset) == ' ') {
-        final newText = text.substring(0, offset - 1) + text.substring(offset);
-        _displayCtrl.text = newText;
-        _displayCtrl.selection = TextSelection.collapsed(offset: offset - 1);
-      }
-    } else {
-      // 有选区：在选区内的每行开头删除两个空格（如果有）
-      final lines = text.split('\n');
-      final startOffset = selection.start;
-      final endOffset = selection.end;
-
-      // 计算起始和结束行号
-      int startLine = 0;
-      int endLine = 0;
-      int currentOffset = 0;
-      for (int i = 0; i < lines.length; i++) {
-        if (currentOffset <= startOffset) startLine = i;
-        if (currentOffset <= endOffset) endLine = i;
-        currentOffset += lines[i].length + 1; // +1 for newline
-      }
-
-      // 在每行开头删除两个空格（如果有）
-      int removedSpaces = 0;
-      for (int i = startLine; i <= endLine; i++) {
-        if (lines[i].startsWith('  ')) {
-          lines[i] = lines[i].substring(2);
-          removedSpaces += 2;
-        } else if (lines[i].startsWith(' ')) {
-          lines[i] = lines[i].substring(1);
-          removedSpaces += 1;
-        }
-      }
-
-      final newText = lines.join('\n');
-      _displayCtrl.text = newText;
-
-      // 更新选区
-      final startLineRemoved = _calculateRemovedSpacesForLine(
-        text,
-        startLine,
-        lines,
-      );
-      _displayCtrl.selection = TextSelection(
-        baseOffset: startOffset - startLineRemoved,
-        extentOffset: endOffset - removedSpaces,
-      );
-    }
-  }
-
-  int _calculateRemovedSpacesForLine(
-    String originalText,
-    int lineIndex,
-    List<String> newLines,
-  ) {
-    final lines = originalText.split('\n');
-    if (lineIndex >= lines.length) return 0;
-    final originalLine = lines[lineIndex];
-    final newLine = newLines[lineIndex];
-    return originalLine.length - newLine.length;
-  }
-
-  // ── Build ───────────────────────────────────────────────────────
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Shortcuts(
-      shortcuts: <LogicalKeySet, Intent>{
-        LogicalKeySet(LogicalKeyboardKey.tab): const _InsertTabIntent(),
-        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.tab):
-            const _RemoveTabIntent(),
-      },
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          _InsertTabIntent: _InsertTabAction(this),
-          _RemoveTabIntent: _RemoveTabAction(this),
-        },
-        child: Focus(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 300, minHeight: 60),
-            child: Container(
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border.all(
-                  color: widget.hasSyntaxError
-                      ? colorScheme.error
-                      : colorScheme.outline,
-                ),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    _onTextFieldScrollNotification(notification);
-                    return false;
-                  },
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 行号列 - 只渲染可见范围内的行号
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final scrollOffset = _textScrollCtrl.hasClients
-                              ? _textScrollCtrl.offset
-                              : 0.0;
-                          final viewHeight = constraints.maxHeight;
-
-                          // 计算可见范围
-                          const topPadding = 8.0;
-                          final firstVisibleLine = ((scrollOffset - topPadding) / _lineHeight).floor().clamp(0, _nodes.length - 1);
-                          final lastVisibleLine = ((scrollOffset + viewHeight - topPadding) / _lineHeight).ceil().clamp(0, _nodes.length - 1);
-
-                          // 额外渲染上下各 2 行以平滑滚动
-                          const bufferLines = 2;
-                          final startLine = (firstVisibleLine - bufferLines).clamp(0, _nodes.length - 1);
-                          final endLine = (lastVisibleLine + bufferLines).clamp(0, _nodes.length - 1);
-
-                          return SizedBox(
-                            width: 48,
-                            height: constraints.maxHeight,
-                            child: ClipRect(
-                              child: Stack(
-                                children: [
-                                  // 使用 Positioned 来定位行号列
-                                  Positioned(
-                                    top: startLine * _lineHeight + topPadding - scrollOffset,
-                                    left: 0,
-                                    right: 0,
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        for (int i = startLine; i <= endLine; i++)
-                                          _buildGutterCell(i, colorScheme),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      // TextField 区域
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          controller: _horizontalScrollCtrl,
-                          child: SizedBox(
-                            width: 5000,
-                            child: Builder(
-                              builder: (context) {
-                                final scrollOffset = _textScrollCtrl.hasClients
-                                    ? _textScrollCtrl.offset
-                                    : 0.0;
-                                return Stack(
-                                  clipBehavior: Clip.hardEdge,
-                                  children: [
-                                    if (_cursorLine >= 0 &&
-                                        _cursorLine < _nodes.length)
-                                      Positioned(
-                                        top: _cursorLine * _lineHeight + 5.0 - scrollOffset,
-                                        left: 0,
-                                        right: 0,
-                                        height: _lineHeight,
-                                        child: Container(
-                                          color: colorScheme.primaryContainer
-                                              .withValues(alpha: 0.3),
-                                        ),
-                                      ),
-                                    TextField(
-                                      controller: _displayCtrl,
-                                      scrollController: _textScrollCtrl,
-                                      style: _lineStyle,
-                                      maxLines: null,
-                                      keyboardType: TextInputType.multiline,
-                                      onTap: () {
-                                        widget.onTap?.call();
-                                        WidgetsBinding.instance
-                                            .addPostFrameCallback((_) {
-                                              _onSelectionChanged();
-                                            });
-                                      },
-                                      decoration: const InputDecoration(
-                                        border: InputBorder.none,
-                                        contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 8,
-                                        ),
-                                        isDense: true,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGutterCell(int i, ColorScheme colorScheme) {
-    final node = _nodes[i];
-    final isFoldable = _foldRanges.containsKey(i) || node.isFolded;
-    final lineNumber = i + 1;
-
-    return SizedBox(
-      height: _lineHeight,
-      width: 48,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            '$lineNumber',
-            style: TextStyle(
-              fontFamily: 'Consolas',
-              fontSize: 12,
-              color: colorScheme.outline,
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            width: 20,
-            child: isFoldable
-                ? InkWell(
-                    onTap: () => _toggleFold(i),
-                    child: Center(
-                      child: Icon(
-                        node.isFolded ? Icons.chevron_right : Icons.expand_more,
-                        size: 14,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-        ],
-      ),
     );
   }
 }

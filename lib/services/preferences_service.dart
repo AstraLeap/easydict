@@ -193,7 +193,7 @@ class PreferencesService {
       case actionResetEntry:
         return Icons.refresh;
       case actionNote:
-        return Icons.note_outlined;
+        return Icons.sticky_note_2_outlined;
       default:
         return Icons.more_horiz;
     }
@@ -201,17 +201,20 @@ class PreferencesService {
 
   static const String _kToolbarActions = 'toolbar_actions';
   static const String _kOverflowActions = 'overflow_actions';
-  static const int maxToolbarItems = 5;
+  static const int maxDisplayItems = 5; // 工具栏最多显示5个按钮（包括折叠菜单按钮）
+  static const int maxToolbarItems = 5; // 兼容旧版本，实际逻辑使用 maxDisplayItems
 
   static const List<String> defaultToolbarActions = [
     actionSearch,
     actionFavorite,
-    actionToggleTranslate,
     actionAiHistory,
-    actionResetEntry,
+    actionNote,
+    actionToggleTranslate,
   ];
 
-  static const List<String> defaultOverflowActions = [];
+  static const List<String> defaultOverflowActions = [
+    actionResetEntry,
+  ];
 
   static const List<String> validToolbarActions = [
     actionSearch,
@@ -266,12 +269,25 @@ class PreferencesService {
 
     for (final action in validToolbarActions) {
       if (!validToolbar.contains(action) && !validOverflow.contains(action)) {
-        if (validToolbar.length < maxToolbarItems) {
+        // 动态计算工具栏按钮上限
+        final totalActions = validToolbar.length + validOverflow.length + 1;
+        final maxToolbar = totalActions > maxDisplayItems
+            ? maxDisplayItems - 1  // 需要折叠菜单，留一个位置
+            : maxDisplayItems;      // 不需要折叠菜单
+
+        if (validToolbar.length < maxToolbar) {
           validToolbar.add(action);
         } else {
           validOverflow.add(action);
         }
       }
+    }
+
+    // 最终验证：如果有溢出按钮，确保工具栏不超过4个
+    if (validOverflow.isNotEmpty && validToolbar.length > maxDisplayItems - 1) {
+      final excess = validToolbar.getRange(maxDisplayItems - 1, validToolbar.length).toList();
+      validToolbar.removeRange(maxDisplayItems - 1, validToolbar.length);
+      validOverflow.insertAll(0, excess);
     }
 
     return (validToolbar, validOverflow);
