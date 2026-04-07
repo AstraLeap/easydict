@@ -89,7 +89,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   @override
   void initState() {
     super.initState();
-    Logger.i('DictionarySearchPage initState', tag: 'DictionarySearch');
     _searchFocusNode.addListener(_onFocusChange);
     // 拦截方向键，阻止 TextField 默认的光标移动行为（上/下移到行首/尾）
     _searchFocusNode.onKey = (FocusNode node, RawKeyEvent event) {
@@ -152,15 +151,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    Logger.i(
-      'DictionarySearchPage didChangeDependencies',
-      tag: 'DictionarySearch',
-    );
     FontLoaderService().reloadDictionaryContentScale();
   }
 
   Future<void> _initData() async {
-    Logger.i('DictionarySearchPage _initData 开始', tag: 'DictionarySearch');
     try {
       await Future.wait([
         _loadSearchHistory(),
@@ -762,10 +756,6 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    Logger.i(
-      'DictionarySearchPage build, _isInitializing: $_isInitializing',
-      tag: 'DictionarySearch',
-    );
     if (_isInitializing) {
       return const Scaffold(
         body: SafeArea(child: Center(child: CircularProgressIndicator())),

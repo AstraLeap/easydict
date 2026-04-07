@@ -1360,19 +1360,11 @@ class DatabaseService {
     }
 
     // 遍历每个词典搜索
-    Logger.d(
-      'getAllEntries: 开始遍历 ${filteredDicts.length} 个词典',
-      tag: 'DatabaseService',
-    );
     for (final metadata in filteredDicts) {
       final langCode = LanguageUtils.normalizeSourceLanguage(
         metadata.sourceLanguage,
       );
       final normQuery = normQueries[langCode]!;
-      Logger.d(
-        'getAllEntries: 正在搜索词典 ${metadata.id}, langCode=$langCode',
-        tag: 'DatabaseService',
-      );
 
       // 先直接搜索单词
       var entries = await _searchInDictionary(
@@ -1588,12 +1580,7 @@ class DatabaseService {
     final entries = <DictionaryEntry>[];
 
     try {
-      Logger.i(
-        '正在搜索词典: $dictId, exactMatch=$exactMatch',
-        tag: 'DatabaseService',
-      );
       final db = await _dictManager.openDictionaryDatabase(dictId);
-      Logger.i('成功打开词典数据库: $dictId', tag: 'DatabaseService');
 
       // 获取该词典的 zstd 字典用于解压
       final zstdDict = await _dictManager.getZstdDictionary(dictId);

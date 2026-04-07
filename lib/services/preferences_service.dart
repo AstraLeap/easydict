@@ -201,18 +201,17 @@ class PreferencesService {
 
   static const String _kToolbarActions = 'toolbar_actions';
   static const String _kOverflowActions = 'overflow_actions';
-  static const int maxDisplayItems = 5; // 工具栏最多显示5个按钮（包括折叠菜单按钮）
-  static const int maxToolbarItems = 5; // 兼容旧版本，实际逻辑使用 maxDisplayItems
+  static const int maxToolbarItems = 4; // 工具栏最多4个按钮
 
   static const List<String> defaultToolbarActions = [
     actionSearch,
     actionFavorite,
     actionAiHistory,
     actionNote,
-    actionToggleTranslate,
   ];
 
   static const List<String> defaultOverflowActions = [
+    actionToggleTranslate,
     actionResetEntry,
   ];
 
@@ -250,11 +249,23 @@ class PreferencesService {
     final validToolbar = <String>[];
     final validOverflow = <String>[];
 
+    // 按保存的顺序添加有效的工具栏按钮（最多4个）
     if (toolbarActions != null) {
       for (final action in toolbarActions) {
         if (validToolbarActions.contains(action) &&
-            !validToolbar.contains(action)) {
+            !validToolbar.contains(action) &&
+            validToolbar.length < maxToolbarItems) {
           validToolbar.add(action);
+        }
+      }
+    }
+    // 溢出的添加到overflow
+    if (toolbarActions != null) {
+      for (final action in toolbarActions) {
+        if (validToolbarActions.contains(action) &&
+            !validToolbar.contains(action) &&
+            !validOverflow.contains(action)) {
+          validOverflow.add(action);
         }
       }
     }
@@ -267,27 +278,11 @@ class PreferencesService {
       }
     }
 
+    // 添加缺失的action
     for (final action in validToolbarActions) {
       if (!validToolbar.contains(action) && !validOverflow.contains(action)) {
-        // 动态计算工具栏按钮上限
-        final totalActions = validToolbar.length + validOverflow.length + 1;
-        final maxToolbar = totalActions > maxDisplayItems
-            ? maxDisplayItems - 1  // 需要折叠菜单，留一个位置
-            : maxDisplayItems;      // 不需要折叠菜单
-
-        if (validToolbar.length < maxToolbar) {
-          validToolbar.add(action);
-        } else {
-          validOverflow.add(action);
-        }
+        validOverflow.add(action);
       }
-    }
-
-    // 最终验证：如果有溢出按钮，确保工具栏不超过4个
-    if (validOverflow.isNotEmpty && validToolbar.length > maxDisplayItems - 1) {
-      final excess = validToolbar.getRange(maxDisplayItems - 1, validToolbar.length).toList();
-      validToolbar.removeRange(maxDisplayItems - 1, validToolbar.length);
-      validOverflow.insertAll(0, excess);
     }
 
     return (validToolbar, validOverflow);

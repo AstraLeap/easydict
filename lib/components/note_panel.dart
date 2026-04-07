@@ -93,12 +93,7 @@ class _NotePanelState extends State<NotePanel> {
   }
 
   void _handleLinkTap(String href) {
-    // 解析链接格式: dictId/entryId/json.path
-    // 检查是否是内部链接格式（包含至少两个斜杠分隔的部分）
-    final parts = href.split('/');
-    if (parts.length >= 2) {
-      widget.onLinkTap?.call(href);
-    }
+    widget.onLinkTap?.call(href);
   }
 
   @override
@@ -187,6 +182,10 @@ class _NotePanelState extends State<NotePanel> {
       padding: const EdgeInsets.all(12),
       child: MarkdownBody(
         data: _note?.content ?? '',
+        styleSheet: MarkdownStyleSheet(
+          p: TextStyle(color: colorScheme.onSurface),
+          a: TextStyle(color: colorScheme.primary),
+        ),
         onTapLink: (text, href, title) {
           if (href != null) {
             _handleLinkTap(href);
@@ -194,10 +193,5 @@ class _NotePanelState extends State<NotePanel> {
         },
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }

@@ -866,7 +866,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       final allDicts = _entryGroup.dictionaryGroups;
       if (allDicts.isEmpty) return;
 
-      // 收集所有词典的语言路径
+      // 收集所有词典的语言路径（带 dictId 和 entry_id 前缀）
       final Set<String> allLanguagePaths = {};
 
       // 遍历每个词典，使用各自的元数据收集语言路径
@@ -883,13 +883,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         final sourceLang = metadata.sourceLanguage;
         final targetLangs = metadata.targetLanguages;
 
-        // 收集该词典的语言路径
+        // 收集该词典的语言路径（带 dictId 和 entry_id 前缀，使各条目独立判断）
         for (final pageGroup in dictGroup.pageGroups) {
           for (final section in pageGroup.sections) {
             final json = section.entry.toJson();
+            final entryId = json['entry_id']?.toString() ?? '';
+            final pathPrefix = '$dictId.$entryId';
             _collectLanguagePaths(
               json,
-              '',
+              pathPrefix, // 使用 dictId.entry_id 作为路径前缀
               allLanguagePaths,
               sourceLang,
               targetLangs,
@@ -2489,21 +2491,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       menuRight,
       overlaySize.height - menuBottomY, // 菜单底部距离屏幕底部的距离
     );
-
-    // 调试信息
-    debugPrint('=== 更多菜单调试信息 ===');
-    debugPrint('屏幕尺寸: $overlaySize');
-    debugPrint('按钮位置: $buttonPosition');
-    debugPrint('按钮尺寸: $buttonSize');
-    debugPrint('键盘高度: $keyboardHeight');
-    debugPrint('底部安全区: $bottomSafePadding');
-    debugPrint('工具栏底部距离: $toolbarBottom');
-    debugPrint('工具栏顶部Y: $toolbarTopY');
-    debugPrint('菜单底部Y: $menuBottomY');
-    debugPrint('菜单顶部Y: $menuTopY');
-    debugPrint('菜单高度: $menuHeight');
-    debugPrint('menuPosition: $menuPosition');
-    debugPrint('===========================');
 
     showMenu<String>(
       context: context,
@@ -5278,8 +5265,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 检查父级 Map 中是否有其他可显示的语言内容
-  /// 即：源语言内容 或 非目标语言内容
+  /// 即：源语言内容、非目标语言内容，或其他目标语言内容
   /// 用于智能隐藏逻辑：只有存在其他可显示内容时才隐藏当前语言
+  ///
+  /// 特殊情况：如果某个位置只有唯一一种目标语言内容（没有源语言或其他目标语言），
+  /// 则不应该隐藏它，以保留至少一个释义。
   bool _checkHasOtherVisibleContent(
     Map<String, dynamic> parentMap,
     String currentLangKey,
@@ -5292,6 +5282,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
       // 如果是源语言，或者不是目标语言（非隐藏范围），则有其他可显示内容
       if (entry.key == sourceLang || !effectiveTargetLangs.contains(entry.key)) {
+        return true;
+      }
+
+      // 如果是其他目标语言（有实际内容），则也有其他可显示内容
+      // 这确保了：只有当存在其他目标语言时，才隐藏当前目标语言
+      if (effectiveTargetLangs.contains(entry.key)) {
         return true;
       }
     }

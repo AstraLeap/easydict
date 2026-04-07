@@ -560,16 +560,48 @@ String _removeFormatting(String text) {
 }
 
 String? _extractTextToCopy(dynamic value) {
-  String textToCopy = '';
+  final result = _extractTextRecursive(value);
+  return result.isNotEmpty ? result : null;
+}
+
+/// 递归提取文本内容，移除格式标记
+String _extractTextRecursive(dynamic value) {
+  if (value == null) return '';
   if (value is String) {
-    textToCopy = _removeFormatting(value);
-  } else if (value is Map) {
-    textToCopy = value['text'] ?? value['word'] ?? value['content'] ?? '';
-    textToCopy = _removeFormatting(textToCopy);
-  } else if (value != null) {
-    textToCopy = value.toString();
+    return _removeFormatting(value);
   }
-  return textToCopy.isNotEmpty ? textToCopy : null;
+  if (value is Map) {
+    // 优先使用常见的文本字段
+    final textKeys = ['text', 'word', 'content'];
+    for (final key in textKeys) {
+      if (value.containsKey(key)) {
+        final text = value[key];
+        if (text is String && text.isNotEmpty) {
+          return _removeFormatting(text);
+        }
+      }
+    }
+    // 如果没有直接的文本字段，递归提取所有值
+    final parts = <String>[];
+    for (final entry in value.entries) {
+      final extracted = _extractTextRecursive(entry.value);
+      if (extracted.isNotEmpty) {
+        parts.add(extracted);
+      }
+    }
+    return parts.join(' ');
+  }
+  if (value is List) {
+    final parts = <String>[];
+    for (final item in value) {
+      final extracted = _extractTextRecursive(item);
+      if (extracted.isNotEmpty) {
+        parts.add(extracted);
+      }
+    }
+    return parts.join(' ');
+  }
+  return value.toString();
 }
 
 String _convertPathToString(List<String> path) {
@@ -1405,6 +1437,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
 
+  /// 路径前缀，格式为 "dictId.entryId"
+  /// 用于隐藏语言功能，但对外暴露路径时需要剥离
+  String get _pathPrefix =>
+      '${widget.entry.dictId ?? ''}.${widget.entry.entryIdAsInt}';
+
+  /// 剥离路径前缀，用于对外暴露路径（如右键菜单、目录跳转等）
+  /// 内部路径格式：dictId.entryId.sense.0.definition.zh
+  /// 对外路径格式：sense.0.definition.zh
+  String _stripPathPrefix(String path) {
+    final prefix = _pathPrefix;
+    if (path.startsWith('$prefix.')) {
+      return path.substring(prefix.length + 1);
+    }
+    return path;
+  }
+
   // headword 音节显示状态：true 表示显示音节形式，false 表示显示原始形式
   // null 表示尚未初始化，会从设置中加载
   bool? _showHeadwordSyllable;
@@ -1923,8 +1971,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
+    // 外部传入的路径不带前缀，需要加上前缀才能在 _elementKeys 中找到
+    final prefixedPath = '$_pathPrefix.$path';
     // 直接执行滚动，GlobalKey 会在 _getElementKey 中按需创建
-    _executeScrollToElement(path, retryCount: retryCount);
+    _executeScrollToElement(prefixedPath, retryCount: retryCount);
   }
 
   /// 执行实际的滚动操作
@@ -3153,19 +3203,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
             // 无论是否有翻译，都通知父组件
             // 如果有翻译，父组件会切换显示状态
             // 如果没有翻译，父组件会触发翻译
-            widget.onElementTap?.call(path, label);
+            widget.onElementTap?.call(_stripPathPrefix(path), label);
             return;
           }
         } else {
           // 点击的是非源语言（目标语言），通知父组件切换显示状态
-          widget.onElementTap?.call(path, label);
+          widget.onElementTap?.call(_stripPathPrefix(path), label);
           return;
         }
       }
     }
 
     // 非语言代码路径，直接调用 onElementTap
-    widget.onElementTap?.call(path, label);
+    widget.onElementTap?.call(_stripPathPrefix(path), label);
   }
 
   /// 根据点击动作设置执行对应的动作
@@ -3174,31 +3224,35 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
+    // 剥离路径前缀，对外暴露不带 dictId.entryId 的路径
+    final strippedPath = _stripPathPrefix(path);
+
     // 使用缓存的点击动作，避免异步延迟
     final action = _clickAction;
 
     switch (action) {
       case PreferencesService.actionAiTranslate:
-        _performAiTranslate(path, label);
+        _performAiTranslate(strippedPath, label);
         break;
       case PreferencesService.actionCopy:
-        _performCopy(path, label);
+        _performCopy(strippedPath, label);
         break;
       case PreferencesService.actionAskAi:
-        widget.onAiAsk?.call(path, label);
+        widget.onAiAsk?.call(strippedPath, label);
         break;
       case PreferencesService.actionEdit:
-        widget.onEditElement?.call(path, label);
+        widget.onEditElement?.call(strippedPath, label);
         break;
       case PreferencesService.actionSpeak:
-        _performSpeak(path, label);
+        _performSpeak(strippedPath, label);
         break;
       default:
-        _performAiTranslate(path, label);
+        _performAiTranslate(strippedPath, label);
     }
   }
 
-  void _performCopy(String path, String label) {
+  /// 从指定路径提取文本（复用逻辑）
+  String? _getTextFromPath(String path) {
     final pathParts = path.split('.');
     final json = _localEntry.toJson();
     dynamic currentValue = json;
@@ -3226,8 +3280,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     final textToCopy = _extractTextToCopy(currentValue);
+    return textToCopy != null ? _substituteHeadword(textToCopy) : null;
+  }
+
+  void _performCopy(String path, String label) {
+    final textToCopy = _getTextFromPath(path);
     if (textToCopy != null) {
-      Clipboard.setData(ClipboardData(text: _substituteHeadword(textToCopy)));
+      Clipboard.setData(ClipboardData(text: textToCopy));
       showToast(context, context.t.entry.copiedToClipboard);
     } else {
       showToast(context, context.t.entry.extractFailed);
@@ -3235,7 +3294,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   /// 处理添加到笔记
-  void _handleAddToNote(_PathData pathData) {
+  void _handleAddToNote(_PathData pathData, {String? selectedText}) {
     final entry = widget.entry;
     final word = entry.headword;
     final language = _sourceLanguage ?? 'en';
@@ -3245,7 +3304,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
     // entry.entryIdAsInt 返回纯数字的 entry_id
     final entryId = entry.entryIdAsInt;
     final jsonPath = pathData.path.join('.');
-    final label = pathData.label;
+
+    // 获取标签：
+    // 1. 如果有选中文本，使用选中文本
+    // 2. 否则从 JSON 值中提取实际文本（与复制文本逻辑一致）
+    final label = (selectedText != null && selectedText.isNotEmpty)
+        ? selectedText
+        : _getTextFromPath(jsonPath) ?? pathData.label;
 
     // 格式: [label](dictId/entryId/json.path)
     final link = '[$label]($dictId/$entryId/$jsonPath)';
@@ -3499,12 +3564,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
+    // 剥离路径前缀，对外暴露不带 dictId.entryId 的路径
+    final strippedPath = _stripPathPrefix(path);
     Logger.d(
-      'Right-click on element: path=$path, label=$label, _currentOverlayEntry=$_currentOverlayEntry',
+      'Right-click on element: path=$strippedPath, label=$label, _currentOverlayEntry=$_currentOverlayEntry',
       tag: 'ComponentRenderer._handleElementSecondaryTap',
     );
 
-    final pathParts = path.split('.');
+    final pathParts = strippedPath.split('.');
     final pathData = _PathData(pathParts, label);
 
     _showContextMenu(context, position, pathData);
@@ -3745,7 +3812,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onTap: () {
             closeMenu();
             selectableState?.clearSelection();
-            _handleAddToNote(pathData);
+            _handleAddToNote(pathData, selectedText: selectedText);
           },
         ),
       );
@@ -4783,51 +4850,56 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onElementTap: widget.onElementTap,
           onElementSecondaryTap: _handleElementSecondaryTap,
           child: PathScope(
-            path: const ['entry'],
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                // 监听滚动结束事件
-                if (notification is ScrollEndNotification) {
-                  _onScrollEnded();
-                }
-                return false; // 不阻止事件继续传递
+            // 使用 dictId 和 entry_id 作为路径前缀，使各词典各条目的隐藏逻辑独立
+            path: [widget.entry.dictId ?? '', widget.entry.entryIdAsInt.toString()],
+            child: Builder(
+              builder: (innerContext) {
+                return NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    // 监听滚动结束事件
+                    if (notification is ScrollEndNotification) {
+                      _onScrollEnded();
+                    }
+                    return false; // 不阻止事件继续传递
+                  },
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      left: widget.leftPadding >= 0 ? widget.leftPadding : 16,
+                      right: widget.rightPadding >= 0 ? widget.rightPadding : 16,
+                      top: widget.topPadding >= 0
+                          ? widget.topPadding
+                          : MediaQuery.of(context).padding.top + 16,
+                      bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
+                    ),
+                    child: widget.enableSelection
+                        ? Listener(
+                            // 捕获所有触摸事件，记录长按开始时的位置
+                            onPointerDown: (event) {
+                              _selectionStartPosition = event.position;
+                            },
+                            child: SelectionArea(
+                              // 使用 key 强制在滚动结束后重建菜单
+                              key: ValueKey('selection_area_$_menuRebuildCounter'),
+                              // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
+                              contextMenuBuilder: (context, state) {
+                                return _buildSelectionContextMenu(context, state);
+                              },
+                              onSelectionChanged: (selection) {
+                                // 只记录选择状态，不触发任何操作
+                                _currentSelection = selection;
+                              },
+                              child: _buildContentColumn(
+                                innerContext,
+                                page,
+                                sections,
+                                entry,
+                              ),
+                            ),
+                          )
+                        : _buildContentColumn(innerContext, page, sections, entry),
+                  ),
+                );
               },
-              child: SingleChildScrollView(
-                padding: EdgeInsets.only(
-                  left: widget.leftPadding >= 0 ? widget.leftPadding : 16,
-                  right: widget.rightPadding >= 0 ? widget.rightPadding : 16,
-                  top: widget.topPadding >= 0
-                      ? widget.topPadding
-                      : MediaQuery.of(context).padding.top + 16,
-                  bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
-                ),
-                child: widget.enableSelection
-                    ? Listener(
-                        // 捕获所有触摸事件，记录长按开始时的位置
-                        onPointerDown: (event) {
-                          _selectionStartPosition = event.position;
-                        },
-                        child: SelectionArea(
-                          // 使用 key 强制在滚动结束后重建菜单
-                          key: ValueKey('selection_area_$_menuRebuildCounter'),
-                          // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
-                          contextMenuBuilder: (context, state) {
-                            return _buildSelectionContextMenu(context, state);
-                          },
-                          onSelectionChanged: (selection) {
-                            // 只记录选择状态，不触发任何操作
-                            _currentSelection = selection;
-                          },
-                          child: _buildContentColumn(
-                            context,
-                            page,
-                            sections,
-                            entry,
-                          ),
-                        ),
-                      )
-                    : _buildContentColumn(context, page, sections, entry),
-              ),
             ),
           ),
         ),

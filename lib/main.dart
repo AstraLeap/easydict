@@ -277,12 +277,6 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   Object? _error;
 
   @override
-  void initState() {
-    super.initState();
-    Logger.i('ErrorBoundary 初始化', tag: 'ErrorBoundary');
-  }
-
-  @override
   Widget build(BuildContext context) {
     if (_error != null) {
       return Material(
@@ -607,7 +601,6 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    Logger.i('MainScreen initState', tag: 'MainScreen');
     _initDictUpdateCheck();
     _initAppUpdateCheck();
   }
@@ -695,7 +688,6 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    Logger.i('MainScreen build 开始', tag: 'MainScreen');
     final updateCheckService = context.watch<DictUpdateCheckService>();
     final appUpdateService = context.watch<AppUpdateService>();
     final dictUpdateCount = updateCheckService.updatableCount;

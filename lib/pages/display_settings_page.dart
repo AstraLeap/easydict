@@ -601,7 +601,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
         await _preferencesService.getToolbarAndOverflowActions();
     setState(() {
       _allActions = [...toolbarActions, ...overflowActions];
-      _dividerIndex = toolbarActions.length;
+      _dividerIndex = toolbarActions.length.clamp(0, PreferencesService.maxToolbarItems);
       _isLoading = false;
     });
   }
@@ -616,18 +616,19 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
   }
 
   void _onReorder(int oldIndex, int newIndex) {
-    // Calculate actual indices in _allActions (visual list includes divider)
+    // 计算实际索引（视觉列表包含分隔线）
     final oldIsInToolbar = oldIndex < _dividerIndex;
     final oldActualIndex = oldIndex >= _dividerIndex ? oldIndex - 1 : oldIndex;
     if (newIndex > oldIndex) newIndex -= 1;
     final newIsInToolbar = newIndex < _dividerIndex;
     final newActualIndex = newIndex >= _dividerIndex ? newIndex - 1 : newIndex;
-    if (!oldIsInToolbar &&
-        newIsInToolbar &&
-        _dividerIndex >= PreferencesService.maxToolbarItems) {
+
+    // 如果移动到工具栏，检查是否超过限制
+    if (!oldIsInToolbar && newIsInToolbar && _dividerIndex >= PreferencesService.maxToolbarItems) {
       _showMaxItemsError();
       return;
     }
+
     setState(() {
       final item = _allActions.removeAt(oldActualIndex);
       _allActions.insert(newActualIndex, item);
