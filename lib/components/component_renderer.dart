@@ -1478,6 +1478,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   // 用于存储元素 Key 的 Map，用于精确滚动
   final Map<String, GlobalKey> _elementKeys = {};
+  // 文本相关 GlobalKey 缓存，避免在高频重建路径中重复创建。
+  final Map<String, GlobalKey> _textKeys = {};
   // 记录当前已渲染的可点击路径，用于更精确的高亮定位。
   final Set<String> _renderedTappablePaths = {};
   // 待处理的滚动请求队列
@@ -1572,7 +1574,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       DictElementType.clob,
       color: colorScheme.onSurface,
     );
-    final clobTextKey = GlobalKey();
+    final clobTextKey = _getTextKey(clobPath, suffix: 'clob');
 
     final recognizer = _createGestureRecognizer(
       pathKey: pathStr,
@@ -1644,7 +1646,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       DictElementType.text,
       color: colorScheme.onSurface,
     );
-    final textTextKey = GlobalKey();
+    final textTextKey = _getTextKey(textPath, suffix: 'text');
 
     final recognizer = _createGestureRecognizer(
       pathKey: pathStr,
@@ -1827,7 +1829,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (text.isEmpty) return const SizedBox.shrink();
 
     final pathData = _PathData(path, label);
-    final textKey = GlobalKey();
+    final textKey = _getTextKey(path, suffix: 'table_cell');
 
     // 创建手势识别器以支持点击和右键菜单
     final tapRecognizer = TapGestureRecognizer()
@@ -1952,6 +1954,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         _hiddenLanguagesNotifier.value = [];
       }
       _elementKeys.clear();
+      _textKeys.clear();
       _sectionKeys.clear();
       _renderedTappablePaths.clear();
       _pendingScrollRequests.clear();
@@ -1961,6 +1964,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     } else if (!identical(oldWidget.entry, widget.entry)) {
       // 同一条目内容被更新（如编辑 JSON 后），同步 _localEntry 并清理 GlobalKey 避免重复
       _elementKeys.clear();
+      _textKeys.clear();
       _sectionKeys.clear();
       _renderedTappablePaths.clear();
       setState(() {
@@ -2248,6 +2252,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return _elementKeys.putIfAbsent(path, () => GlobalKey());
   }
 
+  GlobalKey _getTextKey(List<String> path, {String suffix = 'text'}) {
+    final cacheKey = '${_convertPathToString(path)}::$suffix';
+    return _textKeys.putIfAbsent(cacheKey, () => GlobalKey());
+  }
+
   Widget _buildTappableWidget({
     required BuildContext context,
     required _PathData pathData,
@@ -2256,7 +2265,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     TextStyle? textStyle,
     GlobalKey? customTextKey,
   }) {
-    final textKey = customTextKey ?? GlobalKey();
+    final textKey = customTextKey ??
+      _getTextKey(pathData.path, suffix: 'tappable_widget');
     final pathStr = _convertPathToString(pathData.path);
 
     // 记录当前已渲染的路径，供滚动后精确高亮使用。
@@ -2667,7 +2677,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       currentTextOffset += 1;
     }
 
-    final exampleTextKey = GlobalKey();
+    final exampleTextKey = _getTextKey(basePath, suffix: 'example_text');
 
     // 记录是否有 CJK 语言的例句文本（用于决定 source 的字体样式）
     bool hasCJKText = false;
@@ -4717,6 +4727,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       controller.dispose();
     }
     _highlightControllers.clear();
+    _textKeys.clear();
     super.dispose();
   }
 
@@ -5491,7 +5502,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
                             ...PathScope.of(context),
                             'usage_group',
                           ], 'Usage Group');
-                          final textKey = GlobalKey();
+                          final textKey = _getTextKey(
+                            pathData.path,
+                            suffix: 'usage_group',
+                          );
                           final pathStr = _convertPathToString(pathData.path);
 
                           final result = _parseFormattedText(
@@ -5687,7 +5701,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
 
     final spans = <InlineSpan>[];
-    final noteTextKey = GlobalKey();
+    final noteTextKey = _getTextKey(basePath, suffix: 'note_item');
     final sourceLang = sourceLanguage ?? 'en';
     int currentTextOffset = 0;
 
@@ -6128,6 +6142,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
                 DictElementType.example,
                 color: colorScheme.onSurfaceVariant,
               );
+              final noteTextKey = _getTextKey(
+                notePath,
+                suffix: 'pronunciation_note',
+              );
 
               final tapRecognizer = TapGestureRecognizer()
                 ..onTapDown = (details) {
@@ -6152,7 +6170,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       _lastTapPosition!,
                       note,
                       noteStyle,
-                      GlobalKey(),
+                      noteTextKey,
                       context,
                     );
                     _lastTapTime = null;
@@ -6222,6 +6240,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   pathData: notePathData,
                   child: Text.rich(
                     TextSpan(children: result.spans),
+                    key: noteTextKey,
                   ),
                 ),
               );
@@ -6609,7 +6628,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    final definitionTextKey = GlobalKey();
+    final definitionTextKey = _getTextKey(basePath, suffix: 'definition');
 
     if (definitions != null) {
       for (int i = 0; i < definitions.length; i++) {
@@ -7208,7 +7227,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         isSerif: isSerif,
       );
 
-      final textKey = GlobalKey();
+      final textKey = _getTextKey(path, suffix: 'label_plain');
 
       // 创建手势识别器以支持点击、右键和双击查词
       final recognizer = _createGestureRecognizer(
@@ -7417,7 +7436,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final colorScheme = Theme.of(context).colorScheme;
     final bgColor = colorScheme.primary;
     final fgColor = colorScheme.surface;
-    final textKey = GlobalKey();
+    final pathKey = '$labelPrefix.signpost';
+    final path = [...PathScope.of(context), pathKey];
+    final textKey = _getTextKey(path, suffix: 'signpost');
 
     final textStyle = DictTypography.getBaseStyle(
       DictElementType.label,
@@ -7440,8 +7461,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
       TextSpan(children: result.spans),
     );
 
-    final pathKey = '$labelPrefix.signpost';
-    final path = [...PathScope.of(context), pathKey];
     final pathData = _PathData(path, 'Signpost');
 
     final child = Container(
@@ -7528,7 +7547,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final pathKey = index != null
         ? '$labelPrefix.$key.$index'
         : '$labelPrefix.$key';
-    final textKey = GlobalKey();
 
     TextStyle textStyle;
     if (!hasBackground) {
@@ -7568,6 +7586,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       child: Builder(
         builder: (context) {
           final path = PathScope.of(context);
+          final textKey = _getTextKey(path, suffix: 'label_widget');
           final labelName = _capitalizeFirst(key);
 
           // 创建手势识别器以支持点击、右键和双击查词
@@ -9170,7 +9189,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       color: colorScheme.onSurfaceVariant,
     );
 
-    final textKey = GlobalKey();
+    final textKey = _getTextKey(path, suffix: 'board_content');
 
     return _buildTappableWidget(
       context: context,
@@ -9220,7 +9239,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       color: colorScheme.onSurfaceVariant,
     );
 
-    final textKey = GlobalKey();
+    final textKey = _getTextKey(path, suffix: 'plain_text');
     final hiddenPath = path.join('.');
 
     // 使用 HiddenLanguagesSelector 仅在相关路径的隐藏状态变化时重建
@@ -9540,7 +9559,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               runSpacing: 4,
               children: strings.asMap().entries.map((entry) {
                 final itemPath = [...path, '${entry.key}'];
-                final textKey = GlobalKey();
+                final textKey = _getTextKey(itemPath, suffix: 'inline_item');
                 return _buildTappableWidget(
                   context: context,
                   pathData: _PathData(itemPath, 'Inline Item'),
@@ -9572,7 +9591,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     GlobalKey? textKey,
   }) {
     final pathData = _PathData(path, 'Inline Item');
-    final effectiveTextKey = textKey ?? GlobalKey();
+    final effectiveTextKey =
+        textKey ?? _getTextKey(path, suffix: 'inline_item_text');
 
     // 创建手势识别器以支持点击和右键菜单
     final tapRecognizer = TapGestureRecognizer()

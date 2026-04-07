@@ -41,7 +41,6 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
 
   // 导航面板实际高度
   double _navPanelActualHeight = 0;
-  final GlobalKey _navPanelContentKey = GlobalKey();
 
   // 导航栏位置边界约束
   static const double _topMargin = 0.0; // 上界距离屏幕顶部的距离
@@ -186,7 +185,6 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
                 PreferencesService().setNavPanelPosition(true, _dy);
               },
               child: MeasuredSize(
-                key: _navPanelContentKey,
                 onChange: (size) {
                   if (size.height != _navPanelActualHeight) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {

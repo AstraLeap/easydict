@@ -502,10 +502,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         _dictSearchRelations = _buildDictRelations(searchResult.dictResults);
         // 更新单词关系搜索
         _wordRelationsFuture = EnglishSearchService().searchWordRelations(word);
+        // 切词后需要重新检测笔记状态，避免沿用上一个词的面板
+        _isNoteStatusLoading = true;
       });
 
       // 重新加载收藏状态
       await _loadFavoriteStatus();
+      // 重新加载笔记状态
+      await _loadNoteStatus();
 
       // 等待一帧让 ComponentRenderer 完成更新（包括重置 hiddenLanguages）
       await WidgetsBinding.instance.endOfFrame;
@@ -517,8 +521,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
       // 滚动到顶部
       _isProgrammaticScroll = true;
+      const topPeekPx = 16.0;
+      final viewportHeight = MediaQuery.of(context).size.height;
+      final topAlignment = (topPeekPx / viewportHeight).clamp(0.0, 0.2);
       _itemScrollController
-          .scrollTo(index: 0, duration: const Duration(milliseconds: 300))
+          .scrollTo(
+            index: 0,
+            duration: const Duration(milliseconds: 300),
+            alignment: topAlignment,
+          )
           .then((_) {
             Future.delayed(const Duration(milliseconds: 400), () {
               if (mounted) {
@@ -1957,9 +1968,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // item 0: 笔记面板（有笔记或仍在检测笔记状态时占位）
+    // item 0: 笔记面板（仅在有笔记时显示）
     // item noteOffset: 词形关系横幅（始终占一个位置）
-    final noteOffset = (_hasNote || _isNoteStatusLoading) ? 1 : 0;
+    final noteOffset = _hasNote ? 1 : 0;
     const wordRelationsOffset = 1;
     final totalOffset = noteOffset + wordRelationsOffset;
     final totalCount = totalOffset + entries.length;
@@ -2017,37 +2028,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   itemBuilder: (context, index) {
                     // 索引 0: 笔记面板（如果有笔记）
                     if (index == 0 && noteOffset == 1) {
-                      if (_isNoteStatusLoading) {
-                        return Container(
-                          margin: const EdgeInsets.only(
-                            left: 16,
-                            right: 16,
-                            bottom: 16,
-                          ),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withOpacity(0.35),
-                          ),
-                          child: const SizedBox(
-                            height: 20,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
                       return NotePanel(
                         word: _currentWord,
                         language: _currentLanguage,
@@ -4342,36 +4322,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       future: _wordRelationsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withOpacity(0.35),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  context.t.common.loading,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          );
+          return const SizedBox.shrink();
         }
 
         final rows = snapshot.data;

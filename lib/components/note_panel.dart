@@ -43,6 +43,17 @@ class _NotePanelState extends State<NotePanel> {
   @override
   void didUpdateWidget(NotePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final wordChanged = oldWidget.word != widget.word;
+    final languageChanged = oldWidget.language != widget.language;
+    if (wordChanged || languageChanged) {
+      setState(() {
+        _isLoading = true;
+        _note = null;
+      });
+      _loadedWord = '';  // 重置以允许重新加载
+      _loadNote();
+      return;
+    }
     // 当 refreshVersion 变化时，重新加载笔记内容
     if (oldWidget.refreshVersion != widget.refreshVersion) {
       _loadedWord = '';  // 重置以允许重新加载
@@ -114,13 +125,9 @@ class _NotePanelState extends State<NotePanel> {
 
   @override
   Widget build(BuildContext context) {
-    // 如果正在加载，显示加载指示器
+    // 加载中不显示占位或进度，避免出现“正在加载”UI
     if (_isLoading) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        padding: const EdgeInsets.all(16),
-        child: const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
-      );
+      return const SizedBox.shrink();
     }
 
     // 如果没有笔记，不显示面板
@@ -147,36 +154,45 @@ class _NotePanelState extends State<NotePanel> {
             onTap: _toggleExpanded,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.sticky_note_2_outlined,
-                    size: 18,
-                    color: colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.t.note.title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                height: 40,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.sticky_note_2_outlined,
+                      size: 18,
                       color: colorScheme.primary,
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    onPressed: _startEditing,
-                    tooltip: context.t.note.edit,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    _isExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Text(
+                      context.t.note.title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.2,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      onPressed: _startEditing,
+                      tooltip: context.t.note.edit,
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      _isExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

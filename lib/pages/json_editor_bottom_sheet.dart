@@ -48,7 +48,6 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
   String? _errorMessage;
   bool _isFullScreen = false;
   final List<String> _currentPath = [];
-  final GlobalKey<PathNavigatorState> _pathNavigatorKey = GlobalKey();
 
   @override
   void initState() {
@@ -187,7 +186,6 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                 children: [
                   Expanded(
                     child: PathNavigator(
-                      key: _pathNavigatorKey,
                       pathParts: widget.pathParts,
                       cursorPath: _currentPath.isNotEmpty ? _currentPath : null,
                       onNavigate: (newPathParts) {
