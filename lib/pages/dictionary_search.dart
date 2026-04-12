@@ -39,10 +39,33 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   final DailyWordService _dailyWordService = DailyWordService();
   final WordBankService _wordBankService = WordBankService();
 
-  bool _isLoading = false;
+  // 使用 ValueNotifier 优化频繁变化的状态，减少不必要的全局重建
+  final ValueNotifier<bool> _isLoadingNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> _isHistoryEditModeNotifier = ValueNotifier(false);
+  final ValueNotifier<List<String>> _dailyWordsNotifier = ValueNotifier([]);
+  final ValueNotifier<bool> _isLoadingDailyWordsNotifier = ValueNotifier(false);
+  final ValueNotifier<List<String>> _searchResultsNotifier = ValueNotifier([]);
+  final ValueNotifier<bool> _showSearchResultsNotifier = ValueNotifier(false);
+  final ValueNotifier<int> _selectedResultIndexNotifier = ValueNotifier(-1);
+
+  // Getters/setters 保持代码兼容性
+  bool get _isLoading => _isLoadingNotifier.value;
+  set _isLoading(bool value) => _isLoadingNotifier.value = value;
+  bool get _isHistoryEditMode => _isHistoryEditModeNotifier.value;
+  set _isHistoryEditMode(bool value) => _isHistoryEditModeNotifier.value = value;
+  List<String> get _dailyWords => _dailyWordsNotifier.value;
+  set _dailyWords(List<String> value) => _dailyWordsNotifier.value = value;
+  bool get _isLoadingDailyWords => _isLoadingDailyWordsNotifier.value;
+  set _isLoadingDailyWords(bool value) => _isLoadingDailyWordsNotifier.value = value;
+  List<String> get _searchResults => _searchResultsNotifier.value;
+  set _searchResults(List<String> value) => _searchResultsNotifier.value = value;
+  bool get _showSearchResults => _showSearchResultsNotifier.value;
+  set _showSearchResults(bool value) => _showSearchResultsNotifier.value = value;
+  int get _selectedResultIndex => _selectedResultIndexNotifier.value;
+  set _selectedResultIndex(int value) => _selectedResultIndexNotifier.value = value;
+
   List<SearchRecord> _searchRecords = [];
   bool _wasFocused = false;
-  bool _isHistoryEditMode = false;
 
   // 分组设置
   String _selectedGroup = 'auto';
@@ -62,18 +85,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   }
 
   // 每日单词
-  List<String> _dailyWords = [];
   List<String> _selectedLanguages = [];
   Map<String, List<String>> _selectedLists = {};
   Map<String, List<WordListInfo>> _availableWordListsMap = {};
   List<String> _availableWordBankLanguages = [];
-  bool _isLoadingDailyWords = false;
   final Map<String, String> _wordLanguageCache = {};
-
-  // 搜索结果列表
-  List<String> _searchResults = [];
-  bool _showSearchResults = false;
-  int _selectedResultIndex = -1;
   bool _isHandlingKeyboardEnter = false;
   Timer? _debounceTimer;
   int _prefixSearchToken = 0;
@@ -98,21 +114,17 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         // 直接在此处处理搜索结果导航（不调用 _handleKeyEvent 避免 hasFocus 防重复问题）
         if (_showSearchResults && _searchResults.isNotEmpty) {
           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-            setState(() {
-              if (_selectedResultIndex < _searchResults.length - 1) {
-                _selectedResultIndex++;
-              } else {
-                _selectedResultIndex = 0;
-              }
-            });
+            if (_selectedResultIndex < _searchResults.length - 1) {
+              _selectedResultIndex++;
+            } else {
+              _selectedResultIndex = 0;
+            }
           } else {
-            setState(() {
-              if (_selectedResultIndex > 0) {
-                _selectedResultIndex--;
-              } else {
-                _selectedResultIndex = _searchResults.length - 1;
-              }
-            });
+            if (_selectedResultIndex > 0) {
+              _selectedResultIndex--;
+            } else {
+              _selectedResultIndex = _searchResults.length - 1;
+            }
           }
         }
         return KeyEventResult.handled; // 始终吸收，防止 TextField 移动光标
@@ -248,18 +260,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   Future<void> _loadDailyWords() async {
     if (_selectedLanguages.isEmpty) return;
 
-    setState(() {
-      _isLoadingDailyWords = true;
-    });
+    _isLoadingDailyWords = true;
 
     final words = await _dailyWordService.getDailyWords();
     _wordLanguageCache.clear();
 
     if (mounted) {
-      setState(() {
-        _dailyWords = words;
-        _isLoadingDailyWords = false;
-      });
+      _dailyWords = words;
+      _isLoadingDailyWords = false;
     }
   }
 
@@ -267,18 +275,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   Future<void> _refreshDailyWords() async {
     if (_selectedLanguages.isEmpty) return;
 
-    setState(() {
-      _isLoadingDailyWords = true;
-    });
+    _isLoadingDailyWords = true;
 
     final words = await _dailyWordService.refreshDailyWords();
     _wordLanguageCache.clear();
 
     if (mounted) {
-      setState(() {
-        _dailyWords = words;
-        _isLoadingDailyWords = false;
-      });
+      _dailyWords = words;
+      _isLoadingDailyWords = false;
     }
   }
 
@@ -301,12 +305,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _isSearchingWord = true;
     Logger.d('_searchFromDailyWord 开始: $word', tag: 'DictionarySearch');
 
-    setState(() {
-      _isLoading = true;
-      _showSearchResults = false;
-      _searchResults = [];
-      _selectedResultIndex = -1;
-    });
+    _isLoading = true;
+    _showSearchResults = false;
+    _searchResults = [];
+    _selectedResultIndex = -1;
 
     final searchResult = await _dbService.getAllEntries(
       word,
@@ -363,10 +365,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     }
 
-    setState(() {
-      _isLoading = false;
-      _isSearchingWord = false;
-    });
+    _isLoading = false;
+    _isSearchingWord = false;
     Logger.d('_searchFromDailyWord 完成: $word', tag: 'DictionarySearch');
   }
 
@@ -390,6 +390,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
     _searchFocusNode.dispose();
+    // 释放 ValueNotifier
+    _isLoadingNotifier.dispose();
+    _isHistoryEditModeNotifier.dispose();
+    _dailyWordsNotifier.dispose();
+    _isLoadingDailyWordsNotifier.dispose();
+    _searchResultsNotifier.dispose();
+    _showSearchResultsNotifier.dispose();
+    _selectedResultIndexNotifier.dispose();
     super.dispose();
   }
 
@@ -412,11 +420,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final trimmedText = text.trim();
     if (trimmedText.isEmpty) {
       _prefixSearchToken++;
-      setState(() {
-        _searchResults = [];
-        _showSearchResults = false;
-        _selectedResultIndex = -1;
-      });
+      _searchResults = [];
+      _showSearchResults = false;
+      _selectedResultIndex = -1;
       return;
     }
 
@@ -424,11 +430,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final needsMinTwo = _prefixSearchNeedsMinTwoChars(trimmedText);
     if (needsMinTwo && trimmedText.length < 2) {
       _prefixSearchToken++;
-      setState(() {
-        _searchResults = [];
-        _showSearchResults = false;
-        _selectedResultIndex = -1;
-      });
+      _searchResults = [];
+      _showSearchResults = false;
+      _selectedResultIndex = -1;
       return;
     }
 
@@ -449,22 +453,18 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
 
       if (!mounted || currentToken != _prefixSearchToken) return;
 
-      setState(() {
-        _searchResults = results;
-        _showSearchResults = results.isNotEmpty;
-        _selectedResultIndex = -1;
-      });
+      _searchResults = results;
+      _showSearchResults = results.isNotEmpty;
+      _selectedResultIndex = -1;
     }();
   }
 
   /// 点击搜索结果项
   Future<void> _onSearchResultTap(String word) async {
     _searchController.text = word;
-    setState(() {
-      _searchResults = [];
-      _showSearchResults = false;
-      _selectedResultIndex = -1;
-    });
+    _searchResults = [];
+    _showSearchResults = false;
+    _selectedResultIndex = -1;
     await _searchWord();
   }
 
@@ -477,22 +477,18 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
         // 当搜索框有焦点时，该事件已由 _searchFocusNode.onKey 处理，这里跳过避免重复触发
         if (_searchFocusNode.hasFocus) return;
-        setState(() {
-          if (_selectedResultIndex < _searchResults.length - 1) {
-            _selectedResultIndex++;
-          } else {
-            _selectedResultIndex = 0;
-          }
-        });
+        if (_selectedResultIndex < _searchResults.length - 1) {
+          _selectedResultIndex++;
+        } else {
+          _selectedResultIndex = 0;
+        }
       } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
         if (_searchFocusNode.hasFocus) return;
-        setState(() {
-          if (_selectedResultIndex > 0) {
-            _selectedResultIndex--;
-          } else {
-            _selectedResultIndex = _searchResults.length - 1;
-          }
-        });
+        if (_selectedResultIndex > 0) {
+          _selectedResultIndex--;
+        } else {
+          _selectedResultIndex = _searchResults.length - 1;
+        }
       } else if (event.logicalKey == LogicalKeyboardKey.enter) {
         if (_selectedResultIndex >= 0 &&
             _selectedResultIndex < _searchResults.length) {
@@ -606,12 +602,10 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     }
 
-    setState(() {
-      _isLoading = true;
-      _showSearchResults = false;
-      _searchResults = [];
-      _selectedResultIndex = -1;
-    });
+    _isLoading = true;
+    _showSearchResults = false;
+    _searchResults = [];
+    _selectedResultIndex = -1;
 
     // 总是更新排序位置，保留已记录的语言；仅在搜索成功后再更新语言
     await _historyService.addSearchRecord(word, exactMatch: _exactMatch);
@@ -693,18 +687,16 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       final records = await _historyService.getSearchRecords();
       setState(() {
         _searchRecords = records;
-        _showSearchResults = false;
       });
+      _showSearchResults = false;
 
       if (mounted) {
         showToast(context, context.t.search.noResult(word: word));
       }
     }
 
-    setState(() {
-      _isLoading = false;
-      _isSearchingWord = false;
-    });
+    _isLoading = false;
+    _isSearchingWord = false;
     Logger.d(
       '_searchWord 完成: $word, _isSearchingWord 已重置为 false',
       tag: 'DictionarySearch',
@@ -852,68 +844,84 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                     },
                   ),
                 ),
-                // 搜索结果列表
-                if (_showSearchResults && _searchResults.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                          child: Text(
-                            context.t.search.searchResults,
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
+                // 搜索结果列表 - 使用 ValueListenableBuilder 实现局部重建
+                ValueListenableBuilder<bool>(
+                  valueListenable: _showSearchResultsNotifier,
+                  builder: (context, showResults, child) {
+                    if (!showResults) return const SizedBox.shrink();
+                    return ValueListenableBuilder<List<String>>(
+                      valueListenable: _searchResultsNotifier,
+                      builder: (context, results, _) {
+                        if (results.isEmpty) return const SizedBox.shrink();
+                        return Container(
+                          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outlineVariant,
+                            ),
                           ),
-                        ),
-                        const Divider(height: 1),
-                        ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _searchResults.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final word = _searchResults[index];
-                            final isSelected = index == _selectedResultIndex;
-                            return Container(
-                              color: isSelected
-                                  ? Theme.of(
-                                      context,
-                                    ).colorScheme.primary.withOpacity(0.15)
-                                  : null,
-                              child: ListTile(
-                                dense: true,
-                                title: Text(
-                                  word,
-                                  style: isSelected
-                                      ? TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.primary,
-                                          fontWeight: FontWeight.bold,
-                                        )
-                                      : null,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                child: Text(
+                                  context.t.search.searchResults,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
                                 ),
-                                onTap: () => _onSearchResultTap(word),
                               ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
+                              const Divider(height: 1),
+                              ValueListenableBuilder<int>(
+                                valueListenable: _selectedResultIndexNotifier,
+                                builder: (context, selectedIndex, _) {
+                                  return ListView.separated(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    itemCount: results.length,
+                                    separatorBuilder: (_, _) => const Divider(height: 1),
+                                    itemBuilder: (context, index) {
+                                      final word = results[index];
+                                      final isSelected = index == selectedIndex;
+                                      return Container(
+                                        color: isSelected
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary.withOpacity(0.15)
+                                            : null,
+                                        child: ListTile(
+                                          dense: true,
+                                          title: Text(
+                                            word,
+                                            style: isSelected
+                                                ? TextStyle(
+                                                    color: Theme.of(
+                                                      context,
+                                                    ).colorScheme.primary,
+                                                    fontWeight: FontWeight.bold,
+                                                  )
+                                                : null,
+                                          ),
+                                          onTap: () => _onSearchResultTap(word),
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
                 // 每日单词
                 _buildDailyWordsSection(),
                 // 历史记录始终显示
@@ -946,7 +954,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     );
   }
 
-  /// 构建每日单词区域
+  /// 构建每日单词区域 - 使用 ValueListenableBuilder 实现局部重建
   Widget _buildDailyWordsSection() {
     final colorScheme = Theme.of(context).colorScheme;
     final borderColor = colorScheme.primary.withOpacity(0.4);
@@ -966,37 +974,48 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             ),
             child: _selectedLanguages.isEmpty
                 ? _buildDailyWordsEmptyState()
-                : _dailyWords.isEmpty && !_isLoadingDailyWords
-                ? Text(
-                    context.t.search.dailyWordsNoWords,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
-                  )
-                : Wrap(
-                    spacing: 10,
-                    runSpacing: 4,
-                    children: _dailyWords.map((word) {
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () => _searchFromDailyWord(word),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 2,
-                          ),
-                          child: Text(
-                            word,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: colorScheme.onSurfaceVariant,
+                : ValueListenableBuilder<List<String>>(
+                    valueListenable: _dailyWordsNotifier,
+                    builder: (context, dailyWords, _) {
+                      return ValueListenableBuilder<bool>(
+                        valueListenable: _isLoadingDailyWordsNotifier,
+                        builder: (context, isLoadingDailyWords, _) {
+                          if (dailyWords.isEmpty && !isLoadingDailyWords) {
+                            return Text(
+                              context.t.search.dailyWordsNoWords,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+                            );
+                          }
+                          return Wrap(
+                            spacing: 10,
+                            runSpacing: 4,
+                            children: dailyWords.map((word) {
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () => _searchFromDailyWord(word),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 2,
+                                  ),
+                                  child: Text(
+                                    word,
+                                    style: Theme.of(context).textTheme.bodyMedium
+                                        ?.copyWith(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w500,
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
                                 ),
-                          ),
-                        ),
+                              );
+                            }).toList(),
+                          );
+                        },
                       );
-                    }).toList(),
+                    },
                   ),
           ),
           // 左上角标题（骑在边框线上）
@@ -1026,7 +1045,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               ),
             ),
           ),
-          // 右上角按钮（骑在边框线上）
+          // 右上角按钮（骑在边框线上）- 使用 ValueListenableBuilder
           if (_selectedLanguages.isNotEmpty)
             Positioned(
               top: -10,
@@ -1034,44 +1053,49 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 color: Theme.of(context).scaffoldBackgroundColor,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      onTap: _isLoadingDailyWords ? null : _refreshDailyWords,
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: _isLoadingDailyWords
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colorScheme.primary,
-                                ),
-                              )
-                            : Icon(
-                                Icons.refresh,
-                                size: 18,
-                                color: colorScheme.primary,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: () => _showDailyWordsSettingsDialog(),
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: Icon(
-                          Icons.settings_outlined,
-                          size: 18,
-                          color: colorScheme.primary,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _isLoadingDailyWordsNotifier,
+                  builder: (context, isLoadingDailyWords, _) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: isLoadingDailyWords ? null : _refreshDailyWords,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: isLoadingDailyWords
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: colorScheme.primary,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.refresh,
+                                    size: 18,
+                                    color: colorScheme.primary,
+                                  ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap: () => _showDailyWordsSettingsDialog(),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.settings_outlined,
+                              size: 18,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -1386,9 +1410,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     return GestureDetector(
       onTap: () {
         if (_isHistoryEditMode) {
-          setState(() {
-            _isHistoryEditMode = false;
-          });
+          _isHistoryEditMode = false;
         }
       },
       child: Column(
@@ -1418,6 +1440,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                 final crossAxisCount = constraints.maxWidth >= 600 ? 3 : 2;
                 return GridView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
+                  cacheExtent: 200, // 添加缓存优化
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: crossAxisCount,
                     mainAxisSpacing: 8,
@@ -1447,18 +1470,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         _onSearchFromHistory(record);
       },
       onLongPress: () {
-        setState(() {
-          _isHistoryEditMode = !_isHistoryEditMode;
-        });
+        _isHistoryEditMode = !_isHistoryEditMode;
       },
       borderRadius: BorderRadius.circular(12),
       child: Builder(
         builder: (context) {
           return GestureDetector(
             onSecondaryTapUp: (details) {
-              setState(() {
-                _isHistoryEditMode = !_isHistoryEditMode;
-              });
+              _isHistoryEditMode = !_isHistoryEditMode;
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1481,16 +1500,22 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       maxLines: 1,
                     ),
                   ),
-                  if (_isHistoryEditMode)
-                    GestureDetector(
-                      onTap: () => _deleteHistoryItem(record),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: _ShakingDeleteIcon(
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                  // 使用 ValueListenableBuilder 实现删除按钮的局部重建
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _isHistoryEditModeNotifier,
+                    builder: (context, isEditMode, _) {
+                      if (!isEditMode) return const SizedBox.shrink();
+                      return GestureDetector(
+                        onTap: () => _deleteHistoryItem(record),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _ShakingDeleteIcon(
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),

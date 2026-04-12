@@ -536,28 +536,30 @@ class WordBankService {
     }
   }
 
-  /// 获取所有支持的语言
+  /// 获取所有支持的语言（排除 notes 表，因为它是用户笔记表，不是生词本表）
   Future<List<String>> getSupportedLanguages() async {
     final db = await database;
     final tables = await db.rawQuery('''
-      SELECT name FROM sqlite_master 
-      WHERE type='table' 
+      SELECT name FROM sqlite_master
+      WHERE type='table'
       AND name NOT LIKE 'sqlite_%'
       AND name NOT LIKE 'android_%'
+      AND name != 'notes'
     ''');
     return tables.map((t) => t['name'] as String).toList();
   }
 
-  /// 获取有单词的语言列表
+  /// 获取有单词的语言列表（排除 notes 表，因为它是用户笔记表，不是生词本表）
   Future<List<String>> getAvailableLanguages() async {
     final db = await database;
     final tables = await db.rawQuery('''
-      SELECT name FROM sqlite_master 
-      WHERE type='table' 
+      SELECT name FROM sqlite_master
+      WHERE type='table'
       AND name NOT LIKE 'sqlite_%'
       AND name NOT LIKE 'android_%'
+      AND name != 'notes'
     ''');
-    
+
     final languages = <String>[];
     for (final table in tables) {
       final tableName = table['name'] as String;

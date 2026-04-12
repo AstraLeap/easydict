@@ -7256,7 +7256,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
         child: Text.rich(
           strutStyle: const StrutStyle(
             forceStrutHeight: true,
-            height: 1.5,
+            height: 1.8,
             leading: 0,
           ),
           TextSpan(children: result.spans),
@@ -7611,7 +7611,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
           final richText = Text.rich(
             strutStyle: const StrutStyle(
               forceStrutHeight: true,
-              height: 1.5,
+              height: 1.8,
               leading: 0,
             ),
             TextSpan(children: result.spans),

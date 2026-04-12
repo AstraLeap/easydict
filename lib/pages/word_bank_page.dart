@@ -51,6 +51,22 @@ class _WordBankPageState extends State<WordBankPage> {
   final AdvancedSearchSettingsService _advancedSettingsService =
       AdvancedSearchSettingsService();
 
+  // 使用 ValueNotifier 优化频繁变化的状态，减少不必要的全局重建
+  final ValueNotifier<bool> _isLoadingWordsNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> _isLoadingMoreNotifier = ValueNotifier(false);
+  final ValueNotifier<SortMode> _currentSortModeNotifier = ValueNotifier(SortMode.addTimeDesc);
+  final ValueNotifier<String?> _selectedListNotifier = ValueNotifier(null);
+
+  // Getters/setters 保持代码兼容性
+  bool get _isLoadingWords => _isLoadingWordsNotifier.value;
+  set _isLoadingWords(bool value) => _isLoadingWordsNotifier.value = value;
+  bool get _isLoadingMore => _isLoadingMoreNotifier.value;
+  set _isLoadingMore(bool value) => _isLoadingMoreNotifier.value = value;
+  SortMode get _currentSortMode => _currentSortModeNotifier.value;
+  set _currentSortMode(SortMode value) => _currentSortModeNotifier.value = value;
+  String? get _selectedList => _selectedListNotifier.value;
+  set _selectedList(String? value) => _selectedListNotifier.value = value;
+
   // 数据
   List<String> _languages = [];
   String? _selectedLanguage; // null 表示"全部"
@@ -59,12 +75,8 @@ class _WordBankPageState extends State<WordBankPage> {
   Map<String, int> _languageWordCounts = {};
 
   bool _isInitialLoading = true;
-  bool _isLoadingWords = false;
-  bool _isLoadingMore = false;
   bool _wordsLoaded = false;
   String _searchQuery = '';
-  SortMode _currentSortMode = SortMode.addTimeDesc;
-  String? _selectedList; // 选中的词表筛选
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   bool _wasFocused = false;
@@ -101,6 +113,11 @@ class _WordBankPageState extends State<WordBankPage> {
     _searchFocusNode.removeListener(_onFocusChange);
     _searchController.dispose();
     _searchFocusNode.dispose();
+    // 释放 ValueNotifier
+    _isLoadingWordsNotifier.dispose();
+    _isLoadingMoreNotifier.dispose();
+    _currentSortModeNotifier.dispose();
+    _selectedListNotifier.dispose();
     super.dispose();
   }
 
@@ -182,9 +199,7 @@ class _WordBankPageState extends State<WordBankPage> {
     final startTime = DateTime.now();
     Logger.d('_loadWords 开始', tag: 'WordBank');
 
-    if (mounted) {
-      setState(() => _isLoadingWords = true);
-    }
+    _isLoadingWords = true;
 
     // 重置分页状态
     _currentPage = 0;
@@ -231,9 +246,7 @@ class _WordBankPageState extends State<WordBankPage> {
       Logger.e('_loadWords 错误: $e', tag: 'WordBank');
     }
 
-    if (mounted) {
-      setState(() => _isLoadingWords = false);
-    }
+    _isLoadingWords = false;
 
     final endTime = DateTime.now();
     final duration = endTime.difference(startTime);
@@ -249,7 +262,7 @@ class _WordBankPageState extends State<WordBankPage> {
     final startTime = DateTime.now();
     Logger.d('_loadMoreWords 开始, 页码: $_currentPage', tag: 'WordBank');
 
-    setState(() => _isLoadingMore = true);
+    _isLoadingMore = true;
 
     try {
       final int offset = _currentPage * _pageSize;
@@ -288,9 +301,7 @@ class _WordBankPageState extends State<WordBankPage> {
     } catch (e) {
       Logger.e('_loadMoreWords 错误: $e', tag: 'WordBank');
     } finally {
-      if (mounted) {
-        setState(() => _isLoadingMore = false);
-      }
+      _isLoadingMore = false;
     }
 
     final endTime = DateTime.now();
@@ -462,9 +473,7 @@ class _WordBankPageState extends State<WordBankPage> {
 
   /// 切换排序模式
   void _changeSortMode(SortMode mode) {
-    setState(() {
-      _currentSortMode = mode;
-    });
+    _currentSortMode = mode;
     // 重新加载数据以应用新的排序（从数据库按新顺序获取）
     _loadWords();
   }
@@ -1078,9 +1087,7 @@ class _WordBankPageState extends State<WordBankPage> {
               style: const TextStyle(fontSize: 13),
             ),
             onSelected: (selected) {
-              setState(() {
-                _selectedList = null;
-              });
+              _selectedList = null;
             },
           ),
         ),
@@ -1104,9 +1111,7 @@ class _WordBankPageState extends State<WordBankPage> {
                     style: const TextStyle(fontSize: 13),
                   ),
                   onSelected: (selected) {
-                    setState(() {
-                      _selectedList = selected ? listKey : null;
-                    });
+                    _selectedList = selected ? listKey : null;
                   },
                 ),
               ),
@@ -1124,6 +1129,7 @@ class _WordBankPageState extends State<WordBankPage> {
           ),
           child: ListView(
             scrollDirection: Axis.horizontal,
+            cacheExtent: 500, // 添加缓存优化
             physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
             ),
@@ -1149,6 +1155,8 @@ class _WordBankPageState extends State<WordBankPage> {
               ),
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
+                itemExtent: 100, // 固定宽度优化
+                cacheExtent: 500, // 添加缓存优化
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
@@ -1167,9 +1175,7 @@ class _WordBankPageState extends State<WordBankPage> {
                           style: const TextStyle(fontSize: 13),
                         ),
                         onSelected: (selected) {
-                          setState(() {
-                            _selectedList = null;
-                          });
+                          _selectedList = null;
                         },
                       ),
                     );
@@ -1187,9 +1193,7 @@ class _WordBankPageState extends State<WordBankPage> {
                         style: const TextStyle(fontSize: 13),
                       ),
                       onSelected: (selected) {
-                        setState(() {
-                          _selectedList = selected ? list.name : null;
-                        });
+                        _selectedList = selected ? list.name : null;
                       },
                     ),
                   );
@@ -1413,9 +1417,9 @@ class _WordBankPageState extends State<WordBankPage> {
     } else {
       // 特定语言模式
       // 从 _allWords 中获取该语言的单词
-      final words =
-          _allWords.where((w) => w['language'] == _selectedLanguage).toList() ??
-          [];
+      final words = _allWords
+          .where((w) => w['language'] == _selectedLanguage)
+          .toList();
 
       // 根据选择的词表筛选
       final filteredWords = _selectedList != null
@@ -1702,14 +1706,10 @@ class _WordBankPageState extends State<WordBankPage> {
                           ),
                         ],
                         onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
+                          _searchQuery = value;
                         },
                         onSubmitted: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
+                          _searchQuery = value;
                           _loadWords();
                         },
                       ),
@@ -1722,41 +1722,55 @@ class _WordBankPageState extends State<WordBankPage> {
                   ],
                 ),
               ),
-              // 可滚动的单词列表
+              // 可滚动的单词列表 - 使用 ValueListenableBuilder 实现局部重建
               Expanded(
-                child: _isLoadingWords
-                    ? const Center(child: CircularProgressIndicator())
-                    : NotificationListener<ScrollNotification>(
-                        onNotification: (ScrollNotification scrollInfo) {
-                          if (!_isLoadingMore &&
-                              _hasMoreData &&
-                              scrollInfo.metrics.pixels >=
-                                  scrollInfo.metrics.maxScrollExtent - 200) {
-                            _loadMoreWords();
-                          }
-                          return false;
-                        },
-                        child: CustomScrollView(
-                          slivers: [
-                            // 单词列表
-                            ..._buildWordList(),
-                            // 加载更多指示器
-                            if (_isLoadingMore)
-                              const SliverToBoxAdapter(
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _isLoadingWordsNotifier,
+                  builder: (context, isLoadingWords, _) {
+                    if (isLoadingWords) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return NotificationListener<ScrollNotification>(
+                      onNotification: (ScrollNotification scrollInfo) {
+                        if (!_isLoadingMore &&
+                            _hasMoreData &&
+                            scrollInfo.metrics.pixels >=
+                                scrollInfo.metrics.maxScrollExtent - 200) {
+                          _loadMoreWords();
+                        }
+                        return false;
+                      },
+                      child: CustomScrollView(
+                        cacheExtent: 500, // 添加缓存优化
+                        slivers: [
+                          // 单词列表
+                          ..._buildWordList(),
+                          // 加载更多指示器 - 使用 ValueListenableBuilder
+                          ValueListenableBuilder<bool>(
+                            valueListenable: _isLoadingMoreNotifier,
+                            builder: (context, isLoadingMore, _) {
+                              if (!isLoadingMore) {
+                                return const SliverToBoxAdapter(child: SizedBox.shrink());
+                              }
+                              return const SliverToBoxAdapter(
                                 child: Padding(
                                   padding: EdgeInsets.all(16),
                                   child: Center(
                                     child: CircularProgressIndicator(),
                                   ),
                                 ),
-                              ),
-                            // 底部留白
-                            const SliverToBoxAdapter(
-                              child: SizedBox(height: 32),
-                            ),
-                          ],
-                        ),
+                              );
+                            },
+                          ),
+                          // 底部留白
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 32),
+                          ),
+                        ],
                       ),
+                    );
+                  },
+                ),
               ),
             ],
           ),

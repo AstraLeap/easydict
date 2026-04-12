@@ -253,7 +253,7 @@ void main() async {
       child: MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (context) => ThemeProvider(prefs!)),
-          ChangeNotifierProvider(create: (_) => LocaleProvider()),
+          ChangeNotifierProvider.value(value: LocaleProvider()),
           ChangeNotifierProvider(create: (context) => DownloadManager()),
           ChangeNotifierProvider(create: (context) => UploadManager()),
           ChangeNotifierProvider(create: (context) => DictUpdateCheckService()),
