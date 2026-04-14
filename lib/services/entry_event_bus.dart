@@ -2,9 +2,14 @@ import 'dart:async';
 
 class ScrollToElementEvent {
   final String entryId;
+  final String? dictId;
   final String path;
 
-  ScrollToElementEvent({required this.entryId, required this.path});
+  ScrollToElementEvent({
+    required this.entryId,
+    this.dictId,
+    required this.path,
+  });
 }
 
 class TranslationInsertEvent {

@@ -401,6 +401,18 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     super.dispose();
   }
 
+  /// 激活搜索框：获取焦点并全选文本
+  /// 用于用户在已处于查词页时再次点击查词 tab
+  void activateSearchBar() {
+    _searchFocusNode.requestFocus();
+    if (_searchController.text.isNotEmpty) {
+      _searchController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _searchController.text.length,
+      );
+    }
+  }
+
   /// 判断当前语言是否需要至少输入2个字符才启动边打边搜（字母文字）。
   /// auto 模式且含表意文字单字符时不需要；其余字母文字需要 2 个字符。
   bool _prefixSearchNeedsMinTwoChars(String text) {
@@ -591,13 +603,27 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     if (_detectLanguage(word) == 'en') {
       final dbExists = await EnglishDbService().dbExists();
       if (!dbExists) {
-        final shouldShow = await EnglishDbService().shouldShowDownloadDialog();
-        if (shouldShow && mounted) {
-          final result = await EnglishDbDownloadDialog.show(context);
-          if (result == EnglishDbDownloadResult.downloaded && mounted) {
-            showToast(context, context.t.search.dbDownloaded(word: word));
+        final cloudUrl = (await _dictManager.onlineSubscriptionUrl).trim();
+        final cloudUri = Uri.tryParse(cloudUrl);
+        final hasCloudServer =
+            cloudUri != null &&
+            cloudUri.hasScheme &&
+            cloudUri.host.isNotEmpty;
+
+        if (!hasCloudServer) {
+          Logger.i(
+            '未设置有效服务器地址，跳过 en.db 下载提示',
+            tag: 'EnglishDB',
+          );
+        } else {
+          final shouldShow = await EnglishDbService().shouldShowDownloadDialog();
+          if (shouldShow && mounted) {
+            final result = await EnglishDbDownloadDialog.show(context);
+            if (result == EnglishDbDownloadResult.downloaded && mounted) {
+              showToast(context, context.t.search.dbDownloaded(word: word));
+            }
+            // 下载弹窗关闭后继续执行查词
           }
-          // 下载弹窗关闭后继续执行查词
         }
       }
     }

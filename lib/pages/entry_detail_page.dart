@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:gradient_blur/gradient_blur.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../components/component_renderer.dart';
@@ -19,6 +20,7 @@ import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
 import '../core/utils/language_utils.dart';
 import '../core/utils/responsive_utils.dart';
+import '../core/utils/scroll_safe_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../data/database_service.dart';
@@ -45,6 +47,9 @@ import '../services/group_service.dart';
 import 'json_editor_bottom_sheet.dart';
 
 part 'entry_detail_page_private_widgets.dart';
+
+/// 手势方向枚举
+enum _SwipeDirection { none, left, right, up }
 
 /// Entry 导航模式
 enum EntryNavMode {
@@ -171,8 +176,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _hasNote = false;
   bool _isNoteStatusLoading = true;
   bool _noteDefaultExpanded = true;
-  String _currentLanguage = 'en';  // 缓存当前语言
-  int _notePanelRefreshVersion = 0;  // 用于通知笔记面板刷新内容
+  String _currentLanguage = 'en'; // 缓存当前语言
+  int _notePanelRefreshVersion = 0; // 用于通知笔记面板刷新内容
 
   /// 浏览列表相关状态
   BrowseList? _browseList;
@@ -241,7 +246,22 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 滚动结束检测计时器
   Timer? _scrollEndTimer;
+
+  /// 滚动结束检测延迟
   static const _scrollEndDelay = Duration(milliseconds: 150);
+
+  /// 当前累积的手势偏移量
+  double _swipeOffsetX = 0;
+  double _swipeOffsetY = 0;
+
+  /// 当前确定的手势方向
+  _SwipeDirection _currentSwipeDirection = _SwipeDirection.none;
+
+  /// 手势指示器是否可见
+  bool _showSwipeIndicator = false;
+
+  /// 手势检测阈值
+  static const double _swipeThreshold = 30;
 
   List<String> _toolbarActions = [];
   List<String> _overflowActions = [];
@@ -382,8 +402,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 加载笔记状态
   Future<void> _loadNoteStatus() async {
-    final noteDefaultExpanded =
-        await _preferencesService.getNoteDefaultExpanded();
+    final noteDefaultExpanded = await _preferencesService
+        .getNoteDefaultExpanded();
     final language = await _getCurrentLanguage();
     _currentLanguage = language;
     final hasNote = await _noteService.hasNote(_currentWord, language);
@@ -521,9 +541,16 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
       // 滚动到顶部
       _isProgrammaticScroll = true;
-      const topPeekPx = 16.0;
-      final viewportHeight = MediaQuery.of(context).size.height;
-      final topAlignment = (topPeekPx / viewportHeight).clamp(0.0, 0.2);
+      final topPeekPx = scrollTopSafeOffset(
+        context,
+        mobileExtraMargin: 8.0,
+        desktopTopSpacing: 10.0,
+      );
+      final topAlignment = topOffsetToAlignment(
+        context,
+        topOffset: topPeekPx,
+        maxAlignment: 0.2,
+      );
       _itemScrollController
           .scrollTo(
             index: 0,
@@ -829,6 +856,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
         if (section.entry.id == targetEntry.id) {
           if (i != currentDictIndex || localIndex != dict.currentSectionIndex) {
+            // 词典切换时触发震动反馈（仅手机端）
+            if (i != currentDictIndex && (Platform.isAndroid || Platform.isIOS)) {
+              HapticFeedback.vibrate();
+            }
             _entryGroup.setCurrentDictionaryIndex(i);
             _entryGroup.dictionaryGroups[i].setCurrentSectionIndex(localIndex);
             // 记录词典切换时间，用于冷却机制
@@ -1216,7 +1247,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final targetDictId = target.dictId ?? '';
     final targetNumericId = _extractNumericId(target.id);
 
-    for (int dictIndex = 0; dictIndex < _entryGroup.dictionaryGroups.length; dictIndex++) {
+    for (
+      int dictIndex = 0;
+      dictIndex < _entryGroup.dictionaryGroups.length;
+      dictIndex++
+    ) {
       final dict = _entryGroup.dictionaryGroups[dictIndex];
       if (targetDictId.isNotEmpty && dict.dictionaryId != targetDictId) {
         continue;
@@ -1224,7 +1259,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
       for (int pageIndex = 0; pageIndex < dict.pageGroups.length; pageIndex++) {
         final page = dict.pageGroups[pageIndex];
-        for (int sectionIndex = 0; sectionIndex < page.sections.length; sectionIndex++) {
+        for (
+          int sectionIndex = 0;
+          sectionIndex < page.sections.length;
+          sectionIndex++
+        ) {
           final sectionEntry = page.sections[sectionIndex].entry;
           final isExactMatch = sectionEntry.id == target.id;
           final isNumericMatch =
@@ -1322,7 +1361,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   void _scrollToEntry(DictionaryEntry entry, {String? targetPath}) async {
     // 统一解析为结构中的真实 entry，避免调用方传入非活跃 page 的副本对象。
     final effectiveEntry =
-        _findEntryAcrossAllPages(entry.dictId ?? '', entry.entryIdAsInt.toString()) ??
+        _findEntryAcrossAllPages(
+          entry.dictId ?? '',
+          entry.entryIdAsInt.toString(),
+        ) ??
         entry;
 
     final targetDictId = effectiveEntry.dictId ?? '';
@@ -1349,8 +1391,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       final totalOffset = noteOffset + wordRelationsOffset;
       index += totalOffset;
 
-      // SafeArea 已处理状态栏偏移，滚动 alignment 直接对齐视口顶部
-      const scrollAlignment = 0.0;
+      // 手机平台需要考虑状态栏高度，避免内容被遮挡；桌面端保留 10px 顶部间距
+      final scrollAlignment = scrollTopSafeAlignment(
+        context,
+        desktopTopSpacing: 10.0,
+      );
 
       if (_itemScrollController.isAttached) {
         Logger.d('Controller attached, scrolling now', tag: 'EntryDetail');
@@ -1369,7 +1414,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             if (mounted) {
               // _scrollToElement 使用当前激活 entry 的 id + path
               // 才能让 ComponentRenderer 订阅事件后正确命中。
-              _scrollToElement(effectiveEntry.id, targetPath);
+              _scrollToElement(
+                effectiveEntry.id,
+                targetPath,
+                dictId: effectiveEntry.dictId,
+              );
               Future.delayed(const Duration(milliseconds: 400), () {
                 if (mounted) {
                   _isProgrammaticScroll = false;
@@ -1422,7 +1471,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               // 等待帧渲染后执行元素滚动
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
-                  _scrollToElement(effectiveEntry.id, targetPath);
+                  _scrollToElement(
+                    effectiveEntry.id,
+                    targetPath,
+                    dictId: effectiveEntry.dictId,
+                  );
                   Future.delayed(const Duration(milliseconds: 400), () {
                     if (mounted) {
                       _isProgrammaticScroll = false;
@@ -1469,15 +1522,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
   }
 
-  void _scrollToElement(String entryId, String path) {
+  void _scrollToElement(String entryId, String path, {String? dictId}) {
     Logger.d(
-      'Emitting scroll to element event: $path in entry: $entryId',
+      'Emitting scroll to element event: $path in entry: $entryId, dictId: ${dictId ?? ''}',
       tag: 'EntryDetail',
     );
     // 设置标志位，表示这是程序触发的滚动，不应更新活跃section
     _isProgrammaticScroll = true;
     EntryEventBus().emitScrollToElement(
-      ScrollToElementEvent(entryId: entryId, path: path),
+      ScrollToElementEvent(entryId: entryId, dictId: dictId, path: path),
     );
     // 延迟重置标志位，给滚动动画留出时间（含额外缓冲）
     Future.delayed(const Duration(milliseconds: 700), () {
@@ -1869,7 +1922,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 处理添加到笔记的回调
   /// 注意：word 和 language 参数来自 component_renderer，但我们使用 _currentWord 和 _currentLanguage
-  Future<void> _handleAddToNote(String word, String language, String link) async {
+  Future<void> _handleAddToNote(
+    String word,
+    String language,
+    String link,
+  ) async {
     // 使用当前查词的单词和语言，而不是词条的 headword
     final noteService = NoteService();
     await noteService.appendToNote(_currentWord, _currentLanguage, link);
@@ -1964,9 +2021,49 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
   }
 
+  Widget _buildTopFrostedOverlay({
+    required bool isDark,
+    required double topInset,
+  }) {
+    final surface = Theme.of(context).colorScheme.surface;
+    final overlayHeight = topInset + 8;
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: SizedBox(
+          height: overlayHeight,
+          child: GradientBlur(
+            maxBlur: 8,
+            minBlur: 0,
+            slices: 30,
+            curve: Curves.easeInOut,
+            direction: GradientBlurDirection.topToBottom,
+            edgeBlur: null,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                surface.withOpacity(isDark ? 0.72 : 0.82),
+                surface.withOpacity(0),
+              ],
+              stops: const [0.0, 1.0],
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final topInset = MediaQuery.of(context).padding.top;
+    final isDesktop = Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final scrollableTopSpacing = isDesktop ? 16.0 : topInset + 16.0;
 
     // item 0: 笔记面板（仅在有笔记时显示）
     // item noteOffset: 词形关系横幅（始终占一个位置）
@@ -1979,12 +2076,19 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       // 禁止键盘顶起页面，手动处理底部工具栏位置
       resizeToAvoidBottomInset: false,
       body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        value: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+            .copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+              systemStatusBarContrastEnforced: false,
+              systemNavigationBarContrastEnforced: false,
+            ),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 主内容区域 - 全屏，内容可以滚动到工具栏下方
+            // 主内容区域 - 全屏，内容延伸到状态栏下方，让顶部毛玻璃有真实透视内容
             SafeArea(
+              top: false,
               bottom: false,
               child: NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
@@ -2022,7 +2126,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   scrollOffsetController: _scrollOffsetController,
                   padding: _getDynamicPadding(
                     context,
-                  ).copyWith(top: 16, bottom: 100),
+                  ).copyWith(top: scrollableTopSpacing, bottom: 100),
                   itemCount: totalCount,
                   minCacheExtent: 1500,
                   itemBuilder: (context, index) {
@@ -2092,6 +2196,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 },
               ),
             // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
+            if (topInset > 0)
+              _buildTopFrostedOverlay(isDark: isDark, topInset: topInset),
             if (_isSearchMode)
               Positioned.fill(
                 child: GestureDetector(
@@ -2110,6 +2216,16 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             _KeyboardAwareBottomBar(
               child: _buildBottomActionBarWithBackButton(),
             ),
+            // 手势指示器（屏幕上方中央）
+            if (_showSwipeIndicator)
+              Positioned(
+                top: topInset + 16,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: _buildSwipeIndicator(),
+                ),
+              ),
           ],
         ),
       ),
@@ -2148,6 +2264,47 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 桌面端左上角悬浮返回按钮
+
+  /// 构建手势指示器
+  Widget _buildSwipeIndicator() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    IconData icon;
+    switch (_currentSwipeDirection) {
+      case _SwipeDirection.right:
+        icon = Icons.arrow_forward; // 向右滑 = 上一个词
+        break;
+      case _SwipeDirection.left:
+        icon = Icons.arrow_back; // 向左滑 = 下一个词
+        break;
+      case _SwipeDirection.up:
+        icon = Icons.home;
+        break;
+      case _SwipeDirection.none:
+        return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Icon(icon, size: 24, color: colorScheme.onSurface),
+    );
+  }
+
   /// 桌面端底部工具栏（带左侧独立返回按钮）
   Widget _buildBottomActionBarWithBackButton() {
     final isDesktop =
@@ -2437,23 +2594,83 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     // 手机端：添加手势处理（浏览列表导航）
     if (!isDesktop && _browseList != null) {
       return GestureDetector(
-        onHorizontalDragEnd: (details) {
-          const double sensitivity = 200; // 滑动速度阈值
+        onPanStart: (_) {
+          // 重置手势状态
+          _swipeOffsetX = 0;
+          _swipeOffsetY = 0;
+          _currentSwipeDirection = _SwipeDirection.none;
+          setState(() {
+            _showSwipeIndicator = false;
+          });
+        },
+        onPanUpdate: (details) {
+          // 累积偏移量
+          _swipeOffsetX += details.delta.dx;
+          _swipeOffsetY += details.delta.dy;
 
-          if (details.primaryVelocity! > sensitivity) {
-            // 向右滑：上一个词
-            _goToPreviousWord();
-          } else if (details.primaryVelocity! < -sensitivity) {
-            // 向左滑：下一个词
-            _goToNextWord();
+          // 确定当前手势方向（基于累积偏移量）
+          _SwipeDirection newDirection = _SwipeDirection.none;
+
+          final absX = _swipeOffsetX.abs();
+          final absY = _swipeOffsetY.abs();
+
+          // 判断哪个方向更占主导
+          if (absX > _swipeThreshold || absY > _swipeThreshold) {
+            if (absX > absY) {
+              // 水平方向为主
+              if (_swipeOffsetX > _swipeThreshold) {
+                newDirection = _SwipeDirection.right;
+              } else if (_swipeOffsetX < -_swipeThreshold) {
+                newDirection = _SwipeDirection.left;
+              }
+            } else {
+              // 垂直方向为主
+              if (_swipeOffsetY < -_swipeThreshold) {
+                newDirection = _SwipeDirection.up;
+              }
+              // 向下滑不做处理
+            }
+          }
+
+          // 更新当前方向
+          if (newDirection != _currentSwipeDirection) {
+            // 判断指示器是否即将出现（从无方向变为有方向）
+            final willShowIndicator =
+                newDirection != _SwipeDirection.none && !_showSwipeIndicator;
+
+            setState(() {
+              _currentSwipeDirection = newDirection;
+              _showSwipeIndicator = newDirection != _SwipeDirection.none;
+            });
+
+            // 只在指示器首次出现时触发震动
+            if (willShowIndicator) {
+              HapticFeedback.vibrate();
+            }
           }
         },
-        onVerticalDragEnd: (details) {
-          // 上滑返回主页
-          const double sensitivity = 300;
-          if (details.primaryVelocity! < -sensitivity) {
-            clearAllToasts();
-            Navigator.of(context).popUntil((route) => route.isFirst);
+        onPanEnd: (_) {
+          // 松手时根据最终方向执行操作
+          final direction = _currentSwipeDirection;
+          setState(() {
+            _showSwipeIndicator = false;
+            _currentSwipeDirection = _SwipeDirection.none;
+          });
+
+          switch (direction) {
+            case _SwipeDirection.right:
+              _goToPreviousWord();
+              break;
+            case _SwipeDirection.left:
+              _goToNextWord();
+              break;
+            case _SwipeDirection.up:
+              clearAllToasts();
+              Navigator.of(context).popUntil((route) => route.isFirst);
+              break;
+            case _SwipeDirection.none:
+              // 无有效手势，不执行任何操作
+              break;
           }
         },
         child: content,
@@ -5101,7 +5318,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       } else if (lastKey == targetLang) {
         // 点击的是目标语言，需要切换显示/隐藏
         // 但要检查是否是唯一可见的语言
-        if (parentValue is Map && hasOtherVisibleLanguages(parentValue, lastKey)) {
+        if (parentValue is Map &&
+            hasOtherVisibleLanguages(parentValue, lastKey)) {
           needToggleTranslation = true;
         }
       } else {
@@ -5392,7 +5610,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       if (!_hasTranslationContent(entry.value)) continue; // 跳过空内容
 
       // 如果是源语言，或者不是目标语言（非隐藏范围），则有其他可显示内容
-      if (entry.key == sourceLang || !effectiveTargetLangs.contains(entry.key)) {
+      if (entry.key == sourceLang ||
+          !effectiveTargetLangs.contains(entry.key)) {
         return true;
       }
 
@@ -6205,7 +6424,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             // 非全屏时限制最大拖动高度，确保内容不压住状态栏底部
             maxChildSize: isFullScreen
                 ? 1.0
-                : (screenSize.height - statusBarHeight - 8) / screenSize.height,
+              : availableHeightRatio(
+                totalHeight: screenSize.height,
+                reservedTop: topInsetWithMargin(statusBarHeight),
+                ),
             expand: false,
             builder: (context, scrollController) {
               final aiMdStyleSheet = _buildAiMarkdownStyleSheet(context);
@@ -6220,7 +6442,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               Widget content = Container(
                 width: isFullScreen ? screenSize.width : null,
                 padding: EdgeInsets.only(
-                  top: isFullScreen ? statusBarHeight + 8 : 16,
+                  top: isFullScreen
+                      ? topInsetWithMargin(statusBarHeight)
+                      : 16,
                   left: 16,
                   right: 16,
                   bottom: 16,

@@ -4,6 +4,7 @@ import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/json.dart';
 import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../data/database_service.dart';
+import '../core/utils/scroll_safe_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../i18n/strings.g.dart';
 import '../widgets/path_navigator.dart';
@@ -160,13 +161,16 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
       minChildSize: _isFullScreen ? 1.0 : 0.5,
       maxChildSize: _isFullScreen
           ? 1.0
-          : (screenSize.height - statusBarHeight - 8) / screenSize.height,
+          : availableHeightRatio(
+              totalHeight: screenSize.height,
+              reservedTop: topInsetWithMargin(statusBarHeight),
+            ),
       expand: false,
       builder: (context, scrollController) {
         return Container(
           width: _isFullScreen ? screenSize.width : null,
           padding: EdgeInsets.only(
-            top: _isFullScreen ? statusBarHeight + 8 : 16,
+            top: _isFullScreen ? topInsetWithMargin(statusBarHeight) : 16,
             left: 16,
             right: 16,
             bottom: 16,

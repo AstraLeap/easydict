@@ -28,6 +28,7 @@ import 'rendering/ruby_layout.dart';
 import '../core/utils/dict_typography.dart';
 import '../core/utils/language_utils.dart';
 import '../core/utils/responsive_utils.dart';
+import '../core/utils/scroll_safe_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
@@ -1109,6 +1110,7 @@ void _processFormattedSegment({
             style: style,
             decorationType: decType,
             decorationColor: style.color,
+            underlineOffset: kCustomDecorationOffset,
             recognizer: recognizer,
             mouseCursor: mouseCursor,
             onShowMenu: onShowMenu,
@@ -1492,6 +1494,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   // 用于存储正在闪烁的元素路径
   final Set<String> _highlightingPaths = {};
+  String? _lastScrollRequestPath;
+  DateTime? _lastScrollRequestTime;
   // 闪烁动画控制器
   final Map<String, AnimationController> _highlightControllers = {};
 
@@ -1917,7 +1921,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   void _listenToEvents() {
     final eventBus = EntryEventBus();
     _scrollSubscription = eventBus.scrollToElement.listen((event) {
-      if (event.entryId == widget.entry.id && mounted) {
+      final matched = _matchesScrollEvent(event);
+      if (matched && mounted) {
         scrollToElement(event.path);
       }
     });
@@ -1942,6 +1947,43 @@ class ComponentRendererState extends State<ComponentRenderer> {
         );
       }
     });
+  }
+
+  bool _matchesScrollEvent(ScrollToElementEvent event) {
+    final widgetDictId = widget.entry.dictId;
+    final eventDictId = event.dictId;
+
+    if (eventDictId != null &&
+        eventDictId.isNotEmpty &&
+        widgetDictId != null &&
+        widgetDictId.isNotEmpty &&
+        eventDictId != widgetDictId) {
+      return false;
+    }
+
+    if (event.entryId == widget.entry.id) {
+      return true;
+    }
+
+    final widgetPureEntryId = widget.entry.pureEntryId;
+    if (event.entryId == widgetPureEntryId) {
+      return true;
+    }
+
+    return _extractPureEntryId(event.entryId) == widgetPureEntryId;
+  }
+
+  String _extractPureEntryId(String entryId) {
+    if (entryId.contains('_')) {
+      final parts = entryId.split('_');
+      if (parts.isNotEmpty) {
+        final lastPart = parts.last;
+        if (int.tryParse(lastPart) != null) {
+          return lastPart;
+        }
+      }
+    }
+    return entryId;
   }
 
   @override
@@ -1975,6 +2017,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   /// 滚动到指定路径的元素
   void scrollToElement(String path, {int retryCount = 0}) {
+    final now = DateTime.now();
+    if (_lastScrollRequestPath == path &&
+        _lastScrollRequestTime != null &&
+        now.difference(_lastScrollRequestTime!) <
+            const Duration(milliseconds: 350)) {
+      return;
+    }
+    _lastScrollRequestPath = path;
+    _lastScrollRequestTime = now;
+
     // 外部传入的路径不带前缀，需要加上前缀才能在 _elementKeys 中找到
     final prefixedPath = '$_pathPrefix.$path';
     // 若目标在 data.<tab> 内，先确保对应 tab 展开，避免目标节点尚未构建导致滚动失败
@@ -2050,13 +2102,65 @@ class ComponentRendererState extends State<ComponentRenderer> {
           _updateResolvedAnchor(path, foundPath);
         }
 
+        final elementContext = key.currentContext!;
+
+        // 手动计算滚动位置，以支持状态栏偏移
+        final renderBox = elementContext.findRenderObject() as RenderBox?;
+        final scrollableState = _findBestScrollableState(elementContext);
+
+        if (renderBox != null && scrollableState != null) {
+          final scrollRenderBox =
+              scrollableState.context.findRenderObject() as RenderBox?;
+          if (scrollRenderBox != null) {
+            // 元素相对于滚动视口顶部的偏移
+            final elementOffset = renderBox.localToGlobal(
+              Offset.zero,
+              ancestor: scrollRenderBox,
+            );
+
+            final scrollOffset = scrollTopSafeOffset(
+              context,
+              desktopTopSpacing: 10.0,
+            );
+
+            final position = scrollableState.position;
+            // 目标滚动位置 = 当前位置 + 元素偏移 - 状态栏偏移
+            final targetPixels = (position.pixels +
+                    elementOffset.dy -
+                    scrollOffset)
+                .clamp(position.minScrollExtent, position.maxScrollExtent);
+
+            position
+                .animateTo(
+              targetPixels,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            )
+                .then((_) {
+              // 滚动完成后优先高亮最精确的已渲染目标路径。
+              if (mounted) {
+                final highlightPath = _resolveBestHighlightPath(
+                  requestedPath: path,
+                  fallbackPath: foundPath,
+                );
+                _triggerHighlight(highlightPath);
+              }
+            });
+            return;
+          }
+        }
+
+        // 如果手动滚动失败，回退到 ensureVisible（手机端保留状态栏安全距离）
+        final fallbackAlignment = scrollTopSafeAlignment(
+          context,
+          desktopTopSpacing: 10.0,
+        );
         Scrollable.ensureVisible(
-          key.currentContext!,
+          elementContext,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
-          alignment: 0.1,
+          alignment: fallbackAlignment,
         ).then((_) {
-          // 滚动完成后优先高亮最精确的已渲染目标路径。
           if (mounted) {
             final highlightPath = _resolveBestHighlightPath(
               requestedPath: path,
@@ -2069,8 +2173,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
       }
     }
 
-    // 如果重试次数小于3次，延迟重试
-    if (retryCount < 3) {
+    // 目录跳转常发生在重建期间，给目标元素更多时间完成构建
+    if (retryCount < 8) {
       Logger.d(
         'Element key not found or context null for path: $path, retrying... ($retryCount)',
         tag: 'ComponentRenderer',
@@ -2086,6 +2190,30 @@ class ComponentRendererState extends State<ComponentRenderer> {
         tag: 'ComponentRenderer',
       );
     }
+  }
+
+  ScrollableState? _findBestScrollableState(BuildContext elementContext) {
+    final nearest = Scrollable.maybeOf(elementContext);
+    if (nearest != null && nearest.position.maxScrollExtent > 0) {
+      return nearest;
+    }
+
+    ScrollableState? candidate = nearest;
+    elementContext.visitAncestorElements((ancestor) {
+      if (ancestor is StatefulElement) {
+        final state = ancestor.state;
+        if (state is ScrollableState && state.position.axis == Axis.vertical) {
+          candidate ??= state;
+          if (state.position.maxScrollExtent > 0) {
+            candidate = state;
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+
+    return candidate;
   }
 
   /// 从给定路径开始，逐层向上查找可滚动的元素路径
@@ -3148,11 +3276,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
 
     final position = scrollableState.position;
-    final statusBarHeight = MediaQuery.of(context).padding.top;
+    final safeTopOffset = scrollTopSafeOffset(
+      context,
+      desktopTopSpacing: 10.0,
+    );
 
-    // Scroll so the element's top sits exactly at statusBarHeight below the
-    // screen's physical top (i.e. just below the status bar).
-    final targetPixels = (position.pixels + elementOffset.dy - statusBarHeight)
+    // Scroll so the element's top sits at the mobile safe-top offset
+    // (status bar + small breathing room).
+    final targetPixels = (position.pixels + elementOffset.dy - safeTopOffset)
         .clamp(position.minScrollExtent, position.maxScrollExtent);
 
     position.animateTo(
@@ -4462,11 +4593,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     _phraseOverlayEntry = OverlayEntry(
       builder: (ctx) {
-        // 在 overlay 的 context 中获取状态栏高度（不受 SafeArea 影响的真实物理值）
-        final statusBarHeight = MediaQuery.of(ctx).viewPadding.top;
+        final safeTopOffset = mobileTopSafeOffset(ctx, useViewPadding: true);
         final safeBottom = MediaQuery.of(ctx).viewPadding.bottom;
         final effectiveDy = (position.dy + 20).clamp(
-          statusBarHeight + 8.0,
+          safeTopOffset,
           screenSize.height - maxHeight - safeBottom - 8.0,
         );
         final effectiveDx = dx.clamp(
@@ -6838,12 +6968,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     }
 
     if (spans.isEmpty) return const SizedBox.shrink();
+    // 不使用 forceStrutHeight，让行高自然计算
+    // 这解决了多个 label 元素换行时高度计算不正确的问题
     return Text.rich(
-      strutStyle: const StrutStyle(
-        forceStrutHeight: true,
-        height: 1.8,
-        leading: 0,
-      ),
       TextSpan(children: spans),
       key: definitionTextKey,
     );
@@ -7250,15 +7377,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
       );
 
       // 使用 WidgetSpan 包裹独立的 Text.rich，以支持双击查词
+      // 不使用 forceStrutHeight，让文本高度自然计算以支持换行
       return WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
         child: Text.rich(
-          strutStyle: const StrutStyle(
-            forceStrutHeight: true,
-            height: 1.8,
-            leading: 0,
-          ),
           TextSpan(children: result.spans),
           key: textKey,
         ),
@@ -7608,12 +7731,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
             recognizer: recognizer,
             mouseCursor: SystemMouseCursors.click,
           );
+          // 不使用 forceStrutHeight，让文本高度自然计算以支持换行
           final richText = Text.rich(
-            strutStyle: const StrutStyle(
-              forceStrutHeight: true,
-              height: 1.8,
-              leading: 0,
-            ),
             TextSpan(children: result.spans),
           );
 

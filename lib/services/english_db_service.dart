@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dictionary_manager.dart';
 import 'english_search_service.dart';
 import 'preferences_service.dart';
@@ -133,9 +132,22 @@ class EnglishDbService {
 
   Future<String> getDefaultDownloadUrl() async {
     final dictManager = DictionaryManager();
-    final subscriptionUrl = await dictManager.onlineSubscriptionUrl;
+    final subscriptionUrl = (await dictManager.onlineSubscriptionUrl).trim();
+    if (subscriptionUrl.isEmpty) {
+      Logger.w('EnglishDbService: 未设置服务器地址，无法生成下载URL', tag: 'EnglishDB');
+      return '';
+    }
 
-    final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'/$'), '');
+    final baseUri = Uri.tryParse(subscriptionUrl);
+    if (baseUri == null || !baseUri.hasScheme || baseUri.host.isEmpty) {
+      Logger.w(
+        'EnglishDbService: 服务器地址无效($subscriptionUrl)，无法生成下载URL',
+        tag: 'EnglishDB',
+      );
+      return '';
+    }
+
+    final cleanUrl = subscriptionUrl.replaceAll(RegExp(r'/$'), '');
     return '$cleanUrl/auxi/en.db';
   }
 

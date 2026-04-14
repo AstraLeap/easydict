@@ -1499,6 +1499,7 @@ class _SegmentProcessor extends _SegmentVisitor<void> {
             style: style,
             decorationType: decType,
             decorationColor: style.color,
+            underlineOffset: kCustomDecorationOffset,
             recognizer: config.recognizer,
             mouseCursor: config.mouseCursor,
             onShowMenu: config.onShowMenu,

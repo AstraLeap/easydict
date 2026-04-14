@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/constants/entry_keys.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../data/database_service.dart';
@@ -1011,10 +1014,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               width: double.infinity,
               child: Text(
                 displayText,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.onSurface,
-                ),
+                style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1113,10 +1113,7 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
               width: double.infinity,
               child: Text(
                 displayText,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurface,
-                ),
+                style: TextStyle(fontSize: 12, color: colorScheme.onSurface),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1420,6 +1417,12 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     for (int i = 0; i < widget.entryGroup.dictionaryGroups.length; i++) {
       if (widget.entryGroup.dictionaryGroups[i].dictionaryId ==
           dict.dictionaryId) {
+        // 词典切换时触发震动反馈（仅手机端，且切换到不同词典时）
+        if (i != widget.entryGroup.currentDictionaryIndex &&
+            (Platform.isAndroid || Platform.isIOS)) {
+          HapticFeedback.vibrate();
+        }
+
         // 先展开词典（如果处于折叠状态）
         await widget.onExpandDictionary?.call(dict.dictionaryId);
 

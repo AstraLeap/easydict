@@ -4,6 +4,7 @@ import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/markdown.dart';
 import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../i18n/strings.g.dart';
+import '../core/utils/scroll_safe_utils.dart';
 import '../services/note_service.dart';
 import '../services/preferences_service.dart';
 
@@ -270,13 +271,18 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       minChildSize: _isFullScreen ? 1.0 : 0.5,
       maxChildSize: _isFullScreen
           ? 1.0
-          : (screenSize.height - widget.statusBarHeight - 8) / screenSize.height,
+          : availableHeightRatio(
+              totalHeight: screenSize.height,
+              reservedTop: topInsetWithMargin(widget.statusBarHeight),
+            ),
       expand: false,
       builder: (context, scrollController) {
         return Container(
           width: _isFullScreen ? screenSize.width : null,
           padding: EdgeInsets.only(
-            top: _isFullScreen ? widget.statusBarHeight + 8 : 16,
+            top: _isFullScreen
+                ? topInsetWithMargin(widget.statusBarHeight)
+                : 16,
             left: 16,
             right: 16,
             bottom: 16,

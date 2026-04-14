@@ -532,14 +532,30 @@ class _MyAppState extends State<MyApp>
 
               Widget content = ErrorBoundary(child: child ?? const SizedBox());
               if (_isMultiWindow) {
+                final reducedTopPadding = mq.padding.top <= 0
+                    ? 0.0
+                    : (mq.padding.top - 12.0)
+                          .clamp(6.0, mq.padding.top)
+                          .toDouble();
+                final reducedTopViewPadding = mq.viewPadding.top <= 0
+                    ? 0.0
+                    : (mq.viewPadding.top - 12.0)
+                          .clamp(6.0, mq.viewPadding.top)
+                          .toDouble();
                 Logger.i(
-                  '[WindowDebug] 小窗模式激活：将 padding/viewPadding 顶底归零',
+                  '[WindowDebug] 小窗模式激活：顶部 inset 轻度收缩，保留底部归零',
                   tag: 'EasyDictWindow',
                 );
                 content = MediaQuery(
                   data: mq.copyWith(
-                    padding: mq.padding.copyWith(top: 0, bottom: 0),
-                    viewPadding: mq.viewPadding.copyWith(top: 0, bottom: 0),
+                    padding: mq.padding.copyWith(
+                      top: reducedTopPadding,
+                      bottom: 0,
+                    ),
+                    viewPadding: mq.viewPadding.copyWith(
+                      top: reducedTopViewPadding,
+                      bottom: 0,
+                    ),
                   ),
                   child: content,
                 );
@@ -590,10 +606,11 @@ class _MainScreenState extends State<MainScreen> {
   /// 是否显示底部导航栏（窄屏模式下进入设置子页面时隐藏）
   bool _showBottomNav = true;
 
+  final GlobalKey<dynamic> _dictionarySearchPageKey = GlobalKey();
   final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
 
   List<Widget> get _pages => [
-    const DictionarySearchPage(),
+    DictionarySearchPage(key: _dictionarySearchPageKey),
     WordBankPage(key: _wordBankPageKey),
     SettingsPage(onSubPageChanged: _onSettingsSubPageChanged),
   ];
@@ -639,6 +656,9 @@ class _MainScreenState extends State<MainScreen> {
       if (index == 1) {
         _wordBankPageKey.currentState?.loadWordsIfNeeded();
       }
+    } else if (index == 0) {
+      // 点击已选中的查词 tab 时，激活搜索框（全选文本并获取焦点）
+      _dictionarySearchPageKey.currentState?.activateSearchBar();
     }
   }
 

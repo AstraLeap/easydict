@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/dictionary_logo.dart';
 import '../core/utils/json_path_utils.dart';
+import '../core/utils/scroll_safe_utils.dart';
 import '../data/database_service.dart';
 import '../services/dictionary_manager.dart';
 
@@ -77,10 +78,10 @@ class NoteLinkPreviewPopup {
     // Content overlay
     contentEntry = OverlayEntry(
       builder: (ctx) {
-        final statusBarHeight = MediaQuery.of(ctx).viewPadding.top;
+        final safeTopOffset = mobileTopSafeOffset(ctx, useViewPadding: true);
         final safeBottom = MediaQuery.of(ctx).viewPadding.bottom;
         final effectiveDy = (position.dy + 20).clamp(
-          statusBarHeight + 8.0,
+          safeTopOffset,
           screenSize.height - maxHeight - safeBottom - 8.0,
         );
         final effectiveDx = dx.clamp(

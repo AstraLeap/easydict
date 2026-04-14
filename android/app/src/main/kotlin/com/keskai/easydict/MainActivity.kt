@@ -51,6 +51,9 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // FlutterActivity 及部分 ROM/调试流程可能在 super.onCreate 后重置窗口参数，
+        // 再次应用可确保 debug/release 行为一致。
+        applyEdgeToEdge()
     }
 
     override fun onResume() {
@@ -91,6 +94,9 @@ class MainActivity : FlutterActivity() {
     private fun applyEdgeToEdge() {
         Log.d(TAG, "applyEdgeToEdge called, isInMultiWindowMode=$isInMultiWindowMode")
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // 运行时显式设置透明系统栏，避免构建变体/主题合并差异导致顶部看起来非沉浸式。
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
 
         // DecorView 层拦截：修正 insets 后直接返回，由 ViewGroup 框架自动传播给所有子 View。
         //

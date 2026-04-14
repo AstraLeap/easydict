@@ -75,6 +75,7 @@ dependencies:
   zstd_ffi:
     path: third_party/zstd_ffi
   re_editor: ^0.8.0
+  gradient_blur: ^1.0.2+1
 
 dev_dependencies:
   flutter_test:
