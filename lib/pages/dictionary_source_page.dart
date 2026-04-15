@@ -398,7 +398,8 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
   Widget _buildOnlineDictionaryCard(RemoteDictionary dict) {
     final colorScheme = Theme.of(context).colorScheme;
     final hasUpdate =
-        dict.isDownloaded && context.watch<DictUpdateCheckService>().hasUpdate(dict.id);
+        dict.isDownloaded &&
+        context.watch<DictUpdateCheckService>().hasUpdate(dict.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -529,7 +530,10 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
     );
   }
 
-  void _updateOnlineDictionaryStatus(String dictId, {required bool isDownloaded}) {
+  void _updateOnlineDictionaryStatus(
+    String dictId, {
+    required bool isDownloaded,
+  }) {
     final index = _onlineDictionaries.indexWhere((d) => d.id == dictId);
     if (index != -1) {
       setState(() {

@@ -583,6 +583,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     }
   }
+
   Future<void> _loadSearchHistory() async {
     final records = await _historyService.getSearchRecords();
     setState(() {
