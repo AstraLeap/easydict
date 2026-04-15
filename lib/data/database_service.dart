@@ -1377,15 +1377,15 @@ class DatabaseService {
       }
     }
 
-    // 遍历每个词典搜索
-    for (final metadata in filteredDicts) {
+    // 每个词典搜索相互独立：并行执行，减少词典数量多时的总等待。
+    final dictTasks = filteredDicts.map((metadata) async {
       final langCode = LanguageUtils.normalizeSourceLanguage(
         metadata.sourceLanguage,
       );
       final normQuery = normQueries[langCode]!;
 
       // 先直接搜索单词
-      var entries = await _searchInDictionary(
+      final entries = await _searchInDictionary(
         metadata.id,
         word,
         normQuery,
@@ -1393,42 +1393,54 @@ class DatabaseService {
       );
 
       if (entries.isNotEmpty) {
-        // 直接查到了
-        dictResults.add(
-          DictSearchResult(dictId: metadata.id, entries: entries),
+        return DictSearchResult(dictId: metadata.id, entries: entries);
+      }
+
+      if (englishRelations == null || langCode != 'en') {
+        return null;
+      }
+
+      // 查不到，且是英语词典，尝试搜索关系词
+      final validRelations = <String, List<SearchRelation>>{};
+      final relatedEntries = <DictionaryEntry>[];
+
+      final relatedLookups = englishRelations.keys.map((relatedWord) async {
+        final relatedNormQuery = _precomputeNormalizedQueries(
+          relatedWord,
+          {langCode},
+          {langCode},
         );
-      } else if (englishRelations != null && langCode == 'en') {
-        // 查不到，且是英语词典，尝试搜索关系词
-        final validRelations = <String, List<SearchRelation>>{};
-        final relatedEntries = <DictionaryEntry>[];
+        final relEntries = await _searchInDictionary(
+          metadata.id,
+          relatedWord,
+          relatedNormQuery[langCode]!,
+          exactMatch: exactMatch,
+        );
+        return (relatedWord, relEntries);
+      }).toList();
 
-        for (final relatedWord in englishRelations.keys) {
-          final relatedNormQuery = _precomputeNormalizedQueries(
-            relatedWord,
-            {langCode},
-            {langCode},
-          );
-          final relEntries = await _searchInDictionary(
-            metadata.id,
-            relatedWord,
-            relatedNormQuery[langCode]!,
-            exactMatch: exactMatch,
-          );
-          if (relEntries.isNotEmpty) {
-            validRelations[relatedWord] = englishRelations[relatedWord]!;
-            relatedEntries.addAll(relEntries);
-          }
-        }
+      final relatedLookupResults = await Future.wait(relatedLookups);
+      for (final (relatedWord, relEntries) in relatedLookupResults) {
+        if (relEntries.isEmpty) continue;
+        validRelations[relatedWord] = englishRelations[relatedWord]!;
+        relatedEntries.addAll(relEntries);
+      }
 
-        if (relatedEntries.isNotEmpty) {
-          dictResults.add(
-            DictSearchResult(
-              dictId: metadata.id,
-              entries: relatedEntries,
-              relations: validRelations,
-            ),
-          );
-        }
+      if (relatedEntries.isEmpty) {
+        return null;
+      }
+
+      return DictSearchResult(
+        dictId: metadata.id,
+        entries: relatedEntries,
+        relations: validRelations,
+      );
+    }).toList();
+
+    final parallelResults = await Future.wait(dictTasks);
+    for (final result in parallelResults) {
+      if (result != null) {
+        dictResults.add(result);
       }
     }
 
@@ -2253,7 +2265,7 @@ class DatabaseService {
         .toList();
 
     if (exactMatch && isNormalMode) {
-final filtered = headwords
+      final filtered = headwords
           .where((h) => h.startsWith(query))
           .take(limit)
           .toList();

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../data/database_service.dart';
@@ -9,6 +10,7 @@ import '../services/search_history_service.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_db_service.dart';
+import '../services/english_search_service.dart';
 import '../services/font_loader_service.dart';
 import '../services/entry_event_bus.dart';
 import '../services/daily_word_service.dart';
@@ -54,17 +56,22 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   bool get _isLoading => _isLoadingNotifier.value;
   set _isLoading(bool value) => _isLoadingNotifier.value = value;
   bool get _isHistoryEditMode => _isHistoryEditModeNotifier.value;
-  set _isHistoryEditMode(bool value) => _isHistoryEditModeNotifier.value = value;
+  set _isHistoryEditMode(bool value) =>
+      _isHistoryEditModeNotifier.value = value;
   List<String> get _dailyWords => _dailyWordsNotifier.value;
   set _dailyWords(List<String> value) => _dailyWordsNotifier.value = value;
   bool get _isLoadingDailyWords => _isLoadingDailyWordsNotifier.value;
-  set _isLoadingDailyWords(bool value) => _isLoadingDailyWordsNotifier.value = value;
+  set _isLoadingDailyWords(bool value) =>
+      _isLoadingDailyWordsNotifier.value = value;
   List<String> get _searchResults => _searchResultsNotifier.value;
-  set _searchResults(List<String> value) => _searchResultsNotifier.value = value;
+  set _searchResults(List<String> value) =>
+      _searchResultsNotifier.value = value;
   bool get _showSearchResults => _showSearchResultsNotifier.value;
-  set _showSearchResults(bool value) => _showSearchResultsNotifier.value = value;
+  set _showSearchResults(bool value) =>
+      _showSearchResultsNotifier.value = value;
   int get _selectedResultIndex => _selectedResultIndexNotifier.value;
-  set _selectedResultIndex(int value) => _selectedResultIndexNotifier.value = value;
+  set _selectedResultIndex(int value) =>
+      _selectedResultIndexNotifier.value = value;
 
   List<SearchRecord> _searchRecords = [];
   bool _wasFocused = false;
@@ -102,6 +109,12 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   StreamSubscription<SearchHistoryChangedEvent>? _historyChangedSubscription;
   StreamSubscription<ClipboardSearchEvent>? _clipboardSearchSubscription;
 
+  // 从历史记录点击进入详情时，临时暂停历史组件刷新，避免先重建当前页。
+  bool _pauseHistoryComponentRefresh = false;
+  bool _pendingHistoryComponentRefresh = false;
+  Timer? _historyRefreshTimer;
+  static const Duration _historyRefreshDelay = Duration(milliseconds: 450);
+
   bool _isInitializing = true;
 
   @override
@@ -135,7 +148,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     };
     _initData();
     _syncSubscription = EntryEventBus().settingsSynced.listen((event) {
-      if (event.includesHistory) _loadSearchHistory();
+      if (event.includesHistory) {
+        _refreshHistoryComponent();
+      }
     });
     _dictsChangedSubscription = EntryEventBus().dictionariesChanged.listen((_) {
       _loadDictionaryGroups();
@@ -146,7 +161,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _historyChangedSubscription = EntryEventBus().searchHistoryChanged.listen((
       _,
     ) {
-      _loadSearchHistory();
+      _refreshHistoryComponent();
     });
     // 监听剪切板搜索事件
     _clipboardSearchSubscription = EntryEventBus().clipboardSearch.listen((
@@ -305,6 +320,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     }
 
     _isSearchingWord = true;
+    _beginDeferredHistoryRefreshWindow();
     Logger.d('_searchFromDailyWord 开始: $word', tag: 'DictionarySearch');
 
     _isLoading = true;
@@ -312,7 +328,36 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _searchResults = [];
     _selectedResultIndex = -1;
 
+    if (_detectLanguage(word) == 'en') {
+      // 每日词点击后立即并行预热顶部关系横幅数据。
+      unawaited(EnglishSearchService().searchWordRelations(word));
+    }
+
     try {
+      final reusableTab = _findReusableSearchTab(word);
+      if (reusableTab != null) {
+        Logger.d('每日词复用已有搜索标签: $word', tag: 'DictionarySearch');
+
+        await _historyService.addSearchRecord(word, exactMatch: false);
+        await _historyService.addSearchRecord(
+          word,
+          exactMatch: false,
+          group: language,
+        );
+
+        final records = await _historyService.getSearchRecords();
+        if (mounted) {
+          await _openEntryHostFromData(
+            word: word,
+            entryGroup: reusableTab.entryGroup,
+            dictResults: reusableTab.dictResults,
+            records: records,
+            deferHistoryComponentUpdateUntilNavigated: false,
+          );
+        }
+        return;
+      }
+
       final searchResult = await _dbService.getAllEntries(
         word,
         exactMatch: false,
@@ -339,30 +384,14 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         final records = await _historyService.getSearchRecords();
 
         if (mounted) {
-          setState(() {
-            _searchRecords = records;
-          });
-        }
-
-        if (mounted) {
-          // 构建浏览列表（历史记录）
-          final historyWords = records.map((r) => r.word).toList();
-          final currentIndex = historyWords.indexOf(word);
-
-          await EntryTabHostPage.open(
-            context,
+          await _openEntryHostFromData(
+            word: word,
             entryGroup: entryGroup,
-            initialWord: word,
             dictResults: searchResult.dictResults.isNotEmpty
                 ? searchResult.dictResults
                 : null,
-            browseList: historyWords.isNotEmpty
-                ? BrowseList(
-                    source: BrowseListSource.searchHistory,
-                    words: historyWords,
-                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
-                  )
-                : null,
+            records: records,
+            deferHistoryComponentUpdateUntilNavigated: false,
           );
         }
       } else {
@@ -383,6 +412,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     } finally {
       _isLoading = false;
       _isSearchingWord = false;
+      if (_pauseHistoryComponentRefresh) {
+        _resumeHistoryComponentRefresh();
+      }
       Logger.d('_searchFromDailyWord 完成: $word', tag: 'DictionarySearch');
     }
   }
@@ -405,6 +437,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _clipboardSearchSubscription?.cancel();
     _debounceTimer?.cancel();
     _searchFocusNode.removeListener(_onFocusChange);
+    _historyRefreshTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     // 释放 ValueNotifier
@@ -428,6 +461,29 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         extentOffset: _searchController.text.length,
       );
     }
+  }
+
+  void _beginDeferredHistoryRefreshWindow() {
+    _pauseHistoryComponentRefresh = true;
+    _pendingHistoryComponentRefresh = false;
+    _historyRefreshTimer?.cancel();
+  }
+
+  void _scheduleHistoryComponentRefresh({
+    List<SearchRecord>? records,
+    Duration? delay,
+  }) {
+    _historyRefreshTimer?.cancel();
+    _historyRefreshTimer = Timer(delay ?? _historyRefreshDelay, () {
+      if (!mounted) return;
+      if (records != null) {
+        setState(() {
+          _searchRecords = records;
+        });
+      } else {
+        _loadSearchHistory();
+      }
+    });
   }
 
   /// 判断当前语言是否需要至少输入2个字符才启动边打边搜（字母文字）。
@@ -527,12 +583,27 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       }
     }
   }
-
   Future<void> _loadSearchHistory() async {
     final records = await _historyService.getSearchRecords();
     setState(() {
       _searchRecords = records;
     });
+  }
+
+  void _refreshHistoryComponent() {
+    if (_pauseHistoryComponentRefresh || _isSearchingWord) {
+      _pendingHistoryComponentRefresh = true;
+      return;
+    }
+    _scheduleHistoryComponentRefresh();
+  }
+
+  void _resumeHistoryComponentRefresh() {
+    _pauseHistoryComponentRefresh = false;
+    if (_pendingHistoryComponentRefresh) {
+      _pendingHistoryComponentRefresh = false;
+      _scheduleHistoryComponentRefresh();
+    }
   }
 
   Future<void> _clearHistory() async {
@@ -568,13 +639,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   Future<void> _onSearchFromHistory(SearchRecord record) async {
     // 恢复搜索记录中保存的高级选项和成功搜索时的语言
     _searchController.text = record.word;
-    setState(() {
-      _exactMatch = record.exactMatch;
-      if (record.group != null) {
-        _selectedGroup = record.group!;
-      }
-    });
-    await _searchWord();
+    _exactMatch = record.exactMatch;
+    if (record.group != null) {
+      _selectedGroup = record.group!;
+    }
+    await _searchWord(deferHistoryComponentUpdateUntilNavigated: true);
   }
 
   /// 处理剪切板搜索事件
@@ -589,7 +658,80 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _searchWord();
   }
 
-  Future<void> _searchWord() async {
+  EntryTabItem? _findReusableSearchTab(String word) {
+    final normalized = word.trim().toLowerCase();
+    for (final tab in _entryTabService.tabs) {
+      if (tab.word.trim().toLowerCase() != normalized) continue;
+      final source = tab.browseList?.source;
+      if (source == null || source == BrowseListSource.searchHistory) {
+        return tab;
+      }
+    }
+    return null;
+  }
+
+  BrowseList? _buildHistoryBrowseList(List<SearchRecord> records, String word) {
+    final historyWords = records.map((r) => r.word).toList();
+    if (historyWords.isEmpty) return null;
+    final currentIndex = historyWords.indexOf(word);
+    return BrowseList(
+      source: BrowseListSource.searchHistory,
+      words: historyWords,
+      initialIndex: currentIndex >= 0 ? currentIndex : 0,
+    );
+  }
+
+  Future<void> _openEntryHostFromData({
+    required String word,
+    required DictionaryEntryGroup entryGroup,
+    required List<SearchRecord> records,
+    List<DictSearchResult>? dictResults,
+    required bool deferHistoryComponentUpdateUntilNavigated,
+  }) async {
+    if (!mounted) return;
+
+    final navResultFuture = EntryTabHostPage.open(
+      context,
+      entryGroup: entryGroup,
+      initialWord: word,
+      dictResults: dictResults,
+      browseList: _buildHistoryBrowseList(records, word),
+    );
+
+    final navResult = await navResultFuture;
+
+    // 查词完成后再延迟刷新历史组件，避免查词动作触发立刻重建。
+    _scheduleHistoryComponentRefresh(
+      records: records,
+      delay: deferHistoryComponentUpdateUntilNavigated
+          ? const Duration(milliseconds: 520)
+          : _historyRefreshDelay,
+    );
+
+    if (navResult == null) return;
+
+    if (navResult is String) {
+      _searchController.text = navResult;
+      await _searchWord();
+      return;
+    }
+
+    if (navResult is Map && navResult['selectText'] == true) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _searchFocusNode.requestFocus();
+          _searchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _searchController.text.length,
+          );
+        }
+      });
+    }
+  }
+
+  Future<void> _searchWord({
+    bool deferHistoryComponentUpdateUntilNavigated = false,
+  }) async {
     // 防止重复搜索
     if (_isSearchingWord) {
       Logger.d('_searchWord: 跳过，正在搜索中', tag: 'DictionarySearch');
@@ -601,6 +743,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final word = _searchController.text.trim();
     if (word.isEmpty) return;
 
+    if (_detectLanguage(word) == 'en') {
+      // 用户点击查词瞬间即预热顶部关系横幅数据。
+      unawaited(EnglishSearchService().searchWordRelations(word));
+    }
+
     // LIKE/GLOB 通配符模式下禁止直接查词，必须从候选词列表点击进入
     if (_isWildcardMode(word)) {
       if (mounted) {
@@ -610,6 +757,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     }
 
     _isSearchingWord = true;
+    _beginDeferredHistoryRefreshWindow();
 
     Logger.d(
       '用户开始查词: $word, _isSearchingWord 已设置为 true',
@@ -623,17 +771,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         final cloudUrl = (await _dictManager.onlineSubscriptionUrl).trim();
         final cloudUri = Uri.tryParse(cloudUrl);
         final hasCloudServer =
-            cloudUri != null &&
-            cloudUri.hasScheme &&
-            cloudUri.host.isNotEmpty;
+            cloudUri != null && cloudUri.hasScheme && cloudUri.host.isNotEmpty;
 
         if (!hasCloudServer) {
-          Logger.i(
-            '未设置有效服务器地址，跳过 en.db 下载提示',
-            tag: 'EnglishDB',
-          );
+          Logger.i('未设置有效服务器地址，跳过 en.db 下载提示', tag: 'EnglishDB');
         } else {
-          final shouldShow = await EnglishDbService().shouldShowDownloadDialog();
+          final shouldShow = await EnglishDbService()
+              .shouldShowDownloadDialog();
           if (shouldShow && mounted) {
             final result = await EnglishDbDownloadDialog.show(context);
             if (result == EnglishDbDownloadResult.downloaded && mounted) {
@@ -651,8 +795,28 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _selectedResultIndex = -1;
 
     try {
-      // 总是更新排序位置，保留已记录的语言；仅在搜索成功后再更新语言
-      await _historyService.addSearchRecord(word, exactMatch: _exactMatch);
+      final reusableTab = _findReusableSearchTab(word);
+      if (reusableTab != null) {
+        Logger.d('复用已有搜索标签，跳过数据库查询: $word', tag: 'DictionarySearch');
+
+        await _historyService.addSearchRecord(word, exactMatch: _exactMatch);
+        await _historyService.addSearchRecord(
+          word,
+          exactMatch: _exactMatch,
+          group: _selectedGroup,
+        );
+
+        final records = await _historyService.getSearchRecords();
+        await _openEntryHostFromData(
+          word: word,
+          entryGroup: reusableTab.entryGroup,
+          dictResults: reusableTab.dictResults,
+          records: records,
+          deferHistoryComponentUpdateUntilNavigated:
+              deferHistoryComponentUpdateUntilNavigated,
+        );
+        return;
+      }
 
       final searchResult = await _dbService.getAllEntries(
         word,
@@ -665,70 +829,26 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
           searchResult.entries,
         );
 
-        // 搜索成功时才记录当前语言及所有高级选项
+        // 搜索成功时才记录到搜索历史
         await _historyService.addSearchRecord(
           word,
           exactMatch: _exactMatch,
           group: _selectedGroup,
         );
-        // 更新历史记录
         final records = await _historyService.getSearchRecords();
-        setState(() {
-          _searchRecords = records;
-        });
-
-        // 跳转到详情页面
-        if (mounted) {
-          // 构建浏览列表（历史记录）
-          final historyWords = _searchRecords.map((r) => r.word).toList();
-          final currentIndex = historyWords.indexOf(word);
-
-          final navResult = await EntryTabHostPage.open(
-            context,
-            entryGroup: entryGroup,
-            initialWord: word,
-            dictResults: searchResult.dictResults.isNotEmpty
-                ? searchResult.dictResults
-                : null,
-            browseList: historyWords.isNotEmpty
-                ? BrowseList(
-                    source: BrowseListSource.searchHistory,
-                    words: historyWords,
-                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
-                  )
-                : null,
-          );
-
-          // 处理返回结果
-          if (navResult != null) {
-            // 如果返回的是字符串，表示新的搜索词
-            if (navResult is String) {
-              // 设置搜索词并执行搜索
-              _searchController.text = navResult;
-              await _searchWord();
-            }
-            // 如果返回结果要求选中文本
-            else if (navResult is Map && navResult['selectText'] == true) {
-              // 延迟执行，确保页面已完全返回
-              Future.delayed(const Duration(milliseconds: 100), () {
-                if (mounted) {
-                  // 先请求焦点
-                  _searchFocusNode.requestFocus();
-                  // 然后选中文本
-                  _searchController.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: _searchController.text.length,
-                  );
-                }
-              });
-            }
-          }
-        }
+        await _openEntryHostFromData(
+          word: word,
+          entryGroup: entryGroup,
+          dictResults: searchResult.dictResults.isNotEmpty
+              ? searchResult.dictResults
+              : null,
+          records: records,
+          deferHistoryComponentUpdateUntilNavigated:
+              deferHistoryComponentUpdateUntilNavigated,
+        );
       } else {
         final records = await _historyService.getSearchRecords();
-        setState(() {
-          _searchRecords = records;
-        });
+        _scheduleHistoryComponentRefresh(records: records);
         _showSearchResults = false;
 
         if (mounted) {
@@ -748,6 +868,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     } finally {
       _isLoading = false;
       _isSearchingWord = false;
+      if (_pauseHistoryComponentRefresh) {
+        _resumeHistoryComponentRefresh();
+      }
       Logger.d(
         '_searchWord 完成: $word, _isSearchingWord 已重置为 false',
         tag: 'DictionarySearch',
@@ -906,7 +1029,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Column(
@@ -914,13 +1039,20 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  8,
+                                ),
                                 child: Text(
                                   context.t.search.searchResults,
                                   style: Theme.of(context).textTheme.titleSmall
                                       ?.copyWith(
                                         fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).colorScheme.primary,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
                                       ),
                                 ),
                               ),
@@ -930,17 +1062,20 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                 builder: (context, selectedIndex, _) {
                                   return ListView.separated(
                                     shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
                                     itemCount: results.length,
-                                    separatorBuilder: (_, _) => const Divider(height: 1),
+                                    separatorBuilder: (_, _) =>
+                                        const Divider(height: 1),
                                     itemBuilder: (context, index) {
                                       final word = results[index];
                                       final isSelected = index == selectedIndex;
                                       return Container(
                                         color: isSelected
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.primary.withOpacity(0.15)
+                                            ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withOpacity(0.15)
                                             : null,
                                         child: ListTile(
                                           dense: true,
@@ -1030,9 +1165,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                           if (dailyWords.isEmpty && !isLoadingDailyWords) {
                             return Text(
                               context.t.search.dailyWordsNoWords,
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: colorScheme.outline),
                             );
                           }
                           return Wrap(
@@ -1049,7 +1183,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                                   ),
                                   child: Text(
                                     word,
-                                    style: Theme.of(context).textTheme.bodyMedium
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
                                         ?.copyWith(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w500,
@@ -1107,7 +1243,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         InkWell(
-                          onTap: isLoadingDailyWords ? null : _refreshDailyWords,
+                          onTap: isLoadingDailyWords
+                              ? null
+                              : _refreshDailyWords,
                           borderRadius: BorderRadius.circular(4),
                           child: Padding(
                             padding: const EdgeInsets.all(2),
@@ -1496,13 +1634,16 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         crossAxisCount: crossAxisCount,
                         mainAxisSpacing: 8,
                         crossAxisSpacing: 10,
-                        mainAxisExtent: 46,
+                        mainAxisExtent: 42,
                       ),
                       itemCount: _searchRecords.length,
                       itemBuilder: (context, index) {
                         final record = _searchRecords[index];
                         final isTabActive = activeWords.contains(record.word);
-                        return _buildHistoryItem(record, isTabActive: isTabActive);
+                        return _buildHistoryItem(
+                          record,
+                          isTabActive: isTabActive,
+                        );
                       },
                     );
                   },
@@ -1520,6 +1661,83 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final isMobile =
         platform == TargetPlatform.android || platform == TargetPlatform.iOS;
     final colorScheme = Theme.of(context).colorScheme;
+
+    final historyCard = Container(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: isTabActive
+            ? colorScheme.primaryContainer.withOpacity(0.78)
+            : colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: isTabActive
+            ? [
+                BoxShadow(
+                  color: colorScheme.primary.withOpacity(0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              record.word,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                fontSize: 15,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+          // 使用 ValueListenableBuilder 实现删除按钮的局部重建
+          ValueListenableBuilder<bool>(
+            valueListenable: _isHistoryEditModeNotifier,
+            builder: (context, isEditMode, _) {
+              if (!isEditMode) return const SizedBox.shrink();
+              return GestureDetector(
+                onTap: () => _deleteHistoryItem(record),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: _ShakingDeleteIcon(
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
+                ),
+              );
+            },
+          ),
+          if (isTabActive)
+            GestureDetector(
+              onTap: () {
+                _entryTabService.closeByWord(record.word);
+              },
+              child: Container(
+                margin: const EdgeInsets.only(left: 8),
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer.withOpacity(0.95),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: colorScheme.primary.withOpacity(0.35),
+                    width: 1,
+                  ),
+                ),
+                child: Icon(
+                  Icons.close,
+                  size: 16,
+                  color: colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
 
     return InkWell(
       onTap: () {
@@ -1540,104 +1758,16 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             onSecondaryTapUp: (details) {
               _isHistoryEditMode = !_isHistoryEditMode;
             },
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: isTabActive
-                        ? colorScheme.primaryContainer.withOpacity(0.78)
-                        : colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(12),
-                    border: isTabActive
-                        ? Border.all(
-                            color: colorScheme.primary,
-                            width: 1.4,
-                          )
-                        : null,
-                    boxShadow: isTabActive
-                        ? [
-                            BoxShadow(
-                              color: colorScheme.primary.withOpacity(0.18),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          record.word,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 15,
-                              ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                      // 使用 ValueListenableBuilder 实现删除按钮的局部重建
-                      ValueListenableBuilder<bool>(
-                        valueListenable: _isHistoryEditModeNotifier,
-                        builder: (context, isEditMode, _) {
-                          if (!isEditMode) return const SizedBox.shrink();
-                          return GestureDetector(
-                            onTap: () => _deleteHistoryItem(record),
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: _ShakingDeleteIcon(
-                                color: Theme.of(context).textTheme.bodyLarge?.color,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                if (isTabActive)
-                  Positioned(
-                    top: -1,
-                    right: -1,
-                    child: GestureDetector(
-                      onTap: () {
-                        _entryTabService.closeByWord(record.word);
-                      },
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer.withOpacity(0.95),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colorScheme.primary.withOpacity(0.35),
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: colorScheme.shadow.withOpacity(0.12),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.close,
-                          size: 14,
-                          color: colorScheme.onPrimaryContainer,
-                        ),
-                      ),
+            child: isTabActive
+                ? CustomPaint(
+                    foregroundPainter: _DashedRoundedBorderPainter(
+                      color: colorScheme.primary,
+                      strokeWidth: 1.0,
+                      radius: 12,
                     ),
-                  ),
-              ],
-            ),
+                    child: historyCard,
+                  )
+                : historyCard,
           );
         },
       ),
@@ -1717,5 +1847,58 @@ class _ShakingDeleteIconState extends State<_ShakingDeleteIcon>
       },
       child: Icon(Icons.close, size: 14, color: widget.color),
     );
+  }
+}
+
+class _DashedRoundedBorderPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double radius;
+  final double dashWidth;
+  final double dashGap;
+
+  const _DashedRoundedBorderPainter({
+    required this.color,
+    this.strokeWidth = 1.2,
+    this.radius = 12,
+    this.dashWidth = 4,
+    this.dashGap = 3,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    final inset = strokeWidth / 2;
+    final rect =
+        Offset(inset, inset) &
+        Size(
+          math.max(0, size.width - strokeWidth),
+          math.max(0, size.height - strokeWidth),
+        );
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+    final path = Path()..addRRect(rrect);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final end = math.min(distance + dashWidth, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += dashWidth + dashGap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRoundedBorderPainter oldDelegate) {
+    return color != oldDelegate.color ||
+        strokeWidth != oldDelegate.strokeWidth ||
+        radius != oldDelegate.radius ||
+        dashWidth != oldDelegate.dashWidth ||
+        dashGap != oldDelegate.dashGap;
   }
 }

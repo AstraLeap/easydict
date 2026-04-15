@@ -54,7 +54,9 @@ class _WordBankPageState extends State<WordBankPage> {
   // 使用 ValueNotifier 优化频繁变化的状态，减少不必要的全局重建
   final ValueNotifier<bool> _isLoadingWordsNotifier = ValueNotifier(false);
   final ValueNotifier<bool> _isLoadingMoreNotifier = ValueNotifier(false);
-  final ValueNotifier<SortMode> _currentSortModeNotifier = ValueNotifier(SortMode.addTimeDesc);
+  final ValueNotifier<SortMode> _currentSortModeNotifier = ValueNotifier(
+    SortMode.addTimeDesc,
+  );
   final ValueNotifier<String?> _selectedListNotifier = ValueNotifier(null);
 
   // Getters/setters 保持代码兼容性
@@ -63,7 +65,8 @@ class _WordBankPageState extends State<WordBankPage> {
   bool get _isLoadingMore => _isLoadingMoreNotifier.value;
   set _isLoadingMore(bool value) => _isLoadingMoreNotifier.value = value;
   SortMode get _currentSortMode => _currentSortModeNotifier.value;
-  set _currentSortMode(SortMode value) => _currentSortModeNotifier.value = value;
+  set _currentSortMode(SortMode value) =>
+      _currentSortModeNotifier.value = value;
   String? get _selectedList => _selectedListNotifier.value;
   set _selectedList(String? value) => _selectedListNotifier.value = value;
 
@@ -1087,7 +1090,9 @@ class _WordBankPageState extends State<WordBankPage> {
               style: const TextStyle(fontSize: 13),
             ),
             onSelected: (selected) {
-              _selectedList = null;
+              setState(() {
+                _selectedList = null;
+              });
             },
           ),
         ),
@@ -1111,7 +1116,9 @@ class _WordBankPageState extends State<WordBankPage> {
                     style: const TextStyle(fontSize: 13),
                   ),
                   onSelected: (selected) {
-                    _selectedList = selected ? listKey : null;
+                    setState(() {
+                      _selectedList = selected ? listKey : null;
+                    });
                   },
                 ),
               ),
@@ -1155,7 +1162,6 @@ class _WordBankPageState extends State<WordBankPage> {
               ),
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemExtent: 100, // 固定宽度优化
                 cacheExtent: 500, // 添加缓存优化
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
@@ -1175,7 +1181,9 @@ class _WordBankPageState extends State<WordBankPage> {
                           style: const TextStyle(fontSize: 13),
                         ),
                         onSelected: (selected) {
-                          _selectedList = null;
+                          setState(() {
+                            _selectedList = null;
+                          });
                         },
                       ),
                     );
@@ -1193,7 +1201,9 @@ class _WordBankPageState extends State<WordBankPage> {
                         style: const TextStyle(fontSize: 13),
                       ),
                       onSelected: (selected) {
-                        _selectedList = selected ? list.name : null;
+                        setState(() {
+                          _selectedList = selected ? list.name : null;
+                        });
                       },
                     ),
                   );
@@ -1746,7 +1756,9 @@ class _WordBankPageState extends State<WordBankPage> {
                             valueListenable: _isLoadingMoreNotifier,
                             builder: (context, isLoadingMore, _) {
                               if (!isLoadingMore) {
-                                return const SliverToBoxAdapter(child: SizedBox.shrink());
+                                return const SliverToBoxAdapter(
+                                  child: SizedBox.shrink(),
+                                );
                               }
                               return const SliverToBoxAdapter(
                                 child: Padding(
@@ -1759,9 +1771,7 @@ class _WordBankPageState extends State<WordBankPage> {
                             },
                           ),
                           // 底部留白
-                          const SliverToBoxAdapter(
-                            child: SizedBox(height: 32),
-                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 32)),
                         ],
                       ),
                     );

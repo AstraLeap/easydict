@@ -33,6 +33,7 @@ import '../services/ai_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/english_search_service.dart';
 import '../services/entry_event_bus.dart';
+import '../services/entry_tab_service.dart';
 import '../services/font_loader_service.dart';
 import '../services/llm_client.dart';
 import '../services/note_service.dart';
@@ -162,9 +163,6 @@ class EntryDetailPage extends StatefulWidget {
   /// 请求返回主页（由外部标签容器处理）
   final VoidCallback? onHomeRequested;
 
-  /// 放在底部工具栏上方的额外区域（例如手机端标签栏）
-  final Widget? bottomToolbarAboveWidget;
-
   const EntryDetailPage({
     super.key,
     required this.entryGroup,
@@ -174,7 +172,6 @@ class EntryDetailPage extends StatefulWidget {
     this.onBrowseWordRequested,
     this.onOpenEntryRequested,
     this.onHomeRequested,
-    this.bottomToolbarAboveWidget,
   });
 
   @override
@@ -183,6 +180,10 @@ class EntryDetailPage extends StatefulWidget {
 
 class _EntryDetailPageState extends State<EntryDetailPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  // Shared toolbar config cache to avoid reloading/rebuilding when opening new tabs.
+  static List<String>? _sharedToolbarActions;
+  static List<String>? _sharedOverflowActions;
+
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
@@ -267,6 +268,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 词形关系搜索的缓存 Future，所有词典共享，只搜索一次
   Future<List<WordRelationRow>>? _wordRelationsFuture;
+
+  // 顶部关系横幅会在滚动/状态变化时反复重建，缓存处理后的结果避免重复预处理。
+  static const int _maxProcessedWordRelationsCacheSize = 128;
+  final Map<String, List<WordRelationRow>> _processedWordRelationsCache = {};
+  final Map<String, List<WordRelationRow>> _resolvedWordRelationsCache = {};
+  static const int _maxResolvedWordRelationsCacheSize = 128;
+  final Map<String, DateTime> _wordRelationsRequestedAt = {};
+  String? _wordRelationsWaitingLoggedWord;
+  String? _wordRelationsShownLoggedWord;
 
   DateTime? _lastScrollUpdateTime;
   static const _scrollUpdateThrottle = Duration(milliseconds: 100);
@@ -385,6 +395,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     });
   }
 
+  // 是否已准备好渲染主内容（延迟加载，优先显示底部工具栏和标签栏）
+  bool _isContentReady = false;
+
   @override
   void initState() {
     super.initState();
@@ -412,6 +425,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _initAnchorBlinkAnimation();
     // 标签切换会重建页面，首帧后主动抢回键盘焦点，避免方向键需按两次。
     _requestKeyboardFocusNextFrame();
+
+    // 优先复用共享工具栏配置，避免新开标签时底栏出现二次重建。
+    final cachedToolbarActions = _sharedToolbarActions;
+    final cachedOverflowActions = _sharedOverflowActions;
+    if (cachedToolbarActions != null && cachedOverflowActions != null) {
+      _toolbarActions = List<String>.from(cachedToolbarActions);
+      _overflowActions = List<String>.from(cachedOverflowActions);
+      _isContentReady = true;
+      // 后台静默刷新，只有配置变化时才触发一次 setState。
+      _loadToolbarConfig();
+    } else {
+      // 首次无缓存时再异步加载，加载完成后显示主内容。
+      _loadToolbarConfig().then((_) {
+        if (mounted && !_isContentReady) {
+          setState(() {
+            _isContentReady = true;
+          });
+        }
+      });
+    }
   }
 
   /// 初始化 anchor 图标闪烁动画
@@ -446,7 +479,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     // 使用微任务延迟执行，确保首帧渲染优先
     Future.microtask(() async {
       await _loadFavoriteStatus();
-      await _loadToolbarConfig();
       await _loadEntryGroups();
       await _loadExpansionStates();
     });
@@ -483,10 +515,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final nextWord = _browseList!.getNextWord(_browseIndex);
     if (nextWord == null) return;
     if (widget.onBrowseWordRequested != null) {
-      await widget.onBrowseWordRequested!(
-        word: nextWord,
-        insertToLeft: false,
-      );
+      await widget.onBrowseWordRequested!(word: nextWord, insertToLeft: false);
       return;
     }
     await _navigateToBrowseWord(nextWord);
@@ -511,10 +540,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final prevWord = _browseList!.getPreviousWord(_browseIndex);
     if (prevWord == null) return;
     if (widget.onBrowseWordRequested != null) {
-      await widget.onBrowseWordRequested!(
-        word: prevWord,
-        insertToLeft: true,
-      );
+      await widget.onBrowseWordRequested!(word: prevWord, insertToLeft: true);
       return;
     }
     await _navigateToBrowseWord(prevWord);
@@ -626,6 +652,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 导航到指定单词（在当前页面内切换内容）
   Future<void> _navigateToBrowseWord(String word) async {
+    // 与词典查询并行启动顶部关系横幅数据，避免在页面内容渲染后才开始查关系。
+    final wordRelationsFuture = _createWordRelationsFuture(
+      word,
+      source: 'browse_navigate',
+    );
     final dbService = DatabaseService();
     final searchResult = await dbService.getAllEntries(word);
 
@@ -643,7 +674,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         // 更新按词典的搜索关系
         _dictSearchRelations = _buildDictRelations(searchResult.dictResults);
         // 更新单词关系搜索
-        _wordRelationsFuture = EnglishSearchService().searchWordRelations(word);
+        _wordRelationsFuture = wordRelationsFuture;
         // 切词后需要重新检测笔记状态，避免沿用上一个词的面板
         _isNoteStatusLoading = true;
       });
@@ -790,12 +821,42 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Future<void> _loadToolbarConfig() async {
     final (toolbarActions, overflowActions) = await _preferencesService
         .getToolbarAndOverflowActions();
+
+    _sharedToolbarActions = List<String>.from(toolbarActions);
+    _sharedOverflowActions = List<String>.from(overflowActions);
+
+    final shouldUpdateToolbar = !_listEquals(_toolbarActions, toolbarActions);
+    final shouldUpdateOverflow = !_listEquals(
+      _overflowActions,
+      overflowActions,
+    );
+    final shouldMarkContentReady = !_isContentReady;
+
+    if (!shouldUpdateToolbar &&
+        !shouldUpdateOverflow &&
+        !shouldMarkContentReady) {
+      return;
+    }
+
     if (mounted) {
       setState(() {
-        _toolbarActions = toolbarActions;
-        _overflowActions = overflowActions;
+        if (shouldUpdateToolbar) {
+          _toolbarActions = List<String>.from(toolbarActions);
+        }
+        if (shouldUpdateOverflow) {
+          _overflowActions = List<String>.from(overflowActions);
+        }
+        _isContentReady = true;
       });
     }
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -1133,10 +1194,72 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   void _initWordRelationsSearch() {
     final word = widget.initialWord;
     if (word.isNotEmpty) {
-      _wordRelationsFuture = EnglishSearchService().searchWordRelations(word);
+      _wordRelationsFuture = _createWordRelationsFuture(
+        word,
+        source: 'init_state',
+      );
     } else {
       _wordRelationsFuture = null;
     }
+  }
+
+  Future<List<WordRelationRow>> _createWordRelationsFuture(
+    String word, {
+    required String source,
+  }) {
+    final normalized = word.trim().toLowerCase();
+    final startedAt = DateTime.now();
+    _wordRelationsRequestedAt[normalized] = startedAt;
+    _wordRelationsWaitingLoggedWord = null;
+    _wordRelationsShownLoggedWord = null;
+
+    final immediateCachedRows = EnglishSearchService().getCachedWordRelations(
+      word,
+    );
+    if (immediateCachedRows != null) {
+      if (_resolvedWordRelationsCache.length >=
+          _maxResolvedWordRelationsCacheSize) {
+        _resolvedWordRelationsCache.remove(
+          _resolvedWordRelationsCache.keys.first,
+        );
+      }
+      _resolvedWordRelationsCache[normalized] = immediateCachedRows;
+      Logger.d(
+        'WordRelations local cache primed: word=$normalized, rows=${immediateCachedRows.length}, source=$source',
+        tag: 'RelationPerf',
+      );
+    }
+
+    Logger.d(
+      'WordRelations request started: word=$normalized, source=$source',
+      tag: 'RelationPerf',
+    );
+
+    return EnglishSearchService()
+        .searchWordRelations(word)
+        .then((rows) {
+          if (_resolvedWordRelationsCache.length >=
+              _maxResolvedWordRelationsCacheSize) {
+            _resolvedWordRelationsCache.remove(
+              _resolvedWordRelationsCache.keys.first,
+            );
+          }
+          _resolvedWordRelationsCache[normalized] = rows;
+          final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+          Logger.d(
+            'WordRelations request finished: word=$normalized, rows=${rows.length}, elapsed=${elapsedMs}ms, source=$source',
+            tag: 'RelationPerf',
+          );
+          return rows;
+        })
+        .catchError((Object e, StackTrace st) {
+          final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+          Logger.w(
+            'WordRelations request failed: word=$normalized, elapsed=${elapsedMs}ms, source=$source, error=$e',
+            tag: 'RelationPerf',
+          );
+          throw e;
+        });
   }
 
   /// 从 dictResults 构建按词典的搜索关系映射
@@ -1150,6 +1273,38 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       }
     }
     return result;
+  }
+
+  List<WordRelationRow> _getProcessedWordRelations(
+    String word,
+    List<WordRelationRow> rows,
+  ) {
+    final key = word.trim().toLowerCase();
+    final cached = _processedWordRelationsCache[key];
+    if (cached != null) return cached;
+
+    final processed = _preprocessInflectionRows(rows);
+    if (_processedWordRelationsCache.length >=
+        _maxProcessedWordRelationsCacheSize) {
+      _processedWordRelationsCache.remove(
+        _processedWordRelationsCache.keys.first,
+      );
+    }
+    _processedWordRelationsCache[key] = processed;
+    return processed;
+  }
+
+  List<SearchRelation> _dedupeSearchRelations(List<SearchRelation> relations) {
+    final seen = <String>{};
+    final deduped = <SearchRelation>[];
+    for (final relation in relations) {
+      final key =
+          '${relation.description ?? relation.relationType}|${relation.pos}|${relation.mappedWord}';
+      if (seen.add(key)) {
+        deduped.add(relation);
+      }
+    }
+    return deduped;
   }
 
   /// 获取当前词典的语言
@@ -1204,64 +1359,51 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         spacing: 20,
         runSpacing: 5,
         crossAxisAlignment: WrapCrossAlignment.center,
-        children: relations
-            .fold<List<SearchRelation>>([], (deduped, relation) {
-              // 去重：相同的 (description/relationType, pos, mappedWord) 只显示一次
-              final key =
-                  '${relation.description ?? relation.relationType}|${relation.pos}|${relation.mappedWord}';
-              final alreadyAdded = deduped.any((r) {
-                return '${r.description ?? r.relationType}|${r.pos}|${r.mappedWord}' ==
-                    key;
-              });
-              if (!alreadyAdded) deduped.add(relation);
-              return deduped;
-            })
-            .map((relation) {
-              final posLabel = _shortenPos(relation.pos);
-              final desc = relation.description ?? relation.relationType;
-              final label = posLabel.isNotEmpty ? '$desc $posLabel' : desc;
+        children: _dedupeSearchRelations(relations).map((relation) {
+          final posLabel = _shortenPos(relation.pos);
+          final desc = relation.description ?? relation.relationType;
+          final label = posLabel.isNotEmpty ? '$desc $posLabel' : desc;
 
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    _currentWord,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: colorScheme.onSurface.withOpacity(0.55),
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  const SizedBox(width: 3),
-                  Text(
-                    '($label)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: colorScheme.onSurfaceVariant.withOpacity(0.65),
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 14,
-                      color: colorScheme.primary.withOpacity(0.55),
-                    ),
-                  ),
-                  Text(
-                    relation.mappedWord,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                ],
-              );
-            })
-            .toList(),
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                _currentWord,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colorScheme.onSurface.withOpacity(0.55),
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Text(
+                '($label)',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.65),
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: colorScheme.primary.withOpacity(0.55),
+                ),
+              ),
+              Text(
+                relation.mappedWord,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -2173,93 +2315,98 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           fit: StackFit.expand,
           children: [
             // 主内容区域 - 全屏，内容延伸到状态栏下方，让顶部毛玻璃有真实透视内容
-            SafeArea(
-              top: false,
-              bottom: false,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  // 手机端：滚动时退出搜索模式
-                  if (_isSearchMode &&
-                      notification is ScrollStartNotification &&
-                      notification.dragDetails != null) {
-                    setState(() {
-                      _isSearchMode = false;
-                      _searchController.clear();
-                    });
-                  }
-
-                  // 检测用户手动滚动，重置等待标志
-                  // 包括：拖动滚动、滚轮滚动
-                  // 注意：程序化滚动期间 _isProgrammaticScroll 为 true，跳过检测
-                  if (_waitForUserScroll && !_isProgrammaticScroll) {
-                    if (notification is ScrollStartNotification) {
-                      _waitForUserScroll = false;
-                    }
-                    // 滚轮滚动可能直接触发 ScrollUpdateNotification
-                    else if (notification is ScrollUpdateNotification &&
-                        notification.dragDetails == null &&
-                        notification.scrollDelta != null &&
-                        notification.scrollDelta!.abs() > 0) {
-                      _waitForUserScroll = false;
-                    }
-                  }
-
-                  return false;
-                },
-                child: ScrollablePositionedList.builder(
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  scrollOffsetController: _scrollOffsetController,
-                  padding: _getDynamicPadding(
-                    context,
-                  ).copyWith(top: scrollableTopSpacing, bottom: 100),
-                  itemCount: totalCount,
-                  minCacheExtent: _getAdaptiveMinCacheExtent(context),
-                  itemBuilder: (context, index) {
-                    // 索引 0: 笔记面板（如果有笔记）
-                    if (index == 0 && noteOffset == 1) {
-                      return NotePanel(
-                        word: _currentWord,
-                        language: _currentLanguage,
-                        initiallyExpanded: _noteDefaultExpanded,
-                        refreshVersion: _notePanelRefreshVersion,
-                        onLinkTap: _handleNoteLinkTap,
-                      );
+            // 延迟加载主内容，优先渲染底部工具栏和标签栏
+            if (!_isContentReady)
+              const SizedBox.expand()
+            else
+              SafeArea(
+                top: false,
+                bottom: false,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    // 手机端：滚动时退出搜索模式
+                    if (_isSearchMode &&
+                        notification is ScrollStartNotification &&
+                        notification.dragDetails != null) {
+                      setState(() {
+                        _isSearchMode = false;
+                        _searchController.clear();
+                      });
                     }
 
-                    // 词形关系横幅
-                    final relationsIndex = noteOffset;
-                    if (index == relationsIndex) {
-                      return _buildWordRelationsBanner();
-                    }
-
-                    final entryIndex = index - totalOffset;
-                    final entry = entries[entryIndex];
-
-                    // 仅在该词典第一条 entry 处显示词典 Logo+名称
-                    final showDictHeader =
-                        entryIndex == 0 ||
-                        entries[entryIndex - 1].dictId != entry.dictId;
-
-                    // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
-                    List<SearchRelation>? entryRelations;
-                    if (showDictHeader) {
-                      final dictRelations = _dictSearchRelations[entry.dictId];
-                      if (dictRelations != null) {
-                        final headword = entry.headword.toLowerCase();
-                        entryRelations = dictRelations[headword];
+                    // 检测用户手动滚动，重置等待标志
+                    // 包括：拖动滚动、滚轮滚动
+                    // 注意：程序化滚动期间 _isProgrammaticScroll 为 true，跳过检测
+                    if (_waitForUserScroll && !_isProgrammaticScroll) {
+                      if (notification is ScrollStartNotification) {
+                        _waitForUserScroll = false;
+                      }
+                      // 滚轮滚动可能直接触发 ScrollUpdateNotification
+                      else if (notification is ScrollUpdateNotification &&
+                          notification.dragDetails == null &&
+                          notification.scrollDelta != null &&
+                          notification.scrollDelta!.abs() > 0) {
+                        _waitForUserScroll = false;
                       }
                     }
 
-                    return _buildEntryContent(
-                      entry,
-                      showDictHeader: showDictHeader,
-                      relations: entryRelations,
-                    );
+                    return false;
                   },
+                  child: ScrollablePositionedList.builder(
+                    itemScrollController: _itemScrollController,
+                    itemPositionsListener: _itemPositionsListener,
+                    scrollOffsetController: _scrollOffsetController,
+                    padding: _getDynamicPadding(
+                      context,
+                    ).copyWith(top: scrollableTopSpacing, bottom: 100),
+                    itemCount: totalCount,
+                    minCacheExtent: _getAdaptiveMinCacheExtent(context),
+                    itemBuilder: (context, index) {
+                      // 索引 0: 笔记面板（如果有笔记）
+                      if (index == 0 && noteOffset == 1) {
+                        return NotePanel(
+                          word: _currentWord,
+                          language: _currentLanguage,
+                          initiallyExpanded: _noteDefaultExpanded,
+                          refreshVersion: _notePanelRefreshVersion,
+                          onLinkTap: _handleNoteLinkTap,
+                        );
+                      }
+
+                      // 词形关系横幅
+                      final relationsIndex = noteOffset;
+                      if (index == relationsIndex) {
+                        return _buildWordRelationsBanner();
+                      }
+
+                      final entryIndex = index - totalOffset;
+                      final entry = entries[entryIndex];
+
+                      // 仅在该词典第一条 entry 处显示词典 Logo+名称
+                      final showDictHeader =
+                          entryIndex == 0 ||
+                          entries[entryIndex - 1].dictId != entry.dictId;
+
+                      // 当该词典是通过词形关系找到时，在词典头部下方显示关系横幅
+                      List<SearchRelation>? entryRelations;
+                      if (showDictHeader) {
+                        final dictRelations =
+                            _dictSearchRelations[entry.dictId];
+                        if (dictRelations != null) {
+                          final headword = entry.headword.toLowerCase();
+                          entryRelations = dictRelations[headword];
+                        }
+                      }
+
+                      return _buildEntryContent(
+                        entry,
+                        showDictHeader: showDictHeader,
+                        relations: entryRelations,
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
             if (_entryGroup.dictionaryGroups.isNotEmpty && _isNavPanelLoaded)
               _DraggableNavPanel(
                 entryGroup: _entryGroup,
@@ -2303,14 +2450,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               ),
             // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
             _KeyboardAwareBottomBar(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.bottomToolbarAboveWidget != null)
-                    widget.bottomToolbarAboveWidget!,
-                  _buildBottomActionBarWithBackButton(),
-                ],
-              ),
+              child: _buildBottomActionBarWithBackButton(),
             ),
             // 手势指示器（屏幕中央）
             if (_showSwipeIndicator)
@@ -2403,8 +2543,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
+    Widget content;
     if (isDesktop) {
-      return Center(
+      content = Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),
           child: Row(
@@ -2425,10 +2566,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           ),
         ),
       );
+    } else {
+      // 手机端：搜索模式显示搜索栏，否则显示工具栏
+      content = _isSearchMode ? _buildSearchBar() : _buildBottomActionBar();
     }
 
-    // 手机端：搜索模式显示搜索栏，否则显示工具栏
-    return _isSearchMode ? _buildSearchBar() : _buildBottomActionBar();
+    // 先渲染但透明，等工具栏配置加载完成后取消透明
+    return Opacity(opacity: _isContentReady ? 1.0 : 0.0, child: content);
   }
 
   /// 桌面端返回按钮（与底部工具栏按钮样式相同）
@@ -2581,6 +2725,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       return;
     }
     final word = query.trim();
+
+    // 点击搜索时立即预热顶部关系横幅，减少进入详情页后的等待。
+    unawaited(_createWordRelationsFuture(word, source: 'inline_search_submit'));
 
     // 执行搜索
     final dbService = DatabaseService();
@@ -4691,18 +4838,41 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     return FutureBuilder<List<WordRelationRow>>(
       future: _wordRelationsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        final normalized = _currentWord.trim().toLowerCase();
+        final resolvedRows = _resolvedWordRelationsCache[normalized];
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            resolvedRows == null) {
+          if (_wordRelationsWaitingLoggedWord != normalized) {
+            _wordRelationsWaitingLoggedWord = normalized;
+            Logger.d(
+              'WordRelations banner waiting: word=$normalized',
+              tag: 'RelationPerf',
+            );
+          }
           return const SizedBox.shrink();
         }
 
-        final rows = snapshot.data;
+        final rows = resolvedRows ?? snapshot.data;
 
         if (rows == null || rows.isEmpty) {
           return const SizedBox.shrink();
         }
 
+        if (_wordRelationsShownLoggedWord != normalized) {
+          _wordRelationsShownLoggedWord = normalized;
+          final requestedAt = _wordRelationsRequestedAt[normalized];
+          final elapsedFromRequest = requestedAt == null
+              ? 'unknown'
+              : '${DateTime.now().difference(requestedAt).inMilliseconds}ms';
+          Logger.d(
+            'WordRelations banner shown: word=$normalized, rows=${rows.length}, elapsedFromRequest=$elapsedFromRequest',
+            tag: 'RelationPerf',
+          );
+        }
+
         // 预处理：合并 inflection 行并处理不可数名词、空行过滤
-        final processedRows = _preprocessInflectionRows(rows);
+        final processedRows = _getProcessedWordRelations(_currentWord, rows);
 
         final colorScheme = Theme.of(context).colorScheme;
         const hPad = 16.0;
@@ -5077,6 +5247,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   void _navigateToWord(String word) async {
     if (word.isEmpty) return;
     if (word.toLowerCase() == _currentWord.toLowerCase()) return;
+
+    // 从词条内点击关联词时，提前并行准备顶部关系横幅数据。
+    unawaited(_createWordRelationsFuture(word, source: 'token_click_navigate'));
 
     final dbService = DatabaseService();
     final historyService = SearchHistoryService();
@@ -5670,6 +5843,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _subGroupChildrenCache.clear();
     _subGroupEntryHeadwordsCache.clear();
     _allNonTargetLanguagePathsCache = null;
+    _processedWordRelationsCache.clear();
+    _resolvedWordRelationsCache.clear();
   }
 
   Future<Set<String>> _getOrBuildAllNonTargetLanguagePaths() async {

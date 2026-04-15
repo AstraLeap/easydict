@@ -397,6 +397,8 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
 
   Widget _buildOnlineDictionaryCard(RemoteDictionary dict) {
     final colorScheme = Theme.of(context).colorScheme;
+    final hasUpdate =
+        dict.isDownloaded && context.watch<DictUpdateCheckService>().hasUpdate(dict.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -460,11 +462,29 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
           ),
         ),
         trailing: IconButton(
-          icon: Icon(
-            dict.isDownloaded
-                ? Icons.cloud_download_outlined
-                : Icons.download_outlined,
-            color: colorScheme.primary,
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                dict.isDownloaded
+                    ? Icons.cloud_download_outlined
+                    : Icons.download_outlined,
+                color: colorScheme.primary,
+              ),
+              if (hasUpdate)
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: colorScheme.error,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
           ),
           tooltip: dict.isDownloaded
               ? context.t.dict.tooltipUpdate

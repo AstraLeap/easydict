@@ -711,8 +711,8 @@ class TranslationsHelpZh {
 	/// zh: '电脑端导航'
 	String get desktopNavTitle => '电脑端导航';
 
-	/// zh: '• 词典内容界面按 Esc 或长按返回键可返回主界面 • 方向键左右可以在词表间切换'
-	String get desktopNavDesc => '• 词典内容界面按 Esc 或长按返回键可返回主界面\n• 方向键左右可以在词表间切换';
+	/// zh: '• 词典内容界面按 Esc 可返回主界面 • 方向键左右可以在词表间切换'
+	String get desktopNavDesc => '• 词典内容界面按 Esc 可返回主界面\n• 方向键左右可以在词表间切换';
 
 	/// zh: '手机端导航'
 	String get mobileNavTitle => '手机端导航';
@@ -2210,6 +2210,18 @@ class TranslationsEntryZh {
 
 	/// zh: '第三人称单数'
 	String get morphThirdSingFull => '第三人称单数';
+
+	/// zh: '关闭所有标签页'
+	String get tabMenuCloseAll => '关闭所有标签页';
+
+	/// zh: '关闭所有生词本标签页'
+	String get tabMenuCloseWordBankAll => '关闭所有生词本标签页';
+
+	/// zh: '关闭右侧标签页'
+	String get tabMenuCloseRight => '关闭右侧标签页';
+
+	/// zh: '关闭其他标签页'
+	String get tabMenuCloseOthers => '关闭其他标签页';
 }
 
 // Path: note
@@ -2990,7 +3002,7 @@ extension on Translations {
 			'help.wildcardSearch' => '通配符搜索',
 			'help.wildcardSearchDesc' => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符',
 			'help.desktopNavTitle' => '电脑端导航',
-			'help.desktopNavDesc' => '• 词典内容界面按 Esc 或长按返回键可返回主界面\n• 方向键左右可以在词表间切换',
+			'help.desktopNavDesc' => '• 词典内容界面按 Esc 可返回主界面\n• 方向键左右可以在词表间切换',
 			'help.mobileNavTitle' => '手机端导航',
 			'help.mobileNavDesc' => '• 词典内容界面上滑底部工具栏可返回主界面\n• 左右滑可以在词汇列表内切换',
 			'langNames.zh' => '中文',
@@ -3474,6 +3486,10 @@ extension on Translations {
 			'entry.acronymLabel' => '首字母缩略词',
 			'entry.morphPluralForm' => '复数形式',
 			'entry.morphThirdSingFull' => '第三人称单数',
+			'entry.tabMenuCloseAll' => '关闭所有标签页',
+			'entry.tabMenuCloseWordBankAll' => '关闭所有生词本标签页',
+			'entry.tabMenuCloseRight' => '关闭右侧标签页',
+			'entry.tabMenuCloseOthers' => '关闭其他标签页',
 			'note.title' => '笔记',
 			'note.edit' => '编辑',
 			'note.save' => '保存',

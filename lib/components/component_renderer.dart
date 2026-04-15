@@ -7433,10 +7433,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return WidgetSpan(
       alignment: PlaceholderAlignment.baseline,
       baseline: TextBaseline.alphabetic,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: labelWidget,
-      ),
+      child: labelWidget,
     );
   }
 

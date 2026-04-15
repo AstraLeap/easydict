@@ -29,10 +29,13 @@ import 'services/zstd_service.dart';
 import 'services/advanced_search_settings_service.dart';
 import 'services/clipboard_watcher_service.dart';
 import 'services/system_tray_service.dart';
+import 'services/entry_tab_service.dart';
+import 'services/entry_tab_visibility_service.dart';
 import 'core/utils/toast_utils.dart';
 import 'core/logger.dart';
 import 'components/global_scale_wrapper.dart';
 import 'i18n/strings.g.dart';
+import 'pages/entry_tab_host_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -608,6 +611,9 @@ class _MainScreenState extends State<MainScreen> {
 
   final GlobalKey<dynamic> _dictionarySearchPageKey = GlobalKey();
   final GlobalKey<dynamic> _wordBankPageKey = GlobalKey();
+  final EntryTabService _entryTabService = EntryTabService();
+  final EntryTabVisibilityService _entryTabVisibilityService =
+      EntryTabVisibilityService();
 
   List<Widget> get _pages => [
     DictionarySearchPage(key: _dictionarySearchPageKey),
@@ -618,6 +624,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    _entryTabVisibilityService.setPersistentMode(true);
     _initDictUpdateCheck();
     _initAppUpdateCheck();
   }
@@ -642,6 +649,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    _entryTabVisibilityService.setPersistentMode(false);
     super.dispose();
   }
 
@@ -741,9 +749,48 @@ class _MainScreenState extends State<MainScreen> {
       ],
     );
 
-    return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _pages),
-      bottomNavigationBar: _showBottomNav ? bottomNav : null,
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _entryTabService,
+        _entryTabVisibilityService,
+      ]),
+      builder: (context, _) {
+        final showEntryHost =
+            _entryTabVisibilityService.isVisible &&
+            _entryTabService.tabs.isNotEmpty;
+
+        return PopScope(
+          canPop: !showEntryHost,
+          onPopInvokedWithResult: (didPop, popResult) {
+            if (didPop) return;
+            if (showEntryHost) {
+              if (_entryTabService.tabs.length > 1) {
+                // 多标签时优先关闭当前标签，不直接返回主页。
+                _entryTabService.closeAt(_entryTabService.activeIndex);
+                return;
+              }
+              _entryTabVisibilityService.hide();
+            }
+          },
+          child: Scaffold(
+            body: Stack(
+              children: [
+                IndexedStack(index: _selectedIndex, children: _pages),
+                Offstage(
+                  offstage: !showEntryHost,
+                  child: IgnorePointer(
+                    ignoring: !showEntryHost,
+                    child: const EntryTabHostPage(),
+                  ),
+                ),
+              ],
+            ),
+            bottomNavigationBar: (_showBottomNav && !showEntryHost)
+                ? bottomNav
+                : null,
+          ),
+        );
+      },
     );
   }
 }

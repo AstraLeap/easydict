@@ -300,7 +300,7 @@
     "wildcardSearch": "通配符搜索",
     "wildcardSearchDesc": "LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符",
     "desktopNavTitle": "电脑端导航",
-    "desktopNavDesc": "• 词典内容界面按 Esc 或长按返回键可返回主界面\n• 方向键左右可以在词表间切换",
+    "desktopNavDesc": "• 词典内容界面按 Esc 可返回主界面\n• 方向键左右可以在词表间切换",
     "mobileNavTitle": "手机端导航",
     "mobileNavDesc": "• 词典内容界面上滑底部工具栏可返回主界面\n• 左右滑可以在词汇列表内切换"
   },
@@ -793,7 +793,11 @@
     "abbreviationLabel": "缩写",
     "acronymLabel": "首字母缩略词",
     "morphPluralForm": "复数形式",
-    "morphThirdSingFull": "第三人称单数"
+    "morphThirdSingFull": "第三人称单数",
+    "tabMenuCloseAll": "关闭所有标签页",
+    "tabMenuCloseWordBankAll": "关闭所有生词本标签页",
+    "tabMenuCloseRight": "关闭右侧标签页",
+    "tabMenuCloseOthers": "关闭其他标签页"
   },
   "note": {
     "title": "笔记",

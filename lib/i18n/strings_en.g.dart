@@ -323,7 +323,7 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get wildcardSearch => 'Wildcard Search';
 	@override String get wildcardSearchDesc => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them';
 	@override String get desktopNavTitle => 'Desktop Navigation';
-	@override String get desktopNavDesc => '• Press Esc or long-press back to return to home\n• Use left/right arrow keys to navigate between words';
+	@override String get desktopNavDesc => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words';
 	@override String get mobileNavTitle => 'Mobile Navigation';
 	@override String get mobileNavDesc => '• Swipe up on toolbar to return to home\n• Swipe left/right to navigate between words';
 }
@@ -859,6 +859,10 @@ class _TranslationsEntryEn extends TranslationsEntryZh {
 	@override String get acronymLabel => 'Acronym';
 	@override String get morphPluralForm => 'Plural form';
 	@override String get morphThirdSingFull => 'Third person singular';
+	@override String get tabMenuCloseAll => 'Close all tabs';
+	@override String get tabMenuCloseWordBankAll => 'Close all word bank tabs';
+	@override String get tabMenuCloseRight => 'Close tabs to the right';
+	@override String get tabMenuCloseOthers => 'Close other tabs';
 }
 
 // Path: note
@@ -1359,7 +1363,7 @@ extension on TranslationsEn {
 			'help.wildcardSearch' => 'Wildcard Search',
 			'help.wildcardSearchDesc' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them',
 			'help.desktopNavTitle' => 'Desktop Navigation',
-			'help.desktopNavDesc' => '• Press Esc or long-press back to return to home\n• Use left/right arrow keys to navigate between words',
+			'help.desktopNavDesc' => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words',
 			'help.mobileNavTitle' => 'Mobile Navigation',
 			'help.mobileNavDesc' => '• Swipe up on toolbar to return to home\n• Swipe left/right to navigate between words',
 			'langNames.zh' => 'Chinese',
@@ -1843,6 +1847,10 @@ extension on TranslationsEn {
 			'entry.acronymLabel' => 'Acronym',
 			'entry.morphPluralForm' => 'Plural form',
 			'entry.morphThirdSingFull' => 'Third person singular',
+			'entry.tabMenuCloseAll' => 'Close all tabs',
+			'entry.tabMenuCloseWordBankAll' => 'Close all word bank tabs',
+			'entry.tabMenuCloseRight' => 'Close tabs to the right',
+			'entry.tabMenuCloseOthers' => 'Close other tabs',
 			'note.title' => 'Note',
 			'note.edit' => 'Edit',
 			'note.save' => 'Save',

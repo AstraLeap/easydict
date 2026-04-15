@@ -725,10 +725,6 @@ class ZstdService {
 
   /// 解压数据，如果有字典则使用字典解压，否则不使用字典
   Uint8List decompress(Uint8List compressedData, Uint8List? dictBytes) {
-    Logger.d(
-      'decompress called: compressedData.length=${compressedData.length}, dictBytes=${dictBytes?.length ?? 'null'}, _supportsDictCompression=$_supportsDictCompression',
-      tag: 'ZstdService',
-    );
     if (dictBytes != null && dictBytes.isNotEmpty) {
       if (!_supportsDictCompression) {
         throw Exception(

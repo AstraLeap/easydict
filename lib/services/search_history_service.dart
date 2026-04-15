@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'entry_event_bus.dart';
 import 'preferences_service.dart';
 
 /// 搜索记录模型
@@ -100,11 +101,13 @@ class SearchHistoryService {
     // 保存
     final jsonList = records.map((r) => r.toJson()).toList();
     await prefs.setString(_prefKeySearchHistory, jsonEncode(jsonList));
+    EntryEventBus().emitSearchHistoryChanged();
   }
 
   Future<void> clearHistory() async {
     final prefs = await PreferencesService().prefs;
     await prefs.remove(_prefKeySearchHistory);
+    EntryEventBus().emitSearchHistoryChanged();
   }
 
   Future<void> removeSearchRecord(String word) async {
@@ -115,5 +118,6 @@ class SearchHistoryService {
 
     final jsonList = records.map((r) => r.toJson()).toList();
     await prefs.setString(_prefKeySearchHistory, jsonEncode(jsonList));
+    EntryEventBus().emitSearchHistoryChanged();
   }
 }

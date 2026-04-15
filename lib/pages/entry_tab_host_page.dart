@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 
 import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../models/browse_list.dart';
 import '../services/entry_tab_service.dart';
+import '../services/entry_tab_visibility_service.dart';
+import '../services/search_history_service.dart';
+import '../i18n/strings.g.dart';
 import 'entry_detail_page.dart';
 
-enum _TabMenuAction { closeAll, closeRight, closeOthers }
+enum _TabMenuAction { closeAll, closeWordBankAll, closeRight, closeOthers }
 
 class EntryTabHostPage extends StatefulWidget {
   const EntryTabHostPage({super.key});
@@ -20,6 +25,11 @@ class EntryTabHostPage extends StatefulWidget {
     bool preferExisting = true,
     bool insertToLeft = false,
   }) {
+    final isWordBankBrowse = browseList?.source == BrowseListSource.wordBank;
+    if (!isWordBankBrowse) {
+      SearchHistoryService().addSearchRecord(initialWord);
+    }
+
     EntryTabService().openOrActivateTab(
       word: initialWord,
       entryGroup: entryGroup,
@@ -28,6 +38,14 @@ class EntryTabHostPage extends StatefulWidget {
       preferExisting: preferExisting,
       insertToLeft: insertToLeft,
     );
+
+    final visibilityService = EntryTabVisibilityService();
+    visibilityService.show();
+
+    // 第二阶段：主界面常驻宿主页后，打开详情仅切换可见性，不再 push 新路由。
+    if (visibilityService.persistentMode) {
+      return Future.value(null);
+    }
 
     // 如果当前已经在宿主页内，只更新标签状态，不再 push 新页面。
     if (context.findAncestorWidgetOfExactType<EntryTabHostPage>() != null) {
@@ -53,7 +71,15 @@ class EntryTabHostPage extends StatefulWidget {
 class _EntryTabHostPageState extends State<EntryTabHostPage>
     with SingleTickerProviderStateMixin {
   final EntryTabService _tabService = EntryTabService();
+  final EntryTabVisibilityService _visibilityService =
+      EntryTabVisibilityService();
   final DatabaseService _dbService = DatabaseService();
+  final Map<String, Widget> _detailPageCache = {};
+  final ScrollController _tabScrollController = ScrollController();
+  final Map<String, GlobalKey> _tabItemKeys = {};
+  final FocusNode _hostKeyboardFocusNode = FocusNode(
+    debugLabel: 'EntryTabHostKeyboardFocus',
+  );
 
   late final AnimationController _dismissController;
 
@@ -65,22 +91,212 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       duration: const Duration(milliseconds: 320),
     );
     _tabService.addListener(_onTabsChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestHostKeyboardFocus();
+    });
   }
 
   @override
   void dispose() {
     _tabService.removeListener(_onTabsChanged);
     _dismissController.dispose();
+    _tabScrollController.dispose();
+    _hostKeyboardFocusNode.dispose();
     super.dispose();
+  }
+
+  bool _isPrimaryFocusOnEditableText() {
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    if (focusedContext == null) return false;
+    if ((focusedContext as Element).widget is EditableText) {
+      return true;
+    }
+
+    var foundEditable = false;
+    focusedContext.visitAncestorElements((ancestor) {
+      if (ancestor.widget is EditableText) {
+        foundEditable = true;
+        return false;
+      }
+      return true;
+    });
+    return foundEditable;
+  }
+
+  void _requestHostKeyboardFocus() {
+    if (!mounted) return;
+    final isPhone =
+        Theme.of(context).platform == TargetPlatform.android ||
+        Theme.of(context).platform == TargetPlatform.iOS;
+    if (isPhone) return;
+    if (_isPrimaryFocusOnEditableText()) return;
+    if (!_hostKeyboardFocusNode.hasFocus) {
+      _hostKeyboardFocusNode.requestFocus();
+    }
+  }
+
+  KeyEventResult _handleHostKeyEvent(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape && event is KeyDownEvent) {
+      _dismissToHome();
+      return KeyEventResult.handled;
+    }
+
+    final isArrowKey =
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight;
+    final isArrowPressEvent =
+        isArrowKey && (event is KeyDownEvent || event is KeyRepeatEvent);
+    if (!isArrowPressEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (_isPrimaryFocusOnEditableText()) return KeyEventResult.ignored;
+
+    final toLeft = key == LogicalKeyboardKey.arrowLeft;
+    if (_tryHandleBrowseKeyAtHost(toLeft: toLeft)) {
+      return KeyEventResult.handled;
+    }
+
+    _switchToAdjacentTab(toLeft: toLeft);
+    return KeyEventResult.handled;
+  }
+
+  bool _tryHandleBrowseKeyAtHost({required bool toLeft}) {
+    // 优先保持与 EntryDetailPage 的 browse 语义一致：
+    // - searchHistory: 左右键按相邻标签切换
+    // - wordBank: 左右键按单词列表前后词导航（边界无操作）
+    final activeTab = _tabService.activeTab;
+    final browseList = activeTab?.browseList;
+    if (activeTab == null || browseList == null || browseList.words.isEmpty) {
+      return false;
+    }
+
+    if (browseList.source == BrowseListSource.searchHistory) {
+      _handleBrowseNavigate(activeTab.word, insertToLeft: toLeft);
+      return true;
+    }
+
+    final currentIndex = browseList.words.indexWhere(
+      (w) => w.trim().toLowerCase() == activeTab.word.trim().toLowerCase(),
+    );
+    if (currentIndex < 0) return false;
+
+    if (toLeft && currentIndex > 0) {
+      _handleBrowseNavigate(
+        browseList.words[currentIndex - 1],
+        insertToLeft: true,
+      );
+      return true;
+    }
+    if (!toLeft && currentIndex < browseList.words.length - 1) {
+      _handleBrowseNavigate(
+        browseList.words[currentIndex + 1],
+        insertToLeft: false,
+      );
+      return true;
+    }
+
+    // 在 browseList 边界时吸收事件，和词条页行为保持一致（无操作）。
+    return true;
+  }
+
+  void _switchToAdjacentTab({required bool toLeft}) {
+    final tabs = _tabService.tabs;
+    if (tabs.length <= 1) return;
+
+    final current = _tabService.activeIndex.clamp(0, tabs.length - 1);
+    final next = toLeft ? current - 1 : current + 1;
+    if (next < 0 || next >= tabs.length) return;
+
+    _tabService.setActiveIndex(next, directionHint: toLeft ? -1 : 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestHostKeyboardFocus();
+    });
+  }
+
+  GlobalKey _tabKeyOf(String tabId) {
+    return _tabItemKeys.putIfAbsent(tabId, () => GlobalKey());
+  }
+
+  void _syncTabKeysWithCurrentTabs() {
+    final currentIds = _tabService.tabs.map((tab) => tab.id).toSet();
+    _tabItemKeys.removeWhere((id, _) => !currentIds.contains(id));
+  }
+
+  void _ensureActiveTabVisible() {
+    if (!mounted) return;
+    if (!_tabScrollController.hasClients) return;
+    final tabs = _tabService.tabs;
+    if (tabs.isEmpty) return;
+
+    final activeIndex = _tabService.activeIndex.clamp(0, tabs.length - 1);
+    final activeTabId = tabs[activeIndex].id;
+    final tabKey = _tabItemKeys[activeTabId];
+    final tabContext = tabKey?.currentContext;
+    if (tabContext == null) return;
+
+    final tabRenderObject = tabContext.findRenderObject();
+    if (tabRenderObject is! RenderBox) return;
+
+    final scrollableState = Scrollable.of(tabContext);
+    if (scrollableState == null) return;
+    final viewportRenderObject = scrollableState.context.findRenderObject();
+    if (viewportRenderObject is! RenderBox) return;
+
+    final tabTopLeftInViewport = tabRenderObject.localToGlobal(
+      Offset.zero,
+      ancestor: viewportRenderObject,
+    );
+    final tabLeft = tabTopLeftInViewport.dx;
+    final tabRight = tabLeft + tabRenderObject.size.width;
+    final viewportWidth = viewportRenderObject.size.width;
+
+    const edgePadding = 12.0;
+    final minVisibleLeft = edgePadding;
+    final maxVisibleRight = viewportWidth - edgePadding;
+
+    double targetOffset = _tabScrollController.offset;
+    if (tabLeft < minVisibleLeft) {
+      targetOffset += tabLeft - minVisibleLeft;
+    } else if (tabRight > maxVisibleRight) {
+      targetOffset += tabRight - maxVisibleRight;
+    } else {
+      return;
+    }
+
+    final minOffset = _tabScrollController.position.minScrollExtent;
+    final maxOffset = _tabScrollController.position.maxScrollExtent;
+    targetOffset = targetOffset.clamp(minOffset, maxOffset);
+
+    if ((targetOffset - _tabScrollController.offset).abs() < 0.5) return;
+
+    _tabScrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _onTabsChanged() {
     if (!mounted) return;
     if (_tabService.tabs.isEmpty) {
-      Navigator.of(context).maybePop();
+      if (_visibilityService.persistentMode) {
+        _visibilityService.hide();
+      } else {
+        Navigator.of(context).maybePop();
+      }
       return;
     }
+
+    final currentIds = _tabService.tabs.map((tab) => tab.id).toSet();
+    _detailPageCache.removeWhere((key, _) => !currentIds.contains(key));
+    _syncTabKeysWithCurrentTabs();
+
     setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureActiveTabVisible();
+      _requestHostKeyboardFocus();
+    });
   }
 
   void _trimWordBankTabs({required bool closeFromLeft}) {
@@ -119,18 +335,31 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     if (sourceBrowseList == null) return;
 
     if (sourceBrowseList.source == BrowseListSource.searchHistory) {
-      final nextIndex = insertToLeft
-          ? _tabService.activeIndex - 1
-          : _tabService.activeIndex + 1;
-      if (nextIndex < 0 || nextIndex >= _tabService.tabs.length) return;
-
-      _tabService.setActiveIndex(
-        nextIndex,
-        directionHint: insertToLeft ? -1 : 1,
-      );
+      _navigateSearchHistoryTab(insertToLeft: insertToLeft);
       return;
     }
 
+    await _navigateWordBankTab(
+      word: word,
+      sourceBrowseList: sourceBrowseList,
+      insertToLeft: insertToLeft,
+    );
+  }
+
+  void _navigateSearchHistoryTab({required bool insertToLeft}) {
+    final nextIndex = insertToLeft
+        ? _tabService.activeIndex - 1
+        : _tabService.activeIndex + 1;
+    if (nextIndex < 0 || nextIndex >= _tabService.tabs.length) return;
+
+    _tabService.setActiveIndex(nextIndex, directionHint: insertToLeft ? -1 : 1);
+  }
+
+  Future<void> _navigateWordBankTab({
+    required String word,
+    required BrowseList sourceBrowseList,
+    required bool insertToLeft,
+  }) async {
     // 单词本：若目标方向已有标签，则仅做普通标签切换；
     // 若该方向没有标签，再按单词本 browseList 扩展一个新词，并关闭另一端最远标签保持 5 个。
     final adjacentIndex = insertToLeft
@@ -197,6 +426,14 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
   }
 
   Future<void> _dismissToHome() async {
+    if (_visibilityService.persistentMode) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      _dismissController.stop();
+      _dismissController.value = 0;
+      _visibilityService.hide();
+      return;
+    }
+
     if (_dismissController.isAnimating || _dismissController.value > 0) return;
 
     FocusManager.instance.primaryFocus?.unfocus();
@@ -205,13 +442,13 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     Navigator.of(context).maybePop();
   }
 
-  Future<void> _showTabContextMenu(Offset globalPosition, int index) async {
+  void _showTabContextMenu(Offset globalPosition, int index) {
     if (!mounted) return;
 
     final colorScheme = Theme.of(context).colorScheme;
     final textStyle = Theme.of(context).textTheme.bodyMedium;
 
-    final selected = await showMenu<_TabMenuAction>(
+    showMenu<_TabMenuAction>(
       context: context,
       position: RelativeRect.fromLTRB(
         globalPosition.dx,
@@ -220,8 +457,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
         globalPosition.dy,
       ),
       color: colorScheme.surface,
-      elevation: 4,
-      shadowColor: colorScheme.shadow.withOpacity(0.12),
+      elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
@@ -240,7 +476,21 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
                 color: colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 10),
-              Text('Close all tabs', style: textStyle),
+              Text(context.t.entry.tabMenuCloseAll, style: textStyle),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: _TabMenuAction.closeWordBankAll,
+          child: Row(
+            children: [
+              Icon(
+                Icons.style_outlined,
+                size: 18,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 10),
+              Text(context.t.entry.tabMenuCloseWordBankAll, style: textStyle),
             ],
           ),
         ),
@@ -254,7 +504,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
                 color: colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 10),
-              Text('Close tabs to the right', style: textStyle),
+              Text(context.t.entry.tabMenuCloseRight, style: textStyle),
             ],
           ),
         ),
@@ -268,26 +518,34 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
                 color: colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 10),
-              Text('Close other tabs', style: textStyle),
+              Text(context.t.entry.tabMenuCloseOthers, style: textStyle),
             ],
           ),
         ),
       ],
-    );
+    ).then((selected) {
+      if (!mounted || selected == null) return;
 
-    if (selected == null) return;
-
-    switch (selected) {
-      case _TabMenuAction.closeAll:
-        _tabService.clearAllTabs();
-        break;
-      case _TabMenuAction.closeRight:
-        _tabService.closeTabsToRight(index);
-        break;
-      case _TabMenuAction.closeOthers:
-        _tabService.closeOtherTabs(index);
-        break;
-    }
+      switch (selected) {
+        case _TabMenuAction.closeAll:
+          _tabService.clearAllTabs();
+          break;
+        case _TabMenuAction.closeWordBankAll:
+          for (int i = _tabService.tabs.length - 1; i >= 0; i--) {
+            if (_tabService.tabs[i].browseList?.source ==
+                BrowseListSource.wordBank) {
+              _tabService.closeAt(i);
+            }
+          }
+          break;
+        case _TabMenuAction.closeRight:
+          _tabService.closeTabsToRight(index);
+          break;
+        case _TabMenuAction.closeOthers:
+          _tabService.closeOtherTabs(index);
+          break;
+      }
+    });
   }
 
   Widget _buildTabBar(
@@ -301,146 +559,291 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     final horizontalMargin = compact ? 10.0 : 12.0;
     final verticalMargin = compact ? 4.0 : 6.0;
 
-    return Container(
-      margin: EdgeInsets.fromLTRB(
-        horizontalMargin,
-        compact ? 6 : 8,
-        horizontalMargin,
-        verticalMargin,
-      ),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            surfaceColor.withOpacity(0.96),
-            colorScheme.primaryContainer.withOpacity(0.36),
+    Widget buildTabItem(int index, {required bool enableReorder}) {
+      final tab = tabs[index];
+      final tabKey = _tabKeyOf(tab.id);
+      final isActive = index == activeIndex;
+      final isWordBankTab = tab.browseList?.source == BrowseListSource.wordBank;
+      final prevIsInactive = index > 0 && (index - 1) != activeIndex;
+      final showLeadingSeparator = !isActive && prevIsInactive;
+
+      // 生词本标签使用不同的颜色
+      final activeBg = isWordBankTab
+          ? colorScheme.tertiaryContainer.withOpacity(0.6)
+          : colorScheme.primaryContainer.withOpacity(0.5);
+      final activeFg = isWordBankTab
+          ? colorScheme.onTertiaryContainer
+          : colorScheme.onPrimaryContainer;
+      final activeIndicatorColor = isWordBankTab
+          ? colorScheme.tertiary.withOpacity(0.7)
+          : colorScheme.primary.withOpacity(0.6);
+      final separatorColor = colorScheme.outline.withOpacity(0.48);
+
+      // 活跃标签样式：桌面端上方圆角+底部边框；手机端下方圆角+顶部边框
+      final tabRadius = isActive
+          ? (compact
+                ? const BorderRadius.only(
+                    bottomLeft: Radius.circular(9),
+                    bottomRight: Radius.circular(9),
+                  )
+                : const BorderRadius.only(
+                    topLeft: Radius.circular(9),
+                    topRight: Radius.circular(9),
+                  ))
+          : BorderRadius.circular(9);
+      final horizontalPadding = compact ? 10.0 : 12.0;
+
+      Widget tabContent = Container(
+        margin: const EdgeInsets.only(right: 4),
+        height: barHeight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showLeadingSeparator)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: SizedBox(
+                  width: 8,
+                  child: Center(
+                    child: Container(
+                      width: 1,
+                      height: compact ? 16 : 18,
+                      color: separatorColor,
+                    ),
+                  ),
+                ),
+              ),
+            GestureDetector(
+              onSecondaryTapDown: (details) {
+                _showTabContextMenu(details.globalPosition, index);
+              },
+              // 只在移动端使用长按打开菜单，桌面端保留长按用于拖拽排序
+              onLongPressStart: compact
+                  ? (details) {
+                      _showTabContextMenu(details.globalPosition, index);
+                    }
+                  : null,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isActive ? activeBg : Colors.transparent,
+                  borderRadius: tabRadius,
+                  // 活跃标签：桌面端底部粗边框线，手机端顶部粗边框线
+                  border: isActive
+                      ? (compact
+                            ? Border(
+                                top: BorderSide(
+                                  color: activeIndicatorColor,
+                                  width: 2.5,
+                                ),
+                              )
+                            : Border(
+                                bottom: BorderSide(
+                                  color: activeIndicatorColor,
+                                  width: 2.5,
+                                ),
+                              ))
+                      : null,
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    mouseCursor: SystemMouseCursors.click,
+                    borderRadius: tabRadius,
+                    canRequestFocus: false,
+                    onTap: () {
+                      HapticFeedback.vibrate();
+                      _tabService.setActiveIndex(
+                        index,
+                        directionHint: index > activeIndex ? 1 : -1,
+                      );
+                    },
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: horizontalPadding,
+                        right: 5,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: compact ? 140 : 170,
+                            ),
+                            child: Text(
+                              tab.word,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: compact ? 12.5 : 13.5,
+                                fontWeight: isActive
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isActive
+                                    ? activeFg
+                                    : colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          InkWell(
+                            mouseCursor: SystemMouseCursors.click,
+                            borderRadius: BorderRadius.circular(999),
+                            canRequestFocus: false,
+                            onTap: () => _tabService.closeAt(index),
+                            child: Padding(
+                              padding: const EdgeInsets.all(3),
+                              child: Icon(
+                                Icons.close,
+                                size: compact ? 12 : 13,
+                                color: isActive
+                                    ? activeFg
+                                    : colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
+      );
+
+      // 桌面端使用 ReorderableDragStartListener 启用拖拽排序
+      if (enableReorder) {
+        return ReorderableDragStartListener(
+          key: tabKey,
+          index: index,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: tabContent,
+          ),
+        );
+      }
+
+      return MouseRegion(
+        key: tabKey,
+        cursor: SystemMouseCursors.click,
+        child: tabContent,
+      );
+    }
+
+    // 桌面端使用 ReorderableListView 支持拖拽排序
+    if (!compact) {
+      Widget tabBarContent = Container(
+        padding: EdgeInsets.symmetric(horizontal: horizontalMargin),
+        decoration: BoxDecoration(
+          color: surfaceColor.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: SizedBox(
+          height: barHeight,
+          child: Row(
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(context).copyWith(
+                        dragDevices: {
+                          PointerDeviceKind.touch,
+                          PointerDeviceKind.mouse,
+                          PointerDeviceKind.stylus,
+                          PointerDeviceKind.invertedStylus,
+                          PointerDeviceKind.unknown,
+                        },
+                      ),
+                      child: ReorderableListView.builder(
+                        scrollController: _tabScrollController,
+                        scrollDirection: Axis.horizontal,
+                        buildDefaultDragHandles: false,
+                        itemCount: tabs.length,
+                        onReorder: (oldIndex, newIndex) {
+                          _tabService.moveTab(oldIndex, newIndex);
+                        },
+                        proxyDecorator: (child, index, animation) {
+                          return AnimatedBuilder(
+                            animation: animation,
+                            builder: (context, child) {
+                              return Transform.scale(
+                                scale: 1.05,
+                                child: Opacity(opacity: 0.9, child: child),
+                              );
+                            },
+                            child: child,
+                          );
+                        },
+                        itemBuilder: (context, index) {
+                          return buildTabItem(index, enableReorder: true);
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: context.t.entry.tabMenuCloseAll,
+                child: InkWell(
+                  mouseCursor: SystemMouseCursors.click,
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _tabService.clearAllTabs,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.highlight_off,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      return Container(
+        margin: EdgeInsets.only(top: compact ? 2 : 4, bottom: verticalMargin),
+        child: tabBarContent,
+      );
+    }
+
+    // 移动端使用普通的 SingleChildScrollView（不支持拖拽排序）
+    Widget tabBarContent = Container(
+      padding: EdgeInsets.symmetric(horizontal: horizontalMargin),
+      decoration: BoxDecoration(
+        color: surfaceColor.withOpacity(0.85),
         borderRadius: BorderRadius.circular(12),
-        // boxShadow: [
-        //   BoxShadow(
-        //     color: colorScheme.shadow.withOpacity(0.06),
-        //     blurRadius: 10,
-        //     offset: const Offset(0, 2),
-        //   ),
-        // ],
       ),
       child: SizedBox(
         height: barHeight,
-        child: ReorderableListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          buildDefaultDragHandles: false,
-          proxyDecorator: (child, index, animation) {
-            // 保持拖拽前外形：不加阴影、不加额外背景填充。
-            return child;
-          },
-          onReorder: (oldIndex, newIndex) {
-            _tabService.moveTab(oldIndex, newIndex);
-          },
-          itemCount: tabs.length,
-          itemBuilder: (context, index) {
-            final tab = tabs[index];
-            final isActive = index == activeIndex;
-            final isWordBankTab =
-                tab.browseList?.source == BrowseListSource.wordBank;
-            final activeBg = colorScheme.primaryContainer.withOpacity(0.96);
-            final activeFg = colorScheme.onPrimaryContainer;
-            final activeBorder = colorScheme.primary.withOpacity(0.95);
-            final tabRadius = BorderRadius.circular(isWordBankTab ? 999 : 9);
-            final horizontalPadding = isWordBankTab
-                ? (compact ? 12.0 : 14.0)
-                : (compact ? 10.0 : 12.0);
-
-            return ReorderableDragStartListener(
-              key: ValueKey(tab.id),
-              index: index,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  child: GestureDetector(
-                    onSecondaryTapDown: (details) {
-                      _showTabContextMenu(details.globalPosition, index);
-                    },
-                    onLongPressStart: (details) {
-                      _showTabContextMenu(details.globalPosition, index);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? activeBg
-                            : colorScheme.secondaryContainer.withOpacity(0.42),
-                        borderRadius: tabRadius,
-                        border: Border.all(
-                          color: isActive
-                              ? activeBorder
-                              : colorScheme.outline.withOpacity(0.35),
-                          width: isActive ? 1.3 : 1.0,
-                        ),
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: tabRadius,
-                          canRequestFocus: false,
-                          onTap: () {
-                            _tabService.setActiveIndex(
-                              index,
-                              directionHint: index > activeIndex ? 1 : -1,
-                            );
-                          },
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              left: horizontalPadding,
-                              right: 5,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth: compact ? 140 : 170,
-                                  ),
-                                  child: Text(
-                                    tab.word,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: compact ? 12.5 : 13.5,
-                                      fontWeight: isActive
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                      color: isActive
-                                          ? activeFg
-                                          : colorScheme.onSurface,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 3),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(999),
-                                  canRequestFocus: false,
-                                  onTap: () => _tabService.closeAt(index),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(3),
-                                    child: Icon(
-                                      Icons.close,
-                                      size: compact ? 12 : 13,
-                                      color: isActive
-                                          ? activeFg
-                                          : colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.stylus,
+                  PointerDeviceKind.invertedStylus,
+                  PointerDeviceKind.unknown,
+                },
+              ),
+              child: SingleChildScrollView(
+                controller: _tabScrollController,
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: List.generate(
+                      tabs.length,
+                      (index) => buildTabItem(index, enableReorder: false),
                     ),
                   ),
                 ),
@@ -450,70 +853,55 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
         ),
       ),
     );
+
+    return Container(
+      margin: EdgeInsets.only(top: compact ? 2 : 4, bottom: verticalMargin),
+      child: tabBarContent,
+    );
   }
 
-  Widget _buildAnimatedEntryContent(EntryTabItem activeTab) {
-    final switchDirection = _tabService.lastSwitchDirection;
+  Widget _buildDetailPage(EntryTabItem tab) {
+    final cacheKey = tab.id;
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 260),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeOutCubic,
-      transitionBuilder: (child, animation) {
-        final beginOffset = switchDirection < 0
-            ? const Offset(-0.16, 0)
-            : const Offset(0.16, 0);
-        final slide = Tween<Offset>(
-          begin: beginOffset,
-          end: Offset.zero,
-        ).animate(animation);
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(position: slide, child: child),
-        );
+    Widget buildPage() => EntryDetailPage(
+      key: ValueKey(cacheKey),
+      entryGroup: tab.entryGroup,
+      initialWord: tab.word,
+      dictResults: tab.dictResults,
+      browseList: tab.browseList,
+      onBrowseWordRequested: ({required word, required insertToLeft}) {
+        return _handleBrowseNavigate(word, insertToLeft: insertToLeft);
       },
-      child: KeyedSubtree(
-        key: ValueKey(activeTab.id),
-        child: EntryDetailPage(
-          key: ValueKey('detail_${activeTab.id}'),
-          entryGroup: activeTab.entryGroup,
-          initialWord: activeTab.word,
-          dictResults: activeTab.dictResults,
-          browseList: activeTab.browseList,
-          bottomToolbarAboveWidget:
-              (Theme.of(context).platform == TargetPlatform.android ||
-                      Theme.of(context).platform == TargetPlatform.iOS) &&
-                  _tabService.tabs.length > 1
-              ? _buildTabBar(
-                  _tabService.tabs,
-                  _tabService.activeIndex,
-                  compact: true,
-                )
-              : null,
-          onBrowseWordRequested: ({required word, required insertToLeft}) {
-            return _handleBrowseNavigate(word, insertToLeft: insertToLeft);
+      onOpenEntryRequested:
+          ({
+            required entryGroup,
+            required initialWord,
+            dictResults,
+            browseList,
+            insertToLeft = false,
+            preferExisting = true,
+          }) {
+            return _handleOpenEntryRequested(
+              entryGroup: entryGroup,
+              initialWord: initialWord,
+              dictResults: dictResults,
+              browseList: browseList,
+              insertToLeft: insertToLeft,
+              preferExisting: preferExisting,
+            );
           },
-          onOpenEntryRequested:
-              ({
-                required entryGroup,
-                required initialWord,
-                dictResults,
-                browseList,
-                insertToLeft = false,
-                preferExisting = true,
-              }) {
-                return _handleOpenEntryRequested(
-                  entryGroup: entryGroup,
-                  initialWord: initialWord,
-                  dictResults: dictResults,
-                  browseList: browseList,
-                  insertToLeft: insertToLeft,
-                  preferExisting: preferExisting,
-                );
-              },
-          onHomeRequested: _dismissToHome,
-        ),
-      ),
+      onHomeRequested: _dismissToHome,
+    );
+
+    return _detailPageCache.putIfAbsent(cacheKey, buildPage);
+  }
+
+  Widget _buildEntryContentStack(List<EntryTabItem> tabs) {
+    return IndexedStack(
+      index: _tabService.activeIndex.clamp(0, tabs.length - 1),
+      children: tabs
+          .map((tab) => _buildDetailPage(tab))
+          .toList(growable: false),
     );
   }
 
@@ -524,17 +912,70 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       return const SizedBox.shrink();
     }
 
-    final activeTab = _tabService.activeTab ?? tabs.first;
     final isPhone =
         Theme.of(context).platform == TargetPlatform.android ||
         Theme.of(context).platform == TargetPlatform.iOS;
-    final body = Column(
-      children: [
-        if (!isPhone && tabs.length > 1)
-          _buildTabBar(tabs, _tabService.activeIndex),
-        Expanded(child: _buildAnimatedEntryContent(activeTab)),
-      ],
+    final horizontalMargin = isPhone ? 10.0 : 12.0;
+
+    // 手机端：标签栏悬浮在底部工具栏上方；桌面端：标签栏放在顶部
+    final tabBar = tabs.length > 1
+        ? _buildTabBar(tabs, _tabService.activeIndex, compact: isPhone)
+        : null;
+
+    Widget body;
+    if (isPhone && tabBar != null) {
+      // 手机端：使用 Stack 让标签栏悬浮在底部工具栏上方
+      // 底部工具栏高度约 50-55px + 16px bottom padding = 约 70px
+      const bottomToolbarHeight = 70.0;
+      body = Stack(
+        children: [
+          _buildEntryContentStack(tabs),
+          // 标签栏悬浮在底部工具栏上方，居中且占满宽度
+          Positioned(
+            left: horizontalMargin,
+            right: horizontalMargin,
+            bottom: bottomToolbarHeight,
+            child: tabBar,
+          ),
+        ],
+      );
+    } else {
+      // 桌面端：标签栏在顶部
+      body = Column(
+        children: [
+          if (tabBar != null) tabBar,
+          Expanded(child: _buildEntryContentStack(tabs)),
+        ],
+      );
+    }
+
+    Widget mainContent = Focus(
+      focusNode: _hostKeyboardFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleHostKeyEvent,
+      child: Listener(
+        onPointerDown: (_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _requestHostKeyboardFocus();
+          });
+        },
+        child: Scaffold(body: SafeArea(top: false, bottom: false, child: body)),
+      ),
     );
+
+    // 手机端：非常驻模式下返回时关闭当前标签页。
+    // 常驻模式由 MainScreen 统一处理返回，避免双重处理导致直接回主页。
+    if (isPhone && !_visibilityService.persistentMode && tabs.length > 1) {
+      mainContent = PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          // 关闭当前活跃的标签页
+          _tabService.closeAt(_tabService.activeIndex);
+        },
+        child: mainContent,
+      );
+    }
 
     return AnimatedBuilder(
       animation: _dismissController,
@@ -549,7 +990,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
           ),
         );
       },
-      child: Scaffold(body: SafeArea(top: false, bottom: false, child: body)),
+      child: mainContent,
     );
   }
 }

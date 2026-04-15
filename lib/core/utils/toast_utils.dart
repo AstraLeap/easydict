@@ -24,6 +24,7 @@ final toastRouteObserver = ToastRouteObserver();
 double _getBottomPosition(BuildContext context) {
   String? pageType;
   bool hasJsonEditorBottomSheet = false;
+  bool hasTabBar = false;
 
   final currentWidgetType = context.widget.runtimeType.toString();
 
@@ -38,28 +39,34 @@ double _getBottomPosition(BuildContext context) {
       final widgetType = element.widget.runtimeType.toString();
       if (widgetType == 'EntryDetailPage') {
         pageType = 'EntryDetailPage';
-        return false;
       }
       if (widgetType == '_JsonEditorBottomSheet') {
         hasJsonEditorBottomSheet = true;
       }
+      // 检测是否有标签栏（EntryTabHostPage）
+      if (widgetType == 'EntryTabHostPage') {
+        hasTabBar = true;
+      }
       if (widgetType == 'MainScreen' || widgetType == 'HomePage') {
-        pageType = widgetType;
+        pageType ??= widgetType;
         return false;
       }
       return true;
     });
   }
 
+  // 标签栏高度：margin top(6-8) + bar height(34-36) + margin bottom(4-6) ≈ 50
+  final tabBarHeight = hasTabBar ? 50.0 : 0.0;
+
   switch (pageType) {
     case 'EntryDetailPage':
-      return 75.0;
+      return 75.0 + tabBarHeight;
     case 'MainScreen':
     case 'HomePage':
       return 90.0;
     default:
       if (hasJsonEditorBottomSheet) {
-        return 75.0;
+        return 75.0 + tabBarHeight;
       }
       return 10.0;
   }

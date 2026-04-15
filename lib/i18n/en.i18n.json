@@ -298,7 +298,7 @@
     "wildcardSearch": "Wildcard Search",
     "wildcardSearchDesc": "LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them",
     "desktopNavTitle": "Desktop Navigation",
-    "desktopNavDesc": "• Press Esc or long-press back to return to home\n• Use left/right arrow keys to navigate between words",
+    "desktopNavDesc": "• Press Esc to return to home\n• Use left/right arrow keys to navigate between words",
     "mobileNavTitle": "Mobile Navigation",
     "mobileNavDesc": "• Swipe up on toolbar to return to home\n• Swipe left/right to navigate between words"
   },
@@ -791,7 +791,11 @@
     "abbreviationLabel": "Abbreviation",
     "acronymLabel": "Acronym",
     "morphPluralForm": "Plural form",
-    "morphThirdSingFull": "Third person singular"
+    "morphThirdSingFull": "Third person singular",
+    "tabMenuCloseAll": "Close all tabs",
+    "tabMenuCloseWordBankAll": "Close all word bank tabs",
+    "tabMenuCloseRight": "Close tabs to the right",
+    "tabMenuCloseOthers": "Close other tabs"
   },
   "note": {
     "title": "Note",

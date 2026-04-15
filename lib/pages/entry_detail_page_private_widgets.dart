@@ -44,7 +44,8 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
 
   // 导航栏位置边界约束
   static const double _topMargin = 0.0; // 上界距离屏幕顶部的距离
-  static const double _bottomMargin = 72.0; // 下界距离底部工具栏顶部的距离（底部工具栏高度）
+  static const double _bottomToolbarReservedHeight = 72.0; // 底部工具栏总预留高度（含底部间距）
+  static const double _mobileTabBarReservedHeight = 44.0; // 手机端额外标签栏预留高度
 
   @override
   void initState() {
@@ -90,30 +91,61 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
 
   /// 计算导航栏的允许范围
   /// 返回 (minTop, maxTop)
-  (double, double) _getNavPanelBounds(double screenHeight, double navPanelHeight, double topPadding) {
+  (double, double) _getNavPanelBounds(
+    double screenHeight,
+    double navPanelHeight,
+    double topPadding,
+    double bottomReserved,
+  ) {
     // 上界：导航栏顶部距离屏幕顶部至少 _topMargin + 状态栏高度
     final minTop = _topMargin + topPadding;
 
-    // 下界：导航栏底部距离底部工具栏顶部至少 _bottomMargin
-    // 即：top + navPanelHeight <= screenHeight - _bottomMargin
+    // 下界：导航栏底部距离底部工具栏顶部至少 bottomReserved
+    // 即：top + navPanelHeight <= screenHeight - bottomReserved
     // 所以：top <= screenHeight - _bottomMargin - navPanelHeight
-    final maxTop = (screenHeight - _bottomMargin - navPanelHeight).clamp(minTop, double.infinity);
+    final maxTop = (screenHeight - bottomReserved - navPanelHeight).clamp(
+      minTop,
+      double.infinity,
+    );
 
     return (minTop, maxTop);
   }
 
   /// 将 top 位置约束在允许范围内
-  double _clampTop(double top, double screenHeight, double navPanelHeight, double topPadding) {
-    final (minTop, maxTop) = _getNavPanelBounds(screenHeight, navPanelHeight, topPadding);
+  double _clampTop(
+    double top,
+    double screenHeight,
+    double navPanelHeight,
+    double topPadding,
+    double bottomReserved,
+  ) {
+    final (minTop, maxTop) = _getNavPanelBounds(
+      screenHeight,
+      navPanelHeight,
+      topPadding,
+      bottomReserved,
+    );
     return top.clamp(minTop, maxTop);
+  }
+
+  double _getBottomReservedHeight(bool isMobile) {
+    double reserved = _bottomToolbarReservedHeight;
+    final hasEntryTabHost =
+        context.findAncestorWidgetOfExactType<EntryTabHostPage>() != null;
+    final hasFloatingTabBar =
+        isMobile && hasEntryTabHost && EntryTabService().tabs.length > 1;
+    if (hasFloatingTabBar) {
+      reserved += _mobileTabBarReservedHeight;
+    }
+    return reserved;
   }
 
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isMobile = screenSize.width < 600;
-    final scale = FontLoaderService().getDictionaryContentScale();
     final topPadding = MediaQuery.of(context).padding.top; // 状态栏高度
+    final bottomReserved = _getBottomReservedHeight(isMobile);
 
     // 计算最大高度
     final maxNavHeight = screenSize.height * 0.7;
@@ -122,7 +154,9 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
     }
 
     // 导航面板高度（用于计算边界）
-    final navPanelHeight = _navPanelActualHeight > 0 ? _navPanelActualHeight : 200.0;
+    final navPanelHeight = _navPanelActualHeight > 0
+        ? _navPanelActualHeight
+        : 200.0;
 
     // 计算导航栏位置
     double top;
@@ -134,11 +168,17 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
       top = _dragY!;
     } else {
       // 非拖动状态：使用存储的位置，并约束在边界内
-      top = screenSize.height * _dy / scale;
-      top = _clampTop(top, screenSize.height, navPanelHeight, topPadding);
+      top = screenSize.height * _dy;
+      top = _clampTop(
+        top,
+        screenSize.height,
+        navPanelHeight,
+        topPadding,
+        bottomReserved,
+      );
     }
 
-    final rightPosition = (isMobile ? 4 : 16) / scale;
+    final rightPosition = isMobile ? 4.0 : 16.0;
 
     // 构建导航面板内容
     final navPanel = DictionaryNavigationPanel(
@@ -162,7 +202,7 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
           : GestureDetector(
               onPanStart: (details) {
                 setState(() {
-                  _dragY = screenSize.height * _dy / scale;
+                  _dragY = screenSize.height * _dy;
                 });
               },
               onPanUpdate: (details) {
@@ -173,7 +213,13 @@ class _DraggableNavPanelState extends State<_DraggableNavPanel> {
               },
               onPanEnd: (details) {
                 // 拖动结束后，回弹到边界范围内
-                final clampedTop = _clampTop(_dragY!, screenSize.height, navPanelHeight, topPadding);
+                final clampedTop = _clampTop(
+                  _dragY!,
+                  screenSize.height,
+                  navPanelHeight,
+                  topPadding,
+                  bottomReserved,
+                );
 
                 // 将位置转换为比例并保存
                 final newDy = clampedTop / screenSize.height;
@@ -208,11 +254,7 @@ class MeasuredSize extends StatefulWidget {
   final Widget child;
   final void Function(Size size) onChange;
 
-  const MeasuredSize({
-    super.key,
-    required this.child,
-    required this.onChange,
-  });
+  const MeasuredSize({super.key, required this.child, required this.onChange});
 
   @override
   State<MeasuredSize> createState() => _MeasuredSizeState();
@@ -1242,12 +1284,17 @@ class _KeyboardAwareBottomBarState extends State<_KeyboardAwareBottomBar> {
   Widget build(BuildContext context) {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final bottomPadding = keyboardHeight + _minBottomPadding;
+    final isPhone =
+        Theme.of(context).platform == TargetPlatform.android ||
+        Theme.of(context).platform == TargetPlatform.iOS;
+    // 手机端使用更小的边距，与标签栏对齐
+    final horizontalPadding = isPhone ? 10.0 : 16.0;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 100),
       curve: Curves.easeOut,
-      left: 16,
-      right: 16,
+      left: horizontalPadding,
+      right: horizontalPadding,
       bottom: bottomPadding,
       child: widget.child,
     );
@@ -1313,7 +1360,10 @@ class _GroupBreadcrumbBar extends StatelessWidget {
                     color: colorScheme.outline,
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: colorScheme.tertiaryContainer.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(12),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'english_db_service.dart';
@@ -63,11 +64,34 @@ class EnglishSearchService {
   EnglishSearchService._internal();
 
   Database? _database;
+  Future<Database>? _databaseFuture;
+
+  // 热路径缓存：同一词在短时间内会被重复查询（顶部关系横幅/词典关系提示）。
+  static const int _maxWordRelationsCacheSize = 200;
+  static const int _maxSearchWithRelationsCacheSize = 200;
+  final Map<String, List<WordRelationRow>> _wordRelationsCache = {};
+  final Map<String, Map<String, List<SearchRelation>>>
+  _searchWithRelationsCache = {};
+  final Map<String, Future<List<WordRelationRow>>> _wordRelationsInFlight = {};
+  final Map<String, Future<Map<String, List<SearchRelation>>>>
+  _searchWithRelationsInFlight = {};
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+    final inFlight = _databaseFuture;
+    if (inFlight != null) {
+      return await inFlight;
+    }
+
+    final initFuture = _initDatabase();
+    _databaseFuture = initFuture;
+    try {
+      final db = await initFuture;
+      _database = db;
+      return db;
+    } finally {
+      _databaseFuture = null;
+    }
   }
 
   /// 关闭并释放数据库连接，删除数据库文件后需要调用此方法以使单例重置
@@ -75,8 +99,37 @@ class EnglishSearchService {
     if (_database != null) {
       await _database!.close();
       _database = null;
+      _databaseFuture = null;
+      _wordRelationsCache.clear();
+      _searchWithRelationsCache.clear();
+      _wordRelationsInFlight.clear();
+      _searchWithRelationsInFlight.clear();
       Logger.i('EnglishSearchService: 数据库已关闭并重置', tag: 'EnglishDB');
     }
+  }
+
+  void _putWordRelationsCache(String key, List<WordRelationRow> value) {
+    if (_wordRelationsCache.length >= _maxWordRelationsCacheSize) {
+      _wordRelationsCache.remove(_wordRelationsCache.keys.first);
+    }
+    _wordRelationsCache[key] = value;
+  }
+
+  /// 同步读取关系缓存（仅用于 UI 热路径快速渲染，不触发查询）。
+  List<WordRelationRow>? getCachedWordRelations(String word) {
+    final query = word.trim();
+    if (query.isEmpty) return null;
+    return _wordRelationsCache[query.toLowerCase()];
+  }
+
+  void _putSearchWithRelationsCache(
+    String key,
+    Map<String, List<SearchRelation>> value,
+  ) {
+    if (_searchWithRelationsCache.length >= _maxSearchWithRelationsCacheSize) {
+      _searchWithRelationsCache.remove(_searchWithRelationsCache.keys.first);
+    }
+    _searchWithRelationsCache[key] = value;
   }
 
   Future<Database> _initDatabase() async {
@@ -107,16 +160,80 @@ class EnglishSearchService {
   ///     inflection(base,plural,past,past_part,pres_part,third_sing,comp,superl)
   Future<List<WordRelationRow>> searchWordRelations(String word) async {
     if (word.isEmpty) return [];
+    final query = word.trim();
+    if (query.isEmpty) return [];
+    final cacheKey = query.toLowerCase();
+    final cached = _wordRelationsCache[cacheKey];
+    if (cached != null) {
+      Logger.d(
+        'WordRelations cache hit: word=$cacheKey, rows=${cached.length}',
+        tag: 'RelationPerf',
+      );
+      return cached;
+    }
+    final inFlight = _wordRelationsInFlight[cacheKey];
+    if (inFlight != null) {
+      Logger.d(
+        'WordRelations in-flight reuse: word=$cacheKey',
+        tag: 'RelationPerf',
+      );
+      return inFlight;
+    }
+
+    Logger.d(
+      'WordRelations query dispatch: word=$cacheKey',
+      tag: 'RelationPerf',
+    );
+
+    final task = _searchWordRelationsInternal(query, cacheKey);
+    _wordRelationsInFlight[cacheKey] = task;
+
+    try {
+      return await task;
+    } finally {
+      _wordRelationsInFlight.remove(cacheKey);
+    }
+  }
+
+  Future<List<WordRelationRow>> _searchWordRelationsInternal(
+    String query,
+    String cacheKey,
+  ) async {
+    final sw = Stopwatch()..start();
     try {
       final db = await database;
-      final results = <WordRelationRow>[];
+      final futureRows = Future.wait([
+        db.query(
+          'spelling_variant',
+          where: 'word1 = ? OR word2 = ?',
+          whereArgs: [query, query],
+        ),
+        db.query(
+          'nominalization',
+          where: 'base = ? OR nominal = ?',
+          whereArgs: [query, query],
+        ),
+        db.query(
+          'inflection',
+          columns: [
+            'base',
+            'pos',
+            'plural',
+            'past',
+            'past_part',
+            'pres_part',
+            'third_sing',
+            'comp',
+            'superl',
+          ],
+          where:
+              'base = ? OR plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
+          whereArgs: [query, query, query, query, query, query, query, query],
+        ),
+      ]);
 
-      // spelling_variant
-      final svRows = await db.query(
-        'spelling_variant',
-        where: 'word1 = ? OR word2 = ?',
-        whereArgs: [word, word],
-      );
+      final [svRows, nomRows, inflRows] = await futureRows;
+      final results = <WordRelationRow>[];
       for (final row in svRows) {
         results.add(
           WordRelationRow(
@@ -125,13 +242,6 @@ class EnglishSearchService {
           ),
         );
       }
-
-      // nominalization
-      final nomRows = await db.query(
-        'nominalization',
-        where: 'base = ? OR nominal = ?',
-        whereArgs: [word, word],
-      );
       for (final row in nomRows) {
         results.add(
           WordRelationRow(
@@ -140,25 +250,6 @@ class EnglishSearchService {
           ),
         );
       }
-
-      // inflection — pos 列无索引，不放入 WHERE，只在 SELECT 中取用
-      final inflRows = await db.query(
-        'inflection',
-        columns: [
-          'base',
-          'pos',
-          'plural',
-          'past',
-          'past_part',
-          'pres_part',
-          'third_sing',
-          'comp',
-          'superl',
-        ],
-        where:
-            'base = ? OR plural = ? OR past = ? OR past_part = ? OR pres_part = ? OR third_sing = ? OR comp = ? OR superl = ?',
-        whereArgs: [word, word, word, word, word, word, word, word],
-      );
       for (final row in inflRows) {
         results.add(
           WordRelationRow(
@@ -168,11 +259,16 @@ class EnglishSearchService {
         );
       }
 
+      _putWordRelationsCache(cacheKey, results);
+      Logger.d(
+        'WordRelations query finished: word=$cacheKey, rows=${results.length}, elapsed=${sw.elapsedMilliseconds}ms',
+        tag: 'RelationPerf',
+      );
       return results;
     } catch (e) {
       Logger.w(
-        'EnglishSearchService: searchWordRelations 错误: $e',
-        tag: 'EnglishDB',
+        'WordRelations query failed: word=$cacheKey, elapsed=${sw.elapsedMilliseconds}ms, error=$e',
+        tag: 'RelationPerf',
       );
       return [];
     }
@@ -316,8 +412,60 @@ class EnglishSearchService {
     int maxRelatedWords = 10,
     int maxRelationsPerWord = 3,
   }) async {
+    if (word.isEmpty) return {};
+    final query = word.trim();
+    if (query.isEmpty) return {};
+    final cacheKey =
+        '${query.toLowerCase()}|$maxRelatedWords|$maxRelationsPerWord';
+    final cached = _searchWithRelationsCache[cacheKey];
+    if (cached != null) {
+      Logger.d(
+        'SearchWithRelations cache hit: key=$cacheKey, relatedWords=${cached.length}',
+        tag: 'RelationPerf',
+      );
+      return cached;
+    }
+    final inFlight = _searchWithRelationsInFlight[cacheKey];
+    if (inFlight != null) {
+      Logger.d(
+        'SearchWithRelations in-flight reuse: key=$cacheKey',
+        tag: 'RelationPerf',
+      );
+      return inFlight;
+    }
+
     Logger.d(
-      'EnglishSearchService: searchWithRelations 搜索词: $word',
+      'SearchWithRelations dispatch: key=$cacheKey',
+      tag: 'RelationPerf',
+    );
+
+    final task = _searchWithRelationsInternal(
+      query,
+      cacheKey,
+      maxRelatedWords: maxRelatedWords,
+      maxRelationsPerWord: maxRelationsPerWord,
+    );
+    _searchWithRelationsInFlight[cacheKey] = task;
+
+    try {
+      return await task;
+    } finally {
+      _searchWithRelationsInFlight.remove(cacheKey);
+    }
+  }
+
+  Future<Map<String, List<SearchRelation>>> _searchWithRelationsInternal(
+    String query,
+    String cacheKey, {
+    required int maxRelatedWords,
+    required int maxRelationsPerWord,
+  }) async {
+    final sw = Stopwatch()..start();
+    // 预热顶部关系横幅所需数据，避免进入详情页后再次冷查询。
+    unawaited(searchWordRelations(query));
+
+    Logger.d(
+      'EnglishSearchService: searchWithRelations 搜索词: $query',
       tag: 'EnglishDB',
     );
     final db = await database;
@@ -329,7 +477,7 @@ class EnglishSearchService {
         'spelling_variant',
         'word1',
         'word2',
-        word,
+        query,
         t.entry.spellingVariantLabel,
       ),
       _searchTwoColumnTableWithRelations(
@@ -337,7 +485,7 @@ class EnglishSearchService {
         'abbreviation',
         'base',
         'full_form',
-        word,
+        query,
         t.entry.abbreviationLabel,
       ),
       _searchTwoColumnTableWithRelations(
@@ -345,7 +493,7 @@ class EnglishSearchService {
         'acronym',
         'base',
         'full_form',
-        word,
+        query,
         t.entry.acronymLabel,
       ),
       _searchTwoColumnTableWithRelations(
@@ -353,10 +501,10 @@ class EnglishSearchService {
         'nominalization',
         'base',
         'nominal',
-        word,
+        query,
         t.entry.morphNominalization,
       ),
-      _searchInflectionWithRelations(db, word),
+      _searchInflectionWithRelations(db, query),
     ];
 
     final allResults = await Future.wait(futures);
@@ -369,10 +517,7 @@ class EnglishSearchService {
       if (results.length >= maxRelatedWords) break;
     }
 
-    Logger.d(
-      'EnglishSearchService: searchWithRelations 结果: $results',
-      tag: 'EnglishDB',
-    );
+    _putSearchWithRelationsCache(cacheKey, results);
     return results;
   }
 

@@ -2276,6 +2276,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
 
   Widget _buildOnlineDictionaryCard(RemoteDictionary dict) {
     final colorScheme = Theme.of(context).colorScheme;
+    final hasUpdate =
+        dict.isDownloaded && context.watch<DictUpdateCheckService>().hasUpdate(dict.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -2339,11 +2341,29 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
           ),
         ),
         trailing: IconButton(
-          icon: Icon(
-            dict.isDownloaded
-                ? Icons.cloud_download_outlined
-                : Icons.download_outlined,
-            color: colorScheme.primary,
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                dict.isDownloaded
+                    ? Icons.cloud_download_outlined
+                    : Icons.download_outlined,
+                color: colorScheme.primary,
+              ),
+              if (hasUpdate)
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: colorScheme.error,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
           ),
           tooltip: dict.isDownloaded
               ? context.t.dict.tooltipUpdate
@@ -3734,12 +3754,32 @@ class _BatchUpdateDialogState extends State<BatchUpdateDialog> {
                   });
                 },
                 title: Text(dictId),
-                subtitle: Text(
-                  context.t.dict.versionRange(
-                    from: info.from,
-                    to: info.to,
-                    files: info.required.files.length,
-                  ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.t.dict.versionRange(
+                        from: info.from,
+                        to: info.to,
+                        files: info.required.files.length,
+                      ),
+                    ),
+                    if (info.history.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      ...info.history.map(
+                        (h) => Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            'v${h.v}: ${h.m}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               );
             },
