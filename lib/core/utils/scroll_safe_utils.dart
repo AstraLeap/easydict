@@ -15,7 +15,9 @@ double mobileTopSafeOffset(
 }) {
   if (!isMobilePlatform()) return 0.0;
   final mediaQuery = MediaQuery.of(context);
-  final topInset = useViewPadding ? mediaQuery.viewPadding.top : mediaQuery.padding.top;
+  final topInset = useViewPadding
+      ? mediaQuery.viewPadding.top
+      : mediaQuery.padding.top;
   return topInsetWithMargin(topInset, extraMargin: extraMargin);
 }
 

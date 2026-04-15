@@ -7,7 +7,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:gradient_blur/gradient_blur.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../components/component_renderer.dart';
@@ -44,6 +43,7 @@ import '../widgets/path_navigator.dart';
 import '../widgets/note_editor_bottom_sheet.dart';
 import '../data/models/group_model.dart' as group_model;
 import '../services/group_service.dart';
+import 'entry_tab_host_page.dart';
 import 'json_editor_bottom_sheet.dart';
 
 part 'entry_detail_page_private_widgets.dart';
@@ -141,12 +141,40 @@ class EntryDetailPage extends StatefulWidget {
   /// 浏览列表数据（用于前进/后退功能）
   final BrowseList? browseList;
 
+  /// 请求打开 browseList 里的目标单词（由外部标签容器处理）
+  final Future<void> Function({
+    required String word,
+    required bool insertToLeft,
+  })?
+  onBrowseWordRequested;
+
+  /// 请求打开一个新的词条页面（由外部标签容器处理）
+  final Future<void> Function({
+    required DictionaryEntryGroup entryGroup,
+    required String initialWord,
+    List<DictSearchResult>? dictResults,
+    BrowseList? browseList,
+    bool insertToLeft,
+    bool preferExisting,
+  })?
+  onOpenEntryRequested;
+
+  /// 请求返回主页（由外部标签容器处理）
+  final VoidCallback? onHomeRequested;
+
+  /// 放在底部工具栏上方的额外区域（例如手机端标签栏）
+  final Widget? bottomToolbarAboveWidget;
+
   const EntryDetailPage({
     super.key,
     required this.entryGroup,
     required this.initialWord,
     this.dictResults,
     this.browseList,
+    this.onBrowseWordRequested,
+    this.onOpenEntryRequested,
+    this.onHomeRequested,
+    this.bottomToolbarAboveWidget,
   });
 
   @override
@@ -195,6 +223,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 是否可以后退（有上一个词）
   bool get _canGoPrevious => _browseList?.canGoPrevious(_browseIndex) ?? false;
+
+  bool get _isSearchHistoryBrowse =>
+      _browseList?.source == BrowseListSource.searchHistory;
 
   /// 路径历史栈，用于撤回功能
   final List<List<String>> _pathHistory = [];
@@ -281,6 +312,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 桌面端搜索模式
   bool _isSearchMode = false;
+  bool _isNavigatingHome = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -317,9 +349,16 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       group_model.DictionaryGroup,
       List<group_model.DictionaryGroup>,
       Map<int, String>,
+      List<group_model.DictionaryGroup>,
     )
   >
   _groupDataCache = {};
+
+  /// 组详情中词条加载 Future 缓存（避免 FutureBuilder 重建时重复查库）
+  final Map<String, Future<DictionaryEntry?>> _groupEntryFutureCache = {};
+
+  /// 全局非目标语言路径缓存（按当前 entryGroup 快照构建）
+  Set<String>? _allNonTargetLanguagePathsCache;
 
   /// 子组列表展开状态
   bool _subGroupsExpanded = false;
@@ -328,11 +367,23 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   bool _entriesExpanded = false;
 
   /// 子组展开状态缓存（存储子组的孙子组数据）
+  /// key: "${dictId}_${groupId}"
   final Map<String, List<group_model.DictionaryGroup>> _subGroupChildrenCache =
       {};
 
   /// 子组词条 headwords 缓存
+  /// key: "${dictId}_${groupId}"
   final Map<String, Map<int, String>> _subGroupEntryHeadwordsCache = {};
+
+  void _requestKeyboardFocusNextFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_searchFocusNode.hasFocus) return;
+      if (!_keyboardFocusNode.hasFocus) {
+        _keyboardFocusNode.requestFocus();
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -359,6 +410,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionChanged);
     // 初始化 anchor 图标闪烁动画
     _initAnchorBlinkAnimation();
+    // 标签切换会重建页面，首帧后主动抢回键盘焦点，避免方向键需按两次。
+    _requestKeyboardFocusNextFrame();
   }
 
   /// 初始化 anchor 图标闪烁动画
@@ -418,9 +471,24 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 导航到下一个词（浏览列表）
   Future<void> _goToNextWord() async {
+    if (_isSearchHistoryBrowse && widget.onBrowseWordRequested != null) {
+      await widget.onBrowseWordRequested!(
+        word: _currentWord,
+        insertToLeft: false,
+      );
+      return;
+    }
+
     if (!_canGoNext) return;
     final nextWord = _browseList!.getNextWord(_browseIndex);
     if (nextWord == null) return;
+    if (widget.onBrowseWordRequested != null) {
+      await widget.onBrowseWordRequested!(
+        word: nextWord,
+        insertToLeft: false,
+      );
+      return;
+    }
     await _navigateToBrowseWord(nextWord);
     if (mounted) {
       setState(() {
@@ -431,9 +499,24 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 导航到上一个词（浏览列表）
   Future<void> _goToPreviousWord() async {
+    if (_isSearchHistoryBrowse && widget.onBrowseWordRequested != null) {
+      await widget.onBrowseWordRequested!(
+        word: _currentWord,
+        insertToLeft: true,
+      );
+      return;
+    }
+
     if (!_canGoPrevious) return;
     final prevWord = _browseList!.getPreviousWord(_browseIndex);
     if (prevWord == null) return;
+    if (widget.onBrowseWordRequested != null) {
+      await widget.onBrowseWordRequested!(
+        word: prevWord,
+        insertToLeft: true,
+      );
+      return;
+    }
     await _navigateToBrowseWord(prevWord);
     if (mounted) {
       setState(() {
@@ -446,15 +529,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   void _handleKeyEvent(LogicalKeyboardKey key) {
     // Esc 键返回主界面
     if (key == LogicalKeyboardKey.escape) {
-      clearAllToasts();
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      _goToHomePage();
       return;
     }
     // 所有 browseList 都支持前进后退
     if (key == LogicalKeyboardKey.arrowLeft) {
-      if (_canGoPrevious) _goToPreviousWord();
+      if (_isSearchHistoryBrowse || _canGoPrevious) _goToPreviousWord();
     } else if (key == LogicalKeyboardKey.arrowRight) {
-      if (_canGoNext) _goToNextWord();
+      if (_isSearchHistoryBrowse || _canGoNext) _goToNextWord();
     } else if (key == LogicalKeyboardKey.arrowUp ||
         key == LogicalKeyboardKey.pageUp) {
       _scrollUpKeyboard();
@@ -462,6 +544,45 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         key == LogicalKeyboardKey.pageDown) {
       _scrollDownKeyboard();
     }
+  }
+
+  /// 返回主页前先清理输入焦点，避免返回后文本框仍处于可输入状态
+  void _goToHomePage() {
+    if (widget.onHomeRequested != null) {
+      widget.onHomeRequested!();
+      return;
+    }
+
+    if (!mounted || _isNavigatingHome) return;
+    _isNavigatingHome = true;
+
+    if (_isSearchMode ||
+        _showSwipeIndicator ||
+        _currentSwipeDirection != _SwipeDirection.none) {
+      setState(() {
+        _isSearchMode = false;
+        _searchController.clear();
+        _showSwipeIndicator = false;
+        _currentSwipeDirection = _SwipeDirection.none;
+      });
+    } else {
+      _searchController.clear();
+    }
+
+    _searchFocusNode.unfocus();
+    _keyboardFocusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    clearAllToasts();
+
+    // 在下一帧执行返回，避免当前手势/点击事件穿透到主页触发输入焦点。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      });
+    });
   }
 
   /// 键盘向上翻页
@@ -511,6 +632,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     if (searchResult.entries.isNotEmpty && mounted) {
       setState(() {
         _entryGroup = DictionaryEntryGroup.groupEntries(searchResult.entries);
+        _invalidateDerivedCaches();
         // 重置各种状态
         _collapsedDicts.clear();
         _entryNavStates.clear();
@@ -857,7 +979,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         if (section.entry.id == targetEntry.id) {
           if (i != currentDictIndex || localIndex != dict.currentSectionIndex) {
             // 词典切换时触发震动反馈（仅手机端）
-            if (i != currentDictIndex && (Platform.isAndroid || Platform.isIOS)) {
+            if (i != currentDictIndex &&
+                (Platform.isAndroid || Platform.isIOS)) {
               HapticFeedback.vibrate();
             }
             _entryGroup.setCurrentDictionaryIndex(i);
@@ -907,49 +1030,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 直接更新全局通知器，所有 ComponentRenderer 会自动响应
   Future<void> _applyGlobalTranslationVisibility(bool visible) async {
     try {
-      final allDicts = _entryGroup.dictionaryGroups;
-      if (allDicts.isEmpty) return;
-
-      // 收集所有词典的语言路径（带 dictId 和 entry_id 前缀）
-      final Set<String> allLanguagePaths = {};
-
-      // 遍历每个词典，使用各自的元数据收集语言路径
-      for (final dictGroup in allDicts) {
-        final dictId = dictGroup.dictionaryId;
-        if (dictId.isEmpty) continue;
-
-        // 获取该词典的元数据
-        final metadata = await DictionaryManager().getDictionaryMetadata(
-          dictId,
-        );
-        if (metadata == null) continue;
-
-        final sourceLang = metadata.sourceLanguage;
-        final targetLangs = metadata.targetLanguages;
-
-        // 收集该词典的语言路径（带 dictId 和 entry_id 前缀，使各条目独立判断）
-        for (final pageGroup in dictGroup.pageGroups) {
-          for (final section in pageGroup.sections) {
-            final json = section.entry.toJson();
-            final entryId = json['entry_id']?.toString() ?? '';
-            final pathPrefix = '$dictId.$entryId';
-            _collectLanguagePaths(
-              json,
-              pathPrefix, // 使用 dictId.entry_id 作为路径前缀
-              allLanguagePaths,
-              sourceLang,
-              targetLangs,
-            );
-          }
-        }
-      }
-
       // 直接更新全局通知器
       if (visible) {
         // 显示翻译：移除所有隐藏路径
         _globalHiddenLanguagesNotifier.value = [];
       } else {
         // 隐藏翻译：添加所有语言路径到隐藏列表
+        final allLanguagePaths = await _getOrBuildAllNonTargetLanguagePaths();
         _globalHiddenLanguagesNotifier.value = allLanguagePaths.toList();
       }
     } catch (e) {
@@ -1029,6 +1116,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialWord != widget.initialWord) {
       _entryGroup = widget.entryGroup;
+      _invalidateDerivedCaches();
       _loadFavoriteStatus();
       _initWordRelationsSearch();
       // 重新应用全局翻译显示状态
@@ -1037,6 +1125,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           _applyGlobalTranslationVisibility(_isNonTargetLanguagesVisible);
         });
       }
+      _requestKeyboardFocusNextFrame();
     }
   }
 
@@ -1207,6 +1296,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
     // 刷新导航面板的目录（如果打开的话）
     _navPanelKey.currentState?.handleActiveSectionChanged();
+    // 词条内容变化后，语言路径索引可能变化
+    _allNonTargetLanguagePathsCache = null;
   }
 
   List<DictionaryEntry> get entries => _getAllEntriesInOrder();
@@ -2021,37 +2112,31 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
   }
 
-  Widget _buildTopFrostedOverlay({
+  Widget _buildTopStatusGradientOverlay({
     required bool isDark,
     required double topInset,
   }) {
     final surface = Theme.of(context).colorScheme.surface;
-    final overlayHeight = topInset + 8;
+    final overlayHeight = topInset + 4;
 
     return Positioned(
       top: 0,
       left: 0,
       right: 0,
       child: IgnorePointer(
-        child: SizedBox(
+        child: Container(
           height: overlayHeight,
-          child: GradientBlur(
-            maxBlur: 8,
-            minBlur: 0,
-            slices: 30,
-            curve: Curves.easeInOut,
-            direction: GradientBlurDirection.topToBottom,
-            edgeBlur: null,
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                surface.withOpacity(isDark ? 0.72 : 0.82),
+                surface.withOpacity(1),
+                surface.withOpacity(0.9),
                 surface.withOpacity(0),
               ],
-              stops: const [0.0, 1.0],
+              stops: const [0.0, 0.5, 1.0],
             ),
-            child: const SizedBox.expand(),
           ),
         ),
       ),
@@ -2062,7 +2147,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final topInset = MediaQuery.of(context).padding.top;
-    final isDesktop = Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     final scrollableTopSpacing = isDesktop ? 16.0 : topInset + 16.0;
 
     // item 0: 笔记面板（仅在有笔记时显示）
@@ -2128,7 +2214,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                     context,
                   ).copyWith(top: scrollableTopSpacing, bottom: 100),
                   itemCount: totalCount,
-                  minCacheExtent: 1500,
+                  minCacheExtent: _getAdaptiveMinCacheExtent(context),
                   itemBuilder: (context, index) {
                     // 索引 0: 笔记面板（如果有笔记）
                     if (index == 0 && noteOffset == 1) {
@@ -2197,7 +2283,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               ),
             // 搜索模式下的透明遮罩层，拦截点击事件（放在底部工具栏之前，覆盖主内容和导航面板）
             if (topInset > 0)
-              _buildTopFrostedOverlay(isDark: isDark, topInset: topInset),
+              _buildTopStatusGradientOverlay(
+                isDark: isDark,
+                topInset: topInset,
+              ),
             if (_isSearchMode)
               Positioned.fill(
                 child: GestureDetector(
@@ -2214,16 +2303,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               ),
             // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
             _KeyboardAwareBottomBar(
-              child: _buildBottomActionBarWithBackButton(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.bottomToolbarAboveWidget != null)
+                    widget.bottomToolbarAboveWidget!,
+                  _buildBottomActionBarWithBackButton(),
+                ],
+              ),
             ),
-            // 手势指示器（屏幕上方中央）
+            // 手势指示器（屏幕中央）
             if (_showSwipeIndicator)
-              Positioned(
-                top: topInset + 16,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _buildSwipeIndicator(),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(child: _buildSwipeIndicator()),
                 ),
               ),
           ],
@@ -2253,6 +2346,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       },
       child: Listener(
         onPointerDown: (event) {
+          // 页面点击后主动恢复到键盘焦点节点，避免方向键先做焦点遍历。
+          if (!_searchFocusNode.hasFocus && !_keyboardFocusNode.hasFocus) {
+            _keyboardFocusNode.requestFocus();
+          }
           // 鼠标侧边后退键 (button 8 = kBackMouseButton)
           if (event.buttons == 8) {
             Navigator.of(context).pop();
@@ -2289,10 +2386,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.95),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.3),
-          width: 1,
-        ),
         boxShadow: [
           BoxShadow(
             color: colorScheme.shadow.withOpacity(0.15),
@@ -2375,14 +2468,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                 // 返回按钮
                 Expanded(
                   child: _buildActionButton(
-                    icon: Icons.arrow_back,
+                    icon: Icons.home,
                     onPressed: () {
                       clearAllToasts();
-                      Navigator.of(context).pop();
+                      _goToHomePage();
                     },
                     onLongPress: () {
-                      clearAllToasts();
-                      Navigator.of(context).popUntil((route) => route.isFirst);
+                      _goToHomePage();
                     },
                   ),
                 ),
@@ -2429,6 +2521,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(20),
+                    canRequestFocus: false,
                     onTap: () {
                       setState(() {
                         _isSearchMode = false;
@@ -2462,10 +2555,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(20),
+                    canRequestFocus: false,
                     onTap: () => _onSearchSubmitted(_searchController.text),
-                    child: const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Icon(Icons.search, size: 24),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Icon(
+                        Icons.search,
+                        size: 24,
+                        color: colorScheme.primary,
+                      ),
                     ),
                   ),
                 ),
@@ -2478,7 +2576,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   void _onSearchSubmitted(String query) async {
-    if (query.trim().isEmpty) return;
+    if (query.trim().isEmpty) {
+      showToast(context, context.t.search.hint);
+      return;
+    }
     final word = query.trim();
 
     // 执行搜索
@@ -2510,6 +2611,31 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         searchResult.entries,
       );
       if (mounted) {
+        if (widget.onOpenEntryRequested != null) {
+          await widget.onOpenEntryRequested!(
+            entryGroup: entryGroup,
+            initialWord: word,
+            dictResults: searchResult.dictResults.isNotEmpty
+                ? searchResult.dictResults
+                : null,
+            browseList: historyWords.isNotEmpty
+                ? BrowseList(
+                    source: BrowseListSource.searchHistory,
+                    words: historyWords,
+                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                  )
+                : null,
+            preferExisting: true,
+            insertToLeft: false,
+          );
+
+          setState(() {
+            _isSearchMode = false;
+            _searchController.clear();
+          });
+          return;
+        }
+
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => EntryDetailPage(
@@ -2634,17 +2760,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
           // 更新当前方向
           if (newDirection != _currentSwipeDirection) {
-            // 判断指示器是否即将出现（从无方向变为有方向）
-            final willShowIndicator =
-                newDirection != _SwipeDirection.none && !_showSwipeIndicator;
+            final shouldVibrate = newDirection != _SwipeDirection.none;
 
             setState(() {
               _currentSwipeDirection = newDirection;
               _showSwipeIndicator = newDirection != _SwipeDirection.none;
             });
 
-            // 只在指示器首次出现时触发震动
-            if (willShowIndicator) {
+            // 每次识别到有效方向切换都震动（包含首次识别）
+            if (shouldVibrate) {
               HapticFeedback.vibrate();
             }
           }
@@ -2665,8 +2789,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               _goToNextWord();
               break;
             case _SwipeDirection.up:
-              clearAllToasts();
-              Navigator.of(context).popUntil((route) => route.isFirst);
+              _goToHomePage();
               break;
             case _SwipeDirection.none:
               // 无有效手势，不执行任何操作
@@ -2688,14 +2811,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     switch (action) {
       case PreferencesService.actionBack:
         return _buildActionButton(
-          icon: Icons.arrow_back,
+          icon: isDesktop ? Icons.home : Icons.arrow_back,
           onPressed: () {
+            if (isDesktop) {
+              _goToHomePage();
+              return;
+            }
             clearAllToasts();
             Navigator.of(context).pop();
           },
           onLongPress: () {
-            clearAllToasts();
-            Navigator.of(context).popUntil((route) => route.isFirst);
+            _goToHomePage();
           },
         );
       case PreferencesService.actionSearch:
@@ -2752,6 +2878,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           color: Colors.transparent,
           child: InkWell(
             onTap: () => _showOverflowMenu(buttonContext, colorScheme),
+            canRequestFocus: false,
             borderRadius: BorderRadius.circular(24),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
@@ -2928,6 +3055,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       child: InkWell(
         onTap: onPressed,
         onLongPress: onLongPress,
+        canRequestFocus: false,
         borderRadius: BorderRadius.circular(24),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
@@ -2956,6 +3084,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       maxValue: 28,
     );
     return EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 6);
+  }
+
+  /// 根据设备和视口动态调整预渲染范围，避免固定大 cache 带来的首屏构建压力。
+  double _getAdaptiveMinCacheExtent(BuildContext context) {
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final multiplier = isDesktop ? 1.15 : 0.85;
+    final minValue = isDesktop ? 500.0 : 280.0;
+    final maxValue = isDesktop ? 1200.0 : 820.0;
+    return (viewportHeight * multiplier).clamp(minValue, maxValue);
   }
 
   Widget _buildEntryContent(
@@ -3172,6 +3311,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             ComponentRenderer(
               key: ValueKey(entry.id),
               entry: displayEntry,
+              enableInternalScroll: false,
               topPadding: 12,
               hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
               onElementTap: (path, label) {
@@ -3343,12 +3483,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       group_model.DictionaryGroup? group;
       List<group_model.DictionaryGroup> subGroups;
       Map<int, String> entryHeadwords;
+      List<group_model.DictionaryGroup> breadcrumb;
 
       if (_groupDataCache.containsKey(cacheKey)) {
         final cached = _groupDataCache[cacheKey]!;
         group = cached.$1;
         subGroups = cached.$2;
         entryHeadwords = cached.$3;
+        breadcrumb = cached.$4;
       } else {
         // 加载组信息
         group = await _groupService.getGroup(dictId, groupId);
@@ -3371,15 +3513,17 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         ]);
 
         subGroups = results[0] as List<group_model.DictionaryGroup>;
-        final breadcrumb = results[1] as List<group_model.DictionaryGroup>;
+        breadcrumb = results[1] as List<group_model.DictionaryGroup>;
         entryHeadwords = results[2] as Map<int, String>;
 
         // 缓存数据
-        _groupDataCache[cacheKey] = (group, subGroups, entryHeadwords);
+        _groupDataCache[cacheKey] = (
+          group,
+          subGroups,
+          entryHeadwords,
+          breadcrumb,
+        );
       }
-
-      // 获取面包屑
-      final breadcrumb = await _groupService.getGroupPath(dictId, groupId);
 
       if (mounted) {
         setState(() {
@@ -3513,6 +3657,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       return ComponentRenderer(
         key: ValueKey('group_desc_${group.groupId}'),
         entry: virtualEntry,
+        enableInternalScroll: false,
         topPadding: 0,
         bottomPadding: 0,
         leftPadding: 0,
@@ -3873,11 +4018,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     String dictId,
     String groupId,
   ) async {
-    if (_subGroupChildrenCache.containsKey(groupId)) {
-      return _subGroupChildrenCache[groupId]!;
+    final cacheKey = '${dictId}_$groupId';
+    if (_subGroupChildrenCache.containsKey(cacheKey)) {
+      return _subGroupChildrenCache[cacheKey]!;
     }
     final children = await _groupService.getSubGroups(dictId, groupId);
-    _subGroupChildrenCache[groupId] = children;
+    _subGroupChildrenCache[cacheKey] = children;
     return children;
   }
 
@@ -3887,11 +4033,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     String groupId,
     List<group_model.GroupItem> items,
   ) async {
-    if (_subGroupEntryHeadwordsCache.containsKey(groupId)) {
-      return _subGroupEntryHeadwordsCache[groupId]!;
+    final cacheKey = '${dictId}_$groupId';
+    if (_subGroupEntryHeadwordsCache.containsKey(cacheKey)) {
+      return _subGroupEntryHeadwordsCache[cacheKey]!;
     }
     final headwords = await _groupService.getGroupEntryHeadwords(dictId, items);
-    _subGroupEntryHeadwordsCache[groupId] = headwords;
+    _subGroupEntryHeadwordsCache[cacheKey] = headwords;
     return headwords;
   }
 
@@ -4098,6 +4245,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               child: ComponentRenderer(
                 key: ValueKey('expanded_entry_${entry.id}'),
                 entry: entry,
+                enableInternalScroll: false,
                 topPadding: 0,
                 bottomPadding: 0,
                 leftPadding: 0,
@@ -4171,23 +4319,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     String dictId,
     int entryId,
   ) async {
-    try {
-      final entryJson = await DatabaseService().getEntryJsonById(
-        dictId,
-        entryId.toString(),
-      );
-      if (entryJson != null) {
-        entryJson['dict_id'] = dictId;
-        entryJson['entry_id'] = '${dictId}_$entryId';
-        return DictionaryEntry.fromJson(entryJson);
+    final cacheKey = '${dictId}_$entryId';
+    return _groupEntryFutureCache.putIfAbsent(cacheKey, () async {
+      try {
+        final entryJson = await DatabaseService().getEntryJsonById(
+          dictId,
+          entryId.toString(),
+        );
+        if (entryJson != null) {
+          entryJson['dict_id'] = dictId;
+          entryJson['entry_id'] = '${dictId}_$entryId';
+          return DictionaryEntry.fromJson(entryJson);
+        }
+      } catch (e) {
+        Logger.e(
+          'Failed to load entry from database: $e',
+          tag: 'EntryDetailPage',
+        );
       }
-    } catch (e) {
-      Logger.e(
-        'Failed to load entry from database: $e',
-        tag: 'EntryDetailPage',
-      );
-    }
-    return null;
+      return null;
+    });
   }
 
   /// 构建组内词条芯片
@@ -4246,6 +4397,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       return ComponentRenderer(
         key: ValueKey('group_entry_${entry.id}'),
         entry: entry,
+        enableInternalScroll: false,
         topPadding: 0,
         hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
         onElementTap: (path, label) {
@@ -4291,6 +4443,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           return ComponentRenderer(
             key: ValueKey('group_entry_${loadedEntry.id}'),
             entry: loadedEntry,
+            enableInternalScroll: false,
             topPadding: 0,
             hiddenLanguagesNotifier: _globalHiddenLanguagesNotifier,
             onElementTap: (path, label) {
@@ -4950,23 +5103,20 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       final currentIndex = historyWords.indexOf(word);
 
       if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => EntryDetailPage(
-              entryGroup: entryGroup,
-              initialWord: word,
-              dictResults: result.dictResults.isNotEmpty
-                  ? result.dictResults
-                  : null,
-              browseList: historyWords.isNotEmpty
-                  ? BrowseList(
-                      source: BrowseListSource.searchHistory,
-                      words: historyWords,
-                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
-                    )
-                  : null,
-            ),
-          ),
+        EntryTabHostPage.open(
+          context,
+          entryGroup: entryGroup,
+          initialWord: word,
+          dictResults: result.dictResults.isNotEmpty
+              ? result.dictResults
+              : null,
+          browseList: historyWords.isNotEmpty
+              ? BrowseList(
+                  source: BrowseListSource.searchHistory,
+                  words: historyWords,
+                  initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                )
+              : null,
         );
       }
     } else {
@@ -5512,6 +5662,56 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         showToast(context, context.t.entry.toggleFailed(error: '$e'));
       }
     }
+  }
+
+  void _invalidateDerivedCaches() {
+    _groupEntryFutureCache.clear();
+    _groupDataCache.clear();
+    _subGroupChildrenCache.clear();
+    _subGroupEntryHeadwordsCache.clear();
+    _allNonTargetLanguagePathsCache = null;
+  }
+
+  Future<Set<String>> _getOrBuildAllNonTargetLanguagePaths() async {
+    final cached = _allNonTargetLanguagePathsCache;
+    if (cached != null) return cached;
+
+    final allDicts = _entryGroup.dictionaryGroups;
+    if (allDicts.isEmpty) {
+      _allNonTargetLanguagePathsCache = <String>{};
+      return _allNonTargetLanguagePathsCache!;
+    }
+
+    final Set<String> allLanguagePaths = {};
+
+    for (final dictGroup in allDicts) {
+      final dictId = dictGroup.dictionaryId;
+      if (dictId.isEmpty) continue;
+
+      final metadata = await DictionaryManager().getDictionaryMetadata(dictId);
+      if (metadata == null) continue;
+
+      final sourceLang = metadata.sourceLanguage;
+      final targetLangs = metadata.targetLanguages;
+
+      for (final pageGroup in dictGroup.pageGroups) {
+        for (final section in pageGroup.sections) {
+          final json = section.entry.toJson();
+          final entryId = json['entry_id']?.toString() ?? '';
+          final pathPrefix = '$dictId.$entryId';
+          _collectLanguagePaths(
+            json,
+            pathPrefix,
+            allLanguagePaths,
+            sourceLang,
+            targetLangs,
+          );
+        }
+      }
+    }
+
+    _allNonTargetLanguagePathsCache = allLanguagePaths;
+    return allLanguagePaths;
   }
 
   /// 递归收集所有目标语言的路径（目标语言列表扣除源语言，只收集有实际翻译内容的）
@@ -6424,10 +6624,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
             // 非全屏时限制最大拖动高度，确保内容不压住状态栏底部
             maxChildSize: isFullScreen
                 ? 1.0
-              : availableHeightRatio(
-                totalHeight: screenSize.height,
-                reservedTop: topInsetWithMargin(statusBarHeight),
-                ),
+                : availableHeightRatio(
+                    totalHeight: screenSize.height,
+                    reservedTop: topInsetWithMargin(statusBarHeight),
+                  ),
             expand: false,
             builder: (context, scrollController) {
               final aiMdStyleSheet = _buildAiMarkdownStyleSheet(context);
@@ -6442,9 +6642,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               Widget content = Container(
                 width: isFullScreen ? screenSize.width : null,
                 padding: EdgeInsets.only(
-                  top: isFullScreen
-                      ? topInsetWithMargin(statusBarHeight)
-                      : 16,
+                  top: isFullScreen ? topInsetWithMargin(statusBarHeight) : 16,
                   left: 16,
                   right: 16,
                   bottom: 16,

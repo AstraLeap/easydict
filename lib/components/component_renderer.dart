@@ -33,7 +33,7 @@ import '../core/utils/toast_utils.dart';
 import '../data/database_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../i18n/strings.g.dart';
-import '../pages/entry_detail_page.dart';
+import '../pages/entry_tab_host_page.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../services/ai_service.dart';
 import '../services/dictionary_manager.dart';
@@ -133,10 +133,10 @@ class _SecondaryTapGestureRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void addPointer(PointerDownEvent event) {
-    Logger.d(
-      '_SecondaryTapGestureRecognizer.addPointer: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
-      tag: 'DoubleTapWord',
-    );
+    // Logger.d(
+    //   '_SecondaryTapGestureRecognizer.addPointer: buttons=${event.buttons}, kSecondaryMouseButton=$kSecondaryMouseButton',
+    //   tag: 'DoubleTapWord',
+    // );
     if (event.buttons == kSecondaryMouseButton) {
       startTrackingPointer(event.pointer);
       _kind = event.kind;
@@ -147,10 +147,10 @@ class _SecondaryTapGestureRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void handleEvent(PointerEvent event) {
-    Logger.d(
-      '_SecondaryTapGestureRecognizer.handleEvent: ${event.runtimeType}, buttons=${event.buttons}',
-      tag: 'DoubleTapWord',
-    );
+    // Logger.d(
+    //   '_SecondaryTapGestureRecognizer.handleEvent: ${event.runtimeType}, buttons=${event.buttons}',
+    //   tag: 'DoubleTapWord',
+    // );
     if (event is PointerUpEvent && event.buttons == 0) {
       Logger.d(
         '_SecondaryTapGestureRecognizer: calling onSecondaryTapUp',
@@ -296,6 +296,9 @@ class _RenderTappable extends RenderProxyBox {
 /// 自动缩放字体文本组件
 /// 当文本超出可用宽度时，自动缩小字体以适应一行显示
 class _AutoScalingText extends StatelessWidget {
+  static const int _maxWidthCacheSize = 1200;
+  static final Map<String, double> _textWidthCache = <String, double>{};
+
   final String text;
   final TextStyle baseStyle;
   final DictElementType elementType;
@@ -349,14 +352,7 @@ class _AutoScalingText extends StatelessWidget {
       );
     }
 
-    // 计算文本宽度
-    final textPainter = TextPainter(
-      text: TextSpan(children: textSpans, style: effectiveStyle),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-
-    final textWidth = textPainter.width;
+    final textWidth = _measureTextWidth(textSpans, effectiveStyle);
     final availableWidth = maxWidth;
 
     // 如果文本宽度超过可用宽度，使用FittedBox进行缩放
@@ -380,6 +376,47 @@ class _AutoScalingText extends StatelessWidget {
       TextSpan(children: textSpans, style: effectiveStyle),
       maxLines: 1,
     );
+  }
+
+  double _measureTextWidth(
+    List<InlineSpan> textSpans,
+    TextStyle effectiveStyle,
+  ) {
+    // 对常见纯文本路径启用缓存；复杂富文本仍实时测量。
+    if (spans == null) {
+      final cacheKey = [
+        text,
+        effectiveStyle.fontFamily,
+        effectiveStyle.fontSize,
+        effectiveStyle.fontWeight?.index,
+        effectiveStyle.fontStyle?.index,
+        effectiveStyle.letterSpacing,
+      ].join('|');
+
+      final cachedWidth = _textWidthCache[cacheKey];
+      if (cachedWidth != null) return cachedWidth;
+
+      final measured = _layoutTextWidth(textSpans, effectiveStyle);
+      if (_textWidthCache.length >= _maxWidthCacheSize) {
+        _textWidthCache.remove(_textWidthCache.keys.first);
+      }
+      _textWidthCache[cacheKey] = measured;
+      return measured;
+    }
+
+    return _layoutTextWidth(textSpans, effectiveStyle);
+  }
+
+  double _layoutTextWidth(
+    List<InlineSpan> textSpans,
+    TextStyle effectiveStyle,
+  ) {
+    final textPainter = TextPainter(
+      text: TextSpan(children: textSpans, style: effectiveStyle),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return textPainter.width;
   }
 }
 
@@ -1158,20 +1195,17 @@ Future<void> _handleLinkTap(BuildContext context, String word) async {
     final currentIndex = historyWords.indexOf(word);
 
     if (context.mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => EntryDetailPage(
-            entryGroup: entryGroup,
-            initialWord: word,
-            browseList: historyWords.isNotEmpty
-                ? BrowseList(
-                    source: BrowseListSource.searchHistory,
-                    words: historyWords,
-                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
-                  )
-                : null,
-          ),
-        ),
+      EntryTabHostPage.open(
+        context,
+        entryGroup: entryGroup,
+        initialWord: word,
+        browseList: historyWords.isNotEmpty
+            ? BrowseList(
+                source: BrowseListSource.searchHistory,
+                words: historyWords,
+                initialIndex: currentIndex >= 0 ? currentIndex : 0,
+              )
+            : null,
       );
     }
   } else {
@@ -1261,20 +1295,17 @@ Future<void> _handleExactJump(
       final historyWords = records.map((r) => r.word).toList();
       final currentIndex = historyWords.indexOf(word);
 
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => EntryDetailPage(
-            entryGroup: entryGroup,
-            initialWord: word,
-            browseList: historyWords.isNotEmpty
-                ? BrowseList(
-                    source: BrowseListSource.searchHistory,
-                    words: historyWords,
-                    initialIndex: currentIndex >= 0 ? currentIndex : 0,
-                  )
-                : null,
-          ),
-        ),
+      EntryTabHostPage.open(
+        context,
+        entryGroup: entryGroup,
+        initialWord: word,
+        browseList: historyWords.isNotEmpty
+            ? BrowseList(
+                source: BrowseListSource.searchHistory,
+                words: historyWords,
+                initialIndex: currentIndex >= 0 ? currentIndex : 0,
+              )
+            : null,
       );
     }
   } else {
@@ -1387,6 +1418,10 @@ class ComponentRenderer extends StatefulWidget {
   /// 应设置为 false 以避免 SelectionArea 和 SingleChildScrollView 的嵌套冲突。
   final bool enableSelection;
 
+  /// 是否启用内部滚动容器。默认为 true。
+  /// 当该组件被嵌入到外层滚动列表时可设为 false，避免嵌套滚动带来的布局与命中开销。
+  final bool enableInternalScroll;
+
   /// 分组跳转回调，点击 [text](=>group_id) 格式的链接时触发
   final void Function(String groupId, BuildContext context)? onGroupJump;
 
@@ -1416,6 +1451,7 @@ class ComponentRenderer extends StatefulWidget {
     this.leftPadding = -1,
     this.rightPadding = -1,
     this.enableSelection = true,
+    this.enableInternalScroll = true,
     this.onGroupJump,
     this.onExactJump,
     this.onPathJump,
@@ -1499,6 +1535,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   // 闪烁动画控制器
   final Map<String, AnimationController> _highlightControllers = {};
 
+  // 短语宽度测量缓存，避免在重建时重复 TextPainter 计算
+  static const int _maxPhraseWidthCacheSize = 1500;
+  final Map<String, double> _phraseWidthCache = {};
+
   // 懒加载相关
   bool _isVisible = false;
   bool _hasBeenVisible = false;
@@ -1518,7 +1558,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     super.initState();
     _localEntry = widget.entry;
     // 如果提供了外部的通知器，则使用它；否则创建内部的
-    _hiddenLanguagesNotifier = widget.hiddenLanguagesNotifier ?? HiddenLanguagesNotifier([]);
+    _hiddenLanguagesNotifier =
+        widget.hiddenLanguagesNotifier ?? HiddenLanguagesNotifier([]);
     _initSourceLanguage();
     _loadClickAction();
     _loadHeadwordSyllableSetting();
@@ -1724,13 +1765,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     required List<String> path,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textStyle = TextStyle(
-      fontSize: 13,
-      color: colorScheme.onSurface,
-    );
-    final headerStyle = textStyle.copyWith(
-      fontWeight: FontWeight.bold,
-    );
+    final textStyle = TextStyle(fontSize: 13, color: colorScheme.onSurface);
+    final headerStyle = textStyle.copyWith(fontWeight: FontWeight.bold);
 
     // 动态生成列宽
     final columnWidths = <int, TableColumnWidth>{};
@@ -1741,9 +1777,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        border: Border.all(
-          color: colorScheme.outline.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: ClipRRect(
@@ -1759,7 +1793,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
             // 表头
             TableRow(
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
               ),
               children: columns.asMap().entries.map((entry) {
                 final colIndex = entry.key;
@@ -1783,7 +1819,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
               final row = entry.value;
               return TableRow(
                 children: row.asMap().entries.map((cell) {
-                  final cellPath = [...path, 'content', '$rowIndex', '${cell.key}'];
+                  final cellPath = [
+                    ...path,
+                    'content',
+                    '$rowIndex',
+                    '${cell.key}',
+                  ];
                   return Padding(
                     padding: const EdgeInsets.all(8),
                     child: _buildTableCell(
@@ -1819,7 +1860,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       // 嵌套内容递归渲染
       return renderJsonElement(context, 'cell', value, path);
     }
-    return _buildTableCellText(context, value?.toString() ?? '', path, baseStyle);
+    return _buildTableCellText(
+      context,
+      value?.toString() ?? '',
+      path,
+      baseStyle,
+    );
   }
 
   /// 构建表格单元格文本，支持双击查词和右键菜单
@@ -2125,27 +2171,28 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
             final position = scrollableState.position;
             // 目标滚动位置 = 当前位置 + 元素偏移 - 状态栏偏移
-            final targetPixels = (position.pixels +
-                    elementOffset.dy -
-                    scrollOffset)
-                .clamp(position.minScrollExtent, position.maxScrollExtent);
+            final targetPixels =
+                (position.pixels + elementOffset.dy - scrollOffset).clamp(
+                  position.minScrollExtent,
+                  position.maxScrollExtent,
+                );
 
             position
                 .animateTo(
-              targetPixels,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-            )
+                  targetPixels,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                )
                 .then((_) {
-              // 滚动完成后优先高亮最精确的已渲染目标路径。
-              if (mounted) {
-                final highlightPath = _resolveBestHighlightPath(
-                  requestedPath: path,
-                  fallbackPath: foundPath,
-                );
-                _triggerHighlight(highlightPath);
-              }
-            });
+                  // 滚动完成后优先高亮最精确的已渲染目标路径。
+                  if (mounted) {
+                    final highlightPath = _resolveBestHighlightPath(
+                      requestedPath: path,
+                      fallbackPath: foundPath,
+                    );
+                    _triggerHighlight(highlightPath);
+                  }
+                });
             return;
           }
         }
@@ -2312,7 +2359,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }) {
     String? best;
     for (final candidate in _renderedTappablePaths) {
-      if (candidate == requestedPath || requestedPath.startsWith('$candidate.')) {
+      if (candidate == requestedPath ||
+          requestedPath.startsWith('$candidate.')) {
         if (best == null || candidate.length > best.length) {
           best = candidate;
         }
@@ -2349,12 +2397,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (parts.isNotEmpty && _isChildKey(parts[0])) {
       // 支持 child_xxxx 或 child_xxxx.n 格式
       if (parts.length == 1) return true; // 单个 Map 格式
-      if (parts.length == 2 && int.tryParse(parts[1]) != null) return true; // List 格式的索引
+      if (parts.length == 2 && int.tryParse(parts[1]) != null)
+        return true; // List 格式的索引
     }
 
     // board 元素（不在 _renderedKeys 中的顶层 key）
     // board 路径通常是直接的 key 名，如 "etymology", "notes" 等
-    if (parts.length == 1 && !_isRenderedKey(parts[0]) && !_isChildKey(parts[0])) return true;
+    if (parts.length == 1 &&
+        !_isRenderedKey(parts[0]) &&
+        !_isChildKey(parts[0]))
+      return true;
 
     return false;
   }
@@ -2393,8 +2445,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     TextStyle? textStyle,
     GlobalKey? customTextKey,
   }) {
-    final textKey = customTextKey ??
-      _getTextKey(pathData.path, suffix: 'tappable_widget');
+    final textKey =
+        customTextKey ?? _getTextKey(pathData.path, suffix: 'tappable_widget');
     final pathStr = _convertPathToString(pathData.path);
 
     // 记录当前已渲染的路径，供滚动后精确高亮使用。
@@ -2544,24 +2596,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final currentIndex = historyWords.indexOf(word);
 
       if (context.mounted) {
-        Navigator.push(
+        EntryTabHostPage.open(
           context,
-          MaterialPageRoute(
-            builder: (context) => EntryDetailPage(
-              entryGroup: entryGroup,
-              initialWord: word,
-              dictResults: searchResult.dictResults.isNotEmpty
-                  ? searchResult.dictResults
-                  : null,
-              browseList: historyWords.isNotEmpty
-                  ? BrowseList(
-                      source: BrowseListSource.searchHistory,
-                      words: historyWords,
-                      initialIndex: currentIndex >= 0 ? currentIndex : 0,
-                    )
-                  : null,
-            ),
-          ),
+          entryGroup: entryGroup,
+          initialWord: word,
+          dictResults: searchResult.dictResults.isNotEmpty
+              ? searchResult.dictResults
+              : null,
+          browseList: historyWords.isNotEmpty
+              ? BrowseList(
+                  source: BrowseListSource.searchHistory,
+                  words: historyWords,
+                  initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                )
+              : null,
         );
       }
     } else {
@@ -3225,7 +3273,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   Future<void> _loadHeadwordSyllableSetting() async {
-    final showByDefault = await PreferencesService().getShowHeadwordSyllableByDefault();
+    final showByDefault = await PreferencesService()
+        .getShowHeadwordSyllableByDefault();
     if (mounted) {
       setState(() {
         _showHeadwordSyllable = showByDefault;
@@ -3276,10 +3325,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     );
 
     final position = scrollableState.position;
-    final safeTopOffset = scrollTopSafeOffset(
-      context,
-      desktopTopSpacing: 10.0,
-    );
+    final safeTopOffset = scrollTopSafeOffset(context, desktopTopSpacing: 10.0);
 
     // Scroll so the element's top sits at the mobile safe-top offset
     // (status bar + small breathing room).
@@ -4098,10 +4144,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             closeMenu();
             selectableState?.clearSelection();
             if (pathData != null && actionPath != null) {
-              widget.onEditElement?.call(
-                actionPath,
-                pathData.label,
-              );
+              widget.onEditElement?.call(actionPath, pathData.label);
             }
           },
         );
@@ -4679,25 +4722,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                         phrase,
                                       );
 
-                                      Navigator.push(
+                                      EntryTabHostPage.open(
                                         context,
-                                        MaterialPageRoute(
-                                          builder: (context) => EntryDetailPage(
-                                            entryGroup: entryGroup,
-                                            initialWord: phrase,
-                                            browseList: historyWords.isNotEmpty
-                                                ? BrowseList(
-                                                    source: BrowseListSource
-                                                        .searchHistory,
-                                                    words: historyWords,
-                                                    initialIndex:
-                                                        currentIndex >= 0
-                                                        ? currentIndex
-                                                        : 0,
-                                                  )
-                                                : null,
-                                          ),
-                                        ),
+                                        entryGroup: entryGroup,
+                                        initialWord: phrase,
+                                        browseList: historyWords.isNotEmpty
+                                            ? BrowseList(
+                                                source: BrowseListSource
+                                                    .searchHistory,
+                                                words: historyWords,
+                                                initialIndex: currentIndex >= 0
+                                                    ? currentIndex
+                                                    : 0,
+                                              )
+                                            : null,
                                       );
                                     }
                                   }
@@ -4774,24 +4812,19 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                 .toList();
                             final currentIndex = historyWords.indexOf(phrase);
 
-                            Navigator.push(
+                            EntryTabHostPage.open(
                               context,
-                              MaterialPageRoute(
-                                builder: (context) => EntryDetailPage(
-                                  entryGroup: allEntryGroup,
-                                  initialWord: phrase,
-                                  browseList: historyWords.isNotEmpty
-                                      ? BrowseList(
-                                          source:
-                                              BrowseListSource.searchHistory,
-                                          words: historyWords,
-                                          initialIndex: currentIndex >= 0
-                                              ? currentIndex
-                                              : 0,
-                                        )
-                                      : null,
-                                ),
-                              ),
+                              entryGroup: allEntryGroup,
+                              initialWord: phrase,
+                              browseList: historyWords.isNotEmpty
+                                  ? BrowseList(
+                                      source: BrowseListSource.searchHistory,
+                                      words: historyWords,
+                                      initialIndex: currentIndex >= 0
+                                          ? currentIndex
+                                          : 0,
+                                    )
+                                  : null,
                             );
                           },
                           child: Container(
@@ -5055,6 +5088,76 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
   void _resetContentScale() => _applyContentScale(1.0);
 
+  double _measurePhraseWidthCached(String rawText, TextStyle style) {
+    final cleaned = _removeFormatting(rawText);
+    final cacheKey = [
+      cleaned,
+      style.fontFamily,
+      style.fontSize,
+      style.fontWeight?.index,
+      style.fontStyle?.index,
+      style.letterSpacing,
+    ].join('|');
+
+    final cached = _phraseWidthCache[cacheKey];
+    if (cached != null) return cached;
+
+    final tp = TextPainter(
+      text: TextSpan(text: cleaned, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: double.infinity);
+
+    final width = tp.width;
+    if (_phraseWidthCache.length >= _maxPhraseWidthCacheSize) {
+      _phraseWidthCache.remove(_phraseWidthCache.keys.first);
+    }
+    _phraseWidthCache[cacheKey] = width;
+    return width;
+  }
+
+  Widget _buildPaddedContent(
+    BuildContext context,
+    BuildContext innerContext,
+    String page,
+    List<String> sections,
+    DictionaryEntry entry,
+  ) {
+    final contentBody = widget.enableSelection
+        ? Listener(
+            // 捕获所有触摸事件，记录长按开始时的位置
+            onPointerDown: (event) {
+              _selectionStartPosition = event.position;
+            },
+            child: SelectionArea(
+              // 使用 key 强制在滚动结束后重建菜单
+              key: ValueKey('selection_area_$_menuRebuildCounter'),
+              // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
+              contextMenuBuilder: (context, state) {
+                return _buildSelectionContextMenu(context, state);
+              },
+              onSelectionChanged: (selection) {
+                // 只记录选择状态，不触发任何操作
+                _currentSelection = selection;
+              },
+              child: _buildContentColumn(innerContext, page, sections, entry),
+            ),
+          )
+        : _buildContentColumn(innerContext, page, sections, entry);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: widget.leftPadding >= 0 ? widget.leftPadding : 16,
+        right: widget.rightPadding >= 0 ? widget.rightPadding : 16,
+        top: widget.topPadding >= 0
+            ? widget.topPadding
+            : MediaQuery.of(context).padding.top + 16,
+        bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
+      ),
+      child: contentBody,
+    );
+  }
+
   // ────────────────────────────────────────────────────────────────────────────
 
   @override
@@ -5073,10 +5176,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
         // 当组件首次可见时
         if (_isVisible && !wasVisible && !_hasBeenVisible) {
-          Logger.d(
-            'ComponentRenderer became visible for entry: ${entry.headword}',
-            tag: 'ComponentRenderer',
-          );
           // 设置标志并触发重建，确保 GlobalKey 被创建
           setState(() {
             _hasBeenVisible = true;
@@ -5096,9 +5195,23 @@ class ComponentRendererState extends State<ComponentRenderer> {
           onElementSecondaryTap: _handleElementSecondaryTap,
           child: PathScope(
             // 使用 dictId 和 entry_id 作为路径前缀，使各词典各条目的隐藏逻辑独立
-            path: [widget.entry.dictId ?? '', widget.entry.entryIdAsInt.toString()],
+            path: [
+              widget.entry.dictId ?? '',
+              widget.entry.entryIdAsInt.toString(),
+            ],
             child: Builder(
               builder: (innerContext) {
+                final content = _buildPaddedContent(
+                  context,
+                  innerContext,
+                  page,
+                  sections,
+                  entry,
+                );
+                if (!widget.enableInternalScroll) {
+                  return content;
+                }
+
                 return NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
                     // 监听滚动结束事件
@@ -5107,42 +5220,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     }
                     return false; // 不阻止事件继续传递
                   },
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      left: widget.leftPadding >= 0 ? widget.leftPadding : 16,
-                      right: widget.rightPadding >= 0 ? widget.rightPadding : 16,
-                      top: widget.topPadding >= 0
-                          ? widget.topPadding
-                          : MediaQuery.of(context).padding.top + 16,
-                      bottom: widget.bottomPadding >= 0 ? widget.bottomPadding : 16,
-                    ),
-                    child: widget.enableSelection
-                        ? Listener(
-                            // 捕获所有触摸事件，记录长按开始时的位置
-                            onPointerDown: (event) {
-                              _selectionStartPosition = event.position;
-                            },
-                            child: SelectionArea(
-                              // 使用 key 强制在滚动结束后重建菜单
-                              key: ValueKey('selection_area_$_menuRebuildCounter'),
-                              // 自定义上下文菜单：上方显示系统文本选择菜单，下方显示软件右键菜单
-                              contextMenuBuilder: (context, state) {
-                                return _buildSelectionContextMenu(context, state);
-                              },
-                              onSelectionChanged: (selection) {
-                                // 只记录选择状态，不触发任何操作
-                                _currentSelection = selection;
-                              },
-                              child: _buildContentColumn(
-                                innerContext,
-                                page,
-                                sections,
-                                entry,
-                              ),
-                            ),
-                          )
-                        : _buildContentColumn(innerContext, page, sections, entry),
-                  ),
+                  child: SingleChildScrollView(child: content),
                 );
               },
             ),
@@ -5260,8 +5338,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final entry = _localEntry;
 
     // 判断是否有音节形式可用
-    final hasSyllable = entry.headwordSyllable != null &&
-        entry.headwordSyllable!.isNotEmpty;
+    final hasSyllable =
+        entry.headwordSyllable != null && entry.headwordSyllable!.isNotEmpty;
 
     // 决定当前显示的文本
     String displayText;
@@ -5673,7 +5751,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               },
                               onTap: () {
                                 final now = DateTime.now();
-                                final isDoubleTap = _lastTapTime != null &&
+                                final isDoubleTap =
+                                    _lastTapTime != null &&
                                     now.difference(_lastTapTime!) <
                                         const Duration(milliseconds: 300);
 
@@ -5693,9 +5772,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               },
                               child: Builder(
                                 key: textKey,
-                                builder: (context) => Text.rich(
-                                  TextSpan(children: result.spans),
-                                ),
+                                builder: (context) =>
+                                    Text.rich(TextSpan(children: result.spans)),
                               ),
                             ),
                           );
@@ -5855,23 +5933,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
       currentTextOffset += text.length;
 
       final pathData = _PathData(textPath, 'Note');
-
-      Logger.d(
-        'Note: 创建 tapRecognizer, text=$text, langKey=$langKey',
-        tag: 'NoteDebug',
-      );
-
       final tapRecognizer = TapGestureRecognizer()
         ..onTapDown = (details) {
-          Logger.d(
-            'Note onTapDown: position=${details.globalPosition}',
-            tag: 'NoteDebug',
-          );
           _lastTapPosition = details.globalPosition;
           _currentSelectionPathData = pathData;
         }
         ..onTap = () {
-          Logger.d('Note onTap 触发', tag: 'NoteDebug');
           _handleElementTap(_convertPathToString(textPath), pathData.label);
 
           final now = DateTime.now();
@@ -5881,16 +5948,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   const Duration(milliseconds: 300) &&
               _lastTapButton == 0;
 
-          Logger.d(
-            'Note onTap: isDoubleTap=$isDoubleTap, _lastTapTime=$_lastTapTime, _lastTapButton=$_lastTapButton',
-            tag: 'NoteDebug',
-          );
-
           if (isDoubleTap && _lastTapPosition != null) {
-            Logger.d(
-              'Note 双击触发, 准备调用 _handleDoubleTapOnText',
-              tag: 'NoteDebug',
-            );
             _handleDoubleTapOnText(
               _lastTapPosition!,
               text,
@@ -5910,10 +5968,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
       final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
         ..onSecondaryTapUp = (details) {
-          Logger.d(
-            'Note onSecondaryTapUp: position=${details.globalPosition}',
-            tag: 'NoteDebug',
-          );
           _lastTapPosition = details.globalPosition;
           _handleElementSecondaryTap(
             _convertPathToString(textPath),
@@ -5943,10 +5997,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
         elementType: DictElementType.note,
         mouseCursor: SystemMouseCursors.text,
         onShowMenu: (position, menuText) {
-          Logger.d(
-            'Note onShowMenu: position=$position, text=$menuText',
-            tag: 'NoteDebug',
-          );
           _handleElementSecondaryTap(
             _convertPathToString(textPath),
             pathData.label,
@@ -5955,10 +6005,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
           );
         },
         onDoubleTapWord: (word, position) {
-          Logger.d(
-            'Note onDoubleTapWord: word=$word, position=$position',
-            tag: 'NoteDebug',
-          );
           _performDoubleTapSearch(word, context);
         },
       );
@@ -6205,10 +6251,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   borderRadius: BorderRadius.circular(12),
                   border: audioFile.isNotEmpty
                       ? null
-                      : Border.all(
-                          color: colorScheme.outlineVariant,
-                          width: 1,
-                        ),
+                      : Border.all(color: colorScheme.outlineVariant, width: 1),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -6262,10 +6305,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             builder: (context) {
               // 使用已修正的 path 作为基础，添加 'note' 键
               final notePath = [...path, 'note'];
-              final notePathData = _PathData(
-                notePath,
-                'Pronunciation Note',
-              );
+              final notePathData = _PathData(notePath, 'Pronunciation Note');
 
               // 创建手势识别器以支持双击查词和右键菜单
               final noteStyle = DictTypography.getBaseStyle(
@@ -6312,27 +6352,22 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   }
                 };
 
-              final secondaryTapRecognizer =
-                  _SecondaryTapGestureRecognizer()
-                    ..onSecondaryTapUp = (details) {
-                      Logger.d(
-                        'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
-                        tag:
-                            'ComponentRenderer._buildPronunciations',
-                      );
-                      _lastTapPosition = details.globalPosition;
-                      _handleElementSecondaryTap(
-                        _convertPathToString(notePath),
-                        notePathData.label,
-                        context,
-                        details.globalPosition,
-                      );
-                    };
+              final secondaryTapRecognizer = _SecondaryTapGestureRecognizer()
+                ..onSecondaryTapUp = (details) {
+                  Logger.d(
+                    'SecondaryTapRecognizer.onSecondaryTapUp called (note): position=${details.globalPosition}',
+                    tag: 'ComponentRenderer._buildPronunciations',
+                  );
+                  _lastTapPosition = details.globalPosition;
+                  _handleElementSecondaryTap(
+                    _convertPathToString(notePath),
+                    notePathData.label,
+                    context,
+                    details.globalPosition,
+                  );
+                };
 
-              _recognizers.addAll([
-                tapRecognizer,
-                secondaryTapRecognizer,
-              ]);
+              _recognizers.addAll([tapRecognizer, secondaryTapRecognizer]);
 
               final recognizer = _MultiGestureRecognizer(
                 tapRecognizer: tapRecognizer,
@@ -6363,9 +6398,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
               );
 
               return _HighlightWrapper(
-                isHighlighting: _isHighlighting(
-                  _convertPathToString(notePath),
-                ),
+                isHighlighting: _isHighlighting(_convertPathToString(notePath)),
                 child: _TappableWrapper(
                   pathData: notePathData,
                   child: Text.rich(
@@ -6970,10 +7003,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     if (spans.isEmpty) return const SizedBox.shrink();
     // 不使用 forceStrutHeight，让行高自然计算
     // 这解决了多个 label 元素换行时高度计算不正确的问题
-    return Text.rich(
-      TextSpan(children: spans),
-      key: definitionTextKey,
-    );
+    return Text.rich(TextSpan(children: spans), key: definitionTextKey);
   }
 
   /// 渲染 sense 层级的内联字段（synonym/antonym/related/tail 内字段等）
@@ -7381,10 +7411,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
-        child: Text.rich(
-          TextSpan(children: result.spans),
-          key: textKey,
-        ),
+        child: Text.rich(TextSpan(children: result.spans), key: textKey),
       );
     }
 
@@ -7628,7 +7655,8 @@ class ComponentRendererState extends State<ComponentRenderer> {
               },
               onTap: () {
                 final now = DateTime.now();
-                final isDoubleTap = _lastTapTime != null &&
+                final isDoubleTap =
+                    _lastTapTime != null &&
                     now.difference(_lastTapTime!) <
                         const Duration(milliseconds: 300);
 
@@ -7732,9 +7760,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             mouseCursor: SystemMouseCursors.click,
           );
           // 不使用 forceStrutHeight，让文本高度自然计算以支持换行
-          final richText = Text.rich(
-            TextSpan(children: result.spans),
-          );
+          final richText = Text.rich(TextSpan(children: result.spans));
 
           Widget child;
           if (!hasBackground) {
@@ -8449,23 +8475,16 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           DictElementType.phraseWord,
                           color: Colors.black,
                         );
-                        double measurePhraseWidth(String text) {
-                          final tp = TextPainter(
-                            text: TextSpan(
-                              text: _removeFormatting(text),
-                              style: phraseBaseStyle,
-                            ),
-                            maxLines: 1,
-                            textDirection: TextDirection.ltr,
-                          );
-                          tp.layout(maxWidth: double.infinity);
-                          return tp.width;
-                        }
 
                         const itemPaddingH =
                             12.0 * 2; // horizontal padding inside each chip
                         final maxPhraseWidth = phrases
-                            .map((p) => measurePhraseWidth(p.toString()))
+                            .map(
+                              (p) => _measurePhraseWidthCached(
+                                p.toString(),
+                                phraseBaseStyle,
+                              ),
+                            )
                             .fold<double>(0.0, (a, b) => a > b ? a : b);
                         final twoColItemWidth =
                             (constraints.maxWidth - spacing) / 2;
@@ -8653,7 +8672,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   crossFadeState: isExpanded
                       ? CrossFadeState.showFirst
                       : CrossFadeState.showSecond,
-                  firstChild: _buildChildEntryContent(context, childData, pathStr),
+                  firstChild: _buildChildEntryContent(
+                    context,
+                    childData,
+                    pathStr,
+                  ),
                   secondChild: const SizedBox.shrink(),
                 ),
               ],
@@ -8745,7 +8768,11 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   crossFadeState: isExpanded
                       ? CrossFadeState.showFirst
                       : CrossFadeState.showSecond,
-                  firstChild: _buildChildEntryListContent(context, key, children),
+                  firstChild: _buildChildEntryListContent(
+                    context,
+                    key,
+                    children,
+                  ),
                   secondChild: const SizedBox.shrink(),
                 ),
               ],
@@ -8776,7 +8803,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
       final displayText = headword.isNotEmpty ? headword : (headline ?? '');
       final pos = childData['pos'];
       final posList = _parsePosToList(pos);
-      final pronunciations = _parsePronunciationsFromData(childData['pronunciation']);
+      final pronunciations = _parsePronunciationsFromData(
+        childData['pronunciation'],
+      );
 
       // 从 childData 创建 DictionaryEntry 用于复用渲染方法
       final childEntry = DictionaryEntry.fromJson({
@@ -8822,9 +8851,13 @@ class ComponentRendererState extends State<ComponentRenderer> {
                               },
                             ),
                           ),
-                          if (posList.isNotEmpty) _buildChildPosPlainText(context, posList),
+                          if (posList.isNotEmpty)
+                            _buildChildPosPlainText(context, posList),
                           if (pronunciations.isNotEmpty)
-                            _buildChildPronunciationsInline(context, pronunciations),
+                            _buildChildPronunciationsInline(
+                              context,
+                              pronunciations,
+                            ),
                         ],
                       ),
                     ),
@@ -8848,7 +8881,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       key: 'data',
                       child: Builder(
                         builder: (context) {
-                          return renderJsonElement(context, 'data', childData['data'], pathStr.split('.')..add('data'));
+                          return renderJsonElement(
+                            context,
+                            'data',
+                            childData['data'],
+                            pathStr.split('.')..add('data'),
+                          );
                         },
                       ),
                     ),
@@ -8860,7 +8898,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       key: 'note',
                       child: Builder(
                         builder: (context) {
-                          return renderJsonElement(context, 'note', childData['note'], pathStr.split('.')..add('note'));
+                          return renderJsonElement(
+                            context,
+                            'note',
+                            childData['note'],
+                            pathStr.split('.')..add('note'),
+                          );
                         },
                       ),
                     ),
@@ -8872,7 +8915,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       key: 'clob',
                       child: Builder(
                         builder: (context) {
-                          return renderJsonElement(context, 'clob', childData['clob'], pathStr.split('.')..add('clob'));
+                          return renderJsonElement(
+                            context,
+                            'clob',
+                            childData['clob'],
+                            pathStr.split('.')..add('clob'),
+                          );
                         },
                       ),
                     ),
@@ -8884,7 +8932,12 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       key: 'text',
                       child: Builder(
                         builder: (context) {
-                          return renderJsonElement(context, 'text', childData['text'], pathStr.split('.')..add('text'));
+                          return renderJsonElement(
+                            context,
+                            'text',
+                            childData['text'],
+                            pathStr.split('.')..add('text'),
+                          );
                         },
                       ),
                     ),
@@ -8895,7 +8948,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
           ),
         ),
       );
-
     }
 
     return Column(
@@ -8921,7 +8973,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
     final displayText = headword.isNotEmpty ? headword : (headline ?? '');
     final pos = childData['pos'];
     final posList = _parsePosToList(pos);
-    final pronunciations = _parsePronunciationsFromData(childData['pronunciation']);
+    final pronunciations = _parsePronunciationsFromData(
+      childData['pronunciation'],
+    );
 
     // 从 childData 创建 DictionaryEntry 用于复用渲染方法
     final childEntry = DictionaryEntry.fromJson({
@@ -8983,7 +9037,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
             key: 'data',
             child: Builder(
               builder: (context) {
-                return renderJsonElement(context, 'data', childData['data'], [...pathList, 'data']);
+                return renderJsonElement(context, 'data', childData['data'], [
+                  ...pathList,
+                  'data',
+                ]);
               },
             ),
           ),
@@ -8995,7 +9052,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
             key: 'note',
             child: Builder(
               builder: (context) {
-                return renderJsonElement(context, 'note', childData['note'], [...pathList, 'note']);
+                return renderJsonElement(context, 'note', childData['note'], [
+                  ...pathList,
+                  'note',
+                ]);
               },
             ),
           ),
@@ -9007,7 +9067,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
             key: 'clob',
             child: Builder(
               builder: (context) {
-                return renderJsonElement(context, 'clob', childData['clob'], [...pathList, 'clob']);
+                return renderJsonElement(context, 'clob', childData['clob'], [
+                  ...pathList,
+                  'clob',
+                ]);
               },
             ),
           ),
@@ -9019,7 +9082,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
             key: 'text',
             child: Builder(
               builder: (context) {
-                return renderJsonElement(context, 'text', childData['text'], [...pathList, 'text']);
+                return renderJsonElement(context, 'text', childData['text'], [
+                  ...pathList,
+                  'text',
+                ]);
               },
             ),
           ),
@@ -9037,7 +9103,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
   }
 
   /// 从 pronunciation 数据解析发音列表
-  List<Map<String, dynamic>> _parsePronunciationsFromData(dynamic pronunciation) {
+  List<Map<String, dynamic>> _parsePronunciationsFromData(
+    dynamic pronunciation,
+  ) {
     if (pronunciation == null) return [];
     if (pronunciation is Map<String, dynamic>) {
       return [pronunciation];
@@ -10279,10 +10347,7 @@ class _ImageViewerDialog extends StatefulWidget {
   final Uint8List imageBytes;
   final String? svgString;
 
-  const _ImageViewerDialog({
-    required this.imageBytes,
-    this.svgString,
-  });
+  const _ImageViewerDialog({required this.imageBytes, this.svgString});
 
   @override
   State<_ImageViewerDialog> createState() => _ImageViewerDialogState();
@@ -10762,7 +10827,9 @@ class _DataTabWidgetState extends State<_DataTabWidget> {
                   width: double.infinity,
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: widget.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      color: widget.colorScheme.outlineVariant.withValues(
+                        alpha: 0.5,
+                      ),
                     ),
                     borderRadius: BorderRadius.circular(8),
                   ),

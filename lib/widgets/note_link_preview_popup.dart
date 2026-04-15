@@ -348,7 +348,10 @@ class _LinkPreviewContentState extends State<_LinkPreviewContent> {
               icon: const Icon(Icons.open_in_new, size: 16),
               label: const Text('Jump'),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 textStyle: const TextStyle(fontSize: 13),
               ),
             ),

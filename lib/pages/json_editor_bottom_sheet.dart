@@ -368,7 +368,7 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                       backgroundColor: notePreviewBackground,
                       codeTheme: CodeHighlightTheme(
                         languages: {
-                          'json': CodeHighlightThemeMode(mode: langJson)
+                          'json': CodeHighlightThemeMode(mode: langJson),
                         },
                         theme: isDark
                             ? builtThemes['atom-one-dark']!
@@ -376,21 +376,27 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                       ),
                     ),
                     wordWrap: true,
-                    indicatorBuilder: (context, editingController, chunkController, notifier) {
-                      return Row(
-                        children: [
-                          DefaultCodeLineNumber(
-                            controller: editingController,
-                            notifier: notifier,
-                          ),
-                          DefaultCodeChunkIndicator(
-                            width: 20,
-                            controller: chunkController,
-                            notifier: notifier,
-                          ),
-                        ],
-                      );
-                    },
+                    indicatorBuilder:
+                        (
+                          context,
+                          editingController,
+                          chunkController,
+                          notifier,
+                        ) {
+                          return Row(
+                            children: [
+                              DefaultCodeLineNumber(
+                                controller: editingController,
+                                notifier: notifier,
+                              ),
+                              DefaultCodeChunkIndicator(
+                                width: 20,
+                                controller: chunkController,
+                                notifier: notifier,
+                              ),
+                            ],
+                          );
+                        },
                   ),
                 ),
               ),

@@ -102,7 +102,8 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     if (!_isTrackingChanges) return;
 
     final currentText = _controller.text;
-    if (_undoStack.isNotEmpty && _undoStack[_currentEditPosition] != currentText) {
+    if (_undoStack.isNotEmpty &&
+        _undoStack[_currentEditPosition] != currentText) {
       if (_currentEditPosition < _undoStack.length - 1) {
         _undoStack.removeRange(_currentEditPosition + 1, _undoStack.length);
       }
@@ -255,7 +256,10 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       }
       offset += lineLength + 1; // +1 for newline
     }
-    return (codeLines.length - 1, codeLines.isEmpty ? 0 : codeLines.last.text.length);
+    return (
+      codeLines.length - 1,
+      codeLines.isEmpty ? 0 : codeLines.last.text.length,
+    );
   }
 
   @override
@@ -317,10 +321,13 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                         // 重做
                         _buildToolbarButton(
                           icon: Icons.redo,
-                          onPressed: _currentEditPosition < _undoStack.length - 1 ? _redo : null,
+                          onPressed:
+                              _currentEditPosition < _undoStack.length - 1
+                              ? _redo
+                              : null,
                           tooltip: context.t.common.redo,
                         ),
-                         const Spacer(),
+                        const Spacer(),
                         IconButton(
                           onPressed: _togglePreviewMode,
                           icon: Icon(
@@ -331,9 +338,12 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                         ),
                         // 全屏
                         IconButton(
-                          onPressed: () => setState(() => _isFullScreen = !_isFullScreen),
+                          onPressed: () =>
+                              setState(() => _isFullScreen = !_isFullScreen),
                           icon: Icon(
-                            _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                            _isFullScreen
+                                ? Icons.fullscreen_exit
+                                : Icons.fullscreen,
                             size: 20,
                           ),
                           tooltip: _isFullScreen
@@ -356,7 +366,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                 color: previewBackground,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                                  color: colorScheme.outlineVariant.withOpacity(
+                                    0.5,
+                                  ),
                                 ),
                               ),
                               child: LayoutBuilder(
@@ -374,14 +386,17 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                                 child: Text(
                                                   context.t.note.previewEmpty,
                                                   style: TextStyle(
-                                                    color: colorScheme.onSurfaceVariant,
+                                                    color: colorScheme
+                                                        .onSurfaceVariant,
                                                     fontSize: noteFontSize,
                                                   ),
                                                 ),
                                               ),
                                             )
                                           : MarkdownBody(
-                                              data: _normalizeMarkdownLinks(_controller.text),
+                                              data: _normalizeMarkdownLinks(
+                                                _controller.text,
+                                              ),
                                               styleSheet: MarkdownStyleSheet(
                                                 p: TextStyle(
                                                   color: colorScheme.onSurface,
@@ -408,7 +423,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                 color: previewBackground,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                                  color: colorScheme.outlineVariant.withOpacity(
+                                    0.5,
+                                  ),
                                 ),
                               ),
                               child: CodeEditor(
@@ -419,7 +436,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                   backgroundColor: previewBackground,
                                   codeTheme: CodeHighlightTheme(
                                     languages: {
-                                      'markdown': CodeHighlightThemeMode(mode: langMarkdown)
+                                      'markdown': CodeHighlightThemeMode(
+                                        mode: langMarkdown,
+                                      ),
                                     },
                                     theme: isDark
                                         ? builtThemes['atom-one-dark']!
@@ -427,14 +446,15 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                   ),
                                 ),
                                 wordWrap: true,
-                                indicatorBuilder: (
-                                  context,
-                                  editingController,
-                                  chunkController,
-                                  notifier,
-                                ) {
-                                  return const SizedBox.shrink();
-                                },
+                                indicatorBuilder:
+                                    (
+                                      context,
+                                      editingController,
+                                      chunkController,
+                                      notifier,
+                                    ) {
+                                      return const SizedBox.shrink();
+                                    },
                               ),
                             ),
                     ),
@@ -457,8 +477,11 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       onPressed: onPressed,
       icon: Icon(
         icon,
-        color: color ??
-            (onPressed != null ? colorScheme.onSurfaceVariant : colorScheme.outline),
+        color:
+            color ??
+            (onPressed != null
+                ? colorScheme.onSurfaceVariant
+                : colorScheme.outline),
         size: 20,
       ),
       tooltip: tooltip,

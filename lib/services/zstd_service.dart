@@ -151,7 +151,10 @@ ffi.DynamicLibrary _openZstdLibrary() {
       try {
         return ffi.DynamicLibrary.open('zstd_ffi.framework/zstd_ffi');
       } catch (e) {
-        Logger.e('Failed to load libzstd.dylib and zstd_ffi.framework: $e', tag: 'ZstdService');
+        Logger.e(
+          'Failed to load libzstd.dylib and zstd_ffi.framework: $e',
+          tag: 'ZstdService',
+        );
         throw Exception(
           'Could not find libzstd.dylib or zstd_ffi.framework. Please ensure zstd is statically linked or available.',
         );
@@ -733,10 +736,8 @@ class ZstdService {
           'Please ensure zstd library with dictionary support is properly linked.',
         );
       }
-      Logger.d('Using decompressWithDict', tag: 'ZstdService');
       return decompressWithDict(compressedData, dictBytes);
     } else {
-      Logger.d('Using decompressWithoutDict', tag: 'ZstdService');
       return decompressWithoutDict(compressedData);
     }
   }

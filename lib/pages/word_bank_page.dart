@@ -8,7 +8,7 @@ import '../data/database_service.dart';
 import '../data/word_bank_service.dart';
 import '../data/models/dictionary_entry_group.dart';
 import '../models/browse_list.dart';
-import 'entry_detail_page.dart';
+import 'entry_tab_host_page.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
@@ -1567,26 +1567,22 @@ class _WordBankPageState extends State<WordBankPage> {
         searchResult.entries,
       );
       if (!mounted) return;
-      Navigator.push(
+      EntryTabHostPage.open(
         context,
-        MaterialPageRoute(
-          builder: (context) => EntryDetailPage(
-            entryGroup: entryGroup,
-            initialWord: word,
-            dictResults: searchResult.dictResults.isNotEmpty
-                ? searchResult.dictResults
-                : null,
-            browseList: browseWords != null
-                ? BrowseList(
-                    source: BrowseListSource.wordBank,
-                    words: browseWords,
-                    initialIndex: browseIndex ?? 0,
-                    language: language,
-                    listName: _selectedList,
-                  )
-                : null,
-          ),
-        ),
+        entryGroup: entryGroup,
+        initialWord: word,
+        dictResults: searchResult.dictResults.isNotEmpty
+            ? searchResult.dictResults
+            : null,
+        browseList: browseWords != null
+            ? BrowseList(
+                source: BrowseListSource.wordBank,
+                words: browseWords,
+                initialIndex: browseIndex ?? 0,
+                language: language,
+                listName: _selectedList,
+              )
+            : null,
       );
     } else if (mounted) {
       showToast(context, context.t.wordBank.wordNotFound(word: word));
