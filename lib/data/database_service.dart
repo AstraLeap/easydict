@@ -583,6 +583,12 @@ class JsonParseParams {
   });
 }
 
+class BatchJsonParseParams {
+  final List<JsonParseParams> items;
+
+  BatchJsonParseParams({required this.items});
+}
+
 /// 检查 headword 是否匹配原始搜索词（精确匹配）
 /// 精确匹配就是直接比较 headword 和 originalWord，不做任何转换
 /// - 表音文字（如英语）：大小写敏感，headword 必须与 originalWord 完全相同
@@ -628,6 +634,10 @@ DictionaryEntry? _parseEntryInIsolate(JsonParseParams params) {
     jsonData,
     matchedAnchors: params.matchedAnchors,
   );
+}
+
+List<DictionaryEntry?> _parseEntriesInIsolate(BatchJsonParseParams params) {
+  return params.items.map(_parseEntryInIsolate).toList();
 }
 
 /// 单个词典的搜索结果（包含关系词信息）
@@ -1080,6 +1090,8 @@ class DatabaseService {
 
   // 缓存各词典是否为表意（biaoyi）模式（含 phonetic 列即为表意，含 headword_normalized 与否均可）
   final Map<String, bool> _dictHasPhoneticsCache = {};
+
+  static const int _batchParseThreshold = 20;
 
   Future<String> get currentDictionaryId async {
     if (_currentDictionaryId != null) return _currentDictionaryId!;
@@ -1668,16 +1680,20 @@ class DatabaseService {
         return entries;
       }
 
-      // 提取 entry_id 列表
-      final entryIds = indexResults.map((r) => r['entry_id'] as int).toList();
+      // 提取去重后的 entry_id 列表，避免同一 entry 因多个 anchor 被重复解压解析。
+      final entryIds = <int>[];
+      final seenEntryIds = <int>{};
       final headwordMap = <int, String>{};
       // 构建 entry_id -> List<(headword, anchor)> 映射
       final anchorMap = <int, List<(String, String)>>{};
       for (final r in indexResults) {
         final entryId = r['entry_id'] as int;
+        if (seenEntryIds.add(entryId)) {
+          entryIds.add(entryId);
+        }
         final headword = r['headword'] as String? ?? '';
         final anchor = r['anchor'] as String? ?? '';
-        headwordMap[entryId] = headword;
+        headwordMap.putIfAbsent(entryId, () => headword);
         // 添加 anchor 信息（去重）
         if (!anchorMap.containsKey(entryId)) {
           anchorMap[entryId] = [];
@@ -1712,8 +1728,8 @@ class DatabaseService {
         tag: 'DatabaseService',
       );
 
-      // 按照 entryIds 顺序处理结果
-      int filteredCount = 0;
+      // 按照 entryIds 顺序准备解析参数
+      final parseParams = <JsonParseParams>[];
       for (final entryId in entryIds) {
         final jsonData = jsonDataMap[entryId];
         if (jsonData == null) continue;
@@ -1724,65 +1740,67 @@ class DatabaseService {
           continue;
         }
 
-        DictionaryEntry? entry;
         final row = {'entry_id': entryId, 'headword': headwordMap[entryId]};
-        // 获取该 entry 的 anchor 列表
-        final anchors = anchorMap[entryId] ?? [];
+        parseParams.add(
+          JsonParseParams(
+            jsonStr: jsonStr,
+            dictId: dictId,
+            row: row,
+            exactMatch: exactMatch,
+            isBiaoyi: isbiaoyi,
+            originalWord: word,
+            matchedAnchors: anchorMap[entryId] ?? const [],
+          ),
+        );
+      }
 
-        if (kIsWeb) {
-          final jsonMap = jsonDecode(jsonStr) as Map<String, dynamic>;
-          if (exactMatch) {
-            final headword = jsonMap['headword'] as String? ?? '';
-            if (!_headwordMatchesExact(headword, word, isbiaoyi)) continue;
-          }
-          _ensureEntryId(jsonMap, row, dictId);
-          entry = DictionaryEntry.fromJson(jsonMap, matchedAnchors: anchors);
-        } else {
+      int filteredCount = 0;
+      if (kIsWeb || parseParams.length < _batchParseThreshold) {
+        for (final params in parseParams) {
           try {
-            entry = await compute(
-              _parseEntryInIsolate,
-              JsonParseParams(
-                jsonStr: jsonStr,
-                dictId: dictId,
-                row: row,
-                exactMatch: exactMatch,
-                isBiaoyi: isbiaoyi,
-                originalWord: word,
-                matchedAnchors: anchors,
-              ),
-            );
-          } catch (e) {
-            Logger.w('compute 解析失败，回退到主线程解析: $e', tag: 'DatabaseService');
+            final entry = _parseEntryInIsolate(params);
+            if (entry != null) {
+              entries.add(entry);
+            } else {
+              filteredCount++;
+            }
+          } catch (e2) {
+            Logger.e('主线程解析失败，跳过此条目: $e2', tag: 'DatabaseService');
+          }
+        }
+      } else {
+        try {
+          final parsedEntries = await compute(
+            _parseEntriesInIsolate,
+            BatchJsonParseParams(items: parseParams),
+          );
+
+          for (final entry in parsedEntries) {
+            if (entry != null) {
+              entries.add(entry);
+            } else {
+              filteredCount++;
+            }
+          }
+        } catch (e) {
+          Logger.w('批量compute解析失败，回退到主线程: $e', tag: 'DatabaseService');
+          for (final params in parseParams) {
             try {
-              final jsonMap = jsonDecode(jsonStr) as Map<String, dynamic>;
-              if (exactMatch) {
-                final headword = jsonMap['headword'] as String? ?? '';
-                if (!_headwordMatchesExact(headword, word, isbiaoyi)) continue;
+              final entry = _parseEntryInIsolate(params);
+              if (entry != null) {
+                entries.add(entry);
+              } else {
+                filteredCount++;
               }
-              _ensureEntryId(jsonMap, row, dictId);
-              entry = DictionaryEntry.fromJson(
-                jsonMap,
-                matchedAnchors: anchors,
-              );
             } catch (e2) {
-              Logger.e('回退解析也失败，跳过此条目: $e2', tag: 'DatabaseService');
-              continue;
+              Logger.e('回退主线程解析也失败，跳过此条目: $e2', tag: 'DatabaseService');
             }
           }
         }
-
-        if (entry != null) {
-          entries.add(entry);
-        } else {
-          filteredCount++;
-          Logger.d(
-            '_searchInDictionary: entry_id=$entryId 被过滤掉 (headword=${headwordMap[entryId]})',
-            tag: 'DatabaseService',
-          );
-        }
       }
+
       Logger.d(
-        '_searchInDictionary: 处理完成, 成功=${entries.length}, 被过滤=$filteredCount',
+        '_searchInDictionary: 处理完成, 去重后待解析=${parseParams.length}, 成功=${entries.length}, 被过滤=$filteredCount',
         tag: 'DatabaseService',
       );
     } catch (e) {

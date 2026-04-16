@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../services/entry_tab_service.dart';
+import '../../services/entry_tab_visibility_service.dart';
+
 OverlayEntry? _currentOverlayEntry;
 
 void clearAllToasts() {
@@ -21,10 +24,11 @@ class ToastRouteObserver extends RouteObserver<PageRoute<dynamic>> {
 
 final toastRouteObserver = ToastRouteObserver();
 
+const double _mobileTabBarExtraOffset = 34.0;
+
 double _getBottomPosition(BuildContext context) {
   String? pageType;
   bool hasJsonEditorBottomSheet = false;
-  bool hasTabBar = false;
 
   final currentWidgetType = context.widget.runtimeType.toString();
 
@@ -43,10 +47,6 @@ double _getBottomPosition(BuildContext context) {
       if (widgetType == '_JsonEditorBottomSheet') {
         hasJsonEditorBottomSheet = true;
       }
-      // 检测是否有标签栏（EntryTabHostPage）
-      if (widgetType == 'EntryTabHostPage') {
-        hasTabBar = true;
-      }
       if (widgetType == 'MainScreen' || widgetType == 'HomePage') {
         pageType ??= widgetType;
         return false;
@@ -55,8 +55,17 @@ double _getBottomPosition(BuildContext context) {
     });
   }
 
-  // 标签栏高度：margin top(6-8) + bar height(34-36) + margin bottom(4-6) ≈ 50
-  final tabBarHeight = hasTabBar ? 50.0 : 0.0;
+  final platform = Theme.of(context).platform;
+  final isPhonePlatform =
+      platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+  final hasVisibleTabBar =
+      EntryTabVisibilityService().isVisible &&
+      EntryTabService().tabs.length > 1;
+  // 仅在手机端且确实显示标签栏时，才为 toast 额外抬高。
+  // 与词条页其他底部浮层使用同一预留高度，保持底部对齐基线一致。
+  final tabBarHeight = (isPhonePlatform && hasVisibleTabBar)
+      ? _mobileTabBarExtraOffset
+      : 0.0;
 
   switch (pageType) {
     case 'EntryDetailPage':
@@ -75,9 +84,12 @@ double _getBottomPosition(BuildContext context) {
 void showToast(BuildContext context, String message, {SnackBarAction? action}) {
   clearAllToasts();
   final colorScheme = Theme.of(context).colorScheme;
-  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+  final mediaQuery = MediaQuery.of(context);
+  final viewInsets = mediaQuery.viewInsets.bottom;
   final keyboardHeight = viewInsets > 0 ? viewInsets + 16 : 0.0;
-  final bottom = _getBottomPosition(context) + keyboardHeight;
+  final safeBottomInset = mediaQuery.viewPadding.bottom;
+  final fixedBottomOffset =
+      _getBottomPosition(context) + keyboardHeight + safeBottomInset;
 
   _currentOverlayEntry?.remove();
   _currentOverlayEntry = null;
@@ -85,47 +97,43 @@ void showToast(BuildContext context, String message, {SnackBarAction? action}) {
   final overlay = Overlay.of(context);
   final overlayEntry = OverlayEntry(
     builder: (context) => Positioned(
-      bottom: bottom,
+      bottom: fixedBottomOffset,
       left: 0,
       right: 0,
       child: Material(
         color: Colors.transparent,
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 630),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 630),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                  width: 1,
                 ),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: colorScheme.outlineVariant.withOpacity(0.5),
-                    width: 1,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: TextStyle(color: colorScheme.onSurface),
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        message,
-                        style: TextStyle(color: colorScheme.onSurface),
-                      ),
-                    ),
-                    if (action != null) action,
-                  ],
-                ),
+                  ),
+                  if (action != null) action,
+                ],
               ),
             ),
           ),

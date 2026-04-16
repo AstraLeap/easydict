@@ -385,21 +385,25 @@ class PreferencesService {
     }
   }
 
-  Future<Map<String, dynamic>?> getTTSConfig() async {
+  Future<Map<String, dynamic>> getTTSConfig() async {
     final p = await prefs;
 
     final providerIndex = p.getInt(_kTtsProvider);
-    if (providerIndex == null) return null;
-
     final providers = [
       {'name': 'edge', 'baseUrl': ''},
       {'name': 'azure', 'baseUrl': ''},
       {'name': 'google', 'baseUrl': 'https://texttospeech.googleapis.com/v1'},
     ];
 
-    if (providerIndex >= providers.length) return null;
+    // 默认回退到内置 Edge TTS，保证开箱即用。
+    final safeProviderIndex =
+        providerIndex != null &&
+            providerIndex >= 0 &&
+            providerIndex < providers.length
+        ? providerIndex
+        : 0;
 
-    final provider = providers[providerIndex]['name'];
+    final provider = providers[safeProviderIndex]['name'];
     String voice = p.getString('tts_voice') ?? '';
 
     if (provider == 'google') {
@@ -418,7 +422,7 @@ class PreferencesService {
     return {
       'provider': provider,
       'baseUrl':
-          p.getString(_kTtsBaseUrl) ?? providers[providerIndex]['baseUrl'],
+          p.getString(_kTtsBaseUrl) ?? providers[safeProviderIndex]['baseUrl'],
       'apiKey': p.getString(_kTtsApiKey) ?? '',
       'model': p.getString(_kTtsModel) ?? '',
       'voice': voice,

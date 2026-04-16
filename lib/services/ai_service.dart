@@ -254,9 +254,6 @@ class AIService {
     String? languageSource,
   }) async {
     final config = await _prefsService.getTTSConfig();
-    if (config == null) {
-      throw Exception('未配置TTS服务，请先在设置中配置API');
-    }
 
     final provider = config['provider'] as String;
     var apiKey = config['apiKey'] as String;
@@ -312,9 +309,6 @@ class AIService {
     Map<String, dynamic>? config,
   ) async {
     config ??= await _prefsService.getTTSConfig();
-    if (config == null) {
-      throw Exception('未配置TTS服务');
-    }
 
     final provider = config['provider'] as String;
     var voice = config['voice'] as String;

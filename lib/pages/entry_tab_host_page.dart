@@ -555,9 +555,10 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final surfaceColor = colorScheme.surface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tabBarOpacity = isDark ? 0.65 : 0.8;
     final barHeight = compact ? 34.0 : 36.0;
     final horizontalMargin = compact ? 10.0 : 12.0;
-    final verticalMargin = compact ? 4.0 : 6.0;
 
     Widget buildTabItem(int index, {required bool enableReorder}) {
       final tab = tabs[index];
@@ -579,13 +580,10 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
           : colorScheme.primary.withOpacity(0.6);
       final separatorColor = colorScheme.outline.withOpacity(0.48);
 
-      // 活跃标签样式：桌面端上方圆角+底部边框；手机端下方圆角+顶部边框
+      // 活跃标签样式：手机端和普通标签一致使用四角圆角；桌面端保留上方圆角。
       final tabRadius = isActive
           ? (compact
-                ? const BorderRadius.only(
-                    bottomLeft: Radius.circular(9),
-                    bottomRight: Radius.circular(9),
-                  )
+                ? BorderRadius.circular(9)
                 : const BorderRadius.only(
                     topLeft: Radius.circular(9),
                     topRight: Radius.circular(9),
@@ -594,24 +592,18 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       final horizontalPadding = compact ? 10.0 : 12.0;
 
       Widget tabContent = Container(
-        margin: const EdgeInsets.only(right: 4),
         height: barHeight,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (showLeadingSeparator)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: SizedBox(
-                  width: 8,
-                  child: Center(
-                    child: Container(
-                      width: 1,
-                      height: compact ? 16 : 18,
-                      color: separatorColor,
-                    ),
-                  ),
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  width: 1,
+                  height: compact ? 16 : 18,
+                  color: separatorColor,
                 ),
               ),
             GestureDetector(
@@ -628,15 +620,10 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
                 decoration: BoxDecoration(
                   color: isActive ? activeBg : Colors.transparent,
                   borderRadius: tabRadius,
-                  // 活跃标签：桌面端底部粗边框线，手机端顶部粗边框线
+                  // 活跃标签：仅桌面端显示底部指示线；手机端不显示顶部线。
                   border: isActive
                       ? (compact
-                            ? Border(
-                                top: BorderSide(
-                                  color: activeIndicatorColor,
-                                  width: 2.5,
-                                ),
-                              )
+                            ? null
                             : Border(
                                 bottom: BorderSide(
                                   color: activeIndicatorColor,
@@ -736,7 +723,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       Widget tabBarContent = Container(
         padding: EdgeInsets.symmetric(horizontal: horizontalMargin),
         decoration: BoxDecoration(
-          color: surfaceColor.withOpacity(0.85),
+          color: surfaceColor.withOpacity(tabBarOpacity),
           borderRadius: BorderRadius.circular(12),
         ),
         child: SizedBox(
@@ -784,7 +771,6 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
                   },
                 ),
               ),
-              const SizedBox(width: 6),
               Tooltip(
                 message: context.t.entry.tabMenuCloseAll,
                 child: InkWell(
@@ -807,7 +793,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       );
 
       return Container(
-        margin: EdgeInsets.only(top: compact ? 2 : 4, bottom: verticalMargin),
+        margin: EdgeInsets.only(top: compact ? 0 : 4),
         child: tabBarContent,
       );
     }
@@ -816,7 +802,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     Widget tabBarContent = Container(
       padding: EdgeInsets.symmetric(horizontal: horizontalMargin),
       decoration: BoxDecoration(
-        color: surfaceColor.withOpacity(0.85),
+        color: surfaceColor.withOpacity(tabBarOpacity),
         borderRadius: BorderRadius.circular(12),
       ),
       child: SizedBox(
@@ -855,7 +841,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     );
 
     return Container(
-      margin: EdgeInsets.only(top: compact ? 2 : 4, bottom: verticalMargin),
+      margin: EdgeInsets.only(top: compact ? 2 : 4),
       child: tabBarContent,
     );
   }

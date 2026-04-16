@@ -1716,19 +1716,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
               onTap: () {
                 _entryTabService.closeByWord(record.word);
               },
-              child: Container(
-                margin: const EdgeInsets.only(left: 8),
-                width: 24,
-                height: 24,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withOpacity(0.95),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: colorScheme.primary.withOpacity(0.35),
-                    width: 1,
-                  ),
-                ),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
                 child: Icon(
                   Icons.close,
                   size: 16,
