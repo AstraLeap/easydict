@@ -518,6 +518,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.2.1"
+  pasteboard:
+    dependency: "direct main"
+    description:
+      name: pasteboard
+      sha256: "7bf733f3a00c7188ec1f2c6f0612854248b302cf91ef3611a2b7bb141c0f9d55"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0"
   path:
     dependency: "direct main"
     description:

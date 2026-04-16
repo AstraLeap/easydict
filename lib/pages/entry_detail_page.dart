@@ -239,6 +239,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 正在进行的AI请求（流式 StreamSubscription）
   final Map<String, StreamSubscription<LLMChunk>> _pendingAiRequests = {};
 
+  StreamSubscription<ToolbarConfigChangedEvent>? _toolbarConfigChangedSub;
+
   /// 应自动展开的消息ID集合（新建流式请求时加入）
   final Set<String> _autoExpandIds = {};
 
@@ -445,6 +447,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         }
       });
     }
+
+    _toolbarConfigChangedSub = EntryEventBus().toolbarConfigChanged.listen((_) {
+      _loadToolbarConfig();
+    });
   }
 
   /// 初始化 anchor 图标闪烁动画
@@ -864,6 +870,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _itemPositionsListener.itemPositions.removeListener(
       _onScrollPositionChanged,
     );
+    _toolbarConfigChangedSub?.cancel();
     _scrollEndTimer?.cancel();
     // 释放 anchor 闪烁动画控制器
     _anchorBlinkController?.dispose();
@@ -3143,6 +3150,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         return t.speak;
       case PreferencesService.actionBack:
         return t.back;
+      case PreferencesService.actionSearch:
+        return t.search;
       case PreferencesService.actionFavorite:
         return t.favorite;
       case PreferencesService.actionToggleTranslate:

@@ -83,6 +83,11 @@ class AuthStateChangedEvent {
   const AuthStateChangedEvent(this.isLoggedIn);
 }
 
+/// 底部工具栏配置变化事件
+class ToolbarConfigChangedEvent {
+  const ToolbarConfigChangedEvent();
+}
+
 class EntryEventBus {
   static final EntryEventBus _instance = EntryEventBus._internal();
   factory EntryEventBus() => _instance;
@@ -110,6 +115,8 @@ class EntryEventBus {
       StreamController<SubscriptionUrlChangedEvent>.broadcast();
   final _authStateChangedController =
       StreamController<AuthStateChangedEvent>.broadcast();
+  final _toolbarConfigChangedController =
+      StreamController<ToolbarConfigChangedEvent>.broadcast();
 
   Stream<ScrollToElementEvent> get scrollToElement =>
       _scrollToElementController.stream;
@@ -133,6 +140,8 @@ class EntryEventBus {
       _subscriptionUrlChangedController.stream;
   Stream<AuthStateChangedEvent> get authStateChanged =>
       _authStateChangedController.stream;
+  Stream<ToolbarConfigChangedEvent> get toolbarConfigChanged =>
+      _toolbarConfigChangedController.stream;
 
   void emitScrollToElement(ScrollToElementEvent event) {
     _scrollToElementController.add(event);
@@ -178,6 +187,10 @@ class EntryEventBus {
     _authStateChangedController.add(AuthStateChangedEvent(isLoggedIn));
   }
 
+  void emitToolbarConfigChanged() {
+    _toolbarConfigChangedController.add(const ToolbarConfigChangedEvent());
+  }
+
   void dispose() {
     _scrollToElementController.close();
     _translationInsertController.close();
@@ -190,5 +203,6 @@ class EntryEventBus {
     _clipboardSearchController.close();
     _subscriptionUrlChangedController.close();
     _authStateChangedController.close();
+    _toolbarConfigChangedController.close();
   }
 }

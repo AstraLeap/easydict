@@ -708,6 +708,12 @@ class TranslationsHelpZh {
 	/// zh: 'LIKE 模式（输入含 % 或 _）： % 匹配任意个字符，_ 匹配恰好一个字符 例：hel% → hello、help；%字 → 汉字、生字 GLOB 模式（输入含 * ? [ ] ^）： * 匹配任意个字符，? 匹配单个字符 [abc] 匹配括号内任一字符，[^abc] 排除括号内字符'
 	String get wildcardSearchDesc => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符';
 
+	/// zh: 'Markdown 图片尺寸'
+	String get markdownImageSize => 'Markdown 图片尺寸';
+
+	/// zh: '可在图片 alt 文本中设置尺寸： ![说明|w=320|h=200](media://xxx.png) ![说明|w=80%](media://xxx.png) 支持键：w/width、h/height；支持 px 和百分比。'
+	String get markdownImageSizeDesc => '可在图片 alt 文本中设置尺寸：\n  ![说明|w=320|h=200](media://xxx.png)\n  ![说明|w=80%](media://xxx.png)\n支持键：w/width、h/height；支持 px 和百分比。';
+
 	/// zh: '电脑端导航'
 	String get desktopNavTitle => '电脑端导航';
 
@@ -2247,8 +2253,8 @@ class TranslationsNoteZh {
 	/// zh: '暂无笔记'
 	String get empty => '暂无笔记';
 
-	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](词典ID_词条ID/路径) 示例：[查看释义](oxford_en_123/sense.0.definition)'
-	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)';
+	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](词典ID_词条ID/路径) 示例：[查看释义](oxford_en_123/sense.0.definition) 图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)'
+	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)\n\n图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)';
 
 	/// zh: '添加到笔记'
 	String get addToNote => '添加到笔记';
@@ -3001,6 +3007,8 @@ extension on Translations {
 			'help.logDialogTitle' => '调试日志',
 			'help.wildcardSearch' => '通配符搜索',
 			'help.wildcardSearchDesc' => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符',
+			'help.markdownImageSize' => 'Markdown 图片尺寸',
+			'help.markdownImageSizeDesc' => '可在图片 alt 文本中设置尺寸：\n  ![说明|w=320|h=200](media://xxx.png)\n  ![说明|w=80%](media://xxx.png)\n支持键：w/width、h/height；支持 px 和百分比。',
 			'help.desktopNavTitle' => '电脑端导航',
 			'help.desktopNavDesc' => '• 词典内容界面按 Esc 可返回主界面\n• 方向键左右可以在词表间切换',
 			'help.mobileNavTitle' => '手机端导航',
@@ -3240,10 +3248,10 @@ extension on Translations {
 			'dict.refreshStore' => '刷新商店',
 			'dict.refreshStoreSuccess' => '商店已刷新',
 			'dict.refreshLocal' => '刷新本地',
-			'dict.refreshLocalSuccess' => '本地词典已刷新',
-			'dict.checking' => '检查中...',
 			_ => null,
 		} ?? switch (path) {
+			'dict.refreshLocalSuccess' => '本地词典已刷新',
+			'dict.checking' => '检查中...',
 			'dict.downloadDict' => ({required Object name}) => '下载: ${name}',
 			'dict.selectContent' => '选择要下载的内容:',
 			'dict.dictMeta' => '[必选]词典元数据',
@@ -3495,7 +3503,7 @@ extension on Translations {
 			'note.save' => '保存',
 			'note.delete' => '删除',
 			'note.empty' => '暂无笔记',
-			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)',
+			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)\n\n图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)',
 			'note.addToNote' => '添加到笔记',
 			'note.linkAdded' => '已添加到笔记',
 			'note.returnToNote' => '返回笔记',

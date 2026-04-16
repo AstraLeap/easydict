@@ -3,13 +3,14 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../i18n/strings.g.dart';
 import '../services/note_service.dart';
 import '../widgets/note_editor_bottom_sheet.dart';
+import '../widgets/note_markdown_media_image.dart';
 
 /// 笔记面板组件
 class NotePanel extends StatefulWidget {
   final String word;
   final String language;
   final bool initiallyExpanded;
-  final int refreshVersion;  // 刷新版本号，变化时重新加载内容
+  final int refreshVersion; // 刷新版本号，变化时重新加载内容
   final void Function(String path)? onLinkTap;
 
   const NotePanel({
@@ -32,7 +33,7 @@ class _NotePanelState extends State<NotePanel> {
   bool _isLoading = true;
   String _loadedWord = '';
   int _loadedRefreshVersion = -1;
-  bool _hasInitializedExpanded = false;  // 标记是否已初始化展开状态
+  bool _hasInitializedExpanded = false; // 标记是否已初始化展开状态
 
   @override
   void initState() {
@@ -50,20 +51,21 @@ class _NotePanelState extends State<NotePanel> {
         _isLoading = true;
         _note = null;
       });
-      _loadedWord = '';  // 重置以允许重新加载
+      _loadedWord = ''; // 重置以允许重新加载
       _loadNote();
       return;
     }
     // 当 refreshVersion 变化时，重新加载笔记内容
     if (oldWidget.refreshVersion != widget.refreshVersion) {
-      _loadedWord = '';  // 重置以允许重新加载
+      _loadedWord = ''; // 重置以允许重新加载
       _loadNote();
     }
   }
 
   Future<void> _loadNote() async {
     // 防止重复加载（同一个单词且同一个刷新版本）
-    final loadKey = '${widget.word}_${widget.language}_${widget.refreshVersion}';
+    final loadKey =
+        '${widget.word}_${widget.language}_${widget.refreshVersion}';
     if (_loadedWord == loadKey) {
       return;
     }
@@ -99,13 +101,40 @@ class _NotePanelState extends State<NotePanel> {
     );
     if (result && mounted) {
       // 重新加载笔记
-      _loadedWord = '';  // 重置以允许重新加载
+      _loadedWord = ''; // 重置以允许重新加载
       await _loadNote();
     }
   }
 
   void _handleLinkTap(String href) {
     widget.onLinkTap?.call(href);
+  }
+
+  Future<void> _persistImageWidthPercent(
+    String mediaName,
+    int widthPercent,
+  ) async {
+    final current = _note;
+    if (current == null) {
+      return;
+    }
+
+    final updatedContent = NoteService.upsertMediaWidthPercentInMarkdown(
+      markdown: current.content,
+      mediaName: mediaName,
+      widthPercent: widthPercent,
+    );
+    if (updatedContent == current.content) {
+      return;
+    }
+
+    final updatedNote = current.copyWith(content: updatedContent);
+    if (mounted) {
+      setState(() {
+        _note = updatedNote;
+      });
+    }
+    await _noteService.saveNote(updatedNote);
   }
 
   /// Encode whitespace in markdown link destinations so markdown parser
@@ -142,9 +171,7 @@ class _NotePanelState extends State<NotePanel> {
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withOpacity(0.5),
-        ),
+        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,6 +245,11 @@ class _NotePanelState extends State<NotePanel> {
         styleSheet: MarkdownStyleSheet(
           p: TextStyle(color: colorScheme.onSurface),
           a: TextStyle(color: colorScheme.primary),
+        ),
+        imageBuilder: (uri, title, alt) => NoteMarkdownMediaImage(
+          uri: uri,
+          altText: alt,
+          onWidthPercentResolved: _persistImageWidthPercent,
         ),
         onTapLink: (text, href, title) {
           if (href != null) {

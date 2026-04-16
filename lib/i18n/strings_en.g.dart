@@ -322,6 +322,8 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get logDialogTitle => 'Debug Log';
 	@override String get wildcardSearch => 'Wildcard Search';
 	@override String get wildcardSearchDesc => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them';
+	@override String get markdownImageSize => 'Markdown Image Size';
+	@override String get markdownImageSizeDesc => 'Set image size in alt text:\n  ![label|w=320|h=200](media://xxx.png)\n  ![label|w=80%](media://xxx.png)\nSupported keys: w/width, h/height; supports px and percent.';
 	@override String get desktopNavTitle => 'Desktop Navigation';
 	@override String get desktopNavDesc => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words';
 	@override String get mobileNavTitle => 'Mobile Navigation';
@@ -877,7 +879,7 @@ class _TranslationsNoteEn extends TranslationsNoteZh {
 	@override String get save => 'Save';
 	@override String get delete => 'Delete';
 	@override String get empty => 'No notes yet';
-	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)';
+	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)\n\nImage size: ![label|w=320|h=200](media://xxx.png) or ![label|w=80%](media://xxx.png)';
 	@override String get addToNote => 'Add to Note';
 	@override String get linkAdded => 'Added to note';
 	@override String get returnToNote => 'Return to Note';
@@ -1362,6 +1364,8 @@ extension on TranslationsEn {
 			'help.logDialogTitle' => 'Debug Log',
 			'help.wildcardSearch' => 'Wildcard Search',
 			'help.wildcardSearchDesc' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them',
+			'help.markdownImageSize' => 'Markdown Image Size',
+			'help.markdownImageSizeDesc' => 'Set image size in alt text:\n  ![label|w=320|h=200](media://xxx.png)\n  ![label|w=80%](media://xxx.png)\nSupported keys: w/width, h/height; supports px and percent.',
 			'help.desktopNavTitle' => 'Desktop Navigation',
 			'help.desktopNavDesc' => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words',
 			'help.mobileNavTitle' => 'Mobile Navigation',
@@ -1603,10 +1607,10 @@ extension on TranslationsEn {
 			'dict.refreshLocal' => 'Refresh Local',
 			'dict.refreshLocalSuccess' => 'Local dictionaries refreshed',
 			'dict.checking' => 'Checking...',
-			'dict.downloadDict' => ({required Object name}) => 'Download: ${name}',
-			'dict.selectContent' => 'Select content to download:',
 			_ => null,
 		} ?? switch (path) {
+			'dict.downloadDict' => ({required Object name}) => 'Download: ${name}',
+			'dict.selectContent' => 'Select content to download:',
 			'dict.dictMeta' => '[Required] Dict metadata',
 			'dict.dictIcon' => '[Required] Dict icon',
 			'dict.dictDb' => '[Required] Dictionary database',
@@ -1856,7 +1860,7 @@ extension on TranslationsEn {
 			'note.save' => 'Save',
 			'note.delete' => 'Delete',
 			'note.empty' => 'No notes yet',
-			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)',
+			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)\n\nImage size: ![label|w=320|h=200](media://xxx.png) or ![label|w=80%](media://xxx.png)',
 			'note.addToNote' => 'Add to Note',
 			'note.linkAdded' => 'Added to note',
 			'note.returnToNote' => 'Return to Note',

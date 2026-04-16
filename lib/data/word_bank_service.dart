@@ -94,16 +94,22 @@ class WordBankService {
 
     _database = await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await _createLanguageTable(db, 'en');
         if (version >= 2) {
           await _createNotesTable(db);
         }
+        if (version >= 3) {
+          await _createMediasTable(db);
+        }
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createNotesTable(db);
+        }
+        if (oldVersion < 3) {
+          await _createMediasTable(db);
         }
       },
     );
@@ -129,6 +135,16 @@ class WordBankService {
     );
   }
 
+  /// 创建笔记媒体表
+  Future<void> _createMediasTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS medias (
+        name TEXT PRIMARY KEY,
+        blob BLOB NOT NULL
+      )
+    ''');
+  }
+
   /// 从 assets 复制数据库到用户目录
   Future<void> _copyDatabaseFromAssets(String targetPath) async {
     try {
@@ -152,12 +168,14 @@ class WordBankService {
 
   /// 创建新的数据库
   Future<void> _createNewDatabase(String path) async {
-    final db = await openDatabase(path, version: 2);
+    final db = await openDatabase(path, version: 3);
 
     // 创建默认的英语词表表
     await _createLanguageTable(db, 'en');
     // 创建笔记表
     await _createNotesTable(db);
+    // 创建笔记媒体表
+    await _createMediasTable(db);
 
     await db.close();
   }
@@ -545,6 +563,7 @@ class WordBankService {
       AND name NOT LIKE 'sqlite_%'
       AND name NOT LIKE 'android_%'
       AND name != 'notes'
+      AND name != 'medias'
     ''');
     return tables.map((t) => t['name'] as String).toList();
   }
@@ -558,6 +577,7 @@ class WordBankService {
       AND name NOT LIKE 'sqlite_%'
       AND name NOT LIKE 'android_%'
       AND name != 'notes'
+      AND name != 'medias'
     ''');
 
     final languages = <String>[];
@@ -661,7 +681,7 @@ class WordBankService {
   Future<void> _ensureLanguageTableExists(Database db, String language) async {
     final tables = await db.rawQuery(
       '''
-      SELECT name FROM sqlite_master 
+      SELECT name FROM sqlite_master
       WHERE type='table' AND name = ?
     ''',
       [language],

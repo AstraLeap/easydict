@@ -79,7 +79,11 @@ class _HelpPageState extends State<HelpPage> {
                 return Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
-                    child: _buildContent(context, colorScheme, appUpdateService),
+                    child: _buildContent(
+                      context,
+                      colorScheme,
+                      appUpdateService,
+                    ),
                   ),
                 );
               }, childCount: 1),
@@ -106,7 +110,10 @@ class _HelpPageState extends State<HelpPage> {
   }
 
   /// 构建隐藏功能页面
-  Widget _buildHiddenFeaturesPage(BuildContext context, ColorScheme colorScheme) {
+  Widget _buildHiddenFeaturesPage(
+    BuildContext context,
+    ColorScheme colorScheme,
+  ) {
     final content = Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -134,6 +141,15 @@ class _HelpPageState extends State<HelpPage> {
               iconColor: colorScheme.primary,
               title: context.t.help.wildcardSearch,
               description: context.t.help.wildcardSearchDesc,
+            ),
+            const SizedBox(height: 16),
+            // Markdown 图片尺寸
+            _buildFeatureCard(
+              context,
+              icon: Icons.photo_size_select_large,
+              iconColor: colorScheme.primary,
+              title: context.t.help.markdownImageSize,
+              description: context.t.help.markdownImageSizeDesc,
             ),
             const SizedBox(height: 16),
             // 电脑端导航
@@ -199,9 +215,7 @@ class _HelpPageState extends State<HelpPage> {
           Container(
             width: 80,
             height: 80,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20)),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Image.asset(
@@ -222,11 +236,11 @@ class _HelpPageState extends State<HelpPage> {
             child: Text(
               'EasyDict',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 2.0,
-                    fontFamily: 'SourceSerif4',
-                  ),
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 2.0,
+                fontFamily: 'SourceSerif4',
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -277,10 +291,7 @@ class _HelpPageState extends State<HelpPage> {
                     'https://github.com/AstraLeap/easydict',
                   );
                   if (await canLaunchUrl(url)) {
-                    await launchUrl(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    );
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
                   }
                 },
               ),
@@ -296,10 +307,7 @@ class _HelpPageState extends State<HelpPage> {
                     'https://forum.freemdict.com/t/topic/43251',
                   );
                   if (await canLaunchUrl(url)) {
-                    await launchUrl(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    );
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
                   }
                 },
               ),
@@ -603,7 +611,11 @@ class _HelpPageState extends State<HelpPage> {
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Icon(Icons.article_outlined, color: colorScheme.primary, size: 24),
+      leading: Icon(
+        Icons.article_outlined,
+        color: colorScheme.primary,
+        size: 24,
+      ),
       title: Text(
         context.t.help.debugLog,
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),

@@ -49,6 +49,7 @@ import 'dictionary_interaction_scope.dart';
 import 'global_scale_wrapper.dart';
 import 'hidden_languages_scope.dart';
 import 'path_scope.dart';
+import '../widgets/image_viewer_dialog.dart';
 
 // 颜色映射表
 const Map<String, Color> _colorMap = {
@@ -10331,7 +10332,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
     showDialog(
       context: context,
       builder: (context) {
-        return _ImageViewerDialog(
+        return ImageViewerDialog(
           imageBytes: displayImageBytes ?? imageBytes,
           svgString: displayImageBytes != null ? null : displaySvg,
         );

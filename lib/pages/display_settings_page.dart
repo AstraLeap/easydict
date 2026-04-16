@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/utils/toast_utils.dart';
 import '../services/font_loader_service.dart';
+import '../services/entry_event_bus.dart';
 import '../services/preferences_service.dart';
 import '../components/global_scale_wrapper.dart';
 import '../i18n/strings.g.dart';
@@ -30,9 +31,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
 
   Future<void> _loadData() async {
     final clickAction = await _preferencesService.getClickAction();
-    final dictionaryContentScale = FontLoaderService().getDictionaryContentScale();
-    final showHeadwordSyllableByDefault =
-        await _preferencesService.getShowHeadwordSyllableByDefault();
+    final dictionaryContentScale = FontLoaderService()
+        .getDictionaryContentScale();
+    final showHeadwordSyllableByDefault = await _preferencesService
+        .getShowHeadwordSyllableByDefault();
     setState(() {
       _clickAction = clickAction;
       _dictionaryContentScale = dictionaryContentScale;
@@ -160,10 +162,7 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
       leading: Icon(icon),
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle) : null,
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-      ),
+      trailing: Switch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
     );
   }
@@ -333,6 +332,8 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
         return t.aiHistory;
       case PreferencesService.actionResetEntry:
         return t.resetEntry;
+      case PreferencesService.actionNote:
+        return t.note;
       default:
         return action;
     }
@@ -401,10 +402,7 @@ class _ScaleDialog extends StatefulWidget {
   final double currentValue;
   final Future<void> Function(double value) onSave;
 
-  const _ScaleDialog({
-    required this.currentValue,
-    required this.onSave,
-  });
+  const _ScaleDialog({required this.currentValue, required this.onSave});
 
   @override
   State<_ScaleDialog> createState() => _ScaleDialogState();
@@ -439,9 +437,9 @@ class _ScaleDialogState extends State<_ScaleDialog> {
           const SizedBox(height: 8),
           Text(
             '${_value.round()}%',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -473,7 +471,8 @@ class _ClickActionOrderDialog extends StatefulWidget {
   });
 
   @override
-  State<_ClickActionOrderDialog> createState() => _ClickActionOrderDialogState();
+  State<_ClickActionOrderDialog> createState() =>
+      _ClickActionOrderDialogState();
 }
 
 class _ClickActionOrderDialogState extends State<_ClickActionOrderDialog> {
@@ -586,9 +585,11 @@ class _ToolbarConfigDialog extends StatefulWidget {
 
 class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
   final _preferencesService = PreferencesService();
+  final _eventBus = EntryEventBus();
   List<String> _allActions = [];
   int _dividerIndex = 4;
   bool _isLoading = true;
+  static const String _dividerToken = '__divider__';
 
   @override
   void initState() {
@@ -597,57 +598,55 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
   }
 
   Future<void> _loadData() async {
-    final (toolbarActions, overflowActions) =
-        await _preferencesService.getToolbarAndOverflowActions();
+    final (toolbarActions, overflowActions) = await _preferencesService
+        .getToolbarAndOverflowActions();
     setState(() {
       _allActions = [...toolbarActions, ...overflowActions];
-      _dividerIndex = toolbarActions.length.clamp(0, PreferencesService.maxToolbarItems);
+      _dividerIndex = toolbarActions.length.clamp(
+        0,
+        PreferencesService.maxToolbarItems,
+      );
       _isLoading = false;
     });
   }
 
-  void _saveActions() {
+  Future<void> _saveActions() async {
     final toolbarActions = _allActions.sublist(0, _dividerIndex);
     final overflowActions = _allActions.sublist(_dividerIndex);
-    _preferencesService.setToolbarAndOverflowActions(
+    await _preferencesService.setToolbarAndOverflowActions(
       toolbarActions,
       overflowActions,
     );
+    _eventBus.emitToolbarConfigChanged();
   }
 
   void _onReorder(int oldIndex, int newIndex) {
-    // 计算实际索引（视觉列表包含分隔线）
-    final oldIsInToolbar = oldIndex < _dividerIndex;
-    final oldActualIndex = oldIndex >= _dividerIndex ? oldIndex - 1 : oldIndex;
-    if (newIndex > oldIndex) newIndex -= 1;
-    final newIsInToolbar = newIndex < _dividerIndex;
-    final newActualIndex = newIndex >= _dividerIndex ? newIndex - 1 : newIndex;
+    final visualOrder = <String>[
+      ..._allActions.take(_dividerIndex),
+      _dividerToken,
+      ..._allActions.skip(_dividerIndex),
+    ];
 
-    // 如果移动到工具栏，检查是否超过限制
-    if (!oldIsInToolbar && newIsInToolbar && _dividerIndex >= PreferencesService.maxToolbarItems) {
+    if (newIndex > oldIndex) newIndex -= 1;
+
+    final movingItem = visualOrder.removeAt(oldIndex);
+    final targetIndex = newIndex.clamp(0, visualOrder.length);
+    visualOrder.insert(targetIndex, movingItem);
+
+    final newDividerIndex = visualOrder.indexOf(_dividerToken);
+    if (newDividerIndex < 0) {
+      return;
+    }
+
+    if (newDividerIndex > PreferencesService.maxToolbarItems) {
       _showMaxItemsError();
       return;
     }
 
     setState(() {
-      final item = _allActions.removeAt(oldActualIndex);
-      _allActions.insert(newActualIndex, item);
-      if (oldIsInToolbar && !newIsInToolbar) {
-        _dividerIndex -= 1;
-      } else if (!oldIsInToolbar && newIsInToolbar) {
-        _dividerIndex += 1;
-      }
+      _dividerIndex = newDividerIndex;
+      _allActions = visualOrder.where((item) => item != _dividerToken).toList();
     });
-    _saveActions();
-  }
-
-  void _onDividerReorder(int newIndex) {
-    if (newIndex > _dividerIndex) newIndex -= 1;
-    if (newIndex > PreferencesService.maxToolbarItems) {
-      _showMaxItemsError();
-      return;
-    }
-    setState(() => _dividerIndex = newIndex);
     _saveActions();
   }
 
@@ -687,11 +686,7 @@ class _ToolbarConfigDialogState extends State<_ToolbarConfigDialog> {
                 padding: EdgeInsets.zero,
                 itemCount: _allActions.length + 1,
                 onReorder: (oldIndex, newIndex) {
-                  if (oldIndex == _dividerIndex) {
-                    _onDividerReorder(newIndex);
-                  } else {
-                    _onReorder(oldIndex, newIndex);
-                  }
+                  _onReorder(oldIndex, newIndex);
                 },
                 itemBuilder: (context, index) {
                   if (index == _dividerIndex) {
