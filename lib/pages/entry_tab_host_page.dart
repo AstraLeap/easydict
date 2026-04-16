@@ -949,9 +949,9 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       ),
     );
 
-    // 手机端：非常驻模式下返回时关闭当前标签页。
+    // 手机端：非常驻模式下返回时先关闭当前标签页（单标签也适用）。
     // 常驻模式由 MainScreen 统一处理返回，避免双重处理导致直接回主页。
-    if (isPhone && !_visibilityService.persistentMode && tabs.length > 1) {
+    if (isPhone && !_visibilityService.persistentMode) {
       mainContent = PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {

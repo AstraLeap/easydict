@@ -764,12 +764,8 @@ class _MainScreenState extends State<MainScreen> {
           onPopInvokedWithResult: (didPop, popResult) {
             if (didPop) return;
             if (showEntryHost) {
-              if (_entryTabService.tabs.length > 1) {
-                // 多标签时优先关闭当前标签，不直接返回主页。
-                _entryTabService.closeAt(_entryTabService.activeIndex);
-                return;
-              }
-              _entryTabVisibilityService.hide();
+              // 手机端词条层返回统一先关闭当前标签（包括单标签）。
+              _entryTabService.closeAt(_entryTabService.activeIndex);
             }
           },
           child: Scaffold(
