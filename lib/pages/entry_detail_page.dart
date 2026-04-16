@@ -5532,6 +5532,26 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   /// 处理普通模式下点击元素（尝试翻译或查词）
+  int? _tryParsePathIndex(String part) {
+    if (part.startsWith('[') && part.endsWith(']')) {
+      return int.tryParse(part.substring(1, part.length - 1));
+    }
+    return int.tryParse(part);
+  }
+
+  String _toEntryScopedPath(DictionaryEntry entry, String relativePath) {
+    final dictId = entry.dictId;
+    final entryId = entry.entryIdAsInt.toString();
+    if (dictId == null || dictId.isEmpty || relativePath.isEmpty) {
+      return relativePath;
+    }
+    final prefix = '$dictId.$entryId';
+    if (relativePath == prefix || relativePath.startsWith('$prefix.')) {
+      return relativePath;
+    }
+    return '$prefix.$relativePath';
+  }
+
   void _handleTranslationTap(
     DictionaryEntry entry,
     String path,
@@ -5576,10 +5596,6 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           LanguageUtils.getLanguageDisplayName(lastKey) !=
           lastKey.toUpperCase();
 
-      if (!isLanguageCode) {
-        return;
-      }
-
       final json = entry.toJson();
       dynamic parentValue = json;
       dynamic currentValue = json;
@@ -5591,7 +5607,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           if (parentValue is Map) {
             parentValue = parentValue[part];
           } else if (parentValue is List) {
-            int? index = int.tryParse(part);
+            final index = _tryParsePathIndex(part);
             if (index != null) parentValue = parentValue[index];
           }
         }
@@ -5599,7 +5615,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         if (currentValue is Map) {
           currentValue = currentValue[part];
         } else if (currentValue is List) {
-          int? index = int.tryParse(part);
+          final index = _tryParsePathIndex(part);
           if (index != null) currentValue = currentValue[index];
         }
       }
@@ -5607,55 +5623,79 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       String textToTranslate = '';
       bool needTranslation = false;
       bool needToggleTranslation = false;
+      var effectivePathParts = List<String>.from(pathParts);
 
       // 辅助函数：检查父级 Map 中是否有其他可见的语言
       bool hasOtherVisibleLanguages(Map parent, String clickedLang) {
         int visibleCount = 0;
         for (final key in parent.keys) {
-          // 检查是否是语言代码
           final isLangCode =
               LanguageUtils.getLanguageDisplayName(key) != key.toUpperCase();
           if (isLangCode && parent[key] is String && parent[key].isNotEmpty) {
             visibleCount++;
           }
         }
-        // 只有当有多个可见语言时才能切换
         return visibleCount > 1;
       }
 
-      // 如果点击的是源语言 key
-      if (lastKey == sourceLang) {
-        if (parentValue is Map) {
-          if (!parentValue.containsKey(targetLang)) {
-            // 没有目标语言翻译，需要翻译
-            textToTranslate = currentValue as String;
+      if (isLanguageCode) {
+        // 如果点击的是源语言 key
+        if (lastKey == sourceLang) {
+          if (parentValue is Map) {
+            if (!parentValue.containsKey(targetLang)) {
+              // 没有目标语言翻译，需要翻译
+              textToTranslate = currentValue as String;
+              needTranslation = true;
+            } else {
+              // 已有目标语言翻译，需要切换显示/隐藏
+              // 但要检查是否是唯一可见的语言
+              if (hasOtherVisibleLanguages(parentValue, lastKey)) {
+                needToggleTranslation = true;
+              }
+            }
+          }
+        } else if (lastKey == targetLang) {
+          // 点击的是目标语言，需要切换显示/隐藏
+          // 但要检查是否是唯一可见的语言
+          if (parentValue is Map &&
+              hasOtherVisibleLanguages(parentValue, lastKey)) {
+            needToggleTranslation = true;
+          }
+        } else {
+          // 如果点击的是其他语言代码 key
+          if (currentValue is String) {
+            // 直接翻译当前值
+            textToTranslate = currentValue;
             needTranslation = true;
-          } else {
-            // 已有目标语言翻译，需要切换显示/隐藏
-            // 但要检查是否是唯一可见的语言
-            if (hasOtherVisibleLanguages(parentValue, lastKey)) {
-              needToggleTranslation = true;
+          } else if (currentValue is Map) {
+            if (currentValue.containsKey(sourceLang) &&
+                !currentValue.containsKey(targetLang)) {
+              textToTranslate = currentValue[sourceLang] as String;
+              needTranslation = true;
             }
           }
         }
-      } else if (lastKey == targetLang) {
-        // 点击的是目标语言，需要切换显示/隐藏
-        // 但要检查是否是唯一可见的语言
-        if (parentValue is Map &&
-            hasOtherVisibleLanguages(parentValue, lastKey)) {
-          needToggleTranslation = true;
-        }
       } else {
-        // 如果点击的是其他语言代码 key
-        if (currentValue is String) {
-          // 直接翻译当前值
-          textToTranslate = currentValue;
-          needTranslation = true;
-        } else if (currentValue is Map) {
-          if (currentValue.containsKey(sourceLang) &&
-              !currentValue.containsKey(targetLang)) {
-            textToTranslate = currentValue[sourceLang] as String;
-            needTranslation = true;
+        // 右键/长按菜单常常命中语言容器节点（如 definition），
+        // 这里补充从父级语言映射自动推断单项翻译/显隐切换。
+        if (currentValue is Map) {
+          final sourceText = currentValue[sourceLang];
+          final targetText = currentValue[targetLang];
+          final hasSourceText = sourceText is String && sourceText.isNotEmpty;
+          final hasTargetText = targetText is String && targetText.isNotEmpty;
+
+          if (hasSourceText) {
+            effectivePathParts = [...pathParts, sourceLang];
+            if (!hasTargetText) {
+              textToTranslate = sourceText;
+              needTranslation = true;
+            } else if (hasOtherVisibleLanguages(currentValue, sourceLang)) {
+              needToggleTranslation = true;
+            }
+          } else if (hasTargetText &&
+              hasOtherVisibleLanguages(currentValue, targetLang)) {
+            effectivePathParts = [...pathParts, targetLang];
+            needToggleTranslation = true;
           }
         }
       }
@@ -5668,7 +5708,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         );
         _performTranslation(
           entry,
-          pathParts,
+          effectivePathParts,
           plainText,
           targetLang,
           sourceLang,
@@ -5677,7 +5717,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         // 如果是语言切换，ComponentRenderer 已经本地更新了 UI，这里不需要 setState
         _toggleTranslationVisibility(
           entry,
-          pathParts,
+          effectivePathParts,
           targetLang,
           sourceLang,
           shouldSetState: false,
@@ -5753,7 +5793,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         if (current is Map) {
           current = current[part];
         } else if (current is List) {
-          int? index = int.tryParse(part);
+          final index = _tryParsePathIndex(part);
           if (index != null) current = current[index];
         }
       }
@@ -5765,7 +5805,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         await DatabaseService().insertOrUpdateEntry(newEntry, skipCommit: true);
 
         final hiddenPath = targetPath.join('.');
-        final hiddenKey = '$hiddenPath.$targetLang';
+        final hiddenKey = _toEntryScopedPath(entry, '$hiddenPath.$targetLang');
 
         EntryEventBus().emitTranslationInsert(
           TranslationInsertEvent(
@@ -5800,16 +5840,16 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       }
 
       final hiddenPath = parentPath.join('.');
-      final hiddenKey = '$hiddenPath.$targetLang';
+      final hiddenKey = _toEntryScopedPath(entry, '$hiddenPath.$targetLang');
 
       EntryEventBus().emitToggleHiddenLanguage(
-        ToggleHiddenLanguageEvent(entryId: entry.id, languageKey: hiddenKey),
+        ToggleHiddenLanguageEvent(
+          entryId: entry.id,
+          languageKey: hiddenKey,
+        ),
       );
     } catch (e) {
-      Logger.d('Error in _toggleTranslationVisibility: $e', tag: 'Translation');
-      if (mounted) {
-        showToast(context, context.t.entry.toggleFailed(error: '$e'));
-      }
+      Logger.d('Error toggling translation visibility: $e', tag: 'Translation');
     }
   }
 

@@ -7599,24 +7599,23 @@ class ComponentRendererState extends State<ComponentRenderer> {
       elementType: DictElementType.label,
     );
 
-    final richText = Text.rich(
-      strutStyle: const StrutStyle(
-        forceStrutHeight: true,
-        height: 1.3,
-        leading: 0,
-      ),
-      TextSpan(children: result.spans),
-    );
+    final richText = Text.rich(TextSpan(children: result.spans));
 
     final pathData = _PathData(path, 'Signpost');
 
-    final child = Container(
+    final chipChild = Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(5),
       ),
       child: Builder(key: textKey, builder: (context) => richText),
+    );
+
+    final child = Baseline(
+      baseline: (textStyle.fontSize ?? 13.0) * 1.1,
+      baselineType: TextBaseline.alphabetic,
+      child: chipChild,
     );
 
     return PathScope.append(
@@ -7764,6 +7763,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             if (isPattern) {
               // pattern 标签：使用默认色纯文本，两边有 []，背景为主题色
               child = Container(
+                margin: const EdgeInsets.only(right: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withValues(alpha: 0.12),
@@ -7778,6 +7778,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             final onSurface = colorScheme.onSurface;
 
             child = Container(
+              margin: const EdgeInsets.only(right: 4),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
               decoration: BoxDecoration(
                 color: onSurface.withValues(alpha: 0.07),
