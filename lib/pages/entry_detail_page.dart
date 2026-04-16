@@ -5843,10 +5843,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       final hiddenKey = _toEntryScopedPath(entry, '$hiddenPath.$targetLang');
 
       EntryEventBus().emitToggleHiddenLanguage(
-        ToggleHiddenLanguageEvent(
-          entryId: entry.id,
-          languageKey: hiddenKey,
-        ),
+        ToggleHiddenLanguageEvent(entryId: entry.id, languageKey: hiddenKey),
       );
     } catch (e) {
       Logger.d('Error toggling translation visibility: $e', tag: 'Translation');
