@@ -4,6 +4,7 @@ import '../i18n/strings.g.dart';
 import '../services/note_service.dart';
 import '../widgets/note_editor_bottom_sheet.dart';
 import '../widgets/note_markdown_media_image.dart';
+import '../core/utils/markdown_style_sheet.dart';
 
 /// 笔记面板组件
 class NotePanel extends StatefulWidget {
@@ -229,23 +230,20 @@ class _NotePanelState extends State<NotePanel> {
               height: 1,
               color: colorScheme.outlineVariant.withOpacity(0.3),
             ),
-            _buildMarkdownView(colorScheme),
+            _buildMarkdownView(),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildMarkdownView(ColorScheme colorScheme) {
+  Widget _buildMarkdownView() {
     final normalizedContent = _normalizeMarkdownLinks(_note?.content ?? '');
     return Padding(
       padding: const EdgeInsets.all(12),
       child: MarkdownBody(
         data: normalizedContent,
-        styleSheet: MarkdownStyleSheet(
-          p: TextStyle(color: colorScheme.onSurface),
-          a: TextStyle(color: colorScheme.primary),
-        ),
+        styleSheet: buildMarkdownStyleSheet(context),
         imageBuilder: (uri, title, alt) => NoteMarkdownMediaImage(
           uri: uri,
           altText: alt,

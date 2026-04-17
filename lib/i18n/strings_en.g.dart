@@ -326,8 +326,8 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get logDialogTitle => 'Debug Log';
 	@override String get wildcardSearch => 'Wildcard Search';
 	@override String get wildcardSearchDesc => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them';
-	@override String get pasteImageUrl => 'Paste Image URL';
-	@override String get pasteImageUrlDesc => 'You can paste image URLs directly to insert online images';
+	@override String get pasteImageUrl => 'Add Images to Notes';
+	@override String get pasteImageUrlDesc => '• Ctrl+V to paste clipboard images\n• Drag and drop images into editor\n• Paste online image URLs\n• Drag image edges to resize (desktop) / Pinch to zoom (mobile)';
 	@override String get desktopNavTitle => 'Desktop Navigation';
 	@override String get desktopNavDesc => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words';
 	@override String get mobileNavTitle => 'Mobile Navigation';
@@ -1373,8 +1373,8 @@ extension on TranslationsEn {
 			'help.logDialogTitle' => 'Debug Log',
 			'help.wildcardSearch' => 'Wildcard Search',
 			'help.wildcardSearchDesc' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them',
-			'help.pasteImageUrl' => 'Paste Image URL',
-			'help.pasteImageUrlDesc' => 'You can paste image URLs directly to insert online images',
+			'help.pasteImageUrl' => 'Add Images to Notes',
+			'help.pasteImageUrlDesc' => '• Ctrl+V to paste clipboard images\n• Drag and drop images into editor\n• Paste online image URLs\n• Drag image edges to resize (desktop) / Pinch to zoom (mobile)',
 			'help.desktopNavTitle' => 'Desktop Navigation',
 			'help.desktopNavDesc' => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words',
 			'help.mobileNavTitle' => 'Mobile Navigation',

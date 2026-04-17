@@ -22,6 +22,7 @@ import '../core/utils/responsive_utils.dart';
 import '../core/utils/scroll_safe_utils.dart';
 import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
+import '../core/utils/markdown_style_sheet.dart';
 import '../data/database_service.dart';
 import '../data/models/ai_chat_record.dart';
 import '../data/models/dictionary_entry_group.dart';

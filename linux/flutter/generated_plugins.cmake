@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   clipboard_watcher
+  desktop_drop
   media_kit_libs_linux
   pasteboard
   screen_retriever_linux

@@ -1,14 +1,17 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/markdown.dart';
 import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../i18n/strings.g.dart';
 import '../core/utils/scroll_safe_utils.dart';
+import '../core/utils/markdown_style_sheet.dart';
 import '../services/note_service.dart';
 import '../services/preferences_service.dart';
 import 'note_markdown_media_image.dart';
@@ -74,6 +77,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   bool _isFullScreen = false;
   bool _isPreviewMode = false;
   bool _hasSavedDuringSession = false; // 跟踪本次编辑会话是否保存过笔记
+  bool _isDraggingImage = false;
 
   // 撤销/重做栈
   final List<String> _undoStack = [];
@@ -103,12 +107,69 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   }
 
   bool _handleGlobalKeyEvent(KeyEvent event) {
-    if (!_isSaveShortcut(event)) {
-      return false;
+    if (_isSaveShortcut(event)) {
+      _save();
+      return true;
     }
 
-    _save();
-    return true;
+    return false;
+  }
+
+  Future<void> _handlePasteShortcut() async {
+    if (_isPreviewMode) {
+      return;
+    }
+
+    try {
+      final imageBytes = await Pasteboard.image;
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        final fileName =
+            'clipboard_${DateTime.now().millisecondsSinceEpoch}.png';
+        final storedName = await _noteService.saveMedia(
+          fileName: fileName,
+          bytes: imageBytes,
+        );
+        final encodedName = Uri.encodeComponent(storedName);
+        _insertTextAtSelection('![$storedName](media://$encodedName)');
+        return;
+      }
+    } catch (_) {
+      // Ignore clipboard image errors and continue with other clipboard formats.
+    }
+
+    try {
+      final filePaths = await Pasteboard.files();
+      if (filePaths.isNotEmpty) {
+        var insertedCount = 0;
+        for (final filePath in filePaths) {
+          if (!_isImageFile(filePath)) {
+            continue;
+          }
+
+          final file = File(filePath);
+          if (!await file.exists()) {
+            continue;
+          }
+
+          final bytes = await file.readAsBytes();
+          if (bytes.isEmpty) {
+            continue;
+          }
+
+          final nameFromPath = filePath.split(RegExp(r'[\\/]')).last;
+          await _insertImageBytesToEditor(bytes: bytes, fileName: nameFromPath);
+          insertedCount++;
+        }
+
+        if (insertedCount > 0) {
+          return;
+        }
+      }
+    } catch (_) {
+      // Ignore clipboard file errors and fallback to plain text paste.
+    }
+
+    _controller.paste();
   }
 
   Future<void> _loadInitialState() async {
@@ -166,21 +227,49 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
 
   /// 检测新插入的图片URL并自动转换为Markdown格式
   void _autoConvertImageUrl(String previousText, String currentText) {
-    // 找出新增的内容
-    // 简单方法：查找所有http/https URL，检查是否是图片URL且没有被包裹在Markdown语法中
+    if (previousText == currentText) {
+      return;
+    }
+
+    // 仅分析本次编辑实际变更的区间，避免同 URL 多次粘贴时被旧内容误判。
+    int prefixLen = 0;
+    final minLength = previousText.length < currentText.length
+        ? previousText.length
+        : currentText.length;
+    while (prefixLen < minLength &&
+        previousText.codeUnitAt(prefixLen) ==
+            currentText.codeUnitAt(prefixLen)) {
+      prefixLen++;
+    }
+
+    int suffixLen = 0;
+    while (suffixLen < (previousText.length - prefixLen) &&
+        suffixLen < (currentText.length - prefixLen) &&
+        previousText.codeUnitAt(previousText.length - 1 - suffixLen) ==
+            currentText.codeUnitAt(currentText.length - 1 - suffixLen)) {
+      suffixLen++;
+    }
+
+    final changedStart = prefixLen;
+    final changedEnd = currentText.length - suffixLen;
+    if (changedEnd <= changedStart) {
+      return;
+    }
+
+    final changedText = currentText.substring(changedStart, changedEnd);
     final urlPattern = RegExp(r'(https?://[^\s\)]+)', caseSensitive: false);
-    final matches = urlPattern.allMatches(currentText);
+    final matches = urlPattern.allMatches(changedText);
 
     for (final match in matches) {
       final url = match.group(1)!;
       // 检查是否是图片URL
       if (!_isImageUrl(url)) continue;
 
+      final startIndex = changedStart + match.start;
+      final endIndex = changedStart + match.end;
+
       // 检查是否已经被Markdown图片语法包裹
       // 查找匹配位置前后是否有 ![...](...)
-      final startIndex = match.start;
-      final endIndex = match.end;
-
       // 检查前面是否有 ![...](
       final beforeText = currentText.substring(0, startIndex);
       if (beforeText.contains(RegExp(r'!\[[^\]]*\]\($'))) continue;
@@ -188,11 +277,6 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       // 检查后面是否有 )
       final afterText = currentText.substring(endIndex);
       if (afterText.startsWith(')')) continue;
-
-      // 检查这个URL是否是新插入的（不在之前的文本中，或者位置不同）
-      if (previousText.contains(url) &&
-          previousText.indexOf(url) == currentText.indexOf(url))
-        continue;
 
       // 找到了未被包裹的图片URL，转换为Markdown格式
       final newText = currentText.replaceRange(
@@ -367,17 +451,63 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       final fileName = pickedFile.name.trim().isEmpty
           ? fallbackName
           : pickedFile.name.trim();
+      await _insertImageBytesToEditor(bytes: bytes, fileName: fileName);
+    } catch (_) {}
+  }
 
-      final storedName = await _noteService.saveMedia(
-        fileName: fileName,
-        bytes: bytes,
-      );
-      final encodedName = Uri.encodeComponent(storedName);
-      _insertTextAtSelection('![$storedName](media://$encodedName)');
-      _showMessage(context.t.common.success);
-    } catch (_) {
-      _showMessage(context.t.common.error);
+  Future<void> _insertImageBytesToEditor({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final normalizedName = fileName.trim().isEmpty
+        ? 'image_${DateTime.now().millisecondsSinceEpoch}.png'
+        : fileName.trim();
+    final storedName = await _noteService.saveMedia(
+      fileName: normalizedName,
+      bytes: bytes,
+    );
+    final encodedName = Uri.encodeComponent(storedName);
+    _insertTextAtSelection('![$storedName](media://$encodedName)');
+  }
+
+  bool _isImageFile(String nameOrPath) {
+    final lower = nameOrPath.toLowerCase();
+    return lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.bmp');
+  }
+
+  Future<void> _handleDroppedFiles(List<DropItem> files) async {
+    if (_isPreviewMode || files.isEmpty) {
+      return;
     }
+
+    var insertedCount = 0;
+    try {
+      for (final file in files) {
+        final path = file.path;
+        final candidateName = file.name.trim().isNotEmpty
+            ? file.name
+            : path.split(RegExp(r'[\\/]')).last;
+        final imageLike =
+            _isImageFile(candidateName) ||
+            (path.isNotEmpty && _isImageFile(path));
+        if (!imageLike) {
+          continue;
+        }
+
+        final bytes = await file.readAsBytes();
+        if (bytes.isEmpty) {
+          continue;
+        }
+
+        await _insertImageBytesToEditor(bytes: bytes, fileName: candidateName);
+        insertedCount++;
+      }
+    } catch (_) {}
   }
 
   /// 检查文本是否是图片URL
@@ -404,6 +534,14 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     return CodeEditor(
       controller: _controller,
       toolbarController: _toolbarController,
+      shortcutOverrideActions: {
+        CodeShortcutPasteIntent: CallbackAction<CodeShortcutPasteIntent>(
+          onInvoke: (_) {
+            _handlePasteShortcut();
+            return null;
+          },
+        ),
+      },
       style: CodeEditorStyle(
         fontSize: noteFontSize,
         fontFamily: 'monospace',
@@ -712,6 +850,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                   icon: Icons.save_outlined,
                                   onPressed: () => _save(),
                                   tooltip: context.t.common.save,
+                                  color: _hasUnsavedChanges
+                                      ? null
+                                      : Theme.of(context).colorScheme.outline,
                                 ),
                                 // 撤销
                                 _buildToolbarButton(
@@ -834,19 +975,8 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                                             _controller.text,
                                                           ),
                                                       styleSheet:
-                                                          MarkdownStyleSheet(
-                                                            p: TextStyle(
-                                                              color: colorScheme
-                                                                  .onSurface,
-                                                              fontSize:
-                                                                  noteFontSize,
-                                                            ),
-                                                            a: TextStyle(
-                                                              color: colorScheme
-                                                                  .primary,
-                                                              fontSize:
-                                                                  noteFontSize,
-                                                            ),
+                                                          buildMarkdownStyleSheet(
+                                                            context,
                                                           ),
                                                       imageBuilder:
                                                           (
@@ -882,31 +1012,84 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                               .withOpacity(0.5),
                                         ),
                                       ),
-                                      child: Stack(
-                                        children: [
-                                          _buildCodeEditorWithPasteOverride(
-                                            colorScheme,
-                                            previewBackground,
-                                            noteFontSize,
-                                            isDark,
-                                          ),
-                                          if (_controller.text.trim().isEmpty)
-                                            Positioned.fill(
-                                              child: IgnorePointer(
-                                                child: Center(
-                                                  child: Text(
-                                                    context.t.note.editorHint,
-                                                    style: TextStyle(
-                                                      color: colorScheme
-                                                          .onSurfaceVariant
-                                                          .withOpacity(0.5),
-                                                      fontSize: noteFontSize,
+                                      child: DropTarget(
+                                        onDragEntered: (_) {
+                                          if (!_isPreviewMode && mounted) {
+                                            setState(
+                                              () => _isDraggingImage = true,
+                                            );
+                                          }
+                                        },
+                                        onDragExited: (_) {
+                                          if (mounted) {
+                                            setState(
+                                              () => _isDraggingImage = false,
+                                            );
+                                          }
+                                        },
+                                        onDragDone: (detail) async {
+                                          if (mounted) {
+                                            setState(
+                                              () => _isDraggingImage = false,
+                                            );
+                                          }
+                                          await _handleDroppedFiles(
+                                            detail.files,
+                                          );
+                                        },
+                                        child: Stack(
+                                          children: [
+                                            _buildCodeEditorWithPasteOverride(
+                                              colorScheme,
+                                              previewBackground,
+                                              noteFontSize,
+                                              isDark,
+                                            ),
+                                            if (_controller.text.trim().isEmpty)
+                                              Positioned.fill(
+                                                child: IgnorePointer(
+                                                  child: Center(
+                                                    child: Text(
+                                                      context.t.note.editorHint,
+                                                      style: TextStyle(
+                                                        color: colorScheme
+                                                            .onSurfaceVariant
+                                                            .withOpacity(0.5),
+                                                        fontSize: noteFontSize,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                        ],
+                                            if (_isDraggingImage)
+                                              Positioned.fill(
+                                                child: IgnorePointer(
+                                                  child: Container(
+                                                    decoration: BoxDecoration(
+                                                      color: colorScheme.primary
+                                                          .withOpacity(0.1),
+                                                      border: Border.all(
+                                                        color:
+                                                            colorScheme.primary,
+                                                        width: 1.5,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    alignment: Alignment.center,
+                                                    child: Icon(
+                                                      Icons.add_photo_alternate,
+                                                      color:
+                                                          colorScheme.primary,
+                                                      size: 28,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                             ),

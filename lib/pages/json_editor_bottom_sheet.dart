@@ -463,6 +463,9 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
                             icon: Icons.save_outlined,
                             onPressed: () => _save(),
                             tooltip: context.t.common.save,
+                            color: _hasUnsavedChanges
+                                ? null
+                                : Theme.of(context).colorScheme.outline,
                           ),
                           _buildToolbarIconButton(
                             icon: Icons.undo,

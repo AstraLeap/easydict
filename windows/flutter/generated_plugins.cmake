@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   clipboard_watcher
+  desktop_drop
   media_kit_libs_windows_audio
   pasteboard
   permission_handler_windows
