@@ -242,6 +242,18 @@ class TranslationsCommonZh {
 
 	/// zh: '折叠'
 	String get collapse => '折叠';
+
+	/// zh: '放弃'
+	String get discard => '放弃';
+
+	/// zh: '继续编辑'
+	String get continueEditing => '继续编辑';
+
+	/// zh: '有未保存的更改'
+	String get unsavedChangesTitle => '有未保存的更改';
+
+	/// zh: '当前内容尚未保存，是否保存后关闭？'
+	String get unsavedChangesMessage => '当前内容尚未保存，是否保存后关闭？';
 }
 
 // Path: settings
@@ -678,11 +690,11 @@ class TranslationsHelpZh {
 	/// zh: '检查更新失败: {error}'
 	String checkUpdateError({required Object error}) => '检查更新失败: ${error}';
 
-	/// zh: '隐藏功能'
-	String get hiddenFeatures => '隐藏功能';
+	/// zh: '功能提示'
+	String get hiddenFeatures => '功能提示';
 
-	/// zh: '隐藏功能'
-	String get hiddenFeaturesTitle => '隐藏功能';
+	/// zh: '功能提示'
+	String get hiddenFeaturesTitle => '功能提示';
 
 	/// zh: '配置目录'
 	String get configDir => '配置目录';
@@ -708,11 +720,11 @@ class TranslationsHelpZh {
 	/// zh: 'LIKE 模式（输入含 % 或 _）： % 匹配任意个字符，_ 匹配恰好一个字符 例：hel% → hello、help；%字 → 汉字、生字 GLOB 模式（输入含 * ? [ ] ^）： * 匹配任意个字符，? 匹配单个字符 [abc] 匹配括号内任一字符，[^abc] 排除括号内字符'
 	String get wildcardSearchDesc => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符';
 
-	/// zh: 'Markdown 图片尺寸'
-	String get markdownImageSize => 'Markdown 图片尺寸';
+	/// zh: '粘贴图片网址'
+	String get pasteImageUrl => '粘贴图片网址';
 
-	/// zh: '可在图片 alt 文本中设置尺寸： ![说明|w=320|h=200](media://xxx.png) ![说明|w=80%](media://xxx.png) 支持键：w/width、h/height；支持 px 和百分比。'
-	String get markdownImageSizeDesc => '可在图片 alt 文本中设置尺寸：\n  ![说明|w=320|h=200](media://xxx.png)\n  ![说明|w=80%](media://xxx.png)\n支持键：w/width、h/height；支持 px 和百分比。';
+	/// zh: '可以直接粘贴图片网址以插入在线图片'
+	String get pasteImageUrlDesc => '可以直接粘贴图片网址以插入在线图片';
 
 	/// zh: '电脑端导航'
 	String get desktopNavTitle => '电脑端导航';
@@ -2253,8 +2265,8 @@ class TranslationsNoteZh {
 	/// zh: '暂无笔记'
 	String get empty => '暂无笔记';
 
-	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](词典ID_词条ID/路径) 示例：[查看释义](oxford_en_123/sense.0.definition) 图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)'
-	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)\n\n图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)';
+	/// zh: '输入笔记内容（支持 Markdown 格式） 链接格式：[显示文本](词典ID_词条ID/路径) 示例：[查看释义](oxford_en_123/sense.0.definition)'
+	String get placeholder => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)';
 
 	/// zh: '添加到笔记'
 	String get addToNote => '添加到笔记';
@@ -2294,6 +2306,9 @@ class TranslationsNoteZh {
 
 	/// zh: '暂无内容可预览'
 	String get previewEmpty => '暂无内容可预览';
+
+	/// zh: '用户笔记使用 Markdown 语法'
+	String get editorHint => '用户笔记使用 Markdown 语法';
 }
 
 // Path: groups
@@ -2789,6 +2804,10 @@ extension on Translations {
 			'common.selectLanguage' => '选择语言',
 			'common.expand' => '展开',
 			'common.collapse' => '折叠',
+			'common.discard' => '放弃',
+			'common.continueEditing' => '继续编辑',
+			'common.unsavedChangesTitle' => '有未保存的更改',
+			'common.unsavedChangesMessage' => '当前内容尚未保存，是否保存后关闭？',
 			'settings.title' => '设置',
 			'settings.selectFromLeftSidebar' => '请从左侧选择设置项',
 			'settings.cloudService' => '云服务',
@@ -2997,8 +3016,8 @@ extension on Translations {
 			'help.updateError' => '检查失败，点击重试',
 			'help.githubApiError' => ({required Object code}) => 'GitHub API 错误 (状态码 ${code})',
 			'help.checkUpdateError' => ({required Object error}) => '检查更新失败: ${error}',
-			'help.hiddenFeatures' => '隐藏功能',
-			'help.hiddenFeaturesTitle' => '隐藏功能',
+			'help.hiddenFeatures' => '功能提示',
+			'help.hiddenFeaturesTitle' => '功能提示',
 			'help.configDir' => '配置目录',
 			'help.debugLog' => '调试日志',
 			'help.debugLogDesc' => '查看本次运行的日志文件',
@@ -3007,8 +3026,8 @@ extension on Translations {
 			'help.logDialogTitle' => '调试日志',
 			'help.wildcardSearch' => '通配符搜索',
 			'help.wildcardSearchDesc' => 'LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符',
-			'help.markdownImageSize' => 'Markdown 图片尺寸',
-			'help.markdownImageSizeDesc' => '可在图片 alt 文本中设置尺寸：\n  ![说明|w=320|h=200](media://xxx.png)\n  ![说明|w=80%](media://xxx.png)\n支持键：w/width、h/height；支持 px 和百分比。',
+			'help.pasteImageUrl' => '粘贴图片网址',
+			'help.pasteImageUrlDesc' => '可以直接粘贴图片网址以插入在线图片',
 			'help.desktopNavTitle' => '电脑端导航',
 			'help.desktopNavDesc' => '• 词典内容界面按 Esc 可返回主界面\n• 方向键左右可以在词表间切换',
 			'help.mobileNavTitle' => '手机端导航',
@@ -3244,12 +3263,12 @@ extension on Translations {
 			'dict.updateCount' => ({required Object count}) => '更新 (${count})',
 			'dict.hasUpdates' => ({required Object count}) => '发现 ${count} 个词典有更新',
 			'dict.allUpToDate' => '所有词典已是最新版本',
+			_ => null,
+		} ?? switch (path) {
 			'dict.checkUpdates' => '检查更新',
 			'dict.refreshStore' => '刷新商店',
 			'dict.refreshStoreSuccess' => '商店已刷新',
 			'dict.refreshLocal' => '刷新本地',
-			_ => null,
-		} ?? switch (path) {
 			'dict.refreshLocalSuccess' => '本地词典已刷新',
 			'dict.checking' => '检查中...',
 			'dict.downloadDict' => ({required Object name}) => '下载: ${name}',
@@ -3503,7 +3522,7 @@ extension on Translations {
 			'note.save' => '保存',
 			'note.delete' => '删除',
 			'note.empty' => '暂无笔记',
-			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)\n\n图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)',
+			'note.placeholder' => '输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)',
 			'note.addToNote' => '添加到笔记',
 			'note.linkAdded' => '已添加到笔记',
 			'note.returnToNote' => '返回笔记',
@@ -3517,6 +3536,7 @@ extension on Translations {
 			'note.code' => '代码',
 			'note.preview' => '预览',
 			'note.previewEmpty' => '暂无内容可预览',
+			'note.editorHint' => '用户笔记使用 Markdown 语法',
 			'groups.title' => '组管理',
 			'groups.manageGroups' => '管理组',
 			'groups.createGroup' => '创建组',

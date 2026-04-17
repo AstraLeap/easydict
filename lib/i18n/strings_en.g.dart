@@ -133,6 +133,10 @@ class _TranslationsCommonEn extends TranslationsCommonZh {
 	@override String get neverAskAgain => 'Never Ask Again';
 	@override String get redo => 'Redo';
 	@override String get selectLanguage => 'Select Language';
+	@override String get discard => 'Discard';
+	@override String get continueEditing => 'Continue Editing';
+	@override String get unsavedChangesTitle => 'Unsaved Changes';
+	@override String get unsavedChangesMessage => 'You have unsaved content. Save before closing?';
 }
 
 // Path: settings
@@ -312,8 +316,8 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get updateError => 'Check failed, tap to retry';
 	@override String githubApiError({required Object code}) => 'GitHub API error (status ${code})';
 	@override String checkUpdateError({required Object error}) => 'Update check failed: ${error}';
-	@override String get hiddenFeatures => 'Hidden Features';
-	@override String get hiddenFeaturesTitle => 'Hidden Features';
+	@override String get hiddenFeatures => 'Feature Tips';
+	@override String get hiddenFeaturesTitle => 'Feature Tips';
 	@override String get configDir => 'Config Directory';
 	@override String get debugLog => 'Debug Log';
 	@override String get debugLogDesc => 'View the log file from this session';
@@ -322,8 +326,8 @@ class _TranslationsHelpEn extends TranslationsHelpZh {
 	@override String get logDialogTitle => 'Debug Log';
 	@override String get wildcardSearch => 'Wildcard Search';
 	@override String get wildcardSearchDesc => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them';
-	@override String get markdownImageSize => 'Markdown Image Size';
-	@override String get markdownImageSizeDesc => 'Set image size in alt text:\n  ![label|w=320|h=200](media://xxx.png)\n  ![label|w=80%](media://xxx.png)\nSupported keys: w/width, h/height; supports px and percent.';
+	@override String get pasteImageUrl => 'Paste Image URL';
+	@override String get pasteImageUrlDesc => 'You can paste image URLs directly to insert online images';
 	@override String get desktopNavTitle => 'Desktop Navigation';
 	@override String get desktopNavDesc => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words';
 	@override String get mobileNavTitle => 'Mobile Navigation';
@@ -879,7 +883,7 @@ class _TranslationsNoteEn extends TranslationsNoteZh {
 	@override String get save => 'Save';
 	@override String get delete => 'Delete';
 	@override String get empty => 'No notes yet';
-	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)\n\nImage size: ![label|w=320|h=200](media://xxx.png) or ![label|w=80%](media://xxx.png)';
+	@override String get placeholder => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)';
 	@override String get addToNote => 'Add to Note';
 	@override String get linkAdded => 'Added to note';
 	@override String get returnToNote => 'Return to Note';
@@ -893,6 +897,7 @@ class _TranslationsNoteEn extends TranslationsNoteZh {
 	@override String get code => 'Code';
 	@override String get preview => 'Preview';
 	@override String get previewEmpty => 'No content to preview';
+	@override String get editorHint => 'Markdown syntax supported';
 }
 
 // Path: groups
@@ -1146,6 +1151,10 @@ extension on TranslationsEn {
 			'common.neverAskAgain' => 'Never Ask Again',
 			'common.redo' => 'Redo',
 			'common.selectLanguage' => 'Select Language',
+			'common.discard' => 'Discard',
+			'common.continueEditing' => 'Continue Editing',
+			'common.unsavedChangesTitle' => 'Unsaved Changes',
+			'common.unsavedChangesMessage' => 'You have unsaved content. Save before closing?',
 			'settings.title' => 'Settings',
 			'settings.selectFromLeftSidebar' => 'Please select a settings item from the left sidebar',
 			'settings.cloudService' => 'Cloud Service',
@@ -1354,8 +1363,8 @@ extension on TranslationsEn {
 			'help.updateError' => 'Check failed, tap to retry',
 			'help.githubApiError' => ({required Object code}) => 'GitHub API error (status ${code})',
 			'help.checkUpdateError' => ({required Object error}) => 'Update check failed: ${error}',
-			'help.hiddenFeatures' => 'Hidden Features',
-			'help.hiddenFeaturesTitle' => 'Hidden Features',
+			'help.hiddenFeatures' => 'Feature Tips',
+			'help.hiddenFeaturesTitle' => 'Feature Tips',
 			'help.configDir' => 'Config Directory',
 			'help.debugLog' => 'Debug Log',
 			'help.debugLogDesc' => 'View the log file from this session',
@@ -1364,8 +1373,8 @@ extension on TranslationsEn {
 			'help.logDialogTitle' => 'Debug Log',
 			'help.wildcardSearch' => 'Wildcard Search',
 			'help.wildcardSearchDesc' => 'LIKE pattern (enter % or _):\n  % matches any number of chars, _ matches exactly one\n  e.g. hel% → hello, help\n\nGLOB pattern (enter * ? [ ] ^):\n  * matches any chars, ? matches one char\n  [abc] matches any char in brackets, [^abc] excludes them',
-			'help.markdownImageSize' => 'Markdown Image Size',
-			'help.markdownImageSizeDesc' => 'Set image size in alt text:\n  ![label|w=320|h=200](media://xxx.png)\n  ![label|w=80%](media://xxx.png)\nSupported keys: w/width, h/height; supports px and percent.',
+			'help.pasteImageUrl' => 'Paste Image URL',
+			'help.pasteImageUrlDesc' => 'You can paste image URLs directly to insert online images',
 			'help.desktopNavTitle' => 'Desktop Navigation',
 			'help.desktopNavDesc' => '• Press Esc to return to home\n• Use left/right arrow keys to navigate between words',
 			'help.mobileNavTitle' => 'Mobile Navigation',
@@ -1603,12 +1612,12 @@ extension on TranslationsEn {
 			'dict.allUpToDate' => 'All dictionaries are up to date',
 			'dict.checkUpdates' => 'Check Updates',
 			'dict.refreshStore' => 'Refresh Store',
+			_ => null,
+		} ?? switch (path) {
 			'dict.refreshStoreSuccess' => 'Store refreshed',
 			'dict.refreshLocal' => 'Refresh Local',
 			'dict.refreshLocalSuccess' => 'Local dictionaries refreshed',
 			'dict.checking' => 'Checking...',
-			_ => null,
-		} ?? switch (path) {
 			'dict.downloadDict' => ({required Object name}) => 'Download: ${name}',
 			'dict.selectContent' => 'Select content to download:',
 			'dict.dictMeta' => '[Required] Dict metadata',
@@ -1860,7 +1869,7 @@ extension on TranslationsEn {
 			'note.save' => 'Save',
 			'note.delete' => 'Delete',
 			'note.empty' => 'No notes yet',
-			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)\n\nImage size: ![label|w=320|h=200](media://xxx.png) or ![label|w=80%](media://xxx.png)',
+			'note.placeholder' => 'Enter note content (Markdown supported)\n\nLink format: [text](dictId_entryId/path)\nExample: [See definition](oxford_en_123/sense.0.definition)',
 			'note.addToNote' => 'Add to Note',
 			'note.linkAdded' => 'Added to note',
 			'note.returnToNote' => 'Return to Note',
@@ -1874,6 +1883,7 @@ extension on TranslationsEn {
 			'note.code' => 'Code',
 			'note.preview' => 'Preview',
 			'note.previewEmpty' => 'No content to preview',
+			'note.editorHint' => 'Markdown syntax supported',
 			'groups.title' => 'Group Management',
 			'groups.manageGroups' => 'Manage Groups',
 			'groups.createGroup' => 'Create Group',

@@ -250,6 +250,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// AI聊天历史弹窗的 setState，用于在请求完成时刷新弹窗内容
   StateSetter? _modalSetState;
   bool _isModalActive = false;
+  bool _isEditorSheetOpen = false;
 
   // 导航栏位置状态（固定在右侧，只保存垂直位置）
   double _navPanelDy = 0.5; // 相对屏幕高度的比例，默认在屏幕中间
@@ -2144,13 +2145,21 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   /// 显示笔记编辑器
   Future<void> _showNoteEditor({String? linkToAppend}) async {
     final language = await _getCurrentLanguage();
-    final result = await NoteEditorBottomSheet.show(
-      context,
-      word: _currentWord,
-      language: language,
-      linkToAppend: linkToAppend,
-      onLinkTap: _handleNoteLinkTap,
-    );
+    if (mounted) {
+      setState(() => _isEditorSheetOpen = true);
+    }
+    final result =
+        await NoteEditorBottomSheet.show(
+          context,
+          word: _currentWord,
+          language: language,
+          linkToAppend: linkToAppend,
+          onLinkTap: _handleNoteLinkTap,
+        ).whenComplete(() {
+          if (mounted) {
+            setState(() => _isEditorSheetOpen = false);
+          }
+        });
     if (result && mounted) {
       setState(() {
         _hasNote = true;
@@ -2457,6 +2466,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
               ),
             // 浮动底部工具栏 - 使用独立的 Widget 避免整个页面重建
             _KeyboardAwareBottomBar(
+              ignoreKeyboardInsets: _isEditorSheetOpen,
               child: _buildBottomActionBarWithBackButton(),
             ),
             // 手势指示器（屏幕中央）
@@ -5412,9 +5422,14 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     // 提前从父级 context 获取状态栏高度，底部弹出层的 context 中 viewPadding.top 为 0
     final statusBarHeight = MediaQuery.of(context).viewPadding.top;
 
+    if (mounted) {
+      setState(() => _isEditorSheetOpen = true);
+    }
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      enableDrag: false,
+      showDragHandle: false,
       builder: (context) => JsonEditorBottomSheet(
         entry: currentEntry,
         pathParts: pathParts,
@@ -5444,7 +5459,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      if (mounted) {
+        setState(() => _isEditorSheetOpen = false);
+      }
+    });
   }
 
   DictionaryEntry? _getEntryById(String entryId) {

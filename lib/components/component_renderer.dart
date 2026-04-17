@@ -3854,10 +3854,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     // 剥离路径前缀，对外暴露不带 dictId.entryId 的路径
     final strippedPath = _stripPathPrefix(path);
-    Logger.d(
-      'Right-click on element: path=$strippedPath, label=$label, _currentOverlayEntry=$_currentOverlayEntry',
-      tag: 'ComponentRenderer._handleElementSecondaryTap',
-    );
 
     final pathParts = strippedPath.split('.');
     final pathData = _PathData(pathParts, label);
@@ -3870,11 +3866,6 @@ class ComponentRendererState extends State<ComponentRenderer> {
     Offset? position,
     _PathData? pathData,
   ) async {
-    Logger.d(
-      '_showContextMenu called: position=$position, pathData=$pathData',
-      tag: 'ComponentRenderer._showContextMenu',
-    );
-
     // 关闭之前的菜单
     _removeCurrentOverlay();
 
@@ -4494,26 +4485,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
       return;
     }
 
-    Logger.d(
-      '_removeCurrentOverlay called, _currentOverlayEntry=$_currentOverlayEntry',
-      tag: 'ContextMenu',
-    );
     // 设置关闭标志，防止菜单重建
     _isClosingContextMenu = true;
 
     try {
       _currentOverlayEntry?.remove();
       _currentBarrierEntry?.remove();
-      Logger.d(
-        '_removeCurrentOverlay: overlay removed successfully',
-        tag: 'ContextMenu',
-      );
     } catch (e) {
       // 忽略已经移除的entry
-      Logger.d(
-        '_removeCurrentOverlay: error removing overlay: $e',
-        tag: 'ContextMenu',
-      );
     } finally {
       _currentOverlayEntry = null;
       _currentBarrierEntry = null;

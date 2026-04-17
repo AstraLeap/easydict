@@ -56,7 +56,11 @@
     "redo": "重做",
     "selectLanguage": "选择语言",
     "expand": "展开",
-    "collapse": "折叠"
+    "collapse": "折叠",
+    "discard": "放弃",
+    "continueEditing": "继续编辑",
+    "unsavedChangesTitle": "有未保存的更改",
+    "unsavedChangesMessage": "当前内容尚未保存，是否保存后关闭？"
   },
   "settings": {
     "title": "设置",
@@ -289,8 +293,8 @@
     "updateError": "检查失败，点击重试",
     "githubApiError": "GitHub API 错误 (状态码 {code})",
     "checkUpdateError": "检查更新失败: {error}",
-    "hiddenFeatures": "隐藏功能",
-    "hiddenFeaturesTitle": "隐藏功能",
+    "hiddenFeatures": "功能提示",
+    "hiddenFeaturesTitle": "功能提示",
     "configDir": "配置目录",
     "debugLog": "调试日志",
     "debugLogDesc": "查看本次运行的日志文件",
@@ -299,8 +303,8 @@
     "logDialogTitle": "调试日志",
     "wildcardSearch": "通配符搜索",
     "wildcardSearchDesc": "LIKE 模式（输入含 % 或 _）：\n  % 匹配任意个字符，_ 匹配恰好一个字符\n  例：hel% → hello、help；%字 → 汉字、生字\n\nGLOB 模式（输入含 * ? [ ] ^）：\n  * 匹配任意个字符，? 匹配单个字符\n  [abc] 匹配括号内任一字符，[^abc] 排除括号内字符",
-    "markdownImageSize": "Markdown 图片尺寸",
-    "markdownImageSizeDesc": "可在图片 alt 文本中设置尺寸：\n  ![说明|w=320|h=200](media://xxx.png)\n  ![说明|w=80%](media://xxx.png)\n支持键：w/width、h/height；支持 px 和百分比。",
+    "pasteImageUrl": "粘贴图片网址",
+    "pasteImageUrlDesc": "可以直接粘贴图片网址以插入在线图片",
     "desktopNavTitle": "电脑端导航",
     "desktopNavDesc": "• 词典内容界面按 Esc 可返回主界面\n• 方向键左右可以在词表间切换",
     "mobileNavTitle": "手机端导航",
@@ -807,7 +811,7 @@
     "save": "保存",
     "delete": "删除",
     "empty": "暂无笔记",
-    "placeholder": "输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)\n\n图片尺寸：![说明|w=320|h=200](media://xxx.png) 或 ![说明|w=80%](media://xxx.png)",
+    "placeholder": "输入笔记内容（支持 Markdown 格式）\n\n链接格式：[显示文本](词典ID_词条ID/路径)\n示例：[查看释义](oxford_en_123/sense.0.definition)",
     "addToNote": "添加到笔记",
     "linkAdded": "已添加到笔记",
     "returnToNote": "返回笔记",
@@ -820,7 +824,8 @@
     "link": "链接",
     "code": "代码",
     "preview": "预览",
-    "previewEmpty": "暂无内容可预览"
+    "previewEmpty": "暂无内容可预览",
+    "editorHint": "用户笔记使用 Markdown 语法"
   },
   "groups": {
     "title": "组管理",

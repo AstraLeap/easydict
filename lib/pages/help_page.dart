@@ -143,13 +143,13 @@ class _HelpPageState extends State<HelpPage> {
               description: context.t.help.wildcardSearchDesc,
             ),
             const SizedBox(height: 16),
-            // Markdown 图片尺寸
+            // 粘贴图片网址
             _buildFeatureCard(
               context,
-              icon: Icons.photo_size_select_large,
+              icon: Icons.link,
               iconColor: colorScheme.primary,
-              title: context.t.help.markdownImageSize,
-              description: context.t.help.markdownImageSizeDesc,
+              title: context.t.help.pasteImageUrl,
+              description: context.t.help.pasteImageUrlDesc,
             ),
             const SizedBox(height: 16),
             // 电脑端导航

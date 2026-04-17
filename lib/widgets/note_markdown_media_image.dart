@@ -2,13 +2,17 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../core/logger.dart';
 import '../services/note_service.dart';
 import 'image_viewer_dialog.dart';
 
-/// Markdown 图片渲染器：支持 media://name 从 notes 媒体表读取。
+/// Markdown 图片渲染器：
+/// - 支持 media://name 从 notes 媒体表读取本地图片
+/// - 支持 http/https 网络链接图片
 ///
 /// 尺寸仅由 Markdown 参数控制，例如：
 /// ![alt|w=80%|h=200](media://xxx.png)
+/// ![alt|w=50%](https://example.com/image.png)
 class NoteMarkdownMediaImage extends StatefulWidget {
   final Uri uri;
   final String? altText;
@@ -30,10 +34,17 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
   Uint8List? _mediaBytes;
   String? _loadedMediaName;
   bool _isMediaLoading = false;
+  bool _isNetworkImageLoading = false;
   final GlobalKey _imageBoxKey = GlobalKey();
   double? _interactiveWidth;
   double? _interactiveHeight;
   _ResizeEdge? _activeEdge;
+  double? _pinchBaseWidth;
+  double? _pinchBaseHeight;
+  final Set<int> _activePointers = <int>{};
+  ScrollHoldController? _scrollHold;
+  bool _isPinching = false;
+  double? _lastMaxWidthConstraint;
 
   @override
   void initState() {
@@ -97,6 +108,7 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        _lastMaxWidthConstraint = constraints.maxWidth;
         final targetWidth = _resolveDimension(
           style.width,
           constraints.maxWidth,
@@ -108,11 +120,17 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
 
         if (widget.uri.scheme != 'media') {
           final provider = NetworkImage(widget.uri.toString());
+          final isDesktopLike = Theme.of(context).platform.isDesktopLike;
+          // 标记网络图片开始加载
+          if (!_isNetworkImageLoading) {
+            _isNetworkImageLoading = true;
+          }
           return _buildFrame(
-            child: _buildPreviewableImage(
+            child: _buildNetworkImage(
               context,
               provider: provider,
-              previewBytes: null,
+              isDesktopLike: isDesktopLike,
+              constraints: constraints,
               width: _effectiveWidth(targetWidth, constraints.maxWidth),
               height: _effectiveHeight(targetHeight, constraints.maxHeight),
             ),
@@ -133,11 +151,14 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
         }
 
         final provider = MemoryImage(bytes);
+        final isDesktopLike = Theme.of(context).platform.isDesktopLike;
         return _buildFrame(
           child: _buildPreviewableImage(
             context,
             provider: provider,
             previewBytes: bytes,
+            isDesktopLike: isDesktopLike,
+            constraints: constraints,
             width: _effectiveWidth(targetWidth, constraints.maxWidth),
             height: _effectiveHeight(targetHeight, constraints.maxHeight),
           ),
@@ -147,24 +168,199 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
     );
   }
 
-  Widget _buildPreviewableImage(
+  Widget _buildNetworkImage(
     BuildContext context, {
     required ImageProvider provider,
-    required Uint8List? previewBytes,
+    required bool isDesktopLike,
+    required BoxConstraints constraints,
     double? width,
     double? height,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     return GestureDetector(
-      onTap: () => _openPreview(context, provider, previewBytes),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openPreview(context, provider, null),
       child: Image(
         image: provider,
         width: width,
         height: height,
         fit: BoxFit.contain,
         gaplessPlayback: true,
-        errorBuilder: (context, error, stackTrace) => _buildError(context),
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) {
+            if (_isNetworkImageLoading) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() {
+                    _isNetworkImageLoading = false;
+                  });
+                }
+              });
+            }
+            return child;
+          }
+          final expectedBytes = loadingProgress.expectedTotalBytes;
+          final loaded = loadingProgress.cumulativeBytesLoaded;
+          final progress = expectedBytes != null
+              ? loaded / expectedBytes
+              : null;
+          return Container(
+            width: width,
+            height: height ?? 120,
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    value: progress,
+                  ),
+                ),
+                if (progress != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(progress * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          Logger.w('Network image load failed: ${widget.uri}', tag: 'NoteMarkdownMediaImage');
+          return _buildError(context);
+        },
       ),
     );
+  }
+
+  Widget _buildPreviewableImage(
+    BuildContext context, {
+    required ImageProvider provider,
+    required Uint8List? previewBytes,
+    required bool isDesktopLike,
+    required BoxConstraints constraints,
+    double? width,
+    double? height,
+  }) {
+    final image = Image(
+      image: provider,
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) => _buildError(context),
+    );
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openPreview(context, provider, previewBytes),
+      onScaleStart: isDesktopLike
+          ? null
+          : (details) {
+              // 确保基础尺寸已捕获（Listener 可能已经执行过了）
+              _capturePinchBase(fallbackWidth: width, fallbackHeight: height);
+            },
+      onScaleUpdate: isDesktopLike
+          ? null
+          : (details) {
+              final baseWidth = _pinchBaseWidth;
+              final baseHeight = _pinchBaseHeight;
+              if (baseWidth == null || baseHeight == null) {
+                return;
+              }
+
+              final scale = details.scale;
+              // 降低阈值，让捏合更容易识别
+              if (!scale.isFinite || scale.isNaN || (scale - 1.0).abs() < 0.005) {
+                return;
+              }
+              _isPinching = true;
+              _resizeByPinch(scale: scale, constraints: constraints);
+            },
+      onScaleEnd: isDesktopLike
+          ? null
+          : (details) {
+              _releaseParentScrollHold();
+              _finishPinchInteraction();
+            },
+      child: Listener(
+        onPointerDown: isDesktopLike ? null : _handlePointerDown,
+        onPointerUp: isDesktopLike ? null : _handlePointerUpOrCancel,
+        onPointerCancel: isDesktopLike ? null : _handlePointerUpOrCancel,
+        child: image,
+      ),
+    );
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    _activePointers.add(event.pointer);
+    // 当检测到第二个手指时，立即停止父滚动并捕获基础尺寸
+    // 这必须在手势竞技场决定之前执行，否则滚动手势会抢占
+    if (_activePointers.length >= 2) {
+      _acquireParentScrollHold();
+      _isPinching = true;
+      _capturePinchBase();
+    }
+  }
+
+  void _handlePointerUpOrCancel(PointerEvent event) {
+    _activePointers.remove(event.pointer);
+  }
+
+  void _acquireParentScrollHold() {
+    if (_scrollHold != null) {
+      return;
+    }
+    final position = Scrollable.maybeOf(context)?.position;
+    _scrollHold = position?.hold(() {});
+  }
+
+  void _releaseParentScrollHold() {
+    _scrollHold?.cancel();
+    _scrollHold = null;
+  }
+
+  void _capturePinchBase({double? fallbackWidth, double? fallbackHeight}) {
+    final renderObject = _imageBoxKey.currentContext?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      _pinchBaseWidth = _interactiveWidth ?? renderObject.size.width;
+      _pinchBaseHeight = _interactiveHeight ?? renderObject.size.height;
+      return;
+    }
+
+    _pinchBaseWidth = _interactiveWidth ?? fallbackWidth;
+    _pinchBaseHeight = _interactiveHeight ?? fallbackHeight;
+  }
+
+  void _finishPinchInteraction() {
+    if (!_isPinching) {
+      _pinchBaseWidth = null;
+      _pinchBaseHeight = null;
+      return;
+    }
+
+    final maxWidth = _lastMaxWidthConstraint;
+    if (maxWidth != null && maxWidth.isFinite && maxWidth > 0) {
+      final widthToSave = _interactiveWidth ?? _pinchBaseWidth;
+      if (widthToSave != null && widthToSave > 0) {
+        final percent = ((widthToSave / maxWidth) * 100).round().clamp(1, 100);
+        final mediaName = _extractMediaName(widget.uri);
+        if (mediaName.isNotEmpty && widget.onWidthPercentResolved != null) {
+          widget.onWidthPercentResolved!(mediaName, percent);
+        }
+      }
+    }
+    _pinchBaseWidth = null;
+    _pinchBaseHeight = null;
+    _isPinching = false;
   }
 
   Future<void> _openPreview(
@@ -185,9 +381,11 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
     required Widget child,
     required BoxConstraints constraints,
   }) {
+    final isDesktopLike = Theme.of(context).platform.isDesktopLike;
     final imageChild = SizedBox(key: _imageBoxKey, child: child);
 
-    if (!Theme.of(context).platform.isDesktopLike) {
+    final showResizeLayer = isDesktopLike;
+    if (!showResizeLayer) {
       return imageChild;
     }
 
@@ -310,7 +508,7 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
         },
         onPanEnd: (_) {
           _activeEdge = null;
-          _persistWidthPercent(constraints);
+          _persistWidthPercentByMaxWidth(constraints.maxWidth);
         },
         onPanCancel: () {
           _activeEdge = null;
@@ -319,12 +517,11 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
     );
   }
 
-  void _persistWidthPercent(BoxConstraints constraints) {
-    if (widget.onWidthPercentResolved == null || widget.uri.scheme != 'media') {
+  void _persistWidthPercentByMaxWidth(double maxWidth) {
+    if (widget.onWidthPercentResolved == null) {
       return;
     }
 
-    final maxWidth = constraints.maxWidth;
     final width = _interactiveWidth;
     if (width == null || !maxWidth.isFinite || maxWidth <= 0) {
       return;
@@ -337,6 +534,51 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
 
     final percent = ((width / maxWidth) * 100).round().clamp(1, 100);
     widget.onWidthPercentResolved!(mediaName, percent);
+  }
+
+  void _resizeByPinch({
+    required double scale,
+    required BoxConstraints constraints,
+  }) {
+    final baseWidth = _pinchBaseWidth;
+    final baseHeight = _pinchBaseHeight;
+    if (baseWidth == null || baseHeight == null || baseWidth <= 0 || baseHeight <= 0) {
+      return;
+    }
+
+    final aspect = baseWidth / baseHeight;
+    final nextWidth = baseWidth * scale;
+
+    final maxWidthByConstraint = constraints.maxWidth.isFinite
+        ? constraints.maxWidth
+        : double.infinity;
+    final maxHeightByConstraint = constraints.maxHeight.isFinite
+        ? constraints.maxHeight
+        : double.infinity;
+
+    final maxAllowedWidth = aspect > 0
+        ? (maxHeightByConstraint * aspect)
+        : double.infinity;
+    final minAllowedWidth = aspect > 0 ? (48.0 * aspect) : 48.0;
+
+    final upperBound = maxWidthByConstraint < maxAllowedWidth
+        ? maxWidthByConstraint
+        : maxAllowedWidth;
+    final lowerBound = 48.0 > minAllowedWidth ? 48.0 : minAllowedWidth;
+    if (upperBound <= 0 || upperBound < lowerBound) {
+      return;
+    }
+
+    final clampedWidth = nextWidth.clamp(lowerBound, upperBound).toDouble();
+    final clampedHeight = clampedWidth / aspect;
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _interactiveWidth = clampedWidth;
+      _interactiveHeight = clampedHeight;
+    });
   }
 
   void _resizeFromEdge(
@@ -500,6 +742,11 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
   }
 
   String _extractMediaName(Uri target) {
+    // 对于网络图片，返回完整 URL
+    if (target.scheme == 'http' || target.scheme == 'https') {
+      return target.toString();
+    }
+    // 对于 media:// 图片，返回解码后的名称
     final host = target.host;
     final path = target.path.startsWith('/')
         ? target.path.substring(1)
@@ -526,6 +773,12 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
         style: TextStyle(color: colorScheme.onErrorContainer, fontSize: 12),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _releaseParentScrollHold();
+    super.dispose();
   }
 }
 

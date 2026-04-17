@@ -88,7 +88,7 @@ class PathNavigatorState extends State<PathNavigator> {
 
     if (_isEditingPath) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(4),
@@ -100,7 +100,7 @@ class PathNavigatorState extends State<PathNavigator> {
           style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
           decoration: const InputDecoration(
             border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            contentPadding: EdgeInsets.zero,
             isDense: true,
           ),
           onSubmitted: _applyPath,

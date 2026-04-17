@@ -70,6 +70,11 @@ class NoteService {
     r'!\[([^\]]*)\]\(media://([^\)\s]+)\)',
     caseSensitive: false,
   );
+  // 匹配网络图片：http:// 或 https:// 开头的图片链接
+  static final RegExp _networkImagePattern = RegExp(
+    r'!\[([^\]]*)\]\((https?://[^\)\s]+)\)',
+    caseSensitive: false,
+  );
 
   static String upsertMediaWidthPercentInMarkdown({
     required String markdown,
@@ -81,17 +86,31 @@ class NoteService {
     }
 
     final clampedPercent = widthPercent.clamp(1, 100);
-    return markdown.replaceAllMapped(_mediaImagePattern, (match) {
+
+    // 先尝试匹配 media:// 图片
+    var result = markdown.replaceAllMapped(_mediaImagePattern, (match) {
       final alt = match.group(1) ?? '';
       final rawName = match.group(2) ?? '';
       final decodedName = Uri.decodeComponent(rawName);
-      if (decodedName != mediaName) {
+      if (decodedName.toLowerCase() != mediaName.toLowerCase()) {
         return match.group(0)!;
       }
-
       final nextAlt = _upsertWidthInAlt(alt, clampedPercent);
-      return '![${nextAlt}](media://$rawName)';
+      return '![$nextAlt](media://$rawName)';
     });
+
+    // 再尝试匹配网络图片 URL
+    result = result.replaceAllMapped(_networkImagePattern, (match) {
+      final alt = match.group(1) ?? '';
+      final url = match.group(2) ?? '';
+      if (url.toLowerCase() != mediaName.toLowerCase()) {
+        return match.group(0)!;
+      }
+      final nextAlt = _upsertWidthInAlt(alt, clampedPercent);
+      return '![$nextAlt]($url)';
+    });
+
+    return result;
   }
 
   static String _upsertWidthInAlt(String alt, int widthPercent) {
@@ -221,13 +240,23 @@ class NoteService {
   /// 读取媒体二进制
   Future<Uint8List?> getMedia(String name) async {
     final db = await _database;
-    final rows = await db.query(
+    var rows = await db.query(
       _mediaTableName,
       columns: ['blob'],
       where: 'name = ?',
       whereArgs: [name],
       limit: 1,
     );
+    // 部分平台会把 media:// 的 host 规范化为小写，导致大小写敏感匹配失败。
+    if (rows.isEmpty) {
+      rows = await db.query(
+        _mediaTableName,
+        columns: ['blob'],
+        where: 'LOWER(name) = LOWER(?)',
+        whereArgs: [name],
+        limit: 1,
+      );
+    }
     if (rows.isEmpty) {
       return null;
     }

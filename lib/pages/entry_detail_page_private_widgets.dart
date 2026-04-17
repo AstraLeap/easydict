@@ -1269,8 +1269,12 @@ class _AiChatDetailPageState extends State<_AiChatDetailPage> {
 /// 使用 AnimatedPositioned 实现平滑的键盘跟随动画
 class _KeyboardAwareBottomBar extends StatefulWidget {
   final Widget child;
+  final bool ignoreKeyboardInsets;
 
-  const _KeyboardAwareBottomBar({required this.child});
+  const _KeyboardAwareBottomBar({
+    required this.child,
+    this.ignoreKeyboardInsets = false,
+  });
 
   @override
   State<_KeyboardAwareBottomBar> createState() =>
@@ -1282,7 +1286,9 @@ class _KeyboardAwareBottomBarState extends State<_KeyboardAwareBottomBar> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final keyboardHeight = widget.ignoreKeyboardInsets
+        ? 0.0
+        : MediaQuery.of(context).viewInsets.bottom;
     final bottomPadding = keyboardHeight + _minBottomPadding;
     final isPhone =
         Theme.of(context).platform == TargetPlatform.android ||

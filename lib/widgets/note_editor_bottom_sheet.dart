@@ -1,20 +1,20 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
-import 'package:pasteboard/pasteboard.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/markdown.dart';
 import 'package:re_highlight/styles/all.dart' show builtThemes;
-import '../core/logger.dart';
 import '../i18n/strings.g.dart';
 import '../core/utils/scroll_safe_utils.dart';
 import '../services/note_service.dart';
 import '../services/preferences_service.dart';
 import 'note_markdown_media_image.dart';
+import 're_editor_selection_toolbar.dart';
+
+enum _UnsavedCloseAction { save, discard }
 
 /// 笔记编辑器底部弹窗
 /// 使用 re_editor 实现纯 Flutter 的 Markdown 编辑体验
@@ -46,6 +46,8 @@ class NoteEditorBottomSheet extends StatefulWidget {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      enableDrag: false,
+      showDragHandle: false,
       backgroundColor: Colors.transparent,
       builder: (context) => NoteEditorBottomSheet(
         word: word,
@@ -63,10 +65,11 @@ class NoteEditorBottomSheet extends StatefulWidget {
 }
 
 class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
-  static const String _logTag = 'NoteEditorPaste';
   final NoteService _noteService = NoteService();
   final PreferencesService _preferencesService = PreferencesService();
   late CodeLineEditingController _controller;
+  SelectionToolbarController? _toolbarController;
+  String _savedText = '';
   bool _isLoading = true;
   bool _isFullScreen = false;
   bool _isPreviewMode = false;
@@ -76,18 +79,35 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   final List<String> _redoStack = [];
   int _currentEditPosition = 0;
   bool _isTrackingChanges = true;
-  bool _isPastingImage = false;
-  DateTime? _lastPasteShortcutTime;
+  late final bool Function(KeyEvent event) _keyboardSaveHandler;
 
   @override
   void initState() {
     super.initState();
     _controller = CodeLineEditingController();
-    Logger.i(
-      'note editor init, platform=${Platform.operatingSystem}, supportsPaste=$_supportsClipboardImagePaste',
-      tag: _logTag,
-    );
+    _toolbarController = buildReEditorSelectionToolbarController();
+    _keyboardSaveHandler = _handleGlobalKeyEvent;
+    HardwareKeyboard.instance.addHandler(_keyboardSaveHandler);
     _loadInitialState();
+  }
+
+  bool _isSaveShortcut(KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return false;
+    }
+    final isSKey = event.logicalKey == LogicalKeyboardKey.keyS;
+    final keyboard = HardwareKeyboard.instance;
+    final hasModifier = keyboard.isControlPressed || keyboard.isMetaPressed;
+    return isSKey && hasModifier;
+  }
+
+  bool _handleGlobalKeyEvent(KeyEvent event) {
+    if (!_isSaveShortcut(event)) {
+      return false;
+    }
+
+    _save();
+    return true;
   }
 
   Future<void> _loadInitialState() async {
@@ -105,6 +125,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     }
 
     _controller.text = content;
+    _savedText = content;
     _undoStack.add(content);
     _controller.addListener(_trackChanges);
     setState(() {
@@ -117,6 +138,17 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     if (!_isTrackingChanges) return;
 
     final currentText = _controller.text;
+    final previousText = _undoStack.isNotEmpty ? _undoStack[_currentEditPosition] : '';
+
+    // 检测并自动转换新插入的图片URL
+    if (currentText.length > previousText.length) {
+      final insertedDiff = currentText.length - previousText.length;
+      // 只有插入量合理（可能是粘贴的URL）才检查
+      if (insertedDiff <= 500) {
+        _autoConvertImageUrl(previousText, currentText);
+      }
+    }
+
     if (_undoStack.isNotEmpty &&
         _undoStack[_currentEditPosition] != currentText) {
       if (_currentEditPosition < _undoStack.length - 1) {
@@ -126,6 +158,51 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
       _currentEditPosition = _undoStack.length - 1;
       _redoStack.clear();
       setState(() {});
+    }
+  }
+
+  /// 检测新插入的图片URL并自动转换为Markdown格式
+  void _autoConvertImageUrl(String previousText, String currentText) {
+    // 找出新增的内容
+    // 简单方法：查找所有http/https URL，检查是否是图片URL且没有被包裹在Markdown语法中
+    final urlPattern = RegExp(r'(https?://[^\s\)]+)', caseSensitive: false);
+    final matches = urlPattern.allMatches(currentText);
+
+    for (final match in matches) {
+      final url = match.group(1)!;
+      // 检查是否是图片URL
+      if (!_isImageUrl(url)) continue;
+
+      // 检查是否已经被Markdown图片语法包裹
+      // 查找匹配位置前后是否有 ![...](...)
+      final startIndex = match.start;
+      final endIndex = match.end;
+
+      // 检查前面是否有 ![...](
+      final beforeText = currentText.substring(0, startIndex);
+      if (beforeText.contains(RegExp(r'!\[[^\]]*\]\($'))) continue;
+
+      // 检查后面是否有 )
+      final afterText = currentText.substring(endIndex);
+      if (afterText.startsWith(')')) continue;
+
+      // 检查这个URL是否是新插入的（不在之前的文本中，或者位置不同）
+      if (previousText.contains(url) &&
+          previousText.indexOf(url) == currentText.indexOf(url)) continue;
+
+      // 找到了未被包裹的图片URL，转换为Markdown格式
+      final newText = currentText.replaceRange(startIndex, endIndex, '![picture]($url)');
+      if (newText != currentText) {
+        _isTrackingChanges = false;
+        _controller.text = newText;
+        _isTrackingChanges = true;
+        // 更新撤销栈中的最新文本
+        if (_undoStack.isNotEmpty) {
+          _undoStack[_currentEditPosition] = newText;
+        }
+        setState(() {});
+      }
+      return; // 只处理第一个，避免多次触发
     }
   }
 
@@ -151,21 +228,99 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     }
   }
 
-  Future<void> _save() async {
+  Future<bool> _save({bool closeAfterSave = false}) async {
     final content = _controller.text;
-    final existingNote = await _noteService.getNote(
-      widget.word,
-      widget.language,
+    try {
+      final existingNote = await _noteService.getNote(
+        widget.word,
+        widget.language,
+      );
+      final note = Note(
+        word: widget.word,
+        language: widget.language,
+        content: content,
+        createdAt: existingNote?.createdAt,
+      );
+      await _noteService.saveNote(note);
+
+      if (!mounted) {
+        return true;
+      }
+
+      setState(() {
+        _savedText = content;
+      });
+
+      if (_undoStack.isNotEmpty) {
+        _undoStack[_currentEditPosition] = content;
+      }
+
+      if (closeAfterSave) {
+        Navigator.of(context).pop(true);
+      }
+      return true;
+    } catch (_) {
+      if (mounted) {
+        _showMessage(context.t.entry.saveFailed(error: context.t.common.error));
+      }
+      return false;
+    }
+  }
+
+  bool get _hasUnsavedChanges => _controller.text != _savedText;
+
+  Future<_UnsavedCloseAction?> _showUnsavedCloseDialog() {
+    return showDialog<_UnsavedCloseAction>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Expanded(child: Text(context.t.common.unsavedChangesTitle)),
+              IconButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                icon: const Icon(Icons.close),
+                tooltip: context.t.common.continueEditing,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          content: Text(context.t.common.unsavedChangesMessage),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_UnsavedCloseAction.discard),
+              child: Text(context.t.common.discard),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_UnsavedCloseAction.save),
+              child: Text(context.t.common.save),
+            ),
+          ],
+        );
+      },
     );
-    final note = Note(
-      word: widget.word,
-      language: widget.language,
-      content: content,
-      createdAt: existingNote?.createdAt,
-    );
-    await _noteService.saveNote(note);
-    if (mounted) {
-      Navigator.of(context).pop(true);
+  }
+
+  Future<void> _attemptClose() async {
+    if (!_hasUnsavedChanges) {
+      if (mounted) {
+        Navigator.pop(context, false);
+      }
+      return;
+    }
+
+    final action = await _showUnsavedCloseDialog();
+    if (!mounted) return;
+
+    if (action == _UnsavedCloseAction.save) {
+      await _save(closeAfterSave: true);
+      return;
+    }
+
+    if (action == _UnsavedCloseAction.discard) {
+      Navigator.pop(context, false);
     }
   }
 
@@ -215,101 +370,50 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     }
   }
 
-  Future<bool> _insertImageFromClipboard() async {
-    if (_isPastingImage) {
-      Logger.d('skip paste: already processing', tag: _logTag);
+  /// 检查文本是否是图片URL
+  bool _isImageUrl(String text) {
+    final trimmed = text.trim();
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return false;
     }
-    _isPastingImage = true;
-    try {
-      Logger.d('reading image bytes from clipboard...', tag: _logTag);
-      final bytes = await Pasteboard.image;
-      if (bytes == null || bytes.isEmpty) {
-        Logger.w('clipboard has no image bytes', tag: _logTag);
-        return false;
-      }
-      Logger.i('clipboard image bytes=${bytes.length}', tag: _logTag);
-
-      final fileName = 'paste_${DateTime.now().millisecondsSinceEpoch}.png';
-      final storedName = await _noteService.saveMedia(
-        fileName: fileName,
-        bytes: bytes,
-      );
-      Logger.i('clipboard image saved as $storedName', tag: _logTag);
-      final encodedName = Uri.encodeComponent(storedName);
-      _insertTextAtSelection('![$storedName](media://$encodedName)');
-      _showMessage(context.t.common.success);
-      Logger.i('markdown image inserted from clipboard', tag: _logTag);
-      return true;
-    } catch (e, stackTrace) {
-      Logger.e(
-        'clipboard image paste failed: $e',
-        tag: _logTag,
-        error: e,
-        stackTrace: stackTrace,
-      );
-      return false;
-    } finally {
-      _isPastingImage = false;
-    }
+    final lower = trimmed.toLowerCase();
+    return lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.bmp');
   }
 
-  bool get _supportsClipboardImagePaste =>
-      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-
-  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
-    final isDown = event is KeyDownEvent;
-    final isUp = event is KeyUpEvent;
-    final keyLabel = event.logicalKey.keyLabel;
-    Logger.d(
-      'key event: down=$isDown up=$isUp key="$keyLabel" ctrl=${HardwareKeyboard.instance.isControlPressed} meta=${HardwareKeyboard.instance.isMetaPressed}',
-      tag: _logTag,
+  Widget _buildCodeEditorWithPasteOverride(
+    ColorScheme colorScheme,
+    Color previewBackground,
+    double noteFontSize,
+    bool isDark,
+  ) {
+    return CodeEditor(
+      controller: _controller,
+      toolbarController: _toolbarController,
+      style: CodeEditorStyle(
+        fontSize: noteFontSize,
+        fontFamily: 'monospace',
+        backgroundColor: previewBackground,
+        codeTheme: CodeHighlightTheme(
+          languages: {
+            'markdown': CodeHighlightThemeMode(
+              mode: langMarkdown,
+            ),
+          },
+          theme: isDark
+              ? builtThemes['atom-one-dark']!
+              : builtThemes['atom-one-light']!,
+        ),
+      ),
+      wordWrap: true,
+      indicatorBuilder: (context, editingController, chunkController, notifier) {
+        return const SizedBox.shrink();
+      },
     );
-
-    if (!_supportsClipboardImagePaste) {
-      Logger.d('ignored key event: unsupported platform', tag: _logTag);
-      return KeyEventResult.ignored;
-    }
-    // 在某些控件中，KeyDown 可能会被内部消费，只能收到 KeyUp。
-    if (event is! KeyDownEvent && event is! KeyUpEvent) {
-      return KeyEventResult.ignored;
-    }
-
-    final isPasteKey = event.logicalKey == LogicalKeyboardKey.keyV;
-    final isModifierPressed =
-        HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
-    if (!isPasteKey || !isModifierPressed) {
-      return KeyEventResult.ignored;
-    }
-
-    final now = DateTime.now();
-    final tooSoon =
-        _lastPasteShortcutTime != null &&
-        now.difference(_lastPasteShortcutTime!).inMilliseconds < 300;
-    if (tooSoon) {
-      Logger.d('skip paste shortcut: debounce window', tag: _logTag);
-      return KeyEventResult.ignored;
-    }
-    _lastPasteShortcutTime = now;
-
-    Logger.i(
-      'detected Ctrl/Cmd+V on ${isDown ? 'keydown' : 'keyup'}, trying image paste',
-      tag: _logTag,
-    );
-
-    _insertImageFromClipboard().then((inserted) {
-      Logger.i(
-        'clipboard image paste result: inserted=$inserted',
-        tag: _logTag,
-      );
-      if (inserted && mounted) {
-        FocusScope.of(
-          context,
-        ).requestFocus(FocusScope.of(context).focusedChild);
-      }
-    });
-    return KeyEventResult.ignored;
   }
 
   String _normalizeMarkdownLinks(String markdown) {
@@ -335,6 +439,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     String mediaName,
     int widthPercent,
   ) async {
+    if (!mounted) {
+      return;
+    }
     final currentText = _controller.text;
     final updatedText = NoteService.upsertMediaWidthPercentInMarkdown(
       markdown: currentText,
@@ -492,223 +599,290 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     final colorScheme = Theme.of(context).colorScheme;
     final screenSize = MediaQuery.of(context).size;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDesktop = Theme.of(context).platform.isDesktopLike;
     final noteFontSize = Theme.of(context).textTheme.bodyMedium?.fontSize ?? 15;
     final previewBackground = colorScheme.surface;
 
-    return Focus(
-      autofocus: true,
-      canRequestFocus: true,
-      onKeyEvent: _onKeyEvent,
-      child: DraggableScrollableSheet(
-        initialChildSize: _isFullScreen ? 1.0 : 0.7,
-        minChildSize: _isFullScreen ? 1.0 : 0.5,
-        maxChildSize: _isFullScreen
-            ? 1.0
-            : availableHeightRatio(
-                totalHeight: screenSize.height,
-                reservedTop: topInsetWithMargin(widget.statusBarHeight),
-              ),
-        expand: false,
-        builder: (context, scrollController) {
-          return Container(
-            width: _isFullScreen ? screenSize.width : null,
-            padding: EdgeInsets.only(
-              top: _isFullScreen
-                  ? topInsetWithMargin(widget.statusBarHeight)
-                  : 16,
-              left: 16,
-              right: 16,
-              bottom: 16,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _attemptClose();
+      },
+      child: Shortcuts(
+        shortcuts: {
+          // Ctrl+Z / Cmd+Z 撤销
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.keyZ,
+          ): const _UndoIntent(),
+          // Ctrl+Shift+Z / Cmd+Shift+Z 重做
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.shift,
+            LogicalKeyboardKey.keyZ,
+          ): const _RedoIntent(),
+          // Ctrl+Y / Cmd+Y 重做 (备选)
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.keyY,
+          ): const _RedoIntent(),
+          // Ctrl+S / Cmd+S 保存
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.keyS,
+          ): const _SaveIntent(),
+        },
+        child: Actions(
+          actions: {
+            _UndoIntent: CallbackAction<_UndoIntent>(
+              onInvoke: (_) {
+                _undo();
+                return null;
+              },
             ),
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              borderRadius: _isFullScreen
-                  ? BorderRadius.zero
-                  : const BorderRadius.vertical(top: Radius.circular(16)),
+            _RedoIntent: CallbackAction<_RedoIntent>(
+              onInvoke: (_) {
+                _redo();
+                return null;
+              },
             ),
-            clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : Column(
-                    children: [
-                      // 工具栏
-                      Row(
-                        children: [
-                          // 保存
-                          _buildToolbarButton(
-                            icon: Icons.save,
-                            onPressed: _save,
-                            tooltip: context.t.common.save,
-                            color: colorScheme.primary,
-                          ),
-                          // 撤销
-                          _buildToolbarButton(
-                            icon: Icons.undo,
-                            onPressed: _currentEditPosition > 0 ? _undo : null,
-                            tooltip: context.t.common.undo,
-                          ),
-                          // 重做
-                          _buildToolbarButton(
-                            icon: Icons.redo,
-                            onPressed:
-                                _currentEditPosition < _undoStack.length - 1
-                                ? _redo
-                                : null,
-                            tooltip: context.t.common.redo,
-                          ),
-                          _buildToolbarButton(
-                            icon: Icons.image_outlined,
-                            onPressed: _insertImageFromPicker,
-                            tooltip: context.t.common.upload,
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: _togglePreviewMode,
-                            icon: Icon(
-                              _isPreviewMode ? Icons.edit_note : Icons.preview,
-                              size: 20,
+            _SaveIntent: CallbackAction<_SaveIntent>(
+              onInvoke: (_) {
+                _save();
+                return null;
+              },
+            ),
+          },
+          child: Focus(
+            autofocus: true,
+            canRequestFocus: true,
+            child: DraggableScrollableSheet(
+            initialChildSize: _isFullScreen ? 1.0 : 0.7,
+            minChildSize: _isFullScreen ? 1.0 : 0.5,
+            maxChildSize: _isFullScreen
+                ? 1.0
+                : availableHeightRatio(
+                    totalHeight: screenSize.height,
+                    reservedTop: topInsetWithMargin(widget.statusBarHeight),
+                  ),
+            shouldCloseOnMinExtent: false,
+            expand: false,
+            builder: (context, scrollController) {
+              return Container(
+                width: _isFullScreen ? screenSize.width : null,
+                padding: EdgeInsets.only(
+                  top: _isFullScreen
+                      ? topInsetWithMargin(widget.statusBarHeight)
+                      : 16,
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: _isFullScreen
+                      ? BorderRadius.zero
+                      : const BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : Column(
+                      children: [
+                        // 工具栏
+                        Row(
+                          children: [
+                            _buildToolbarButton(
+                              icon: Icons.save_outlined,
+                              onPressed: () => _save(),
+                              tooltip: context.t.common.save,
                             ),
-                            tooltip: context.t.note.preview,
-                          ),
-                          // 全屏
-                          IconButton(
-                            onPressed: () =>
-                                setState(() => _isFullScreen = !_isFullScreen),
-                            icon: Icon(
-                              _isFullScreen
-                                  ? Icons.fullscreen_exit
-                                  : Icons.fullscreen,
-                              size: 20,
+                            // 撤销
+                            _buildToolbarButton(
+                              icon: Icons.undo,
+                              onPressed: _currentEditPosition > 0
+                                  ? _undo
+                                  : null,
+                              tooltip: context.t.common.undo,
                             ),
-                            tooltip: _isFullScreen
-                                ? context.t.common.exitFullscreen
-                                : context.t.common.fullscreen,
-                          ),
-                          // 关闭
-                          IconButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            icon: const Icon(Icons.close, size: 20),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      // 编辑器 / 预览
-                      Expanded(
-                        child: _isPreviewMode
-                            ? Container(
-                                decoration: BoxDecoration(
-                                  color: previewBackground,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: colorScheme.outlineVariant
-                                        .withOpacity(0.5),
-                                  ),
-                                ),
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    return SingleChildScrollView(
-                                      padding: const EdgeInsets.all(12),
-                                      child: ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          minWidth: constraints.maxWidth,
-                                        ),
-                                        child: _controller.text.trim().isEmpty
-                                            ? SizedBox(
-                                                height: 220,
-                                                child: Center(
-                                                  child: Text(
-                                                    context.t.note.previewEmpty,
-                                                    style: TextStyle(
-                                                      color: colorScheme
-                                                          .onSurfaceVariant,
-                                                      fontSize: noteFontSize,
-                                                    ),
-                                                  ),
-                                                ),
-                                              )
-                                            : MarkdownBody(
-                                                data: _normalizeMarkdownLinks(
-                                                  _controller.text,
-                                                ),
-                                                styleSheet: MarkdownStyleSheet(
-                                                  p: TextStyle(
-                                                    color:
-                                                        colorScheme.onSurface,
-                                                    fontSize: noteFontSize,
-                                                  ),
-                                                  a: TextStyle(
-                                                    color: colorScheme.primary,
-                                                    fontSize: noteFontSize,
-                                                  ),
-                                                ),
-                                                imageBuilder:
-                                                    (
-                                                      uri,
-                                                      title,
-                                                      alt,
-                                                    ) => NoteMarkdownMediaImage(
-                                                      uri: uri,
-                                                      altText: alt,
-                                                      onWidthPercentResolved:
-                                                          _persistImageWidthPercentInEditor,
-                                                    ),
-                                                onTapLink: (text, href, title) {
-                                                  if (href != null) {
-                                                    _handlePreviewLinkTap(href);
-                                                  }
-                                                },
-                                              ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              )
-                            : Container(
-                                decoration: BoxDecoration(
-                                  color: previewBackground,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: colorScheme.outlineVariant
-                                        .withOpacity(0.5),
-                                  ),
-                                ),
-                                child: CodeEditor(
-                                  controller: _controller,
-                                  style: CodeEditorStyle(
-                                    fontSize: noteFontSize,
-                                    fontFamily: 'monospace',
-                                    backgroundColor: previewBackground,
-                                    codeTheme: CodeHighlightTheme(
-                                      languages: {
-                                        'markdown': CodeHighlightThemeMode(
-                                          mode: langMarkdown,
-                                        ),
-                                      },
-                                      theme: isDark
-                                          ? builtThemes['atom-one-dark']!
-                                          : builtThemes['atom-one-light']!,
+                            // 重做
+                            _buildToolbarButton(
+                              icon: Icons.redo,
+                              onPressed:
+                                  _currentEditPosition < _undoStack.length - 1
+                                  ? _redo
+                                  : null,
+                              tooltip: context.t.common.redo,
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.image_outlined,
+                              onPressed: _insertImageFromPicker,
+                              tooltip: context.t.common.upload,
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              onPressed: _togglePreviewMode,
+                              icon: Icon(
+                                _isPreviewMode
+                                    ? Icons.edit_note
+                                    : Icons.preview,
+                                size: 20,
+                              ),
+                              tooltip: context.t.note.preview,
+                              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                              padding: EdgeInsets.zero,
+                              visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
+                            ),
+                            // 全屏
+                            IconButton(
+                              onPressed: () => setState(
+                                () => _isFullScreen = !_isFullScreen,
+                              ),
+                              icon: Icon(
+                                _isFullScreen
+                                    ? Icons.fullscreen_exit
+                                    : Icons.fullscreen,
+                                size: 20,
+                              ),
+                              tooltip: _isFullScreen
+                                  ? context.t.common.exitFullscreen
+                                  : context.t.common.fullscreen,
+                              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                              padding: EdgeInsets.zero,
+                              visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
+                            ),
+                            // 关闭
+                            IconButton(
+                              onPressed: _attemptClose,
+                              icon: const Icon(Icons.close, size: 20),
+                              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                              padding: EdgeInsets.zero,
+                              visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // 编辑器 / 预览
+                        Expanded(
+                          child: _isPreviewMode
+                              ? Container(
+                                  decoration: BoxDecoration(
+                                    color: previewBackground,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant
+                                          .withOpacity(0.5),
                                     ),
                                   ),
-                                  wordWrap: true,
-                                  indicatorBuilder:
-                                      (
-                                        context,
-                                        editingController,
-                                        chunkController,
-                                        notifier,
-                                      ) {
-                                        return const SizedBox.shrink();
-                                      },
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return _controller.text.trim().isEmpty
+                                          ? Center(
+                                              child: Text(
+                                                context.t.note.previewEmpty,
+                                                style: TextStyle(
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                  fontSize: noteFontSize,
+                                                ),
+                                              ),
+                                            )
+                                          : SingleChildScrollView(
+                                              padding: const EdgeInsets.all(12),
+                                              child: ConstrainedBox(
+                                                constraints: BoxConstraints(
+                                                  minWidth: constraints.maxWidth,
+                                                ),
+                                                child: MarkdownBody(
+                                                  data: _normalizeMarkdownLinks(
+                                                    _controller.text,
+                                                  ),
+                                                  styleSheet:
+                                                      MarkdownStyleSheet(
+                                                        p: TextStyle(
+                                                          color: colorScheme
+                                                              .onSurface,
+                                                          fontSize:
+                                                              noteFontSize,
+                                                        ),
+                                                        a: TextStyle(
+                                                          color: colorScheme
+                                                              .primary,
+                                                          fontSize:
+                                                              noteFontSize,
+                                                        ),
+                                                      ),
+                                                  imageBuilder:
+                                                      (
+                                                        uri,
+                                                        title,
+                                                        alt,
+                                                      ) => NoteMarkdownMediaImage(
+                                                        uri: uri,
+                                                        altText: alt,
+                                                        onWidthPercentResolved:
+                                                            _persistImageWidthPercentInEditor,
+                                                      ),
+                                                  onTapLink:
+                                                      (text, href, title) {
+                                                        if (href != null) {
+                                                          _handlePreviewLinkTap(
+                                                            href,
+                                                          );
+                                                        }
+                                                      },
+                                                ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    color: previewBackground,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant
+                                          .withOpacity(0.5),
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      _buildCodeEditorWithPasteOverride(
+                                        colorScheme,
+                                        previewBackground,
+                                        noteFontSize,
+                                        isDark,
+                                      ),
+                                      if (_controller.text.trim().isEmpty)
+                                        Positioned.fill(
+                                          child: IgnorePointer(
+                                            child: Center(
+                                              child: Text(
+                                                context.t.note.editorHint,
+                                                style: TextStyle(
+                                                  color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                                                  fontSize: noteFontSize,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                      ),
-                    ],
-                  ),
-          );
-        },
+                        ),
+                      ],
+                    ),
+              );
+            },
+          ),
+        ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildToolbarButton({
     required IconData icon,
@@ -717,6 +891,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     Color? color,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDesktop = Theme.of(context).platform.isDesktopLike;
 
     return IconButton(
       onPressed: onPressed,
@@ -725,19 +900,40 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
         color:
             color ??
             (onPressed != null
-                ? colorScheme.onSurfaceVariant
+                ? colorScheme.primary
                 : colorScheme.outline),
         size: 20,
       ),
       tooltip: tooltip,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+      visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
     );
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_keyboardSaveHandler);
     _controller.dispose();
     super.dispose();
   }
+}
+
+class _UndoIntent extends Intent {
+  const _UndoIntent();
+}
+
+class _RedoIntent extends Intent {
+  const _RedoIntent();
+}
+
+class _SaveIntent extends Intent {
+  const _SaveIntent();
+}
+
+extension on TargetPlatform {
+  bool get isDesktopLike =>
+      this == TargetPlatform.windows ||
+      this == TargetPlatform.macOS ||
+      this == TargetPlatform.linux;
 }
