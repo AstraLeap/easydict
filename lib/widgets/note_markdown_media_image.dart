@@ -234,7 +234,10 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
           );
         },
         errorBuilder: (context, error, stackTrace) {
-          Logger.w('Network image load failed: ${widget.uri}', tag: 'NoteMarkdownMediaImage');
+          Logger.w(
+            'Network image load failed: ${widget.uri}',
+            tag: 'NoteMarkdownMediaImage',
+          );
           return _buildError(context);
         },
       ),
@@ -279,7 +282,9 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
 
               final scale = details.scale;
               // 降低阈值，让捏合更容易识别
-              if (!scale.isFinite || scale.isNaN || (scale - 1.0).abs() < 0.005) {
+              if (!scale.isFinite ||
+                  scale.isNaN ||
+                  (scale - 1.0).abs() < 0.005) {
                 return;
               }
               _isPinching = true;
@@ -542,7 +547,10 @@ class _NoteMarkdownMediaImageState extends State<NoteMarkdownMediaImage> {
   }) {
     final baseWidth = _pinchBaseWidth;
     final baseHeight = _pinchBaseHeight;
-    if (baseWidth == null || baseHeight == null || baseWidth <= 0 || baseHeight <= 0) {
+    if (baseWidth == null ||
+        baseHeight == null ||
+        baseWidth <= 0 ||
+        baseHeight <= 0) {
       return;
     }
 

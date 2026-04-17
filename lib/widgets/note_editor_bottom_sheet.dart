@@ -138,7 +138,9 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     if (!_isTrackingChanges) return;
 
     final currentText = _controller.text;
-    final previousText = _undoStack.isNotEmpty ? _undoStack[_currentEditPosition] : '';
+    final previousText = _undoStack.isNotEmpty
+        ? _undoStack[_currentEditPosition]
+        : '';
 
     // 检测并自动转换新插入的图片URL
     if (currentText.length > previousText.length) {
@@ -188,10 +190,15 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
 
       // 检查这个URL是否是新插入的（不在之前的文本中，或者位置不同）
       if (previousText.contains(url) &&
-          previousText.indexOf(url) == currentText.indexOf(url)) continue;
+          previousText.indexOf(url) == currentText.indexOf(url))
+        continue;
 
       // 找到了未被包裹的图片URL，转换为Markdown格式
-      final newText = currentText.replaceRange(startIndex, endIndex, '![picture]($url)');
+      final newText = currentText.replaceRange(
+        startIndex,
+        endIndex,
+        '![picture]($url)',
+      );
       if (newText != currentText) {
         _isTrackingChanges = false;
         _controller.text = newText;
@@ -399,20 +406,17 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
         fontFamily: 'monospace',
         backgroundColor: previewBackground,
         codeTheme: CodeHighlightTheme(
-          languages: {
-            'markdown': CodeHighlightThemeMode(
-              mode: langMarkdown,
-            ),
-          },
+          languages: {'markdown': CodeHighlightThemeMode(mode: langMarkdown)},
           theme: isDark
               ? builtThemes['atom-one-dark']!
               : builtThemes['atom-one-light']!,
         ),
       ),
       wordWrap: true,
-      indicatorBuilder: (context, editingController, chunkController, notifier) {
-        return const SizedBox.shrink();
-      },
+      indicatorBuilder:
+          (context, editingController, chunkController, notifier) {
+            return const SizedBox.shrink();
+          },
     );
   }
 
@@ -613,23 +617,31 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
         shortcuts: {
           // Ctrl+Z / Cmd+Z 撤销
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.keyZ,
           ): const _UndoIntent(),
           // Ctrl+Shift+Z / Cmd+Shift+Z 重做
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.shift,
             LogicalKeyboardKey.keyZ,
           ): const _RedoIntent(),
           // Ctrl+Y / Cmd+Y 重做 (备选)
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.keyY,
           ): const _RedoIntent(),
           // Ctrl+S / Cmd+S 保存
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.keyS,
           ): const _SaveIntent(),
         },
@@ -658,231 +670,253 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
             autofocus: true,
             canRequestFocus: true,
             child: DraggableScrollableSheet(
-            initialChildSize: _isFullScreen ? 1.0 : 0.7,
-            minChildSize: _isFullScreen ? 1.0 : 0.5,
-            maxChildSize: _isFullScreen
-                ? 1.0
-                : availableHeightRatio(
-                    totalHeight: screenSize.height,
-                    reservedTop: topInsetWithMargin(widget.statusBarHeight),
+              initialChildSize: _isFullScreen ? 1.0 : 0.7,
+              minChildSize: _isFullScreen ? 1.0 : 0.5,
+              maxChildSize: _isFullScreen
+                  ? 1.0
+                  : availableHeightRatio(
+                      totalHeight: screenSize.height,
+                      reservedTop: topInsetWithMargin(widget.statusBarHeight),
+                    ),
+              shouldCloseOnMinExtent: false,
+              expand: false,
+              builder: (context, scrollController) {
+                return Container(
+                  width: _isFullScreen ? screenSize.width : null,
+                  padding: EdgeInsets.only(
+                    top: _isFullScreen
+                        ? topInsetWithMargin(widget.statusBarHeight)
+                        : 16,
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
                   ),
-            shouldCloseOnMinExtent: false,
-            expand: false,
-            builder: (context, scrollController) {
-              return Container(
-                width: _isFullScreen ? screenSize.width : null,
-                padding: EdgeInsets.only(
-                  top: _isFullScreen
-                      ? topInsetWithMargin(widget.statusBarHeight)
-                      : 16,
-                  left: 16,
-                  right: 16,
-                  bottom: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: _isFullScreen
-                      ? BorderRadius.zero
-                      : const BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : Column(
-                      children: [
-                        // 工具栏
-                        Row(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    borderRadius: _isFullScreen
+                        ? BorderRadius.zero
+                        : const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : Column(
                           children: [
-                            _buildToolbarButton(
-                              icon: Icons.save_outlined,
-                              onPressed: () => _save(),
-                              tooltip: context.t.common.save,
-                            ),
-                            // 撤销
-                            _buildToolbarButton(
-                              icon: Icons.undo,
-                              onPressed: _currentEditPosition > 0
-                                  ? _undo
-                                  : null,
-                              tooltip: context.t.common.undo,
-                            ),
-                            // 重做
-                            _buildToolbarButton(
-                              icon: Icons.redo,
-                              onPressed:
-                                  _currentEditPosition < _undoStack.length - 1
-                                  ? _redo
-                                  : null,
-                              tooltip: context.t.common.redo,
-                            ),
-                            _buildToolbarButton(
-                              icon: Icons.image_outlined,
-                              onPressed: _insertImageFromPicker,
-                              tooltip: context.t.common.upload,
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              onPressed: _togglePreviewMode,
-                              icon: Icon(
-                                _isPreviewMode
-                                    ? Icons.edit_note
-                                    : Icons.preview,
-                                size: 20,
-                              ),
-                              tooltip: context.t.note.preview,
-                              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                              padding: EdgeInsets.zero,
-                              visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
-                            ),
-                            // 全屏
-                            IconButton(
-                              onPressed: () => setState(
-                                () => _isFullScreen = !_isFullScreen,
-                              ),
-                              icon: Icon(
-                                _isFullScreen
-                                    ? Icons.fullscreen_exit
-                                    : Icons.fullscreen,
-                                size: 20,
-                              ),
-                              tooltip: _isFullScreen
-                                  ? context.t.common.exitFullscreen
-                                  : context.t.common.fullscreen,
-                              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                              padding: EdgeInsets.zero,
-                              visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
-                            ),
-                            // 关闭
-                            IconButton(
-                              onPressed: _attemptClose,
-                              icon: const Icon(Icons.close, size: 20),
-                              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                              padding: EdgeInsets.zero,
-                              visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        // 编辑器 / 预览
-                        Expanded(
-                          child: _isPreviewMode
-                              ? Container(
-                                  decoration: BoxDecoration(
-                                    color: previewBackground,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant
-                                          .withOpacity(0.5),
-                                    ),
+                            // 工具栏
+                            Row(
+                              children: [
+                                _buildToolbarButton(
+                                  icon: Icons.save_outlined,
+                                  onPressed: () => _save(),
+                                  tooltip: context.t.common.save,
+                                ),
+                                // 撤销
+                                _buildToolbarButton(
+                                  icon: Icons.undo,
+                                  onPressed: _currentEditPosition > 0
+                                      ? _undo
+                                      : null,
+                                  tooltip: context.t.common.undo,
+                                ),
+                                // 重做
+                                _buildToolbarButton(
+                                  icon: Icons.redo,
+                                  onPressed:
+                                      _currentEditPosition <
+                                          _undoStack.length - 1
+                                      ? _redo
+                                      : null,
+                                  tooltip: context.t.common.redo,
+                                ),
+                                _buildToolbarButton(
+                                  icon: Icons.image_outlined,
+                                  onPressed: _insertImageFromPicker,
+                                  tooltip: context.t.common.upload,
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  onPressed: _togglePreviewMode,
+                                  icon: Icon(
+                                    _isPreviewMode
+                                        ? Icons.edit_note
+                                        : Icons.preview,
+                                    size: 20,
                                   ),
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      return _controller.text.trim().isEmpty
-                                          ? Center(
-                                              child: Text(
-                                                context.t.note.previewEmpty,
-                                                style: TextStyle(
-                                                  color: colorScheme
-                                                      .onSurfaceVariant,
-                                                  fontSize: noteFontSize,
-                                                ),
-                                              ),
-                                            )
-                                          : SingleChildScrollView(
-                                              padding: const EdgeInsets.all(12),
-                                              child: ConstrainedBox(
-                                                constraints: BoxConstraints(
-                                                  minWidth: constraints.maxWidth,
-                                                ),
-                                                child: MarkdownBody(
-                                                  data: _normalizeMarkdownLinks(
-                                                    _controller.text,
-                                                  ),
-                                                  styleSheet:
-                                                      MarkdownStyleSheet(
-                                                        p: TextStyle(
-                                                          color: colorScheme
-                                                              .onSurface,
-                                                          fontSize:
-                                                              noteFontSize,
-                                                        ),
-                                                        a: TextStyle(
-                                                          color: colorScheme
-                                                              .primary,
-                                                          fontSize:
-                                                              noteFontSize,
-                                                        ),
-                                                      ),
-                                                  imageBuilder:
-                                                      (
-                                                        uri,
-                                                        title,
-                                                        alt,
-                                                      ) => NoteMarkdownMediaImage(
-                                                        uri: uri,
-                                                        altText: alt,
-                                                        onWidthPercentResolved:
-                                                            _persistImageWidthPercentInEditor,
-                                                      ),
-                                                  onTapLink:
-                                                      (text, href, title) {
-                                                        if (href != null) {
-                                                          _handlePreviewLinkTap(
-                                                            href,
-                                                          );
-                                                        }
-                                                      },
-                                                ),
+                                  tooltip: context.t.note.preview,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 38,
+                                    minHeight: 38,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: isDesktop
+                                      ? VisualDensity.standard
+                                      : VisualDensity.compact,
+                                ),
+                                // 全屏
+                                IconButton(
+                                  onPressed: () => setState(
+                                    () => _isFullScreen = !_isFullScreen,
+                                  ),
+                                  icon: Icon(
+                                    _isFullScreen
+                                        ? Icons.fullscreen_exit
+                                        : Icons.fullscreen,
+                                    size: 20,
+                                  ),
+                                  tooltip: _isFullScreen
+                                      ? context.t.common.exitFullscreen
+                                      : context.t.common.fullscreen,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 38,
+                                    minHeight: 38,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: isDesktop
+                                      ? VisualDensity.standard
+                                      : VisualDensity.compact,
+                                ),
+                                // 关闭
+                                IconButton(
+                                  onPressed: _attemptClose,
+                                  icon: const Icon(Icons.close, size: 20),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 38,
+                                    minHeight: 38,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: isDesktop
+                                      ? VisualDensity.standard
+                                      : VisualDensity.compact,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // 编辑器 / 预览
+                            Expanded(
+                              child: _isPreviewMode
+                                  ? Container(
+                                      decoration: BoxDecoration(
+                                        color: previewBackground,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: colorScheme.outlineVariant
+                                              .withOpacity(0.5),
                                         ),
-                                      );
-                                    },
-                                  ),
-                                )
-                              : Container(
-                                  decoration: BoxDecoration(
-                                    color: previewBackground,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant
-                                          .withOpacity(0.5),
-                                    ),
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      _buildCodeEditorWithPasteOverride(
-                                        colorScheme,
-                                        previewBackground,
-                                        noteFontSize,
-                                        isDark,
                                       ),
-                                      if (_controller.text.trim().isEmpty)
-                                        Positioned.fill(
-                                          child: IgnorePointer(
-                                            child: Center(
-                                              child: Text(
-                                                context.t.note.editorHint,
-                                                style: TextStyle(
-                                                  color: colorScheme.onSurfaceVariant.withOpacity(0.5),
-                                                  fontSize: noteFontSize,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          return _controller.text.trim().isEmpty
+                                              ? Center(
+                                                  child: Text(
+                                                    context.t.note.previewEmpty,
+                                                    style: TextStyle(
+                                                      color: colorScheme
+                                                          .onSurfaceVariant,
+                                                      fontSize: noteFontSize,
+                                                    ),
+                                                  ),
+                                                )
+                                              : SingleChildScrollView(
+                                                  padding: const EdgeInsets.all(
+                                                    12,
+                                                  ),
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      minWidth:
+                                                          constraints.maxWidth,
+                                                    ),
+                                                    child: MarkdownBody(
+                                                      data:
+                                                          _normalizeMarkdownLinks(
+                                                            _controller.text,
+                                                          ),
+                                                      styleSheet:
+                                                          MarkdownStyleSheet(
+                                                            p: TextStyle(
+                                                              color: colorScheme
+                                                                  .onSurface,
+                                                              fontSize:
+                                                                  noteFontSize,
+                                                            ),
+                                                            a: TextStyle(
+                                                              color: colorScheme
+                                                                  .primary,
+                                                              fontSize:
+                                                                  noteFontSize,
+                                                            ),
+                                                          ),
+                                                      imageBuilder:
+                                                          (
+                                                            uri,
+                                                            title,
+                                                            alt,
+                                                          ) => NoteMarkdownMediaImage(
+                                                            uri: uri,
+                                                            altText: alt,
+                                                            onWidthPercentResolved:
+                                                                _persistImageWidthPercentInEditor,
+                                                          ),
+                                                      onTapLink:
+                                                          (text, href, title) {
+                                                            if (href != null) {
+                                                              _handlePreviewLinkTap(
+                                                                href,
+                                                              );
+                                                            }
+                                                          },
+                                                    ),
+                                                  ),
+                                                );
+                                        },
+                                      ),
+                                    )
+                                  : Container(
+                                      decoration: BoxDecoration(
+                                        color: previewBackground,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: colorScheme.outlineVariant
+                                              .withOpacity(0.5),
+                                        ),
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          _buildCodeEditorWithPasteOverride(
+                                            colorScheme,
+                                            previewBackground,
+                                            noteFontSize,
+                                            isDark,
+                                          ),
+                                          if (_controller.text.trim().isEmpty)
+                                            Positioned.fill(
+                                              child: IgnorePointer(
+                                                child: Center(
+                                                  child: Text(
+                                                    context.t.note.editorHint,
+                                                    style: TextStyle(
+                                                      color: colorScheme
+                                                          .onSurfaceVariant
+                                                          .withOpacity(0.5),
+                                                      fontSize: noteFontSize,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
+                                        ],
+                                      ),
+                                    ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildToolbarButton({
     required IconData icon,
@@ -899,9 +933,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
         icon,
         color:
             color ??
-            (onPressed != null
-                ? colorScheme.primary
-                : colorScheme.outline),
+            (onPressed != null ? colorScheme.primary : colorScheme.outline),
         size: 20,
       ),
       tooltip: tooltip,

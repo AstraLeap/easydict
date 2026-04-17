@@ -271,23 +271,31 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
         shortcuts: {
           // Ctrl+Z / Cmd+Z 撤销
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.keyZ,
           ): const _UndoIntent(),
           // Ctrl+Shift+Z / Cmd+Shift+Z 重做
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.shift,
             LogicalKeyboardKey.keyZ,
           ): const _RedoIntent(),
           // Ctrl+Y / Cmd+Y 重做 (备选)
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.keyY,
           ): const _RedoIntent(),
           // Ctrl+S / Cmd+S 保存
           LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
             LogicalKeyboardKey.keyS,
           ): const _SaveIntent(),
         },
@@ -316,270 +324,293 @@ class _JsonEditorBottomSheetState extends State<JsonEditorBottomSheet> {
             autofocus: true,
             canRequestFocus: true,
             child: DraggableScrollableSheet(
-          initialChildSize: _isFullScreen ? 1.0 : 0.7,
-          minChildSize: _isFullScreen ? 1.0 : 0.5,
-          maxChildSize: _isFullScreen
-              ? 1.0
-              : availableHeightRatio(
-                  totalHeight: screenSize.height,
-                  reservedTop: topInsetWithMargin(statusBarHeight),
-                ),
-          shouldCloseOnMinExtent: false,
-          expand: false,
-          builder: (context, scrollController) {
-            return Container(
-              width: _isFullScreen ? screenSize.width : null,
-              padding: EdgeInsets.only(
-                top: _isFullScreen ? topInsetWithMargin(statusBarHeight) : 16,
-                left: 16,
-                right: 16,
-                bottom: 16,
-              ),
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                borderRadius: _isFullScreen
-                    ? BorderRadius.zero
-                    : const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
-              child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: PathNavigator(
-                        pathParts: widget.pathParts,
-                        cursorPath: _currentPath.isNotEmpty
-                            ? _currentPath
-                            : null,
-                        onNavigate: (newPathParts) {
-                          Navigator.pop(context);
-                          dynamic currentValue;
-                          try {
-                            currentValue = jsonDecode(_controller.text);
-                          } catch (_) {
-                            final json = widget.entry.toJson();
-                            currentValue = json;
-                          }
-                          for (final part in newPathParts) {
-                            if (currentValue is Map) {
-                              currentValue = currentValue[part];
-                            } else if (currentValue is List) {
-                              final index = int.tryParse(part);
-                              if (index != null &&
-                                  index >= 0 &&
-                                  index < currentValue.length) {
-                                currentValue = currentValue[index];
-                              } else {
-                                // 索引无效，停止遍历
-                                break;
-                              }
-                            }
-                          }
-                          widget.onNavigate(newPathParts, currentValue);
-                        },
-                        onHomeTap: () {
-                          Navigator.pop(context);
-                          final json = widget.entry.toJson();
-                          widget.onNavigate([], json);
-                        },
-                        onCursorPathTap: (cursorPath) {
-                          // re_editor 不支持路径跳转
-                        },
-                        showReturnToStart:
-                            widget.initialPath != null &&
-                            widget.pathParts.join('.') !=
-                                widget.initialPath!.join('.'),
-                        onReturnToStart:
-                            widget.initialPath != null &&
-                                widget.pathParts.join('.') !=
-                                    widget.initialPath!.join('.')
-                            ? () {
+              initialChildSize: _isFullScreen ? 1.0 : 0.7,
+              minChildSize: _isFullScreen ? 1.0 : 0.5,
+              maxChildSize: _isFullScreen
+                  ? 1.0
+                  : availableHeightRatio(
+                      totalHeight: screenSize.height,
+                      reservedTop: topInsetWithMargin(statusBarHeight),
+                    ),
+              shouldCloseOnMinExtent: false,
+              expand: false,
+              builder: (context, scrollController) {
+                return Container(
+                  width: _isFullScreen ? screenSize.width : null,
+                  padding: EdgeInsets.only(
+                    top: _isFullScreen
+                        ? topInsetWithMargin(statusBarHeight)
+                        : 16,
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    borderRadius: _isFullScreen
+                        ? BorderRadius.zero
+                        : const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  clipBehavior: _isFullScreen ? Clip.none : Clip.antiAlias,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PathNavigator(
+                              pathParts: widget.pathParts,
+                              cursorPath: _currentPath.isNotEmpty
+                                  ? _currentPath
+                                  : null,
+                              onNavigate: (newPathParts) {
                                 Navigator.pop(context);
-                                final startPath = widget.initialPath!;
-                                final json = widget.entry.toJson();
-                                dynamic currentValue = json;
-                                for (final part in startPath) {
+                                dynamic currentValue;
+                                try {
+                                  currentValue = jsonDecode(_controller.text);
+                                } catch (_) {
+                                  final json = widget.entry.toJson();
+                                  currentValue = json;
+                                }
+                                for (final part in newPathParts) {
                                   if (currentValue is Map) {
                                     currentValue = currentValue[part];
                                   } else if (currentValue is List) {
-                                    int? index = int.tryParse(part);
-                                    if (index != null)
+                                    final index = int.tryParse(part);
+                                    if (index != null &&
+                                        index >= 0 &&
+                                        index < currentValue.length) {
                                       currentValue = currentValue[index];
+                                    } else {
+                                      // 索引无效，停止遍历
+                                      break;
+                                    }
                                   }
                                 }
-                                widget.onNavigate(startPath, currentValue);
-                              }
-                            : null,
-                        validatePath: (newPath) {
-                          final json = widget.entry.toJson();
-                          dynamic currentValue = json;
+                                widget.onNavigate(newPathParts, currentValue);
+                              },
+                              onHomeTap: () {
+                                Navigator.pop(context);
+                                final json = widget.entry.toJson();
+                                widget.onNavigate([], json);
+                              },
+                              onCursorPathTap: (cursorPath) {
+                                // re_editor 不支持路径跳转
+                              },
+                              showReturnToStart:
+                                  widget.initialPath != null &&
+                                  widget.pathParts.join('.') !=
+                                      widget.initialPath!.join('.'),
+                              onReturnToStart:
+                                  widget.initialPath != null &&
+                                      widget.pathParts.join('.') !=
+                                          widget.initialPath!.join('.')
+                                  ? () {
+                                      Navigator.pop(context);
+                                      final startPath = widget.initialPath!;
+                                      final json = widget.entry.toJson();
+                                      dynamic currentValue = json;
+                                      for (final part in startPath) {
+                                        if (currentValue is Map) {
+                                          currentValue = currentValue[part];
+                                        } else if (currentValue is List) {
+                                          int? index = int.tryParse(part);
+                                          if (index != null)
+                                            currentValue = currentValue[index];
+                                        }
+                                      }
+                                      widget.onNavigate(
+                                        startPath,
+                                        currentValue,
+                                      );
+                                    }
+                                  : null,
+                              validatePath: (newPath) {
+                                final json = widget.entry.toJson();
+                                dynamic currentValue = json;
 
-                          for (final part in newPath) {
-                            if (currentValue is Map) {
-                              if (currentValue.containsKey(part)) {
-                                currentValue = currentValue[part];
-                              } else {
-                                return context.t.entry.pathNotFound;
-                              }
-                            } else if (currentValue is List) {
-                              final index = int.tryParse(part);
-                              if (index != null &&
-                                  index >= 0 &&
-                                  index < currentValue.length) {
-                                currentValue = currentValue[index];
-                              } else {
-                                return context.t.entry.pathNotFound;
-                              }
-                            } else {
-                              return context.t.entry.pathNotFound;
-                            }
-                          }
-                          return null;
-                        },
+                                for (final part in newPath) {
+                                  if (currentValue is Map) {
+                                    if (currentValue.containsKey(part)) {
+                                      currentValue = currentValue[part];
+                                    } else {
+                                      return context.t.entry.pathNotFound;
+                                    }
+                                  } else if (currentValue is List) {
+                                    final index = int.tryParse(part);
+                                    if (index != null &&
+                                        index >= 0 &&
+                                        index < currentValue.length) {
+                                      currentValue = currentValue[index];
+                                    } else {
+                                      return context.t.entry.pathNotFound;
+                                    }
+                                  } else {
+                                    return context.t.entry.pathNotFound;
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _buildToolbarIconButton(
-                      icon: Icons.save_outlined,
-                      onPressed: () => _save(),
-                      tooltip: context.t.common.save,
-                    ),
-                    _buildToolbarIconButton(
-                      icon: Icons.undo,
-                      onPressed: _currentEditPosition > 0 ? _undo : null,
-                      tooltip: context.t.common.undo,
-                    ),
-                    _buildToolbarIconButton(
-                      icon: Icons.redo,
-                      onPressed: _currentEditPosition < _undoStack.length - 1
-                          ? _redo
-                          : null,
-                      tooltip: context.t.common.redo,
-                    ),
-                    _buildToolbarIconButton(
-                      icon: Icons.format_align_left,
-                      onPressed: _formatJson,
-                      tooltip: context.t.entry.formatJson,
-                    ),
-                    _buildToolbarIconButton(
-                      icon: _hasSyntaxError
-                          ? Icons.error
-                          : Icons.check_circle_outline,
-                      onPressed: _validateJson,
-                      tooltip: _hasSyntaxError
-                          ? context.t.entry.syntaxError
-                          : context.t.entry.syntaxCheck,
-                      color: _hasSyntaxError ? colorScheme.error : null,
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _isFullScreen = !_isFullScreen;
-                        });
-                      },
-                      icon: Icon(
-                        _isFullScreen
-                            ? Icons.fullscreen_exit
-                            : Icons.fullscreen,
-                        size: 20,
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildToolbarIconButton(
+                            icon: Icons.save_outlined,
+                            onPressed: () => _save(),
+                            tooltip: context.t.common.save,
+                          ),
+                          _buildToolbarIconButton(
+                            icon: Icons.undo,
+                            onPressed: _currentEditPosition > 0 ? _undo : null,
+                            tooltip: context.t.common.undo,
+                          ),
+                          _buildToolbarIconButton(
+                            icon: Icons.redo,
+                            onPressed:
+                                _currentEditPosition < _undoStack.length - 1
+                                ? _redo
+                                : null,
+                            tooltip: context.t.common.redo,
+                          ),
+                          _buildToolbarIconButton(
+                            icon: Icons.format_align_left,
+                            onPressed: _formatJson,
+                            tooltip: context.t.entry.formatJson,
+                          ),
+                          _buildToolbarIconButton(
+                            icon: _hasSyntaxError
+                                ? Icons.error
+                                : Icons.check_circle_outline,
+                            onPressed: _validateJson,
+                            tooltip: _hasSyntaxError
+                                ? context.t.entry.syntaxError
+                                : context.t.entry.syntaxCheck,
+                            color: _hasSyntaxError ? colorScheme.error : null,
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _isFullScreen = !_isFullScreen;
+                              });
+                            },
+                            icon: Icon(
+                              _isFullScreen
+                                  ? Icons.fullscreen_exit
+                                  : Icons.fullscreen,
+                              size: 20,
+                            ),
+                            tooltip: _isFullScreen
+                                ? context.t.common.exitFullscreen
+                                : context.t.common.fullscreen,
+                            constraints: const BoxConstraints(
+                              minWidth: 38,
+                              minHeight: 38,
+                            ),
+                            padding: EdgeInsets.zero,
+                            visualDensity: isDesktop
+                                ? VisualDensity.standard
+                                : VisualDensity.compact,
+                          ),
+                          IconButton(
+                            onPressed: _attemptClose,
+                            icon: const Icon(Icons.close, size: 20),
+                            constraints: const BoxConstraints(
+                              minWidth: 38,
+                              minHeight: 38,
+                            ),
+                            padding: EdgeInsets.zero,
+                            visualDensity: isDesktop
+                                ? VisualDensity.standard
+                                : VisualDensity.compact,
+                          ),
+                        ],
                       ),
-                      tooltip: _isFullScreen
-                          ? context.t.common.exitFullscreen
-                          : context.t.common.fullscreen,
-                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                      padding: EdgeInsets.zero,
-                      visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
-                    ),
-                    IconButton(
-                      onPressed: _attemptClose,
-                      icon: const Icon(Icons.close, size: 20),
-                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                      padding: EdgeInsets.zero,
-                      visualDensity: isDesktop ? VisualDensity.standard : VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                if (_hasSyntaxError && _errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      context.t.entry.jsonErrorLabel(error: _errorMessage!),
-                      style: TextStyle(color: colorScheme.error, fontSize: 12),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _hasSyntaxError
-                            ? colorScheme.error
-                            : colorScheme.outlineVariant.withOpacity(0.5),
-                      ),
-                    ),
-                    child: CodeEditor(
-                      controller: _controller,
-                      toolbarController: _toolbarController,
-                      chunkAnalyzer: const DefaultCodeChunkAnalyzer(),
-                      style: CodeEditorStyle(
-                        fontSize: 14,
-                        fontFamily: 'Consolas',
-                        backgroundColor: notePreviewBackground,
-                        codeTheme: CodeHighlightTheme(
-                          languages: {
-                            'json': CodeHighlightThemeMode(mode: langJson),
-                          },
-                          theme: isDark
-                              ? builtThemes['atom-one-dark']!
-                              : builtThemes['atom-one-light']!,
+                      if (_hasSyntaxError && _errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            context.t.entry.jsonErrorLabel(
+                              error: _errorMessage!,
+                            ),
+                            style: TextStyle(
+                              color: colorScheme.error,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _hasSyntaxError
+                                  ? colorScheme.error
+                                  : colorScheme.outlineVariant.withOpacity(0.5),
+                            ),
+                          ),
+                          child: CodeEditor(
+                            controller: _controller,
+                            toolbarController: _toolbarController,
+                            chunkAnalyzer: const DefaultCodeChunkAnalyzer(),
+                            style: CodeEditorStyle(
+                              fontSize: 14,
+                              fontFamily: 'Consolas',
+                              backgroundColor: notePreviewBackground,
+                              codeTheme: CodeHighlightTheme(
+                                languages: {
+                                  'json': CodeHighlightThemeMode(
+                                    mode: langJson,
+                                  ),
+                                },
+                                theme: isDark
+                                    ? builtThemes['atom-one-dark']!
+                                    : builtThemes['atom-one-light']!,
+                              ),
+                            ),
+                            wordWrap: true,
+                            indicatorBuilder:
+                                (
+                                  context,
+                                  editingController,
+                                  chunkController,
+                                  notifier,
+                                ) {
+                                  return Row(
+                                    children: [
+                                      DefaultCodeLineNumber(
+                                        controller: editingController,
+                                        notifier: notifier,
+                                      ),
+                                      DefaultCodeChunkIndicator(
+                                        width: 20,
+                                        controller: chunkController,
+                                        notifier: notifier,
+                                      ),
+                                    ],
+                                  );
+                                },
+                          ),
                         ),
                       ),
-                      wordWrap: true,
-                      indicatorBuilder:
-                          (
-                            context,
-                            editingController,
-                            chunkController,
-                            notifier,
-                          ) {
-                            return Row(
-                              children: [
-                                DefaultCodeLineNumber(
-                                  controller: editingController,
-                                  notifier: notifier,
-                                ),
-                                DefaultCodeChunkIndicator(
-                                  width: 20,
-                                  controller: chunkController,
-                                  notifier: notifier,
-                                ),
-                              ],
-                            );
-                          },
-                    ),
+                    ],
                   ),
-                ),
-              ],
+                );
+              },
             ),
-            );
-          },
-        ),
           ),
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-Widget _buildToolbarIconButton({
+  Widget _buildToolbarIconButton({
     required IconData icon,
     required VoidCallback? onPressed,
     required String tooltip,
