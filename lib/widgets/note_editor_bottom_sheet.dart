@@ -73,6 +73,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   bool _isLoading = true;
   bool _isFullScreen = false;
   bool _isPreviewMode = false;
+  bool _hasSavedDuringSession = false; // 跟踪本次编辑会话是否保存过笔记
 
   // 撤销/重做栈
   final List<String> _undoStack = [];
@@ -256,6 +257,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
 
       setState(() {
         _savedText = content;
+        _hasSavedDuringSession = true;
       });
 
       if (_undoStack.isNotEmpty) {
@@ -313,7 +315,8 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
   Future<void> _attemptClose() async {
     if (!_hasUnsavedChanges) {
       if (mounted) {
-        Navigator.pop(context, false);
+        // 如果本次编辑会话曾保存过笔记，返回 true 以触发笔记面板刷新
+        Navigator.pop(context, _hasSavedDuringSession);
       }
       return;
     }
@@ -327,7 +330,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     }
 
     if (action == _UnsavedCloseAction.discard) {
-      Navigator.pop(context, false);
+      Navigator.pop(context, _hasSavedDuringSession);
     }
   }
 

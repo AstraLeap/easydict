@@ -4614,18 +4614,117 @@ class ComponentRendererState extends State<ComponentRenderer> {
       ),
     );
 
+    const double popupGap = 8.0; // 弹窗与点击位置的统一间距
+
     _phraseOverlayEntry = OverlayEntry(
       builder: (ctx) {
         final safeTopOffset = mobileTopSafeOffset(ctx, useViewPadding: true);
         final safeBottom = MediaQuery.of(ctx).viewPadding.bottom;
-        final effectiveDy = (position.dy + 20).clamp(
-          safeTopOffset,
-          screenSize.height - maxHeight - safeBottom - 8.0,
+
+        // 计算上下可用空间
+        final spaceBelow = screenSize.height - position.dy - safeBottom;
+        final spaceAbove = position.dy - safeTopOffset;
+
+        // 判断下方能否完整放置弹窗
+        final canFitBelow = spaceBelow >= maxHeight + popupGap;
+        final canFitAbove = spaceAbove >= maxHeight + popupGap;
+
+        // 决定显示位置：优先下方，下方不够则上方，都不够则选择空间较大的一方
+        bool showAbove;
+        if (canFitBelow) {
+          showAbove = false;
+        } else if (canFitAbove) {
+          showAbove = true;
+        } else {
+          // 上下都不够，选择空间较大的一方
+          showAbove = spaceAbove > spaceBelow;
+        }
+
+        double effectiveDy = 0;
+        double effectiveBottom = 0;
+        if (showAbove) {
+          // 显示在点击位置上方，弹窗底部距离点击位置 popupGap
+          // 弹窗底部距离屏幕底部的距离 = 屏幕高度 - 点击位置Y + 间距
+          effectiveBottom = screenSize.height - position.dy + popupGap;
+        } else {
+          // 显示在点击位置下方，弹窗顶部距离点击位置 popupGap
+          effectiveDy = position.dy + popupGap;
+          // 确保 top 不超出屏幕底部
+          final maxTop = screenSize.height - maxHeight - safeBottom - popupGap;
+          if (effectiveDy > maxTop) {
+            effectiveDy = maxTop;
+          }
+        }
+
+        // 调试日志
+        Logger.d(
+          'PhrasePopup: position.dy=${position.dy.toStringAsFixed(1)}, '
+          'spaceBelow=${spaceBelow.toStringAsFixed(1)}, '
+          'spaceAbove=${spaceAbove.toStringAsFixed(1)}, '
+          'canFitBelow=$canFitBelow, '
+          'canFitAbove=$canFitAbove, '
+          'showAbove=$showAbove, '
+          'maxHeight=${maxHeight.toStringAsFixed(1)}, '
+          '${showAbove ? "bottom=${effectiveBottom.toStringAsFixed(1)}" : "top=${effectiveDy.toStringAsFixed(1)}"}, '
+          'gap=$popupGap',
+          tag: 'PhrasePopup',
         );
+
         final effectiveDx = dx.clamp(
           8.0,
           screenSize.width - overlayWidth - 8.0,
         );
+
+        // 当显示在上方时，使用 bottom 定位，让弹窗以底部为基准向上增长
+        if (showAbove) {
+          return Positioned(
+            left: effectiveDx,
+            bottom: effectiveBottom,
+            width: overlayWidth,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.75),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 24,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 8),
+                    ),
+                    BoxShadow(
+                      color: colorScheme.primary.withValues(alpha: 0.08),
+                      blurRadius: 8,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: _buildPhraseOverlayContent(
+                    ctx,
+                    entries,
+                    phrase,
+                    fontScale,
+                    dictionaryContentScale,
+                    iconSize,
+                    maxHeight,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        // 显示在下方时，使用 top 定位
         return Positioned(
           left: effectiveDx,
           top: effectiveDy,
@@ -4658,175 +4757,14 @@ class ComponentRendererState extends State<ComponentRenderer> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Stack(
-                  children: [
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Flexible(
-                          child: SingleChildScrollView(
-                            padding: EdgeInsets.all(
-                              12 * fontScale * dictionaryContentScale,
-                            ),
-                            child: PageScaleWrapper(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: entries.asMap().entries.map((e) {
-                                  final isLast = e.key == entries.length - 1;
-                                  final phraseEntry = e.value;
-
-                                  // 当短语弹窗中需要对 AI 翻译、编辑或询问AI时，导航到该短语词条的全屏详情页
-                                  void navigateToPhraseDetail() async {
-                                    _removePhraseOverlay();
-                                    if (mounted) {
-                                      final entryGroup =
-                                          DictionaryEntryGroup.groupEntries(
-                                            entries,
-                                          );
-
-                                      // 记录搜索历史
-                                      final historyService =
-                                          SearchHistoryService();
-                                      await historyService.addSearchRecord(
-                                        phrase,
-                                      );
-
-                                      // 获取历史记录构建浏览列表
-                                      final records = await historyService
-                                          .getSearchRecords();
-                                      final historyWords = records
-                                          .map((r) => r.word)
-                                          .toList();
-                                      final currentIndex = historyWords.indexOf(
-                                        phrase,
-                                      );
-
-                                      EntryTabHostPage.open(
-                                        context,
-                                        entryGroup: entryGroup,
-                                        initialWord: phrase,
-                                        browseList: historyWords.isNotEmpty
-                                            ? BrowseList(
-                                                source: BrowseListSource
-                                                    .searchHistory,
-                                                words: historyWords,
-                                                initialIndex: currentIndex >= 0
-                                                    ? currentIndex
-                                                    : 0,
-                                              )
-                                            : null,
-                                      );
-                                    }
-                                  }
-
-                                  return Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      ComponentRenderer(
-                                        entry: phraseEntry,
-                                        topPadding: 8,
-                                        bottomPadding: 8,
-                                        enableElementActions: false,
-                                        enableSelection: false,
-                                        onElementTap: (path, label) {
-                                          navigateToPhraseDetail();
-                                        },
-                                        onEditElement: (path, label) {
-                                          navigateToPhraseDetail();
-                                        },
-                                        onAiAsk: (path, label) {
-                                          navigateToPhraseDetail();
-                                        },
-                                        onGroupJump: (groupId, ctx) {
-                                          navigateToPhraseDetail();
-                                        },
-                                      ),
-                                      if (!isLast)
-                                        Divider(
-                                          height: 1,
-                                          color: colorScheme.outlineVariant
-                                              .withValues(alpha: 0.4),
-                                        ),
-                                    ],
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(20),
-                          mouseCursor: SystemMouseCursors.click,
-                          onTap: () async {
-                            _removePhraseOverlay();
-                            // 放大时搜索所有词典并跳转全屏查词
-                            final dbService = DatabaseService();
-                            final allResult = await dbService.getAllEntries(
-                              phrase,
-                              exactMatch: false,
-                            );
-                            if (!mounted) return;
-                            final allEntryGroup = allResult.entries.isNotEmpty
-                                ? DictionaryEntryGroup.groupEntries(
-                                    allResult.entries,
-                                  )
-                                : DictionaryEntryGroup.groupEntries(entries);
-
-                            // 记录搜索历史
-                            final historyService = SearchHistoryService();
-                            await historyService.addSearchRecord(phrase);
-
-                            // 获取历史记录构建浏览列表
-                            final records = await historyService
-                                .getSearchRecords();
-                            final historyWords = records
-                                .map((r) => r.word)
-                                .toList();
-                            final currentIndex = historyWords.indexOf(phrase);
-
-                            EntryTabHostPage.open(
-                              context,
-                              entryGroup: allEntryGroup,
-                              initialWord: phrase,
-                              browseList: historyWords.isNotEmpty
-                                  ? BrowseList(
-                                      source: BrowseListSource.searchHistory,
-                                      words: historyWords,
-                                      initialIndex: currentIndex >= 0
-                                          ? currentIndex
-                                          : 0,
-                                    )
-                                  : null,
-                            );
-                          },
-                          child: Container(
-                            padding: EdgeInsets.all(
-                              8 * fontScale * dictionaryContentScale,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.surface.withValues(
-                                alpha: 0.85,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Icon(
-                              Icons.open_in_full,
-                              size: iconSize,
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                child: _buildPhraseOverlayContent(
+                  ctx,
+                  entries,
+                  phrase,
+                  fontScale,
+                  dictionaryContentScale,
+                  iconSize,
+                  maxHeight,
                 ),
               ),
             ),
@@ -4837,6 +4775,168 @@ class ComponentRendererState extends State<ComponentRenderer> {
 
     overlay.insert(_phraseBarrierEntry!);
     overlay.insert(_phraseOverlayEntry!);
+  }
+
+  /// 构建 phrase 弹窗内容
+  Widget _buildPhraseOverlayContent(
+    BuildContext ctx,
+    List<DictionaryEntry> entries,
+    String phrase,
+    double fontScale,
+    double dictionaryContentScale,
+    double iconSize,
+    double maxHeight,
+  ) {
+    final colorScheme = Theme.of(ctx).colorScheme;
+    return Stack(
+      children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(
+                  12 * fontScale * dictionaryContentScale,
+                ),
+                child: PageScaleWrapper(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: entries.asMap().entries.map((e) {
+                      final isLast = e.key == entries.length - 1;
+                      final phraseEntry = e.value;
+
+                      // 当短语弹窗中需要对 AI 翻译、编辑或询问AI时，导航到该短语词条的全屏详情页
+                      void navigateToPhraseDetail() async {
+                        _removePhraseOverlay();
+                        if (mounted) {
+                          final entryGroup =
+                              DictionaryEntryGroup.groupEntries(entries);
+
+                          // 记录搜索历史
+                          final historyService = SearchHistoryService();
+                          await historyService.addSearchRecord(phrase);
+
+                          // 获取历史记录构建浏览列表
+                          final records =
+                              await historyService.getSearchRecords();
+                          final historyWords =
+                              records.map((r) => r.word).toList();
+                          final currentIndex = historyWords.indexOf(phrase);
+
+                          EntryTabHostPage.open(
+                            context,
+                            entryGroup: entryGroup,
+                            initialWord: phrase,
+                            browseList: historyWords.isNotEmpty
+                                ? BrowseList(
+                                    source: BrowseListSource.searchHistory,
+                                    words: historyWords,
+                                    initialIndex:
+                                        currentIndex >= 0 ? currentIndex : 0,
+                                  )
+                                : null,
+                          );
+                        }
+                      }
+
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ComponentRenderer(
+                            entry: phraseEntry,
+                            topPadding: 8,
+                            bottomPadding: 8,
+                            enableElementActions: false,
+                            enableSelection: false,
+                            onElementTap: (path, label) {
+                              navigateToPhraseDetail();
+                            },
+                            onEditElement: (path, label) {
+                              navigateToPhraseDetail();
+                            },
+                            onAiAsk: (path, label) {
+                              navigateToPhraseDetail();
+                            },
+                            onGroupJump: (groupId, ctx) {
+                              navigateToPhraseDetail();
+                            },
+                          ),
+                          if (!isLast)
+                            Divider(
+                              height: 1,
+                              color:
+                                  colorScheme.outlineVariant.withValues(alpha: 0.4),
+                            ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              mouseCursor: SystemMouseCursors.click,
+              onTap: () async {
+                _removePhraseOverlay();
+                // 放大时搜索所有词典并跳转全屏查词
+                final dbService = DatabaseService();
+                final allResult = await dbService.getAllEntries(
+                  phrase,
+                  exactMatch: false,
+                );
+                if (!mounted) return;
+                final allEntryGroup = allResult.entries.isNotEmpty
+                    ? DictionaryEntryGroup.groupEntries(allResult.entries)
+                    : DictionaryEntryGroup.groupEntries(entries);
+
+                // 记录搜索历史
+                final historyService = SearchHistoryService();
+                await historyService.addSearchRecord(phrase);
+
+                // 获取历史记录构建浏览列表
+                final records = await historyService.getSearchRecords();
+                final historyWords = records.map((r) => r.word).toList();
+                final currentIndex = historyWords.indexOf(phrase);
+
+                EntryTabHostPage.open(
+                  context,
+                  entryGroup: allEntryGroup,
+                  initialWord: phrase,
+                  browseList: historyWords.isNotEmpty
+                      ? BrowseList(
+                          source: BrowseListSource.searchHistory,
+                          words: historyWords,
+                          initialIndex: currentIndex >= 0 ? currentIndex : 0,
+                        )
+                      : null,
+                );
+              },
+              child: Container(
+                padding: EdgeInsets.all(8 * fontScale * dictionaryContentScale),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  Icons.open_in_full,
+                  size: iconSize,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
