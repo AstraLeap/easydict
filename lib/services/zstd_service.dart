@@ -22,8 +22,20 @@ String _resolveSymbolName(ffi.DynamicLibrary lib, String name) {
   try {
     lib.lookup<ffi.NativeFunction<ffi.Pointer<ffi.Void> Function()>>(name);
     return name;
-  } catch (e) {
-    Logger.w('Symbol $name not found in library: $e', tag: 'ZstdService');
+  } catch (e1) {
+    // macOS fallback: our plugin can export wrapper symbols as ED_ZSTD_*
+    if (Platform.isMacOS && name.startsWith('ZSTD_')) {
+      final wrapperName = 'ED_$name';
+      try {
+        lib.lookup<ffi.NativeFunction<ffi.Pointer<ffi.Void> Function()>>(
+          wrapperName,
+        );
+        return wrapperName;
+      } catch (_) {
+        // Ignore and report original symbol lookup error below.
+      }
+    }
+    Logger.w('Symbol $name not found in library: $e1', tag: 'ZstdService');
     rethrow;
   }
 }
@@ -157,8 +169,8 @@ ffi.DynamicLibrary _openZstdLibrary() {
     final possiblePaths = [
       'libzstd.dll',
       'zstd.dll',
-      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}System32libzstd.dll',
-      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}SysWOW64libzstd.dll',
+      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}\\System32\\libzstd.dll',
+      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}\\SysWOW64\\libzstd.dll',
     ];
     for (final path in possiblePaths) {
       Logger.i('Trying to load zstd from: $path', tag: 'ZstdService');

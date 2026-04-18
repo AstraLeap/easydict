@@ -8,7 +8,7 @@ Pod::Spec.new do |s|
   s.author           = { 'Facebook' => 'zstd@fb.com' }
   s.source           = { :path => '.' }
 
-  s.source_files = 
+  s.source_files =
     'Classes/**/*',
     '../../zstd/lib/common/*.c',
     '../../zstd/lib/common/*.h',
@@ -30,6 +30,9 @@ Pod::Spec.new do |s|
   s.osx.deployment_target = '10.14'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'GCC_PREPROCESSOR_DEFINITIONS' => 'ZSTD_STATIC_LINKING_ONLY=1'
+    'GCC_PREPROCESSOR_DEFINITIONS' => 'ZSTD_STATIC_LINKING_ONLY=1',
+    'GCC_SYMBOLS_PRIVATE_EXTERN' => 'NO',
+    'DEAD_CODE_STRIPPING' => 'NO',
+    'OTHER_CFLAGS' => '$(inherited) -fvisibility=default'
   }
 end
