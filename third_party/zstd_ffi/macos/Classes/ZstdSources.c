@@ -1,6 +1,3 @@
-#define ZSTD_STATIC_LINKING_ONLY
-#define ZSTD_DISABLE_ASM
-
 // Common
 #include "../../../zstd/lib/common/debug.c"
 #include "../../../zstd/lib/common/entropy_common.c"
