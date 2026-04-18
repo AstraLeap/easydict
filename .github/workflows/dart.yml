@@ -18,7 +18,7 @@ jobs:
         include:
           - target: android
             os: ubuntu-latest
-            build_cmd: flutter build apk --release --target-platform android-arm64 --dart-define=LOG_TO_FILE=true
+            build_cmd: flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=LOG_TO_FILE=true
             artifact_path: easydict-*-android-arm64.apk
 
           - target: windows
@@ -78,7 +78,7 @@ jobs:
           TARGET="${{ matrix.target }}"
 
           if [ "$TARGET" = "android" ]; then
-            cp build/app/outputs/flutter-apk/app-release.apk "easydict-${VERSION}-android-arm64.apk"
+            cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "easydict-${VERSION}-android-arm64.apk"
           elif [ "$TARGET" = "windows" ]; then
             powershell "Compress-Archive -Path 'build/windows/x64/runner/Release/*' -DestinationPath \"easydict-${VERSION}-windows-x64.zip\" -Force"
           elif [ "$TARGET" = "linux" ]; then
