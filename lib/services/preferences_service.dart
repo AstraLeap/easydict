@@ -346,12 +346,12 @@ class PreferencesService {
     final p = await prefs;
     final prefix = isFast ? _kLlmFastPrefix : _kLlmStandardPrefix;
 
-    final providerIndex = p.getInt('$prefix${_kLlmSuffixProvider}');
+    final providerIndex = p.getInt('$prefix$_kLlmSuffixProvider');
     if (providerIndex == null) return null;
 
-    final apiKey = p.getString('$prefix${_kLlmSuffixApiKey}') ?? '';
-    final baseUrl = p.getString('$prefix${_kLlmSuffixBaseUrl}') ?? '';
-    final model = p.getString('$prefix${_kLlmSuffixModel}') ?? '';
+    final apiKey = p.getString('$prefix$_kLlmSuffixApiKey') ?? '';
+    final baseUrl = p.getString('$prefix$_kLlmSuffixBaseUrl') ?? '';
+    final model = p.getString('$prefix$_kLlmSuffixModel') ?? '';
 
     final enableThinking =
         !isFast && (p.getBool(_kLlmStandardEnableThinking) ?? false);
@@ -376,10 +376,10 @@ class PreferencesService {
     final p = await prefs;
     final prefix = isFast ? _kLlmFastPrefix : _kLlmStandardPrefix;
 
-    await p.setInt('$prefix${_kLlmSuffixProvider}', provider.index);
-    await p.setString('$prefix${_kLlmSuffixApiKey}', apiKey);
-    await p.setString('$prefix${_kLlmSuffixBaseUrl}', baseUrl);
-    await p.setString('$prefix${_kLlmSuffixModel}', model);
+    await p.setInt('$prefix$_kLlmSuffixProvider', provider.index);
+    await p.setString('$prefix$_kLlmSuffixApiKey', apiKey);
+    await p.setString('$prefix$_kLlmSuffixBaseUrl', baseUrl);
+    await p.setString('$prefix$_kLlmSuffixModel', model);
     if (!isFast) {
       await p.setBool(_kLlmStandardEnableThinking, enableThinking);
     }

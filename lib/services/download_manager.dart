@@ -300,7 +300,7 @@ class DownloadManager with ChangeNotifier {
   final Map<String, DownloadTask> _downloads = {};
   String? _currentDownloadId;
   DateTime _lastNotifyTime = DateTime.now();
-  DateTime _lastSaveTime = DateTime.now();
+  final DateTime _lastSaveTime = DateTime.now();
   static const _minNotifyInterval = Duration(milliseconds: 100);
   static const _minSaveInterval = Duration(seconds: 2);
 

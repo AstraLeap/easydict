@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../core/logger.dart';
 import 'preferences_service.dart';
@@ -241,13 +240,11 @@ class SystemTrayService with TrayListener {
   }
 
   /// 托盘图标鼠标进入事件（macOS 特有）
-  @override
   void onTrayIconMouseEnter() {
     // macOS: 鼠标进入托盘图标
   }
 
   /// 托盘图标鼠标离开事件（macOS 特有）
-  @override
   void onTrayIconMouseExit() {
     // macOS: 鼠标离开托盘图标
   }

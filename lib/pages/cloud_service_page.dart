@@ -18,7 +18,6 @@ import '../services/zstd_service.dart';
 import '../services/upload_manager.dart';
 import '../data/models/remote_dictionary.dart';
 import '../data/models/user.dart';
-import '../data/models/user_dictionary.dart' hide DictionaryEntry;
 import '../data/models/dictionary_metadata.dart';
 import '../data/database_service.dart';
 import '../core/utils/toast_utils.dart';
@@ -1018,7 +1017,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
       final jsonLines = <String>[];
 
       for (final record in _updateRecords) {
-        final entryId = record['id'] as int;  // 纯 int
+        final entryId = record['id'] as int; // 纯 int
         final opType = record['operation_type'] as String? ?? 'update';
         final isDelete = opType == 'delete';
 
@@ -1037,7 +1036,7 @@ class _PushUpdatesDialogState extends State<PushUpdatesDialog> {
         // 获取完整的 entry JSON
         final entryJson = await _databaseService.getEntryJsonById(
           widget.dictId,
-          entryId.toString(),  // getEntryJsonById 接收 String
+          entryId.toString(), // getEntryJsonById 接收 String
         );
 
         if (entryJson == null) {
@@ -2219,14 +2218,6 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
       for (int i = 0; i < objectsToParse.length; i++) {
         final decoded = objectsToParse[i];
         try {
-          if (decoded is! Map<String, dynamic>) {
-            errorCount++;
-            errorMessages.add(
-              context.t.cloud.importItemNotObject(item: (i + 1).toString()),
-            );
-            continue;
-          }
-
           final json = Map<String, dynamic>.from(decoded);
           // 注入当前词典 ID（以便 insertOrUpdateEntry 找到正确的数据库）
           json['dict_id'] = widget.dictId;
@@ -2744,7 +2735,7 @@ class _UpdateJsonDialogState extends State<UpdateJsonDialog>
           Expanded(
             child: ListView.separated(
               itemCount: _foundEntries.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final e = _foundEntries[index];
                 final hw = e['headword']?.toString() ?? '';

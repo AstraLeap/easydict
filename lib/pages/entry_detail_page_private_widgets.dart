@@ -423,7 +423,6 @@ class _AiChatDetailContent extends StatefulWidget {
   final ScrollController? scrollController;
 
   const _AiChatDetailContent({
-    super.key,
     required this.record,
     this.streamingNotifier,
     this.scrollController,

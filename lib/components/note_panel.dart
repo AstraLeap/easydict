@@ -33,7 +33,7 @@ class _NotePanelState extends State<NotePanel> {
   bool _isExpanded = true;
   bool _isLoading = true;
   String _loadedWord = '';
-  int _loadedRefreshVersion = -1;
+  final int _loadedRefreshVersion = -1;
   bool _hasInitializedExpanded = false; // 标记是否已初始化展开状态
 
   @override

@@ -52,10 +52,7 @@ class Logger {
     try {
       await _initLogFile();
       if (_logFile != null) {
-        _logFile!.writeAsStringSync(
-          '$message\n',
-          mode: FileMode.append,
-        );
+        _logFile!.writeAsStringSync('$message\n', mode: FileMode.append);
       }
     } catch (e) {
       // 写入失败不影响应用运行
@@ -72,9 +69,20 @@ class Logger {
     _log('ℹ️ INFO', message, tag: tag);
   }
 
-  static void w(String message, {String? tag}) {
+  static void w(
+    String message, {
+    String? tag,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
     if (!_enableLog && !_logToFile) return;
     _log('⚠️ WARN', message, tag: tag);
+    if (error != null) {
+      _output('Warn: $error');
+      if (stackTrace != null) {
+        _output('StackTrace: $stackTrace');
+      }
+    }
   }
 
   static void e(
@@ -132,12 +140,17 @@ class Logger {
       if (!await logDir.exists()) return null;
 
       final files = await logDir.list().toList();
-      final logFiles = files.whereType<File>().where((f) => f.path.endsWith('.log')).toList();
+      final logFiles = files
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.log'))
+          .toList();
 
       if (logFiles.isEmpty) return null;
 
       // 按修改时间排序，返回最新的
-      logFiles.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      logFiles.sort(
+        (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+      );
       return logFiles.first;
     } catch (e) {
       return null;

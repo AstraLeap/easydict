@@ -96,7 +96,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
   // 每日单词
   List<String> _selectedLanguages = [];
   Map<String, List<String>> _selectedLists = {};
-  Map<String, List<WordListInfo>> _availableWordListsMap = {};
+  final Map<String, List<WordListInfo>> _availableWordListsMap = {};
   List<String> _availableWordBankLanguages = [];
   final Map<String, String> _wordLanguageCache = {};
   bool _isHandlingKeyboardEnter = false;

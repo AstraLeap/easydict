@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'entry_event_bus.dart';
 import 'preferences_service.dart';
 

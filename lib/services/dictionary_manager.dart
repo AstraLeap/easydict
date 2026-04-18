@@ -9,11 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../data/models/dictionary_metadata.dart';
 import '../core/logger.dart';
-import '../core/utils/language_utils.dart';
 import '../i18n/strings.g.dart';
-import 'advanced_search_settings_service.dart';
 import 'entry_event_bus.dart';
-import 'search_history_service.dart';
 
 class DictionaryManager {
   static final DictionaryManager _instance = DictionaryManager._internal();
@@ -69,7 +66,7 @@ class DictionaryManager {
       final defaultDir = await _getDefaultDirectory();
       savedDir = defaultDir;
       await setBaseDirectory(defaultDir);
-      
+
       // 尝试迁移旧数据（仅首次运行时）
       await _migrateIfNeeded();
     }

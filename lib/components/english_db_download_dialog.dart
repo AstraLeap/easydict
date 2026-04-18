@@ -118,12 +118,12 @@ class _EnglishDbDownloadDialogState extends State<EnglishDbDownloadDialog> {
           ),
           if (isDownloading || task != null) ...[
             const SizedBox(height: 16),
-            _buildProgressSection(task!, colorScheme),
+            _buildProgressSection(task, colorScheme),
           ],
-          if (isError && task?.error != null) ...[
+          if (isError && task.error != null) ...[
             const SizedBox(height: 12),
             Text(
-              task!.error!,
+              task.error!,
               style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
             ),
           ],

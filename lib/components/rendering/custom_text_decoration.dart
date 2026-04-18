@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-import '../../core/logger.dart';
 
 /// 自定义装饰线距离文本基线的偏移量
 const double kCustomDecorationOffset = 3.0;

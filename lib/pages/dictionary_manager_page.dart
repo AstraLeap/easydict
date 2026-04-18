@@ -363,12 +363,12 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) {
-        int _selected = 1; // 默认推荐「外部持久目录」
+        int selected = 1; // 默认推荐「外部持久目录」
         final colorScheme = Theme.of(ctx).colorScheme;
 
         return StatefulBuilder(
           builder: (ctx, setLocalState) {
-            Widget _permBadge() {
+            Widget permBadge() {
               if (hasPermission) {
                 return Row(
                   mainAxisSize: MainAxisSize.min,
@@ -414,8 +414,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
                     // ── 选项 0：应用专属目录 ───────────────────
                     RadioListTile<int>(
                       value: 0,
-                      groupValue: _selected,
-                      onChanged: (v) => setLocalState(() => _selected = v!),
+                      groupValue: selected,
+                      onChanged: (v) => setLocalState(() => selected = v!),
                       title: Text(context.t.dict.androidAppDir),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,8 +455,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
                     // ── 选项 1：外部持久目录（推荐）───────────────
                     RadioListTile<int>(
                       value: 1,
-                      groupValue: _selected,
-                      onChanged: (v) => setLocalState(() => _selected = v!),
+                      groupValue: selected,
+                      onChanged: (v) => setLocalState(() => selected = v!),
                       title: Row(
                         children: [
                           Text(ctx.t.dict.androidExtDir),
@@ -506,7 +506,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
                             ],
                           ),
                           const SizedBox(height: 2),
-                          _permBadge(),
+                          permBadge(),
                         ],
                       ),
                       contentPadding: EdgeInsets.zero,
@@ -518,8 +518,8 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
                     // ── 选项 2：自定义路径 ─────────────────────
                     RadioListTile<int>(
                       value: 2,
-                      groupValue: _selected,
-                      onChanged: (v) => setLocalState(() => _selected = v!),
+                      groupValue: selected,
+                      onChanged: (v) => setLocalState(() => selected = v!),
                       title: Text(ctx.t.dict.androidCustomDir),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -529,14 +529,14 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
                             style: const TextStyle(fontSize: 11),
                           ),
                           const SizedBox(height: 2),
-                          _permBadge(),
+                          permBadge(),
                         ],
                       ),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                     ),
 
-                    if (_selected >= 1 && !hasPermission) ...[
+                    if (selected >= 1 && !hasPermission) ...[
                       const SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.all(10),
@@ -576,7 +576,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
                   child: Text(ctx.t.common.cancel),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.pop(ctx, {'choice': _selected}),
+                  onPressed: () => Navigator.pop(ctx, {'choice': selected}),
                   child: Text(ctx.t.common.ok),
                 ),
               ],
@@ -2203,7 +2203,7 @@ class _DictionaryManagerPageState extends State<DictionaryManagerPage>
       onError: (error) {
         // 错误处理不依赖 context，只在页面挂载时显示 toast
         if (!mounted) return;
-        showToast(context, context.t.dict.updateFailed(error: '$error'));
+        showToast(context, context.t.dict.updateFailed(error: error));
       },
     );
   }

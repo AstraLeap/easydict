@@ -13,7 +13,6 @@ import '../services/font_loader_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/entry_event_bus.dart';
 import '../services/advanced_search_settings_service.dart';
-import '../components/scale_layout_wrapper.dart';
 import '../components/global_scale_wrapper.dart';
 import '../i18n/strings.g.dart';
 

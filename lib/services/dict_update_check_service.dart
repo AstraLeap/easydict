@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import '../data/models/dictionary_metadata.dart';
 import '../data/models/user_dictionary.dart' as user_dict;
 import '../services/dictionary_manager.dart';
 import '../services/user_dicts_service.dart';
@@ -180,10 +179,5 @@ class DictUpdateCheckService extends ChangeNotifier {
 
   user_dict.DictUpdateInfo? getUpdateInfo(String dictId) {
     return _updatableDicts[dictId];
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }

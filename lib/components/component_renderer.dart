@@ -1471,7 +1471,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
   int? _lastTapButton;
   Offset? _lastTapPosition;
   Timer? _longPressTimer;
-  bool _longPressHandled = false;
+  final bool _longPressHandled = false;
   DateTime? _lastTtsTime; // TTS防抖时间戳
   late HiddenLanguagesNotifier _hiddenLanguagesNotifier;
   late DictionaryEntry _localEntry;
@@ -1503,10 +1503,10 @@ class ComponentRendererState extends State<ComponentRenderer> {
   Offset? _selectionStartPosition;
 
   // 展开的 example comment 路径集合
-  Set<String> _expandedCommentPaths = {};
+  final Set<String> _expandedCommentPaths = {};
 
   // 折叠的 child_xxxx 条目路径集合（默认展开，点击后折叠）
-  Set<String> _collapsedChildPaths = {};
+  final Set<String> _collapsedChildPaths = {};
 
   // data tab 强制选中映射：key=data路径（到 data 为止），value=需要展开的tab key
   final Map<String, String> _forcedDataTabSelections = {};
@@ -3140,7 +3140,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                   const SizedBox(height: 2),
                   Align(alignment: Alignment.centerRight, child: sourceWidget),
                 ],
-                if (commentWidget != null) commentWidget,
+                ?commentWidget,
               ],
             ),
           )
@@ -4046,7 +4046,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
             if (selectableState != null) {
               selectableState.clearSelection();
             }
-            _handleTextSelectionSearch(selectedText!);
+            _handleTextSelectionSearch(selectedText);
           },
         ),
       );
@@ -4810,18 +4810,20 @@ class ComponentRendererState extends State<ComponentRenderer> {
                       void navigateToPhraseDetail() async {
                         _removePhraseOverlay();
                         if (mounted) {
-                          final entryGroup =
-                              DictionaryEntryGroup.groupEntries(entries);
+                          final entryGroup = DictionaryEntryGroup.groupEntries(
+                            entries,
+                          );
 
                           // 记录搜索历史
                           final historyService = SearchHistoryService();
                           await historyService.addSearchRecord(phrase);
 
                           // 获取历史记录构建浏览列表
-                          final records =
-                              await historyService.getSearchRecords();
-                          final historyWords =
-                              records.map((r) => r.word).toList();
+                          final records = await historyService
+                              .getSearchRecords();
+                          final historyWords = records
+                              .map((r) => r.word)
+                              .toList();
                           final currentIndex = historyWords.indexOf(phrase);
 
                           EntryTabHostPage.open(
@@ -4832,8 +4834,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
                                 ? BrowseList(
                                     source: BrowseListSource.searchHistory,
                                     words: historyWords,
-                                    initialIndex:
-                                        currentIndex >= 0 ? currentIndex : 0,
+                                    initialIndex: currentIndex >= 0
+                                        ? currentIndex
+                                        : 0,
                                   )
                                 : null,
                           );
@@ -4865,8 +4868,9 @@ class ComponentRendererState extends State<ComponentRenderer> {
                           if (!isLast)
                             Divider(
                               height: 1,
-                              color:
-                                  colorScheme.outlineVariant.withValues(alpha: 0.4),
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.4,
+                              ),
                             ),
                         ],
                       );
@@ -8319,7 +8323,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     if (groupName.isNotEmpty)
                       _buildTappableGroupName(
                         groupName,
-                        '${groupPath}.group_name',
+                        '$groupPath.group_name',
                         'Group Name',
                         DictTypography.getBaseStyle(
                           DictElementType.groupName,
@@ -8329,7 +8333,7 @@ class ComponentRendererState extends State<ComponentRenderer> {
                     if (groupSubName.isNotEmpty)
                       _buildTappableGroupName(
                         groupSubName,
-                        '${groupPath}.group_sub_name',
+                        '$groupPath.group_sub_name',
                         'Group Sub Name',
                         DictTypography.getBaseStyle(
                           DictElementType.groupSubName,

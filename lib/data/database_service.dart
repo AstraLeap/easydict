@@ -1923,7 +1923,7 @@ class DatabaseService {
             limit: limit,
           );
         }
-      } catch (e, st) {
+      } catch (e) {
         return <_Candidate>[];
       }
     }).toList();
@@ -2569,7 +2569,7 @@ class DatabaseService {
         await db.insert('indices', {
           'headword': hw,
           'headword_normalized': hwNorm,
-          if (phoneticNorm != null) 'phonetic': phoneticNorm,
+          'phonetic': ?phoneticNorm,
           'entry_type': entryType,
           'entry_id': entryId,
           'anchor': anchor,

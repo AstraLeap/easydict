@@ -157,8 +157,8 @@ ffi.DynamicLibrary _openZstdLibrary() {
     final possiblePaths = [
       'libzstd.dll',
       'zstd.dll',
-      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}\System32\libzstd.dll',
-      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}\SysWOW64\libzstd.dll',
+      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}System32libzstd.dll',
+      '${Platform.environment['SYSTEMROOT'] ?? r'C:\Windows'}SysWOW64libzstd.dll',
     ];
     for (final path in possiblePaths) {
       Logger.i('Trying to load zstd from: $path', tag: 'ZstdService');

@@ -132,7 +132,7 @@ void showToast(BuildContext context, String message, {SnackBarAction? action}) {
                       style: TextStyle(color: colorScheme.onSurface),
                     ),
                   ),
-                  if (action != null) action,
+                  ?action,
                 ],
               ),
             ),

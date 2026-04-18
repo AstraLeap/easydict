@@ -5,6 +5,7 @@
 /// - 已单独渲染的内容字段：headword, headline, sense, sense_group 等
 /// - 索引字段：links, groups（用于索引，不需要渲染）
 /// - 内部字段：hiddenLanguages, hidden_languages
+library;
 
 /// 在内容渲染和导航目录中都应该排除的字段
 /// component_renderer 和 dictionary_navigation_panel 共享

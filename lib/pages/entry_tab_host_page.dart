@@ -239,7 +239,6 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     if (tabRenderObject is! RenderBox) return;
 
     final scrollableState = Scrollable.of(tabContext);
-    if (scrollableState == null) return;
     final viewportRenderObject = scrollableState.context.findRenderObject();
     if (viewportRenderObject is! RenderBox) return;
 
@@ -591,7 +590,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
           : BorderRadius.circular(9);
       final horizontalPadding = compact ? 10.0 : 12.0;
 
-      Widget tabContent = Container(
+      Widget tabContent = SizedBox(
         height: barHeight,
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -929,7 +928,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       // 桌面端：标签栏在顶部
       body = Column(
         children: [
-          if (tabBar != null) tabBar,
+          ?tabBar,
           Expanded(child: _buildEntryContentStack(tabs)),
         ],
       );

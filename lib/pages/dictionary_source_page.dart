@@ -911,7 +911,7 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
       },
       onError: (error) {
         if (!mounted) return;
-        showToast(context, context.t.dict.updateFailed(error: '$error'));
+        showToast(context, context.t.dict.updateFailed(error: error));
       },
     );
   }
@@ -1008,7 +1008,7 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
       },
       onError: (error) {
         if (!mounted) return;
-        showToast(context, context.t.dict.updateFailed(error: '$error'));
+        showToast(context, context.t.dict.updateFailed(error: error));
       },
     );
   }
