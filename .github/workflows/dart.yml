@@ -62,8 +62,26 @@ jobs:
         run: |
           if [ "${{ matrix.target }}" = "android" ]; then
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/easydict.jks
+            attempt=1
+            max_attempts=3
+            until [ "$attempt" -gt "$max_attempts" ]; do
+              echo "Android build attempt $attempt/$max_attempts"
+              if flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=LOG_TO_FILE=true; then
+                break
+              fi
+
+              if [ "$attempt" -eq "$max_attempts" ]; then
+                echo "Android build failed after $max_attempts attempts."
+                exit 1
+              fi
+
+              # Clean potentially incomplete Gradle wrapper download before retrying.
+              rm -rf ~/.gradle/wrapper/dists/gradle-*
+              attempt=$((attempt + 1))
+            done
+          else
+            ${{ matrix.build_cmd }}
           fi
-          ${{ matrix.build_cmd }}
         shell: bash
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/android/app/easydict.jks
