@@ -34,6 +34,41 @@ String _resolveSymbolName(ffi.DynamicLibrary lib, String name) {
 ffi.DynamicLibrary _openZstdLibrary() {
   Logger.i('Attempting to load zstd library...', tag: 'ZstdService');
 
+  final bootstrapSymbol = Platform.isMacOS
+      ? 'ZSTD_createDDict'
+      : 'ZSTD_createDCtx';
+
+  bool hasSymbol(ffi.DynamicLibrary lib, String symbolName) {
+    try {
+      _resolveSymbolName(lib, symbolName);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  ffi.DynamicLibrary? tryLoadLibrary(
+    String path, {
+    required String validateSymbol,
+  }) {
+    try {
+      final lib = ffi.DynamicLibrary.open(path);
+      if (!hasSymbol(lib, validateSymbol)) {
+        Logger.w(
+          'Loaded $path but missing symbol: $validateSymbol',
+          tag: 'ZstdService',
+        );
+        return null;
+      }
+      Logger.i('Successfully loaded zstd from: $path', tag: 'ZstdService');
+      _loadedLibrarySource = path;
+      return lib;
+    } catch (e) {
+      Logger.w('Failed to load zstd from $path: $e', tag: 'ZstdService');
+      return null;
+    }
+  }
+
   // Android 平台优先尝试加载 libzstd.so
   if (Platform.isAndroid) {
     Logger.i(
@@ -47,6 +82,7 @@ ffi.DynamicLibrary _openZstdLibrary() {
       // 验证符号存在
       _resolveSymbolName(lib, 'ZSTD_createDCtx');
       Logger.i('Successfully loaded libzstd.so', tag: 'ZstdService');
+      _loadedLibrarySource = 'libzstd.so';
       return lib;
     } catch (e) {
       Logger.w(
@@ -60,6 +96,7 @@ ffi.DynamicLibrary _openZstdLibrary() {
       final processLib = ffi.DynamicLibrary.process();
       _resolveSymbolName(processLib, 'ZSTD_createDCtx');
       Logger.i('Found zstd symbols in process library', tag: 'ZstdService');
+      _loadedLibrarySource = 'process';
       return processLib;
     } catch (e) {
       Logger.e(
@@ -73,6 +110,7 @@ ffi.DynamicLibrary _openZstdLibrary() {
       final execLib = ffi.DynamicLibrary.executable();
       _resolveSymbolName(execLib, 'ZSTD_createDCtx');
       Logger.i('Found zstd symbols in executable', tag: 'ZstdService');
+      _loadedLibrarySource = 'executable';
       return execLib;
     } catch (e) {
       Logger.e('Failed to find zstd in executable: $e', tag: 'ZstdService');
@@ -87,9 +125,10 @@ ffi.DynamicLibrary _openZstdLibrary() {
   try {
     final processLib = ffi.DynamicLibrary.process();
     // 尝试查找一个 zstd 函数来验证
-    final symbolName = _resolveSymbolName(processLib, 'ZSTD_createDCtx');
+    final symbolName = _resolveSymbolName(processLib, bootstrapSymbol);
     Logger.i('Found zstd symbol in process: $symbolName', tag: 'ZstdService');
     Logger.i('Using statically linked zstd from process', tag: 'ZstdService');
+    _loadedLibrarySource = 'process';
     return processLib;
   } catch (e) {
     Logger.w('Failed to find zstd in process: $e', tag: 'ZstdService');
@@ -98,7 +137,7 @@ ffi.DynamicLibrary _openZstdLibrary() {
   // 尝试从可执行文件中查找
   try {
     final executableLib = ffi.DynamicLibrary.executable();
-    final symbolName = _resolveSymbolName(executableLib, 'ZSTD_createDCtx');
+    final symbolName = _resolveSymbolName(executableLib, bootstrapSymbol);
     Logger.i(
       'Found zstd symbol in executable: $symbolName',
       tag: 'ZstdService',
@@ -107,6 +146,7 @@ ffi.DynamicLibrary _openZstdLibrary() {
       'Using statically linked zstd from executable',
       tag: 'ZstdService',
     );
+    _loadedLibrarySource = 'executable';
     return executableLib;
   } catch (e) {
     Logger.w('Failed to find zstd in executable: $e', tag: 'ZstdService');
@@ -125,6 +165,7 @@ ffi.DynamicLibrary _openZstdLibrary() {
       try {
         final lib = ffi.DynamicLibrary.open(path);
         Logger.i('Successfully loaded zstd from: $path', tag: 'ZstdService');
+        _loadedLibrarySource = path;
         return lib;
       } catch (e) {
         Logger.w('Failed to load zstd from $path: $e', tag: 'ZstdService');
@@ -137,7 +178,9 @@ ffi.DynamicLibrary _openZstdLibrary() {
     );
   } else if (Platform.isLinux) {
     try {
-      return ffi.DynamicLibrary.open('libzstd.so');
+      final lib = ffi.DynamicLibrary.open('libzstd.so');
+      _loadedLibrarySource = 'libzstd.so';
+      return lib;
     } catch (e) {
       Logger.e('Failed to load libzstd.so: $e', tag: 'ZstdService');
       throw Exception(
@@ -145,21 +188,29 @@ ffi.DynamicLibrary _openZstdLibrary() {
       );
     }
   } else if (Platform.isMacOS) {
-    try {
-      return ffi.DynamicLibrary.open('libzstd.dylib');
-    } catch (_) {
-      try {
-        return ffi.DynamicLibrary.open('zstd_ffi.framework/zstd_ffi');
-      } catch (e) {
-        Logger.e(
-          'Failed to load libzstd.dylib and zstd_ffi.framework: $e',
-          tag: 'ZstdService',
-        );
-        throw Exception(
-          'Could not find libzstd.dylib or zstd_ffi.framework. Please ensure zstd is statically linked or available.',
-        );
+    // On macOS, prefer the app-bundled zstd_ffi framework.
+    // System libzstd may exist but not provide the dictionary symbols we need.
+    final macCandidates = [
+      'zstd_ffi.framework/zstd_ffi',
+      'Frameworks/zstd_ffi.framework/zstd_ffi',
+      'libzstd.dylib',
+    ];
+
+    for (final path in macCandidates) {
+      final lib = tryLoadLibrary(path, validateSymbol: 'ZSTD_createDDict');
+      if (lib != null) {
+        return lib;
       }
     }
+
+    Logger.e(
+      'Failed to load zstd with dictionary support from macOS candidates',
+      tag: 'ZstdService',
+    );
+    throw Exception(
+      'Could not find a zstd library with dictionary support on macOS. '
+      'Please ensure zstd_ffi.framework is bundled correctly.',
+    );
   }
   throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
 }
@@ -167,6 +218,51 @@ ffi.DynamicLibrary _openZstdLibrary() {
 late final ffi.DynamicLibrary _zstdLib;
 bool _isLibraryLoaded = false;
 bool _ffibindingsInitialized = false;
+String _loadedLibrarySource = 'unknown';
+bool _startupProbeLogged = false;
+
+bool _hasSymbolQuiet(ffi.DynamicLibrary lib, String symbolName) {
+  try {
+    _resolveSymbolName(lib, symbolName);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+void _logStartupProbeOnce() {
+  if (_startupProbeLogged) return;
+  _startupProbeLogged = true;
+
+  if (!_isLibraryLoaded) {
+    Logger.w(
+      'Startup probe: zstd library unavailable, source=$_loadedLibrarySource',
+      tag: 'ZstdService',
+    );
+    return;
+  }
+
+  final hasCreateDCtx = _hasSymbolQuiet(_zstdLib, 'ZSTD_createDCtx');
+  final hasCreateDDict = _hasSymbolQuiet(_zstdLib, 'ZSTD_createDDict');
+  final hasDecompressUsingDDict = _hasSymbolQuiet(
+    _zstdLib,
+    'ZSTD_decompress_usingDDict',
+  );
+  final hasCreateCDict = _hasSymbolQuiet(_zstdLib, 'ZSTD_createCDict');
+  final hasCompressUsingCDict = _hasSymbolQuiet(
+    _zstdLib,
+    'ZSTD_compress_usingCDict',
+  );
+
+  Logger.i(
+    'Startup probe: platform=${Platform.operatingSystem}, source=$_loadedLibrarySource, '
+    'dictSupport=$_supportsDictCompression, '
+    'symbols={createDCtx:$hasCreateDCtx, createDDict:$hasCreateDDict, '
+    'decompressUsingDDict:$hasDecompressUsingDDict, createCDict:$hasCreateCDict, '
+    'compressUsingCDict:$hasCompressUsingCDict}',
+    tag: 'ZstdService',
+  );
+}
 
 /// 初始化 zstd 库
 void _ensureLibraryLoaded() {
@@ -198,6 +294,7 @@ void _tryInitializeBindings() {
       'Zstd FFI bindings initialized, dict compression: $_supportsDictCompression',
       tag: 'ZstdService',
     );
+    _logStartupProbeOnce();
   } catch (e, stackTrace) {
     Logger.e(
       'Failed to initialize zstd FFI bindings: $e',
@@ -206,6 +303,7 @@ void _tryInitializeBindings() {
       stackTrace: stackTrace,
     );
     _supportsDictCompression = false;
+    _logStartupProbeOnce();
   }
 }
 
