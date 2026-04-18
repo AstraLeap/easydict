@@ -33,6 +33,7 @@ Pod::Spec.new do |s|
     'GCC_PREPROCESSOR_DEFINITIONS' => 'ZSTD_STATIC_LINKING_ONLY=1',
     'GCC_SYMBOLS_PRIVATE_EXTERN' => 'NO',
     'DEAD_CODE_STRIPPING' => 'NO',
+    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/../../zstd/lib" "${PODS_TARGET_SRCROOT}/../../zstd/lib/common"',
     'OTHER_CFLAGS' => '$(inherited) -fvisibility=default'
   }
 end
