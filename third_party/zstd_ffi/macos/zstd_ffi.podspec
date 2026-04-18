@@ -1,4 +1,7 @@
 Pod::Spec.new do |s|
+  plugin_macos_dir = File.realpath(__dir__)
+  zstd_root = File.expand_path('../../zstd', plugin_macos_dir)
+
   s.name             = 'zstd_ffi'
   s.version          = '0.0.1'
   s.summary          = 'Zstandard compression library for FFI'
@@ -10,21 +13,21 @@ Pod::Spec.new do |s|
 
   s.source_files =
     'Classes/**/*',
-    '../../zstd/lib/common/*.c',
-    '../../zstd/lib/common/*.h',
-    '../../zstd/lib/compress/*.c',
-    '../../zstd/lib/compress/*.h',
-    '../../zstd/lib/decompress/*.c',
-    '../../zstd/lib/decompress/*.h',
-    '../../zstd/lib/decompress/*.S',
-    '../../zstd/lib/dictBuilder/*.c',
-    '../../zstd/lib/dictBuilder/*.h',
-    '../../zstd/lib/deprecated/*.c',
-    '../../zstd/lib/deprecated/*.h',
-    '../../zstd/lib/*.h'
+    "#{zstd_root}/lib/common/*.c",
+    "#{zstd_root}/lib/common/*.h",
+    "#{zstd_root}/lib/compress/*.c",
+    "#{zstd_root}/lib/compress/*.h",
+    "#{zstd_root}/lib/decompress/*.c",
+    "#{zstd_root}/lib/decompress/*.h",
+    "#{zstd_root}/lib/decompress/*.S",
+    "#{zstd_root}/lib/dictBuilder/*.c",
+    "#{zstd_root}/lib/dictBuilder/*.h",
+    "#{zstd_root}/lib/deprecated/*.c",
+    "#{zstd_root}/lib/deprecated/*.h",
+    "#{zstd_root}/lib/*.h"
 
-  s.public_header_files = '../../zstd/lib/*.h'
-  s.header_mappings_dir = '../../zstd/lib'
+  s.public_header_files = "#{zstd_root}/lib/*.h"
+  s.header_mappings_dir = "#{zstd_root}/lib"
 
   s.dependency 'FlutterMacOS'
   s.osx.deployment_target = '10.14'
@@ -33,7 +36,7 @@ Pod::Spec.new do |s|
     'GCC_PREPROCESSOR_DEFINITIONS' => 'ZSTD_STATIC_LINKING_ONLY=1',
     'GCC_SYMBOLS_PRIVATE_EXTERN' => 'NO',
     'DEAD_CODE_STRIPPING' => 'NO',
-    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/../../zstd/lib" "${PODS_TARGET_SRCROOT}/../../zstd/lib/common"',
+    'HEADER_SEARCH_PATHS' => "$(inherited) \"#{zstd_root}/lib\" \"#{zstd_root}/lib/common\"",
     'OTHER_CFLAGS' => '$(inherited) -fvisibility=default'
   }
 end

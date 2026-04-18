@@ -1,6 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "../../../zstd/lib/zstd.h"
+#include "zstd.h"
 
 #if defined(__GNUC__)
 #define ED_EXPORT __attribute__((visibility("default"))) __attribute__((used))
