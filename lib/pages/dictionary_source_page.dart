@@ -782,6 +782,7 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
       );
       await _dictManager.saveDictionaryMetadata(newMetadata);
       if (mounted) {
+        context.read<DictUpdateCheckService>().clearUpdate(dict.id);
         showToast(
           context,
           context.t.dict.versionUpdated(version: updateInfo.to),
@@ -906,6 +907,7 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
         );
         await _dictManager.saveDictionaryMetadata(newMetadata);
 
+        context.read<DictUpdateCheckService>().clearUpdate(dict.id);
         showToast(context, context.t.dict.updateSuccess);
         _loadOnlineDictionaries();
       },
@@ -1001,6 +1003,11 @@ class _DictionarySourcePageState extends State<DictionarySourcePage> {
 
         if (includeMetadata) {
           _dictManager.clearMetadataCache(dict.id);
+        }
+
+        // 如果是从更新对话框进入，清除更新状态
+        if (updateInfo != null) {
+          context.read<DictUpdateCheckService>().clearUpdate(dict.id);
         }
 
         showToast(context, context.t.dict.updateSuccess);
