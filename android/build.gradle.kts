@@ -1,10 +1,17 @@
 allprojects {
     repositories {
-        maven(url = "https://maven.aliyun.com/repository/google")
-        maven(url = "https://maven.aliyun.com/repository/central")
-        maven(url = "https://maven.aliyun.com/repository/public")
         google()
         mavenCentral()
+
+        // Optional mirror for environments where official Maven repos are slow.
+        // Enable with: ./gradlew -PuseAliyunMaven=true ...
+        val useAliyunMaven =
+            (findProperty("useAliyunMaven") as String?)?.toBoolean() == true
+        if (useAliyunMaven) {
+            maven(url = "https://maven.aliyun.com/repository/google")
+            maven(url = "https://maven.aliyun.com/repository/central")
+            maven(url = "https://maven.aliyun.com/repository/public")
+        }
     }
 }
 
