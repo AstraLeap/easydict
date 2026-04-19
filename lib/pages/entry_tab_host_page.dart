@@ -955,9 +955,11 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
         Theme.of(context).platform == TargetPlatform.android ||
         Theme.of(context).platform == TargetPlatform.iOS;
     final horizontalMargin = isPhone ? 10.0 : 12.0;
+    final activeTab = _tabService.activeTab;
+    final hideTabBarOnPhone = isPhone && (activeTab?.isLoading ?? false);
 
     // 手机端：标签栏悬浮在底部工具栏上方；桌面端：标签栏放在顶部
-    final tabBar = tabs.length > 1
+    final tabBar = tabs.length > 1 && !hideTabBarOnPhone
         ? _buildTabBar(tabs, _tabService.activeIndex, compact: isPhone)
         : null;
 
