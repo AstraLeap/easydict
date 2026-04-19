@@ -198,6 +198,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         setState(() {
           _isInitializing = false;
         });
+        // 页面初始化完成后后台预热主查词路径，降低首次查询冷启动耗时。
+        unawaited(_dbService.prewarmSearchPath(sourceLanguage: _selectedGroup));
       }
     } catch (e, stack) {
       Logger.e(
@@ -328,10 +330,7 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     _searchResults = [];
     _selectedResultIndex = -1;
 
-    if (_detectLanguage(word) == 'en') {
-      // 每日词点击后立即并行预热顶部关系横幅数据。
-      unawaited(EnglishSearchService().searchWordRelations(word));
-    }
+    final shouldPrefetchRelations = _detectLanguage(word) == 'en';
 
     try {
       final reusableTab = _findReusableSearchTab(word);
@@ -393,6 +392,11 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
             records: records,
             deferHistoryComponentUpdateUntilNavigated: false,
           );
+
+          if (shouldPrefetchRelations) {
+            // 延后到主结果可见后再触发关系词查询，避免与主查词争用数据库资源。
+            unawaited(EnglishSearchService().searchWordRelations(word));
+          }
         }
       } else {
         if (mounted) {
@@ -682,6 +686,33 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     );
   }
 
+  List<SearchRecord> _buildOptimisticHistoryRecords(String word) {
+    final normalized = word.trim();
+    if (normalized.isEmpty) return List<SearchRecord>.from(_searchRecords);
+    final now = DateTime.now();
+    final merged = <SearchRecord>[
+      SearchRecord(
+        word: normalized,
+        timestamp: now,
+        exactMatch: _exactMatch,
+        group: _selectedGroup,
+      ),
+      ..._searchRecords.where((r) => r.word != normalized),
+    ];
+    return merged.take(50).toList();
+  }
+
+  Future<String?> _resolvePrimaryDictIdForSearch(String sourceLanguage) async {
+    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
+    final filtered = enabledDicts.where((metadata) {
+      if (sourceLanguage == 'auto') return true;
+      return LanguageUtils.normalizeSourceLanguage(sourceLanguage) ==
+          LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
+    }).toList();
+    if (filtered.isEmpty) return null;
+    return filtered.first.id;
+  }
+
   Future<void> _openEntryHostFromData({
     required String word,
     required DictionaryEntryGroup entryGroup,
@@ -744,10 +775,13 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
     final word = _searchController.text.trim();
     if (word.isEmpty) return;
 
-    if (_detectLanguage(word) == 'en') {
-      // 用户点击查词瞬间即预热顶部关系横幅数据。
-      unawaited(EnglishSearchService().searchWordRelations(word));
-    }
+    final isEnglishWord = _detectLanguage(word) == 'en';
+    final normalizedSelectedGroup = LanguageUtils.normalizeSourceLanguage(
+      _selectedGroup,
+    );
+    final shouldUseEnglishPath =
+        isEnglishWord &&
+        (_selectedGroup == 'auto' || normalizedSelectedGroup == 'en');
 
     // LIKE/GLOB 通配符模式下禁止直接查词，必须从候选词列表点击进入
     if (_isWildcardMode(word)) {
@@ -757,57 +791,89 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
       return;
     }
 
+    final shouldPrefetchRelations = shouldUseEnglishPath;
+
     _isSearchingWord = true;
     _beginDeferredHistoryRefreshWindow();
+    final searchStopwatch = Stopwatch()..start();
+    final perfTag = 'SearchPerf';
+    final traceId =
+        '${DateTime.now().microsecondsSinceEpoch}_${word.hashCode & 0xFFFF}';
+
+    void logStage(String stage, Stopwatch watch, {String extra = ''}) {
+      Logger.d(
+        '[SearchTrace] trace=$traceId, stage=$stage, elapsed=${watch.elapsedMilliseconds}ms${extra.isEmpty ? '' : ', $extra'}',
+        tag: perfTag,
+      );
+    }
 
     Logger.d(
-      '用户开始查词: $word, _isSearchingWord 已设置为 true',
-      tag: 'DictionarySearch',
+      '用户开始查词: trace=$traceId, word=$word, _isSearchingWord 已设置为 true',
+      tag: perfTag,
     );
 
-    // 首次查英语词且 en.db 不存在时，直接弹出下载推荐（不等待查询结果）
-    if (_detectLanguage(word) == 'en') {
+    Future<void> maybePromptEnglishDbDownloadAsync() async {
+      if (!shouldUseEnglishPath) return;
+      final englishDbCheckWatch = Stopwatch()..start();
       final dbExists = await EnglishDbService().dbExists();
-      if (!dbExists) {
-        final cloudUrl = (await _dictManager.onlineSubscriptionUrl).trim();
-        final cloudUri = Uri.tryParse(cloudUrl);
-        final hasCloudServer =
-            cloudUri != null && cloudUri.hasScheme && cloudUri.host.isNotEmpty;
+      logStage(
+        'english_db_check_deferred',
+        englishDbCheckWatch,
+        extra: 'word=$word, dbExists=$dbExists',
+      );
+      if (dbExists || !mounted) return;
 
-        if (!hasCloudServer) {
-          Logger.i('未设置有效服务器地址，跳过 en.db 下载提示', tag: 'EnglishDB');
-        } else {
-          final shouldShow = await EnglishDbService()
-              .shouldShowDownloadDialog();
-          if (shouldShow && mounted) {
-            final result = await EnglishDbDownloadDialog.show(context);
-            if (result == EnglishDbDownloadResult.downloaded && mounted) {
-              showToast(context, context.t.search.dbDownloaded(word: word));
-            }
-            // 下载弹窗关闭后继续执行查词
-          }
-        }
+      final cloudUrl = (await _dictManager.onlineSubscriptionUrl).trim();
+      final cloudUri = Uri.tryParse(cloudUrl);
+      final hasCloudServer =
+          cloudUri != null && cloudUri.hasScheme && cloudUri.host.isNotEmpty;
+
+      if (!hasCloudServer) {
+        Logger.i('未设置有效服务器地址，跳过 en.db 下载提示', tag: 'EnglishDB');
+        return;
+      }
+
+      final shouldShow = await EnglishDbService().shouldShowDownloadDialog();
+      if (!shouldShow || !mounted) return;
+
+      final result = await EnglishDbDownloadDialog.show(context);
+      if (result == EnglishDbDownloadResult.downloaded && mounted) {
+        showToast(context, context.t.search.dbDownloaded(word: word));
       }
     }
 
+    final uiPrepWatch = Stopwatch()..start();
     _isLoading = true;
     _showSearchResults = false;
     _searchResults = [];
     _selectedResultIndex = -1;
+    logStage('ui_prepare', uiPrepWatch, extra: 'word=$word');
 
     try {
+      final reuseCheckWatch = Stopwatch()..start();
+      final records = _buildOptimisticHistoryRecords(word);
       final reusableTab = _findReusableSearchTab(word);
+      logStage(
+        'reuse_check',
+        reuseCheckWatch,
+        extra:
+            'word=$word, reusableTab=${reusableTab != null}, historySize=${records.length}',
+      );
       if (reusableTab != null) {
         Logger.d('复用已有搜索标签，跳过数据库查询: $word', tag: 'DictionarySearch');
-
-        await _historyService.addSearchRecord(word, exactMatch: _exactMatch);
-        await _historyService.addSearchRecord(
-          word,
-          exactMatch: _exactMatch,
-          group: _selectedGroup,
+        Logger.d(
+          '复用标签，直接跳转: trace=$traceId, word=$word, elapsed=${searchStopwatch.elapsedMilliseconds}ms',
+          tag: perfTag,
         );
 
-        final records = await _historyService.getSearchRecords();
+        unawaited(
+          _historyService.addSearchRecord(
+            word,
+            exactMatch: _exactMatch,
+            group: _selectedGroup,
+          ),
+        );
+
         await _openEntryHostFromData(
           word: word,
           entryGroup: reusableTab.entryGroup,
@@ -816,50 +882,307 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
           deferHistoryComponentUpdateUntilNavigated:
               deferHistoryComponentUpdateUntilNavigated,
         );
+        Logger.d(
+          '[SearchTraceSummary] trace=$traceId, word=$word, route=reuse_tab, total=${searchStopwatch.elapsedMilliseconds}ms',
+          tag: perfTag,
+        );
         return;
       }
 
+      final browseList = _buildHistoryBrowseList(records, word);
+      final openLoadingWatch = Stopwatch()..start();
+      final loadingTabId = await EntryTabHostPage.openLoading(
+        context,
+        word: word,
+        browseList: browseList,
+        preferExisting: false,
+      );
+
+      // 不阻塞首屏进入，后台检查英语关系库下载提示。
+      unawaited(maybePromptEnglishDbDownloadAsync());
+      logStage(
+        'open_loading_tab',
+        openLoadingWatch,
+        extra: 'word=$word, tabId=$loadingTabId',
+      );
+
+      Logger.d(
+        '已进入详情页(加载中): trace=$traceId, word=$word, elapsed=${searchStopwatch.elapsedMilliseconds}ms',
+        tag: perfTag,
+      );
+
+      Future<bool> applyResultToCurrentTab(
+        SearchResult result, {
+        required String phase,
+        bool scheduleHistoryRefresh = false,
+      }) async {
+        if (result.entries.isEmpty) return false;
+
+        final buildGroupWatch = Stopwatch()..start();
+        final entryGroup = DictionaryEntryGroup.groupEntries(result.entries);
+        logStage(
+          'build_entry_group_$phase',
+          buildGroupWatch,
+          extra: 'word=$word, dictCount=${entryGroup.totalDictionaryCount}',
+        );
+
+        final applyWatch = Stopwatch()..start();
+        final didReplace = _entryTabService.replaceLoadingTabContent(
+          tabId: loadingTabId,
+          word: word,
+          entryGroup: entryGroup,
+          dictResults: result.dictResults.isNotEmpty
+              ? result.dictResults
+              : null,
+          browseList: browseList,
+        );
+
+        if (!didReplace) {
+          Logger.d(
+            '标签已关闭，跳过结果填充: trace=$traceId, word=$word, phase=$phase',
+            tag: perfTag,
+          );
+          return false;
+        }
+
+        if (scheduleHistoryRefresh) {
+          _scheduleHistoryComponentRefresh(
+            records: records,
+            delay: deferHistoryComponentUpdateUntilNavigated
+                ? const Duration(milliseconds: 520)
+                : _historyRefreshDelay,
+          );
+        }
+
+        logStage('apply_result_to_tab_$phase', applyWatch, extra: 'word=$word');
+        return true;
+      }
+
+      final enableTwoPhase = _selectedGroup != 'auto';
+      const phase1MaxRowsPerDict = 1;
+      if (enableTwoPhase) {
+        final warmFullCacheWatch = Stopwatch()..start();
+        final hasWarmFullCache = await _dbService.hasWarmCacheForSearch(
+          word,
+          exactMatch: _exactMatch,
+          sourceLanguage: _selectedGroup,
+        );
+        logStage(
+          'check_full_cache_hot',
+          warmFullCacheWatch,
+          extra: 'word=$word, warm=$hasWarmFullCache',
+        );
+
+        if (hasWarmFullCache) {
+          final hotFullWatch = Stopwatch()..start();
+          final hotFullResult = await _dbService.getAllEntries(
+            word,
+            exactMatch: _exactMatch,
+            sourceLanguage: _selectedGroup,
+            traceId: '${traceId}_hot',
+          );
+          logStage(
+            'db_hot_full_cache',
+            hotFullWatch,
+            extra:
+                'word=$word, entries=${hotFullResult.entries.length}, dictResults=${hotFullResult.dictResults.length}',
+          );
+
+          if (hotFullResult.entries.isNotEmpty) {
+            unawaited(
+              _historyService.addSearchRecord(
+                word,
+                exactMatch: _exactMatch,
+                group: _selectedGroup,
+              ),
+            );
+
+            final didApply = await applyResultToCurrentTab(
+              hotFullResult,
+              phase: 'hot_full_single',
+              scheduleHistoryRefresh: true,
+            );
+            if (!didApply) {
+              return;
+            }
+
+            if (shouldPrefetchRelations) {
+              final relationPrefetchWatch = Stopwatch()..start();
+              unawaited(EnglishSearchService().searchWordRelations(word));
+              logStage(
+                'prefetch_relations_deferred',
+                relationPrefetchWatch,
+                extra: 'word=$word',
+              );
+            }
+
+            Logger.d(
+              '[SearchTraceSummary] trace=$traceId, word=$word, result=hit_hot_cache_single, total=${searchStopwatch.elapsedMilliseconds}ms',
+              tag: perfTag,
+            );
+            return;
+          }
+        }
+
+        final resolvePrimaryWatch = Stopwatch()..start();
+        final primaryDictId = await _resolvePrimaryDictIdForSearch(
+          _selectedGroup,
+        );
+        logStage(
+          'resolve_primary_dict',
+          resolvePrimaryWatch,
+          extra: 'word=$word, dictId=${primaryDictId ?? 'none'}',
+        );
+
+        if (primaryDictId != null) {
+          final phase1DbWatch = Stopwatch()..start();
+          final primaryResult = await _dbService.getAllEntries(
+            word,
+            exactMatch: _exactMatch,
+            sourceLanguage: _selectedGroup,
+            dictId: primaryDictId,
+            traceId: '${traceId}_p1',
+            maxRowsPerDict: phase1MaxRowsPerDict,
+          );
+          logStage(
+            'db_phase1_primary_dict',
+            phase1DbWatch,
+            extra:
+                'word=$word, dictId=$primaryDictId, entries=${primaryResult.entries.length}',
+          );
+
+          if (primaryResult.entries.isNotEmpty) {
+            unawaited(
+              _historyService.addSearchRecord(
+                word,
+                exactMatch: _exactMatch,
+                group: _selectedGroup,
+              ),
+            );
+
+            final didApplyPrimary = await applyResultToCurrentTab(
+              primaryResult,
+              phase: 'phase1_primary',
+              scheduleHistoryRefresh: true,
+            );
+            if (!didApplyPrimary) {
+              return;
+            }
+
+            if (shouldPrefetchRelations) {
+              final relationPrefetchWatch = Stopwatch()..start();
+              unawaited(EnglishSearchService().searchWordRelations(word));
+              logStage(
+                'prefetch_relations_deferred',
+                relationPrefetchWatch,
+                extra: 'word=$word',
+              );
+            }
+
+            unawaited(() async {
+              final phase2DbWatch = Stopwatch()..start();
+              final fullResult = await _dbService.getAllEntries(
+                word,
+                exactMatch: _exactMatch,
+                sourceLanguage: _selectedGroup,
+                traceId: '${traceId}_p2',
+              );
+              Logger.d(
+                '[SearchTrace] trace=$traceId, stage=db_phase2_full_dicts, elapsed=${phase2DbWatch.elapsedMilliseconds}ms, word=$word, entries=${fullResult.entries.length}, dictResults=${fullResult.dictResults.length}',
+                tag: perfTag,
+              );
+              if (!mounted || fullResult.entries.isEmpty) return;
+
+              final updateAllWatch = Stopwatch()..start();
+              // 将重内容回填延后到下一帧，避免与 phase1 紧邻触发双重重建导致掉帧。
+              await Future<void>.delayed(const Duration(milliseconds: 16));
+              final didApplyFull = await applyResultToCurrentTab(
+                fullResult,
+                phase: 'phase2_full',
+                scheduleHistoryRefresh: false,
+              );
+              if (!didApplyFull) return;
+              Logger.d(
+                '[SearchTrace] trace=$traceId, stage=phase2_full_done, elapsed=${updateAllWatch.elapsedMilliseconds}ms, word=$word',
+                tag: perfTag,
+              );
+            }());
+
+            Logger.d(
+              '[SearchTraceSummary] trace=$traceId, word=$word, result=hit_phase1, total=${searchStopwatch.elapsedMilliseconds}ms',
+              tag: perfTag,
+            );
+            return;
+          }
+        }
+      }
+
+      final dbWatch = Stopwatch()..start();
       final searchResult = await _dbService.getAllEntries(
         word,
         exactMatch: _exactMatch,
         sourceLanguage: _selectedGroup,
+        traceId: traceId,
+      );
+      logStage(
+        'db_get_all_entries',
+        dbWatch,
+        extra:
+            'word=$word, entries=${searchResult.entries.length}, dictResults=${searchResult.dictResults.length}',
       );
 
       if (searchResult.entries.isNotEmpty) {
-        final entryGroup = DictionaryEntryGroup.groupEntries(
-          searchResult.entries,
+        unawaited(
+          _historyService.addSearchRecord(
+            word,
+            exactMatch: _exactMatch,
+            group: _selectedGroup,
+          ),
         );
 
-        // 搜索成功时才记录到搜索历史
-        await _historyService.addSearchRecord(
-          word,
-          exactMatch: _exactMatch,
-          group: _selectedGroup,
+        final didApply = await applyResultToCurrentTab(
+          searchResult,
+          phase: 'single_phase',
+          scheduleHistoryRefresh: true,
         );
-        final records = await _historyService.getSearchRecords();
-        await _openEntryHostFromData(
-          word: word,
-          entryGroup: entryGroup,
-          dictResults: searchResult.dictResults.isNotEmpty
-              ? searchResult.dictResults
-              : null,
-          records: records,
-          deferHistoryComponentUpdateUntilNavigated:
-              deferHistoryComponentUpdateUntilNavigated,
+        if (!didApply) return;
+
+        if (shouldPrefetchRelations) {
+          final relationPrefetchWatch = Stopwatch()..start();
+          unawaited(EnglishSearchService().searchWordRelations(word));
+          logStage(
+            'prefetch_relations_deferred',
+            relationPrefetchWatch,
+            extra: 'word=$word',
+          );
+        }
+        Logger.d(
+          '[SearchTraceSummary] trace=$traceId, word=$word, result=hit, total=${searchStopwatch.elapsedMilliseconds}ms',
+          tag: perfTag,
         );
       } else {
-        final records = await _historyService.getSearchRecords();
-        _scheduleHistoryComponentRefresh(records: records);
+        _entryTabService.closeById(loadingTabId);
+        _scheduleHistoryComponentRefresh(records: _searchRecords);
         _showSearchResults = false;
+
+        Logger.d(
+          '[SearchTraceSummary] trace=$traceId, word=$word, result=miss, total=${searchStopwatch.elapsedMilliseconds}ms',
+          tag: perfTag,
+        );
 
         if (mounted) {
           showToast(context, context.t.search.noResult(word: word));
         }
       }
     } catch (e, stack) {
+      // 查询失败时保持标签状态一致，避免停留在加载占位。
+      _entryTabService.tabs
+          .where((tab) => tab.isLoading && tab.word == word)
+          .toList()
+          .forEach((tab) => _entryTabService.closeById(tab.id));
       Logger.e(
-        '_searchWord 失败: $e',
-        tag: 'DictionarySearch',
+        '_searchWord 失败: trace=$traceId, word=$word, error=$e',
+        tag: perfTag,
         error: e,
         stackTrace: stack,
       );
@@ -873,8 +1196,8 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
         _resumeHistoryComponentRefresh();
       }
       Logger.d(
-        '_searchWord 完成: $word, _isSearchingWord 已重置为 false',
-        tag: 'DictionarySearch',
+        '_searchWord 完成: trace=$traceId, word=$word, _isSearchingWord 已重置为 false, total=${searchStopwatch.elapsedMilliseconds}ms',
+        tag: perfTag,
       );
     }
   }
@@ -918,6 +1241,9 @@ class _DictionarySearchPageState extends State<DictionarySearchPage> {
                         });
                         await _advancedSettingsService.setLastSelectedGroup(
                           value,
+                        );
+                        unawaited(
+                          _dbService.prewarmSearchPath(sourceLanguage: value),
                         );
                         // 语言切换后立即更新边打边搜预览列表
                         _onSearchTextChanged(_searchController.text);

@@ -16,18 +16,37 @@ class EnglishDbService {
   EnglishDbService._internal();
 
   static const String _kNeverAskAgain = 'english_db_never_ask_again';
+  static const Duration _dbExistsCacheTtl = Duration(seconds: 8);
+
+  String? _cachedDbPath;
+  bool? _cachedDbExists;
+  DateTime? _cachedDbExistsAt;
 
   Future<String> getDbPath() async {
+    final cached = _cachedDbPath;
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
     Logger.d('EnglishDbService: 获取数据库路径...', tag: 'EnglishDB');
     final appDir = await getApplicationSupportDirectory();
     final dbPath = path.join(appDir.path, 'en.db');
+    _cachedDbPath = dbPath;
     Logger.d('EnglishDbService: 数据库路径: $dbPath', tag: 'EnglishDB');
     return dbPath;
   }
 
   Future<bool> dbExists() async {
+    final now = DateTime.now();
+    if (_cachedDbExists != null && _cachedDbExistsAt != null) {
+      final age = now.difference(_cachedDbExistsAt!);
+      if (age <= _dbExistsCacheTtl) {
+        return _cachedDbExists!;
+      }
+    }
     final dbPath = await getDbPath();
     final exists = File(dbPath).existsSync();
+    _cachedDbExists = exists;
+    _cachedDbExistsAt = now;
     Logger.d('EnglishDbService: 数据库是否存在: $exists', tag: 'EnglishDB');
     return exists;
   }
@@ -87,7 +106,9 @@ class EnglishDbService {
           'EnglishDbService: 下载失败 - HTTP ${response.statusCode}',
           tag: 'EnglishDB',
         );
-        onError(t.dict.downloadDbFailedHttp(code: response.statusCode.toString()));
+        onError(
+          t.dict.downloadDbFailedHttp(code: response.statusCode.toString()),
+        );
         return false;
       }
 
@@ -121,6 +142,8 @@ class EnglishDbService {
           .asFuture();
 
       onProgress(1.0);
+      _cachedDbExists = true;
+      _cachedDbExistsAt = DateTime.now();
       Logger.i('EnglishDbService: 数据库下载完成!', tag: 'EnglishDB');
       return true;
     } catch (e) {
@@ -162,9 +185,13 @@ class EnglishDbService {
     final dbFile = File(dbPath);
     if (await dbFile.exists()) {
       await dbFile.delete();
+      _cachedDbExists = false;
+      _cachedDbExistsAt = DateTime.now();
       Logger.i('EnglishDbService: 数据库已删除', tag: 'EnglishDB');
       return true;
     }
+    _cachedDbExists = false;
+    _cachedDbExistsAt = DateTime.now();
     return false;
   }
 }

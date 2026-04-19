@@ -283,7 +283,7 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   String? _wordRelationsShownLoggedWord;
 
   DateTime? _lastScrollUpdateTime;
-  static const _scrollUpdateThrottle = Duration(milliseconds: 100);
+  static const _scrollUpdateThrottle = Duration(milliseconds: 140);
   bool _isProgrammaticScroll = false;
   bool _waitForUserScroll = false; // 等待用户手动滚动后恢复位置检测
   DateTime? _lastDictionaryChangeTime;
@@ -313,6 +313,8 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 导航面板状态通知器，用于在滚动时只更新导航面板而不重建整个页面
   final ValueNotifier<int> _navPanelVersionNotifier = ValueNotifier(0);
+  bool _navRebuildScheduled = false;
+  DateTime? _lastNavInteractionAt;
 
   /// 流式输出状态通知器，避免在每个chunk时重建整个列表
   final Map<String, ValueNotifier<(String, String?, bool)>>
@@ -939,6 +941,15 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   int? _lastEntryIndex;
   String? _lastEntryId;
 
+  // 可见列表缓存：避免频繁重建 entries 列表并重复 indexWhere。
+  String? _visibleEntriesCacheKey;
+  List<DictionaryEntry>? _visibleEntriesCache;
+  final Map<String, int> _visibleEntryIndexById = {};
+
+  // 全词典 entry 定位缓存：加速跨页/跨词典定位。
+  final Map<String, DictionaryEntry> _entryLookupCache = {};
+  bool _entryLookupCacheBuilt = false;
+
   void _updateCurrentSectionFromScroll() {
     _updateCurrentSectionInternal(skipCooldown: false);
   }
@@ -1237,6 +1248,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         'WordRelations local cache primed: word=$normalized, rows=${immediateCachedRows.length}, source=$source',
         tag: 'RelationPerf',
       );
+
+      // 已有缓存时直接返回，避免进入详情页后重复触发一次关系词查询。
+      return Future.value(immediateCachedRows);
     }
 
     Logger.d(
@@ -1449,12 +1463,36 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _navPanelKey.currentState?.handleActiveSectionChanged();
     // 词条内容变化后，语言路径索引可能变化
     _allNonTargetLanguagePathsCache = null;
+    _visibleEntriesCache = null;
+    _visibleEntriesCacheKey = null;
+    _visibleEntryIndexById.clear();
+    _entryLookupCacheBuilt = false;
+    _entryLookupCache.clear();
   }
 
   List<DictionaryEntry> get entries => _getAllEntriesInOrder();
 
+  String _buildVisibleEntriesCacheKey() {
+    final sb = StringBuffer();
+    for (final dict in _entryGroup.dictionaryGroups) {
+      sb
+        ..write(dict.dictionaryId)
+        ..write(':')
+        ..write(dict.currentPageIndex)
+        ..write(';');
+    }
+    return sb.toString();
+  }
+
   List<DictionaryEntry> _getAllEntriesInOrder() {
+    final cacheKey = _buildVisibleEntriesCacheKey();
+    final cached = _visibleEntriesCache;
+    if (_visibleEntriesCacheKey == cacheKey && cached != null) {
+      return cached;
+    }
+
     final List<DictionaryEntry> entries = [];
+    _visibleEntryIndexById.clear();
 
     final allDicts = _entryGroup.dictionaryGroups;
 
@@ -1464,11 +1502,37 @@ class _EntryDetailPageState extends State<EntryDetailPage>
       final dict = allDicts[i];
       final currentPage = dict.currentPageGroup;
       for (final section in currentPage.sections) {
+        _visibleEntryIndexById[section.entry.id] = entries.length;
         entries.add(section.entry);
       }
     }
 
+    _visibleEntriesCacheKey = cacheKey;
+    _visibleEntriesCache = entries;
     return entries;
+  }
+
+  String _makeEntryLookupKey(String dictId, String entryId) {
+    return '$dictId|$entryId';
+  }
+
+  void _ensureEntryLookupCache() {
+    if (_entryLookupCacheBuilt) return;
+    _entryLookupCache.clear();
+    for (final dict in _entryGroup.dictionaryGroups) {
+      final dictId = dict.dictionaryId;
+      for (final page in dict.pageGroups) {
+        for (final section in page.sections) {
+          final e = section.entry;
+          _entryLookupCache[_makeEntryLookupKey(
+                dictId,
+                e.entryIdAsInt.toString(),
+              )] =
+              e;
+        }
+      }
+    }
+    _entryLookupCacheBuilt = true;
   }
 
   /// 从复合 ID 中提取纯数字 entry_id（去掉 dict_id 前缀）
@@ -1528,6 +1592,12 @@ class _EntryDetailPageState extends State<EntryDetailPage>
 
   /// 按 dictId + numeric entry_id 在所有词典/页面/section 中查找词条。
   DictionaryEntry? _findEntryAcrossAllPages(String dictId, String entryId) {
+    if (dictId.isNotEmpty && entryId.isNotEmpty) {
+      _ensureEntryLookupCache();
+      final cached = _entryLookupCache[_makeEntryLookupKey(dictId, entryId)];
+      if (cached != null) return cached;
+    }
+
     for (final dict in _entryGroup.dictionaryGroups) {
       if (dictId.isNotEmpty && dict.dictionaryId != dictId) {
         continue;
@@ -1619,7 +1689,10 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     }
 
     final entries = _getAllEntriesInOrder();
-    int index = entries.indexWhere((e) => e.id == effectiveEntry.id);
+    int index = _visibleEntryIndexById[effectiveEntry.id] ?? -1;
+    if (index < 0) {
+      index = entries.indexWhere((e) => e.id == effectiveEntry.id);
+    }
 
     Logger.d(
       'Scrolling to entry: ${effectiveEntry.headword}, index: $index, total entries: ${entries.length}, targetPath: $targetPath',
@@ -1643,6 +1716,41 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         Logger.d('Controller attached, scrolling now', tag: 'EntryDetail');
 
         _isProgrammaticScroll = true;
+
+        final visiblePositions = _itemPositionsListener.itemPositions.value;
+        int? currentTopIndex;
+        for (final p in visiblePositions) {
+          if (p.itemLeadingEdge >= 0) {
+            currentTopIndex = currentTopIndex == null
+                ? p.index
+                : (p.index < currentTopIndex ? p.index : currentTopIndex);
+          }
+        }
+        final distance = currentTopIndex == null
+            ? 0
+            : (index - currentTopIndex).abs();
+        final now = DateTime.now();
+        final isRecentNavInteraction =
+            _lastNavInteractionAt != null &&
+            now.difference(_lastNavInteractionAt!) <
+                const Duration(milliseconds: 1200);
+        final jumpDistanceThreshold = isRecentNavInteraction ? 5 : 24;
+        final shouldJumpDirectly =
+            targetPath == null && distance > jumpDistanceThreshold;
+
+        if (shouldJumpDirectly) {
+          _itemScrollController.jumpTo(
+            index: index,
+            alignment: scrollAlignment,
+          );
+          Future.delayed(const Duration(milliseconds: 120), () {
+            if (mounted) {
+              _isProgrammaticScroll = false;
+              _waitForUserScroll = true;
+            }
+          });
+          return;
+        }
 
         if (targetPath != null) {
           // 有目标元素时：极短动画快速定位，然后执行元素滚动（一次性跳转）
@@ -2057,13 +2165,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   void _onDictionaryChanged() {
-    Logger.d('Dictionary changed, rebuilding list', tag: 'EntryDetail');
-    setState(() {});
+    Logger.d('Dictionary changed, schedule rebuild', tag: 'EntryDetail');
+    _scheduleNavDrivenRebuild();
   }
 
   void _onPageChanged() {
-    Logger.d('Page changed, rebuilding list', tag: 'EntryDetail');
-    setState(() {});
+    Logger.d('Page changed, schedule rebuild', tag: 'EntryDetail');
+    _scheduleNavDrivenRebuild();
     // 移除这里的自动滚动逻辑，因为 _onSectionTapped 已经处理了具体的跳转
     // 如果这里保留，会导致每次切换 Page 都强制滚动到第一个 Section，覆盖用户的点击意图
     /*
@@ -2082,7 +2190,18 @@ class _EntryDetailPageState extends State<EntryDetailPage>
   }
 
   void _onSectionChanged() {
-    setState(() {});
+    _scheduleNavDrivenRebuild();
+  }
+
+  void _scheduleNavDrivenRebuild() {
+    _lastNavInteractionAt = DateTime.now();
+    if (_navRebuildScheduled) return;
+    _navRebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navRebuildScheduled = false;
+      if (!mounted) return;
+      setState(() {});
+    });
   }
 
   Future<void> _toggleFavorite() async {
@@ -2890,9 +3009,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
           _swipeOffsetX = 0;
           _swipeOffsetY = 0;
           _currentSwipeDirection = _SwipeDirection.none;
-          setState(() {
-            _showSwipeIndicator = false;
-          });
+          if (_showSwipeIndicator) {
+            setState(() {
+              _showSwipeIndicator = false;
+            });
+          }
         },
         onPanUpdate: (details) {
           // 累积偏移量
@@ -2941,10 +3062,13 @@ class _EntryDetailPageState extends State<EntryDetailPage>
         onPanEnd: (_) {
           // 松手时根据最终方向执行操作
           final direction = _currentSwipeDirection;
-          setState(() {
-            _showSwipeIndicator = false;
-            _currentSwipeDirection = _SwipeDirection.none;
-          });
+          if (_showSwipeIndicator ||
+              _currentSwipeDirection != _SwipeDirection.none) {
+            setState(() {
+              _showSwipeIndicator = false;
+              _currentSwipeDirection = _SwipeDirection.none;
+            });
+          }
 
           switch (direction) {
             case _SwipeDirection.right:
@@ -3258,9 +3382,9 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     final viewportHeight = MediaQuery.sizeOf(context).height;
     final isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-    final multiplier = isDesktop ? 1.15 : 0.85;
-    final minValue = isDesktop ? 500.0 : 280.0;
-    final maxValue = isDesktop ? 1200.0 : 820.0;
+    final multiplier = isDesktop ? 1.0 : 0.65;
+    final minValue = isDesktop ? 420.0 : 220.0;
+    final maxValue = isDesktop ? 920.0 : 560.0;
     return (viewportHeight * multiplier).clamp(minValue, maxValue);
   }
 
@@ -5911,6 +6035,11 @@ class _EntryDetailPageState extends State<EntryDetailPage>
     _allNonTargetLanguagePathsCache = null;
     _processedWordRelationsCache.clear();
     _resolvedWordRelationsCache.clear();
+    _visibleEntriesCache = null;
+    _visibleEntriesCacheKey = null;
+    _visibleEntryIndexById.clear();
+    _entryLookupCacheBuilt = false;
+    _entryLookupCache.clear();
   }
 
   Future<Set<String>> _getOrBuildAllNonTargetLanguagePaths() async {

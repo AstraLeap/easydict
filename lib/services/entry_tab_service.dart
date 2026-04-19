@@ -12,6 +12,8 @@ class EntryTabItem {
   final DictionaryEntryGroup entryGroup;
   final List<DictSearchResult>? dictResults;
   final BrowseList? browseList;
+  final bool isLoading;
+  final int revision;
 
   const EntryTabItem({
     required this.id,
@@ -19,7 +21,28 @@ class EntryTabItem {
     required this.entryGroup,
     this.dictResults,
     this.browseList,
+    this.isLoading = false,
+    this.revision = 0,
   });
+
+  EntryTabItem copyWith({
+    String? word,
+    DictionaryEntryGroup? entryGroup,
+    List<DictSearchResult>? dictResults,
+    BrowseList? browseList,
+    bool? isLoading,
+    int? revision,
+  }) {
+    return EntryTabItem(
+      id: id,
+      word: word ?? this.word,
+      entryGroup: entryGroup ?? this.entryGroup,
+      dictResults: dictResults ?? this.dictResults,
+      browseList: browseList ?? this.browseList,
+      isLoading: isLoading ?? this.isLoading,
+      revision: revision ?? this.revision,
+    );
+  }
 }
 
 class EntryTabService extends ChangeNotifier {
@@ -36,7 +59,9 @@ class EntryTabService extends ChangeNotifier {
   int get activeIndex => _activeIndex;
   int get lastSwitchDirection => _lastSwitchDirection;
   EntryTabItem? get activeTab =>
-      (_activeIndex >= 0 && _activeIndex < _tabs.length) ? _tabs[_activeIndex] : null;
+      (_activeIndex >= 0 && _activeIndex < _tabs.length)
+      ? _tabs[_activeIndex]
+      : null;
 
   Set<String> get activeWords => _tabs.map((t) => t.word).toSet();
 
@@ -75,6 +100,13 @@ class EntryTabService extends ChangeNotifier {
   }
 
   bool isWordActive(String word) => _indexOfWord(word) != -1;
+
+  int _indexOfTabId(String tabId) {
+    for (int i = 0; i < _tabs.length; i++) {
+      if (_tabs[i].id == tabId) return i;
+    }
+    return -1;
+  }
 
   void setActiveIndex(int index, {int? directionHint}) {
     if (index < 0 || index >= _tabs.length || _activeIndex == index) return;
@@ -133,6 +165,91 @@ class EntryTabService extends ChangeNotifier {
     _tabs.insert(insertIndex, tab);
     _activeIndex = insertIndex;
     notifyListeners();
+  }
+
+  String openLoadingTab({
+    required String word,
+    BrowseList? browseList,
+    bool preferExisting = true,
+    bool insertToLeft = false,
+  }) {
+    final placeholderGroup = DictionaryEntryGroup(
+      headword: word,
+      dictionaryGroups: const [],
+    );
+
+    int existingIndex = -1;
+    if (preferExisting) {
+      existingIndex = _indexOfWordByBrowseSource(word, browseList);
+      if (existingIndex == -1 && browseList == null) {
+        existingIndex = _indexOfWord(word);
+      }
+    }
+
+    if (existingIndex != -1) {
+      final existing = _tabs[existingIndex];
+      _tabs[existingIndex] = existing.copyWith(
+        isLoading: true,
+        revision: existing.revision + 1,
+      );
+      setActiveIndex(existingIndex);
+      return existing.id;
+    }
+
+    final tab = EntryTabItem(
+      id: 'tab_${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}',
+      word: word,
+      entryGroup: placeholderGroup,
+      dictResults: null,
+      browseList: browseList,
+      isLoading: true,
+      revision: 0,
+    );
+
+    if (_tabs.isEmpty) {
+      _tabs.add(tab);
+      _activeIndex = 0;
+      _lastSwitchDirection = 1;
+      notifyListeners();
+      return tab.id;
+    }
+
+    final insertIndex = insertToLeft ? 0 : _tabs.length;
+    _lastSwitchDirection = insertToLeft ? -1 : 1;
+    _tabs.insert(insertIndex, tab);
+    _activeIndex = insertIndex;
+    notifyListeners();
+    return tab.id;
+  }
+
+  bool replaceLoadingTabContent({
+    required String tabId,
+    required String word,
+    required DictionaryEntryGroup entryGroup,
+    List<DictSearchResult>? dictResults,
+    BrowseList? browseList,
+  }) {
+    final index = _indexOfTabId(tabId);
+    if (index == -1) return false;
+
+    final oldTab = _tabs[index];
+    _tabs[index] = oldTab.copyWith(
+      word: word,
+      entryGroup: entryGroup,
+      dictResults: dictResults,
+      browseList: browseList,
+      isLoading: false,
+      revision: oldTab.revision + 1,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  void closeById(String tabId) {
+    final index = _indexOfTabId(tabId);
+    if (index != -1) {
+      closeAt(index);
+    }
   }
 
   void closeAt(int index) {

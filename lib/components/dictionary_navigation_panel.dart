@@ -88,6 +88,9 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   final GlobalKey _sectionButtonKey = GlobalKey(); // 用于获取选中 section 按钮的位置
   OverlayEntry? _overlayEntry;
   OverlayEntry? _directoryOverlayEntry;
+  final Map<String, ({int dictIndex, int pageIndex, int sectionIndex})>
+  _entryLocationCache = {};
+  bool _entryLocationCacheBuilt = false;
 
   // 暴露 ScrollController 给父组件
   ScrollController get mainScrollController => _mainScrollController;
@@ -103,6 +106,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   @override
   void didUpdateWidget(DictionaryNavigationPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _entryLocationCache.clear();
+    _entryLocationCacheBuilt = false;
     // 导航栏固定在右侧，不需要处理位置变化
 
     // 如果目录列表应该是打开状态但 OverlayEntry 为 null，重新打开它
@@ -157,6 +162,38 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
   void _removeDirectoryOverlay() {
     _directoryOverlayEntry?.remove();
     _directoryOverlayEntry = null;
+  }
+
+  String _entryLocationKey(String dictId, String entryId) {
+    return '$dictId|$entryId';
+  }
+
+  void _ensureEntryLocationCache() {
+    if (_entryLocationCacheBuilt) return;
+    _entryLocationCache.clear();
+    final groups = widget.entryGroup.dictionaryGroups;
+    for (int dictIndex = 0; dictIndex < groups.length; dictIndex++) {
+      final dict = groups[dictIndex];
+      for (int pageIndex = 0; pageIndex < dict.pageGroups.length; pageIndex++) {
+        final page = dict.pageGroups[pageIndex];
+        for (
+          int sectionIndex = 0;
+          sectionIndex < page.sections.length;
+          sectionIndex++
+        ) {
+          final section = page.sections[sectionIndex];
+          _entryLocationCache[_entryLocationKey(
+            dict.dictionaryId,
+            section.entry.id,
+          )] = (
+            dictIndex: dictIndex,
+            pageIndex: pageIndex,
+            sectionIndex: sectionIndex,
+          );
+        }
+      }
+    }
+    _entryLocationCacheBuilt = true;
   }
 
   void _togglePageList() {
@@ -1430,9 +1467,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
         widget.entryGroup.dictionaryGroups[i].setCurrentPageIndex(0);
         widget.entryGroup.dictionaryGroups[i].setCurrentSectionIndex(0);
 
+        // 词典切换已包含 page/section 变更，通知一次父级重建即可。
         widget.onDictionaryChanged?.call();
-        widget.onPageChanged?.call();
-        widget.onSectionChanged?.call();
 
         // 等待 UI 重建后再滚动
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1490,10 +1526,8 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     }
 
     // 6. 通知父组件 (EntryDetailPage) 进行重建和滚动
+    // page 切换已包含 section 归零，不再重复触发 section 回调。
     widget.onPageChanged?.call();
-
-    // 同时通知 section 变化，因为 section index 重置了
-    widget.onSectionChanged?.call();
 
     // 导航到新页面的第一个section
     if (currentDict.currentPageGroup.sections.isNotEmpty) {
@@ -1557,77 +1591,81 @@ class DictionaryNavigationPanelState extends State<DictionaryNavigationPanel> {
     bool isCrossDictionary = false;
     bool isCrossPage = false;
 
-    for (int i = 0; i < widget.entryGroup.dictionaryGroups.length; i++) {
-      if (widget.entryGroup.dictionaryGroups[i].dictionaryId == dictId) {
-        if (widget.entryGroup.currentDictionaryIndex != i) {
-          isCrossDictionary = true;
-        }
-
-        // 先展开词典（如果处于折叠状态）
-        await widget.onExpandDictionary?.call(dictId);
-
-        widget.entryGroup.setCurrentDictionaryIndex(i);
-
-        final dict = widget.entryGroup.dictionaryGroups[i];
-        for (
-          int pageIndex = 0;
-          pageIndex < dict.pageGroups.length;
-          pageIndex++
-        ) {
-          final page = dict.pageGroups[pageIndex];
-          for (
-            int sectionIndex = 0;
-            sectionIndex < page.sections.length;
-            sectionIndex++
-          ) {
-            if (page.sections[sectionIndex] == section) {
-              Logger.d(
-                'Found matching section at page $pageIndex, section $sectionIndex, isCrossDictionary: $isCrossDictionary, isCrossPage: $isCrossPage',
-                tag: 'NavPanel',
-              );
-
-              if (dict.currentPageIndex != pageIndex) {
-                isCrossPage = true;
-              }
-
-              dict.setCurrentPageIndex(pageIndex);
-              dict.setCurrentSectionIndex(sectionIndex);
-
-              final shouldOpenDirectory = _isDirectoryExpanded;
-              if (_isDirectoryExpanded) {
-                _removeDirectoryOverlay();
-                setState(() {
-                  _isDirectoryExpanded = false;
-                  _selectedSectionIndex = null;
-                });
-              }
-
-              if (isCrossDictionary) {
-                widget.onDictionaryChanged?.call();
-              } else if (isCrossPage) {
-                widget.onPageChanged?.call();
-              } else {
-                widget.onSectionChanged?.call();
-              }
-
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-
-                if (shouldOpenDirectory) {
-                  _openDirectoryForCurrentSection();
-                }
-
-                widget.onNavigateToEntry?.call(
-                  section.entry,
-                  targetPath: targetPath,
-                );
-              });
-              return;
-            }
-          }
-        }
-      }
+    final dictIndex = widget.entryGroup.dictionaryGroups.indexWhere(
+      (g) => g.dictionaryId == dictId,
+    );
+    if (dictIndex < 0) {
+      Logger.w('Section dict not found, navigating directly', tag: 'NavPanel');
+      widget.onNavigateToEntry?.call(section.entry, targetPath: targetPath);
+      return;
     }
+
+    if (widget.entryGroup.currentDictionaryIndex != dictIndex) {
+      isCrossDictionary = true;
+    }
+
+    // 先展开词典（如果处于折叠状态）
+    await widget.onExpandDictionary?.call(dictId);
+
+    widget.entryGroup.setCurrentDictionaryIndex(dictIndex);
+    final dict = widget.entryGroup.dictionaryGroups[dictIndex];
+
+    _ensureEntryLocationCache();
+    final location =
+        _entryLocationCache[_entryLocationKey(dictId, section.entry.id)];
+
+    if (location == null) {
+      Logger.w(
+        'Section location cache miss, navigating directly',
+        tag: 'NavPanel',
+      );
+      widget.onNavigateToEntry?.call(section.entry, targetPath: targetPath);
+      return;
+    }
+
+    final pageIndex = location.pageIndex;
+    final sectionIndex = location.sectionIndex;
+
+    Logger.d(
+      'Found matching section at page $pageIndex, section $sectionIndex, isCrossDictionary: $isCrossDictionary, isCrossPage: $isCrossPage',
+      tag: 'NavPanel',
+    );
+
+    if (dict.currentPageIndex != pageIndex) {
+      isCrossPage = true;
+    }
+
+    dict.setCurrentPageIndex(pageIndex);
+    dict.setCurrentSectionIndex(sectionIndex);
+
+    final shouldOpenDirectory = _isDirectoryExpanded;
+    if (_isDirectoryExpanded) {
+      _removeDirectoryOverlay();
+      setState(() {
+        _isDirectoryExpanded = false;
+        _selectedSectionIndex = null;
+      });
+    }
+
+    if (isCrossDictionary) {
+      widget.onDictionaryChanged?.call();
+    } else if (isCrossPage) {
+      widget.onPageChanged?.call();
+    } else {
+      widget.onSectionChanged?.call();
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      if (shouldOpenDirectory) {
+        _openDirectoryForCurrentSection();
+      }
+
+      widget.onNavigateToEntry?.call(section.entry, targetPath: targetPath);
+    });
+
+    return;
 
     Logger.w(
       'Section not found in structure, navigating directly',

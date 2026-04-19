@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -1091,6 +1092,19 @@ class DatabaseService {
   // 缓存各词典是否为表意（biaoyi）模式（含 phonetic 列即为表意，含 headword_normalized 与否均可）
   final Map<String, bool> _dictHasPhoneticsCache = {};
 
+  // 解压后的 json 字符串缓存，减少重复词条查询时的重复解压开销。
+  static const int _maxDecompressedJsonCacheSize = 512;
+  final LinkedHashMap<String, String> _decompressedJsonCache =
+      LinkedHashMap<String, String>();
+
+  // 词典维度查询结果缓存：key=dictId|word|exact|norm，用于重复查词快速返回。
+  static const int _maxDictSearchResultCacheSize = 256;
+  final LinkedHashMap<String, List<DictionaryEntry>> _dictSearchResultCache =
+      LinkedHashMap<String, List<DictionaryEntry>>();
+
+  // 预热状态，避免重复做冷启动预热。
+  final Set<String> _prewarmedDictIds = {};
+
   static const int _batchParseThreshold = 20;
 
   Future<String> get currentDictionaryId async {
@@ -1301,26 +1315,69 @@ class DatabaseService {
     bool exactMatch = false,
     String? sourceLanguage,
     String? dictId,
+    String? traceId,
+    Set<String>? excludedDictIds,
+    int? maxRowsPerDict,
   }) async {
+    final totalWatch = Stopwatch()..start();
+    final tracePrefix = traceId == null ? '' : 'trace=$traceId, ';
     Logger.d(
-      'getAllEntries 开始: word=$word, exactMatch=$exactMatch, sourceLanguage=$sourceLanguage, dictId=$dictId',
+      'getAllEntries 开始: ${tracePrefix}word=$word, exactMatch=$exactMatch, sourceLanguage=$sourceLanguage, dictId=$dictId',
       tag: 'DatabaseService',
     );
     final dictManager = DictionaryManager();
+    final loadMetaWatch = Stopwatch()..start();
     final enabledDicts = await dictManager.getEnabledDictionariesMetadata();
+    Logger.d(
+      '[SearchTrace][DB] ${tracePrefix}stage=load_metadata, elapsed=${loadMetaWatch.elapsedMilliseconds}ms, enabled=${enabledDicts.length}',
+      tag: 'SearchPerf',
+    );
     Logger.d(
       'getAllEntries: enabledDicts.length=${enabledDicts.length}, dictIds=${enabledDicts.map((d) => d.id).toList()}',
       tag: 'DatabaseService',
     );
 
-    // 如果指定了 dictId，使用旧逻辑（单词典搜索）
+    // 如果指定了 dictId，走单词典快速路径（避免旧逻辑中的额外遍历与日志开销）。
     if (dictId != null && dictId.isNotEmpty) {
-      final entries = await _searchEntriesInternal(
-        word,
-        exactMatch: exactMatch,
-        sourceLanguage: sourceLanguage,
-        dictId: dictId,
+      DictionaryMetadata? singleDictMeta;
+      for (final meta in enabledDicts) {
+        if (meta.id == dictId) {
+          singleDictMeta = meta;
+          break;
+        }
+      }
+      if (singleDictMeta == null) {
+        Logger.w('指定的词典未找到或未启用: $dictId', tag: 'DatabaseService');
+        return SearchResult(
+          entries: const [],
+          originalWord: word,
+          dictResults: const [],
+        );
+      }
+
+      final langCode = LanguageUtils.normalizeSourceLanguage(
+        singleDictMeta.sourceLanguage,
       );
+      final normQuery = _precomputeNormalizedQueries(
+        word,
+        {langCode},
+        {singleDictMeta.sourceLanguage.toLowerCase()},
+      )[langCode]!;
+
+      final singleWatch = Stopwatch()..start();
+      final entries = await _searchInDictionary(
+        dictId,
+        word,
+        normQuery,
+        exactMatch: exactMatch,
+        traceId: traceId,
+        maxRows: maxRowsPerDict,
+      );
+      Logger.d(
+        '[SearchTrace][DB] ${tracePrefix}stage=single_dict_lookup, dict=$dictId, elapsed=${singleWatch.elapsedMilliseconds}ms, entries=${entries.length}',
+        tag: 'SearchPerf',
+      );
+
       return SearchResult(
         entries: entries,
         originalWord: word,
@@ -1333,6 +1390,9 @@ class DatabaseService {
 
     // 过滤要搜索的词典
     final filteredDicts = enabledDicts.where((metadata) {
+      if (excludedDictIds != null && excludedDictIds.contains(metadata.id)) {
+        return false;
+      }
       if (sourceLanguage == 'auto') {
         return true;
       } else if (sourceLanguage != null &&
@@ -1342,6 +1402,10 @@ class DatabaseService {
       }
       return true;
     }).toList();
+    Logger.d(
+      '[SearchTrace][DB] ${tracePrefix}stage=filter_dicts, elapsed=${totalWatch.elapsedMilliseconds}ms, filtered=${filteredDicts.length}',
+      tag: 'SearchPerf',
+    );
 
     // 预计算所有涉及语言的标准化结果
     final languageCodes = filteredDicts
@@ -1369,9 +1433,69 @@ class DatabaseService {
       }
     }
 
-    // 预先搜索英语关系词（如果需要）
-    Map<String, List<SearchRelation>>? englishRelations;
-    if (shouldPrepareEnglishRelations) {
+    // 第一阶段：只做词典直查，避免在已命中场景触发关系词重查询。
+    final directTasks = filteredDicts.map((metadata) async {
+      final dictWatch = Stopwatch()..start();
+      final langCode = LanguageUtils.normalizeSourceLanguage(
+        metadata.sourceLanguage,
+      );
+      final normQuery = normQueries[langCode]!;
+
+      // 先直接搜索单词
+      final entries = await _searchInDictionary(
+        metadata.id,
+        word,
+        normQuery,
+        exactMatch: exactMatch,
+        traceId: traceId,
+        maxRows: maxRowsPerDict,
+      );
+      return (
+        metadata: metadata,
+        langCode: langCode,
+        entries: entries,
+        elapsedMs: dictWatch.elapsedMilliseconds,
+      );
+    }).toList();
+
+    final directWatch = Stopwatch()..start();
+    final directResults = await Future.wait(directTasks);
+    Logger.d(
+      '[SearchTrace][DB] ${tracePrefix}stage=direct_lookup_all, elapsed=${directWatch.elapsedMilliseconds}ms, dictCount=${directResults.length}',
+      tag: 'SearchPerf',
+    );
+    final englishMisses = <({DictionaryMetadata metadata, String langCode})>[];
+
+    for (final result in directResults) {
+      final metadata = result.metadata;
+      final langCode = result.langCode;
+      final entries = result.entries;
+      final elapsedMs = result.elapsedMs;
+
+      if (entries.isNotEmpty) {
+        Logger.d(
+          '词典直查命中: ${tracePrefix}dict=${metadata.id}, entries=${entries.length}, elapsed=${elapsedMs}ms',
+          tag: 'SearchPerf',
+        );
+        dictResults.add(
+          DictSearchResult(dictId: metadata.id, entries: entries),
+        );
+        continue;
+      }
+
+      Logger.d(
+        '词典直查未命中: ${tracePrefix}dict=${metadata.id}, elapsed=${elapsedMs}ms',
+        tag: 'SearchPerf',
+      );
+      if (shouldPrepareEnglishRelations && langCode == 'en') {
+        englishMisses.add((metadata: metadata, langCode: langCode));
+      }
+    }
+
+    // 第二阶段：仅在存在英语未命中词典时，按需查询关系词并回退。
+    if (englishMisses.isNotEmpty) {
+      final relationWatch = Stopwatch()..start();
+      Map<String, List<SearchRelation>> englishRelations;
       try {
         englishRelations = await EnglishSearchService()
             .searchWithRelations(
@@ -1387,73 +1511,73 @@ class DatabaseService {
         Logger.e('DatabaseService: 搜索关系词错误: $e', tag: 'EnglishDB');
         englishRelations = {};
       }
-    }
 
-    // 每个词典搜索相互独立：并行执行，减少词典数量多时的总等待。
-    final dictTasks = filteredDicts.map((metadata) async {
-      final langCode = LanguageUtils.normalizeSourceLanguage(
-        metadata.sourceLanguage,
-      );
-      final normQuery = normQueries[langCode]!;
-
-      // 先直接搜索单词
-      final entries = await _searchInDictionary(
-        metadata.id,
-        word,
-        normQuery,
-        exactMatch: exactMatch,
+      Logger.d(
+        '[SearchTrace][DB] ${tracePrefix}stage=english_relations_prepare, relatedWords=${englishRelations.length}, elapsed=${relationWatch.elapsedMilliseconds}ms, fallbackDicts=${englishMisses.length}',
+        tag: 'SearchPerf',
       );
 
-      if (entries.isNotEmpty) {
-        return DictSearchResult(dictId: metadata.id, entries: entries);
+      if (englishRelations.isNotEmpty) {
+        final fallbackTasks = englishMisses.map((miss) async {
+          final dictWatch = Stopwatch()..start();
+          final metadata = miss.metadata;
+          final langCode = miss.langCode;
+          final validRelations = <String, List<SearchRelation>>{};
+          final relatedEntries = <DictionaryEntry>[];
+
+          final relatedLookups = englishRelations.keys.map((relatedWord) async {
+            final relatedNormQuery = _precomputeNormalizedQueries(
+              relatedWord,
+              {langCode},
+              {metadata.sourceLanguage.toLowerCase()},
+            );
+            final relEntries = await _searchInDictionary(
+              metadata.id,
+              relatedWord,
+              relatedNormQuery[langCode]!,
+              exactMatch: exactMatch,
+              traceId: traceId,
+              maxRows: maxRowsPerDict,
+            );
+            return (relatedWord, relEntries);
+          }).toList();
+
+          final relatedLookupResults = await Future.wait(relatedLookups);
+          for (final (relatedWord, relEntries) in relatedLookupResults) {
+            if (relEntries.isEmpty) continue;
+            validRelations[relatedWord] = englishRelations[relatedWord]!;
+            relatedEntries.addAll(relEntries);
+          }
+
+          if (relatedEntries.isEmpty) {
+            Logger.d(
+              '英语关系词回退未命中: ${tracePrefix}dict=${metadata.id}, elapsed=${dictWatch.elapsedMilliseconds}ms',
+              tag: 'SearchPerf',
+            );
+            return null;
+          }
+
+          Logger.d(
+            '英语关系词回退命中: ${tracePrefix}dict=${metadata.id}, relatedEntries=${relatedEntries.length}, elapsed=${dictWatch.elapsedMilliseconds}ms',
+            tag: 'SearchPerf',
+          );
+
+          return DictSearchResult(
+            dictId: metadata.id,
+            entries: relatedEntries,
+            relations: validRelations,
+          );
+        }).toList();
+
+        final fallbackResults = await Future.wait(fallbackTasks);
+        for (final result in fallbackResults) {
+          if (result != null) {
+            dictResults.add(result);
+          }
+        }
       }
-
-      if (englishRelations == null || langCode != 'en') {
-        return null;
-      }
-
-      // 查不到，且是英语词典，尝试搜索关系词
-      final validRelations = <String, List<SearchRelation>>{};
-      final relatedEntries = <DictionaryEntry>[];
-
-      final relatedLookups = englishRelations.keys.map((relatedWord) async {
-        final relatedNormQuery = _precomputeNormalizedQueries(
-          relatedWord,
-          {langCode},
-          {langCode},
-        );
-        final relEntries = await _searchInDictionary(
-          metadata.id,
-          relatedWord,
-          relatedNormQuery[langCode]!,
-          exactMatch: exactMatch,
-        );
-        return (relatedWord, relEntries);
-      }).toList();
-
-      final relatedLookupResults = await Future.wait(relatedLookups);
-      for (final (relatedWord, relEntries) in relatedLookupResults) {
-        if (relEntries.isEmpty) continue;
-        validRelations[relatedWord] = englishRelations[relatedWord]!;
-        relatedEntries.addAll(relEntries);
-      }
-
-      if (relatedEntries.isEmpty) {
-        return null;
-      }
-
-      return DictSearchResult(
-        dictId: metadata.id,
-        entries: relatedEntries,
-        relations: validRelations,
-      );
-    }).toList();
-
-    final parallelResults = await Future.wait(dictTasks);
-    for (final result in parallelResults) {
-      if (result != null) {
-        dictResults.add(result);
-      }
+    } else if (shouldPrepareEnglishRelations) {
+      Logger.d('跳过英语关系词回退：${tracePrefix}所有英语词典直查均命中', tag: 'SearchPerf');
     }
 
     // 合并所有 entries 和 relations
@@ -1467,6 +1591,10 @@ class DatabaseService {
       'getAllEntries 完成: word=$word, allEntries.length=${allEntries.length}, dictResults.length=${dictResults.length}',
       tag: 'DatabaseService',
     );
+    Logger.d(
+      '[SearchTraceSummary][DB] ${tracePrefix}word=$word, elapsed=${totalWatch.elapsedMilliseconds}ms, entries=${allEntries.length}, dictResults=${dictResults.length}',
+      tag: 'SearchPerf',
+    );
 
     return SearchResult(
       entries: allEntries,
@@ -1474,6 +1602,107 @@ class DatabaseService {
       relations: allRelations,
       dictResults: dictResults,
     );
+  }
+
+  Future<bool> hasWarmCacheForSearch(
+    String word, {
+    bool exactMatch = false,
+    String? sourceLanguage,
+    Set<String>? excludedDictIds,
+    int? maxRowsPerDict,
+  }) async {
+    final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
+    final filteredDicts = enabledDicts.where((metadata) {
+      if (excludedDictIds != null && excludedDictIds.contains(metadata.id)) {
+        return false;
+      }
+      if (sourceLanguage == 'auto') {
+        return true;
+      } else if (sourceLanguage != null &&
+          LanguageUtils.normalizeSourceLanguage(sourceLanguage) !=
+              LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (filteredDicts.isEmpty) return false;
+
+    final languageCodes = filteredDicts
+        .map((m) => LanguageUtils.normalizeSourceLanguage(m.sourceLanguage))
+        .toSet();
+    final originalLanguageCodes = filteredDicts
+        .map((m) => m.sourceLanguage.toLowerCase())
+        .toSet();
+    final normQueries = _precomputeNormalizedQueries(
+      word,
+      languageCodes,
+      originalLanguageCodes,
+    );
+
+    for (final metadata in filteredDicts) {
+      final langCode = LanguageUtils.normalizeSourceLanguage(
+        metadata.sourceLanguage,
+      );
+      final normQuery = normQueries[langCode]!;
+      final key =
+          '${metadata.id}|$word|$exactMatch|${normQuery.headword}|${normQuery.phonetic ?? ''}|${maxRowsPerDict ?? -1}';
+      if (!_dictSearchResultCache.containsKey(key)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /// 预热主查词路径：打开词典连接、读取一条索引/词条并做一次轻量解压。
+  /// 目的：降低首次查询冷启动（磁盘页/SQLite缓存/zstd初始化）延迟。
+  Future<void> prewarmSearchPath({required String sourceLanguage}) async {
+    try {
+      final enabledDicts = await _dictManager.getEnabledDictionariesMetadata();
+      final candidates = enabledDicts.where((metadata) {
+        if (sourceLanguage == 'auto') return true;
+        return LanguageUtils.normalizeSourceLanguage(sourceLanguage) ==
+            LanguageUtils.normalizeSourceLanguage(metadata.sourceLanguage);
+      }).toList();
+      if (candidates.isEmpty) return;
+
+      final target = candidates.first;
+      if (_prewarmedDictIds.contains(target.id)) return;
+
+      final warmWatch = Stopwatch()..start();
+      final db = await _dictManager.openDictionaryDatabase(target.id);
+      final rows = await db.rawQuery(
+        'SELECT entry_id FROM indices ORDER BY entry_id ASC LIMIT 1',
+      );
+      if (rows.isNotEmpty) {
+        final entryId = rows.first['entry_id'];
+        if (entryId is int) {
+          final entryRows = await db.rawQuery(
+            'SELECT json_data FROM entries WHERE entry_id = ? LIMIT 1',
+            [entryId],
+          );
+          if (entryRows.isNotEmpty) {
+            final jsonData = entryRows.first['json_data'];
+            if (jsonData is Uint8List) {
+              final zstdDict = await _dictManager.getZstdDictionary(target.id);
+              extractJsonFromFieldWithDict(jsonData, zstdDict);
+            }
+          }
+        }
+      }
+
+      _prewarmedDictIds.add(target.id);
+      Logger.d(
+        '[SearchPrewarm] dict=${target.id}, sourceLanguage=$sourceLanguage, elapsed=${warmWatch.elapsedMilliseconds}ms',
+        tag: 'SearchPerf',
+      );
+    } catch (e) {
+      Logger.w(
+        'prewarmSearchPath failed: sourceLanguage=$sourceLanguage, error=$e',
+        tag: 'SearchPerf',
+      );
+    }
   }
 
   Future<List<DictionaryEntry>> _searchEntriesInternal(
@@ -1618,16 +1847,52 @@ class DatabaseService {
     String word,
     _NormalizedQuery normQuery, {
     required bool exactMatch,
+    String? traceId,
+    int? maxRows,
   }) async {
     final entries = <DictionaryEntry>[];
+    final totalWatch = Stopwatch()..start();
+    final tracePrefix = traceId == null ? '' : 'trace=$traceId, ';
+    final searchCacheKey =
+        '$dictId|$word|$exactMatch|${normQuery.headword}|${normQuery.phonetic ?? ''}|${maxRows ?? -1}';
+
+    void logStage(String stage, Stopwatch watch, {String extra = ''}) {
+      if (traceId == null) return;
+      Logger.d(
+        '[SearchTrace][Dict] ${tracePrefix}dict=$dictId, word=$word, stage=$stage, elapsed=${watch.elapsedMilliseconds}ms${extra.isEmpty ? '' : ', $extra'}',
+        tag: 'SearchPerf',
+      );
+    }
+
+    final cachedEntries = _dictSearchResultCache.remove(searchCacheKey);
+    if (cachedEntries != null) {
+      // LRU: 命中时刷新到末尾。
+      _dictSearchResultCache[searchCacheKey] = cachedEntries;
+      logStage(
+        'entry_result_cache_hit',
+        totalWatch,
+        extra: 'entries=${cachedEntries.length}',
+      );
+      return List<DictionaryEntry>.from(cachedEntries);
+    }
 
     try {
+      final openDbWatch = Stopwatch()..start();
       final db = await _dictManager.openDictionaryDatabase(dictId);
+      logStage('open_db', openDbWatch);
 
       // 获取该词典的 zstd 字典用于解压
+      final dictLoadWatch = Stopwatch()..start();
       final zstdDict = await _dictManager.getZstdDictionary(dictId);
+      logStage('load_zstd_dict', dictLoadWatch);
 
+      final detectModeWatch = Stopwatch()..start();
       final isbiaoyi = await _isBiaoyiDict(dictId, db);
+      logStage(
+        'detect_dict_mode',
+        detectModeWatch,
+        extra: 'isbiaoyi=$isbiaoyi',
+      );
 
       String whereClause;
       List<dynamic> whereArgs;
@@ -1667,16 +1932,25 @@ class DatabaseService {
         }
       }
 
-      // 从 indices 表获取 entry_id 列表（包含 anchor 字段）
-      final indexResults = await db.query(
-        'indices',
-        columns: ['entry_id', 'headword', 'anchor'],
-        where: whereClause,
-        whereArgs: whereArgs,
-        orderBy: isbiaoyi ? 'phonetic ASC, headword ASC' : 'entry_id ASC',
+      // 一次 JOIN 同时拿到 indices 与 entries(json_data)，减少数据库往返。
+      final queryJoinedWatch = Stopwatch()..start();
+      final joinedResults = await db.rawQuery(
+        'SELECT i.entry_id AS entry_id, i.headword AS headword, i.anchor AS anchor, e.json_data AS json_data '
+        'FROM indices i '
+        'JOIN entries e ON i.entry_id = e.entry_id '
+        'WHERE $whereClause '
+        'ORDER BY ${isbiaoyi ? 'i.phonetic ASC, i.headword ASC' : 'i.entry_id ASC'}'
+        '${maxRows != null && maxRows > 0 ? ' LIMIT ?' : ''}',
+        maxRows != null && maxRows > 0 ? [...whereArgs, maxRows] : whereArgs,
+      );
+      logStage(
+        'query_indices_entries_join',
+        queryJoinedWatch,
+        extra: 'rows=${joinedResults.length}',
       );
 
-      if (indexResults.isEmpty) {
+      if (joinedResults.isEmpty) {
+        logStage('done_empty', totalWatch);
         return entries;
       }
 
@@ -1686,13 +1960,18 @@ class DatabaseService {
       final headwordMap = <int, String>{};
       // 构建 entry_id -> List<(headword, anchor)> 映射
       final anchorMap = <int, List<(String, String)>>{};
-      for (final r in indexResults) {
+      final jsonDataMap = <int, Uint8List>{};
+      for (final r in joinedResults) {
         final entryId = r['entry_id'] as int;
         if (seenEntryIds.add(entryId)) {
           entryIds.add(entryId);
         }
         final headword = r['headword'] as String? ?? '';
         final anchor = r['anchor'] as String? ?? '';
+        final jsonData = r['json_data'];
+        if (jsonData is Uint8List) {
+          jsonDataMap.putIfAbsent(entryId, () => jsonData);
+        }
         headwordMap.putIfAbsent(entryId, () => headword);
         // 添加 anchor 信息（去重）
         if (!anchorMap.containsKey(entryId)) {
@@ -1706,35 +1985,38 @@ class DatabaseService {
         }
       }
 
-      // 第二步：从 entries 表批量获取 json_data
-      final placeholders = List.filled(entryIds.length, '?').join(',');
-      final jsonResults = await db.rawQuery(
-        'SELECT entry_id, json_data FROM entries WHERE entry_id IN ($placeholders)',
-        entryIds,
-      );
-
-      // 构建 entry_id -> json_data 映射
-      final jsonDataMap = <int, Uint8List>{};
-      for (final r in jsonResults) {
-        final entryId = r['entry_id'] as int;
-        final jsonData = r['json_data'];
-        if (jsonData is Uint8List) {
-          jsonDataMap[entryId] = jsonData;
-        }
-      }
-
       Logger.d(
-        '_searchInDictionary: indices查询返回 ${indexResults.length} 条, entries查询返回 ${jsonDataMap.length} 条',
+        '_searchInDictionary: join查询返回 ${joinedResults.length} 条, 去重entry=${entryIds.length}, 可解析json=${jsonDataMap.length} 条',
         tag: 'DatabaseService',
       );
 
       // 按照 entryIds 顺序准备解析参数
+      final prepareParseWatch = Stopwatch()..start();
       final parseParams = <JsonParseParams>[];
+      int decompressCacheHit = 0;
+      int decompressCacheMiss = 0;
       for (final entryId in entryIds) {
         final jsonData = jsonDataMap[entryId];
         if (jsonData == null) continue;
 
-        final jsonStr = extractJsonFromFieldWithDict(jsonData, zstdDict);
+        final cacheKey = '$dictId:$entryId';
+        String? jsonStr = _decompressedJsonCache.remove(cacheKey);
+        if (jsonStr != null) {
+          // LRU: re-insert to the end when hit.
+          _decompressedJsonCache[cacheKey] = jsonStr;
+          decompressCacheHit++;
+        } else {
+          jsonStr = extractJsonFromFieldWithDict(jsonData, zstdDict);
+          if (jsonStr != null) {
+            if (_decompressedJsonCache.length >=
+                _maxDecompressedJsonCacheSize) {
+              _decompressedJsonCache.remove(_decompressedJsonCache.keys.first);
+            }
+            _decompressedJsonCache[cacheKey] = jsonStr;
+          }
+          decompressCacheMiss++;
+        }
+
         if (jsonStr == null) {
           Logger.w('无法解析行数据的json_data字段', tag: 'DatabaseService');
           continue;
@@ -1753,8 +2035,15 @@ class DatabaseService {
           ),
         );
       }
+      logStage(
+        'prepare_parse_params',
+        prepareParseWatch,
+        extra:
+            'parseCount=${parseParams.length}, jsonCacheHit=$decompressCacheHit, jsonCacheMiss=$decompressCacheMiss',
+      );
 
       int filteredCount = 0;
+      final parseWatch = Stopwatch()..start();
       if (kIsWeb || parseParams.length < _batchParseThreshold) {
         for (final params in parseParams) {
           try {
@@ -1798,13 +2087,28 @@ class DatabaseService {
           }
         }
       }
+      logStage(
+        'parse_entries',
+        parseWatch,
+        extra: 'success=${entries.length}, filtered=$filteredCount',
+      );
 
       Logger.d(
         '_searchInDictionary: 处理完成, 去重后待解析=${parseParams.length}, 成功=${entries.length}, 被过滤=$filteredCount',
         tag: 'DatabaseService',
       );
+
+      if (_dictSearchResultCache.length >= _maxDictSearchResultCacheSize) {
+        _dictSearchResultCache.remove(_dictSearchResultCache.keys.first);
+      }
+      _dictSearchResultCache[searchCacheKey] = List<DictionaryEntry>.from(
+        entries,
+      );
+
+      logStage('done', totalWatch, extra: 'entries=${entries.length}');
     } catch (e) {
       Logger.e('_searchInDictionary 整体失败: $e', tag: 'DatabaseService');
+      logStage('failed', totalWatch, extra: 'error=$e');
     }
 
     return entries;
@@ -2300,6 +2604,9 @@ class DatabaseService {
       await _database!.close();
       _database = null;
     }
+    _decompressedJsonCache.clear();
+    _dictSearchResultCache.clear();
+    _prewarmedDictIds.clear();
   }
 
   /// 创建 commits 表（如果不存在）并运行迁移升级

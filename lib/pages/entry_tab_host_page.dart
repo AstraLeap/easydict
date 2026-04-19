@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -64,6 +66,47 @@ class EntryTabHostPage extends StatefulWidget {
     );
   }
 
+  static Future<String> openLoading(
+    BuildContext context, {
+    required String word,
+    BrowseList? browseList,
+    bool preferExisting = true,
+    bool insertToLeft = false,
+  }) async {
+    final isWordBankBrowse = browseList?.source == BrowseListSource.wordBank;
+    if (!isWordBankBrowse) {
+      SearchHistoryService().addSearchRecord(word);
+    }
+
+    final tabId = EntryTabService().openLoadingTab(
+      word: word,
+      browseList: browseList,
+      preferExisting: preferExisting,
+      insertToLeft: insertToLeft,
+    );
+
+    final visibilityService = EntryTabVisibilityService();
+    visibilityService.show();
+
+    if (!visibilityService.persistentMode &&
+        context.findAncestorWidgetOfExactType<EntryTabHostPage>() == null) {
+      unawaited(
+        Navigator.of(context).push<void>(
+          PageRouteBuilder<void>(
+            opaque: false,
+            barrierColor: Colors.transparent,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const EntryTabHostPage(),
+          ),
+        ),
+      );
+    }
+
+    return tabId;
+  }
+
   @override
   State<EntryTabHostPage> createState() => _EntryTabHostPageState();
 }
@@ -74,7 +117,6 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
   final EntryTabVisibilityService _visibilityService =
       EntryTabVisibilityService();
   final DatabaseService _dbService = DatabaseService();
-  final Map<String, Widget> _detailPageCache = {};
   final ScrollController _tabScrollController = ScrollController();
   final Map<String, GlobalKey> _tabItemKeys = {};
   final FocusNode _hostKeyboardFocusNode = FocusNode(
@@ -82,6 +124,15 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
   );
 
   late final AnimationController _dismissController;
+
+  bool _shouldSkipDismissAnimation() {
+    final isPhone =
+        Theme.of(context).platform == TargetPlatform.android ||
+        Theme.of(context).platform == TargetPlatform.iOS;
+    if (!isPhone) return false;
+    // 标签较多时，直接返回可显著降低整页变换导致的掉帧。
+    return _tabService.tabs.length >= 3;
+  }
 
   @override
   void initState() {
@@ -287,8 +338,6 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
       return;
     }
 
-    final currentIds = _tabService.tabs.map((tab) => tab.id).toSet();
-    _detailPageCache.removeWhere((key, _) => !currentIds.contains(key));
     _syncTabKeysWithCurrentTabs();
 
     setState(() {});
@@ -436,6 +485,11 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     if (_dismissController.isAnimating || _dismissController.value > 0) return;
 
     FocusManager.instance.primaryFocus?.unfocus();
+    if (_shouldSkipDismissAnimation()) {
+      if (!mounted) return;
+      Navigator.of(context).maybePop();
+      return;
+    }
     await _dismissController.forward();
     if (!mounted) return;
     Navigator.of(context).maybePop();
@@ -846,10 +900,12 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
   }
 
   Widget _buildDetailPage(EntryTabItem tab) {
-    final cacheKey = tab.id;
+    if (tab.isLoading) {
+      return _LoadingEntryPage(word: tab.word, onHomeRequested: _dismissToHome);
+    }
 
-    Widget buildPage() => EntryDetailPage(
-      key: ValueKey(cacheKey),
+    return EntryDetailPage(
+      key: ValueKey('${tab.id}_${tab.revision}'),
       entryGroup: tab.entryGroup,
       initialWord: tab.word,
       dictResults: tab.dictResults,
@@ -877,8 +933,6 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
           },
       onHomeRequested: _dismissToHome,
     );
-
-    return _detailPageCache.putIfAbsent(cacheKey, buildPage);
   }
 
   Widget _buildEntryContentStack(List<EntryTabItem> tabs) {
@@ -976,6 +1030,57 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
         );
       },
       child: mainContent,
+    );
+  }
+}
+
+class _LoadingEntryPage extends StatelessWidget {
+  final String word;
+  final VoidCallback onHomeRequested;
+
+  const _LoadingEntryPage({required this.word, required this.onHomeRequested});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.6),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '正在打开 "$word" ...',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 12,
+              top: 12,
+              child: IconButton(
+                tooltip: context.t.common.back,
+                onPressed: onHomeRequested,
+                icon: const Icon(Icons.arrow_back),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
