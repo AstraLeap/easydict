@@ -5,15 +5,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:pasteboard/pasteboard.dart';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/languages/markdown.dart';
+import 'package:re_highlight/styles/all.dart' show builtThemes;
 import '../i18n/strings.g.dart';
 import '../core/utils/markdown_style_sheet.dart';
 import '../core/theme/app_theme.dart';
 import '../services/note_service.dart';
 import '../services/preferences_service.dart';
 import 'note_markdown_media_image.dart';
+import 're_editor_selection_toolbar.dart';
 
 /// 内嵌笔记编辑器
-/// 支持编辑/预览模式切换，复用 NoteEditorBottomSheet 的核心逻辑
+/// 使用 re_editor 实现 Markdown 语法高亮编辑 + 预览模式切换
 class NoteInlineEditor extends StatefulWidget {
   final String word;
   final String language;
@@ -37,7 +41,8 @@ class NoteInlineEditor extends StatefulWidget {
 class _NoteInlineEditorState extends State<NoteInlineEditor> {
   final NoteService _noteService = NoteService();
   final PreferencesService _preferencesService = PreferencesService();
-  late TextEditingController _controller;
+  late CodeLineEditingController _controller;
+  SelectionToolbarController? _toolbarController;
   String _savedText = '';
   bool _isPreviewMode = false;
   bool _isLoading = true;
@@ -45,14 +50,14 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
 
   // 撤销/重做栈
   final List<String> _undoStack = [];
-  final List<String> _redoStack = [];
   int _currentEditPosition = 0;
   bool _isTrackingChanges = true;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController();
+    _controller = CodeLineEditingController();
+    _toolbarController = buildReEditorSelectionToolbarController();
     _controller.addListener(_trackChanges);
     _loadContent();
   }
@@ -80,7 +85,6 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
     }
     _undoStack.add(currentText);
     _currentEditPosition = _undoStack.length - 1;
-    _redoStack.clear();
     setState(() {});
   }
 
@@ -90,9 +94,6 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
         _currentEditPosition--;
         _isTrackingChanges = false;
         _controller.text = _undoStack[_currentEditPosition];
-        _controller.selection = TextSelection.collapsed(
-          offset: _controller.text.length,
-        );
         _isTrackingChanges = true;
       });
     }
@@ -104,9 +105,6 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
         _currentEditPosition++;
         _isTrackingChanges = false;
         _controller.text = _undoStack[_currentEditPosition];
-        _controller.selection = TextSelection.collapsed(
-          offset: _controller.text.length,
-        );
         _isTrackingChanges = true;
       });
     }
@@ -122,7 +120,6 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
     _undoStack.clear();
     _undoStack.add(content);
     _currentEditPosition = 0;
-    _redoStack.clear();
     if (mounted) {
       setState(() {
         _isPreviewMode = previewMode;
@@ -205,23 +202,12 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
       bytes: bytes,
     );
     final encodedName = Uri.encodeComponent(storedName);
-    final insertText = '![$storedName](media://$encodedName)';
-
-    final text = _controller.text;
-    final selection = _controller.selection;
-    final newText = text.replaceRange(
-      selection.start,
-      selection.end,
-      insertText,
-    );
-    _controller.text = newText;
-    _controller.selection = TextSelection.collapsed(
-      offset: selection.start + insertText.length,
-    );
-    setState(() {});
+    _insertTextAtSelection('![$storedName](media://$encodedName)');
   }
 
   Future<void> _handlePaste() async {
+    if (_isPreviewMode) return;
+
     try {
       final imageBytes = await Pasteboard.image;
       if (imageBytes != null && imageBytes.isNotEmpty) {
@@ -232,7 +218,7 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
           bytes: imageBytes,
         );
         final encodedName = Uri.encodeComponent(storedName);
-        _insertText('![$storedName](media://$encodedName)');
+        _insertTextAtSelection('![$storedName](media://$encodedName)');
         return;
       }
     } catch (_) {}
@@ -252,20 +238,42 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
         return;
       }
     } catch (_) {}
+
+    _controller.paste();
   }
 
-  void _insertText(String insertText) {
-    final text = _controller.text;
+  void _insertTextAtSelection(String insertText) {
     final selection = _controller.selection;
-    final newText = text.replaceRange(
-      selection.start,
-      selection.end,
+    final startIndex = selection.startIndex;
+    final startOffset = selection.startOffset;
+    final endIndex = selection.endIndex;
+    final endOffset = selection.endOffset;
+
+    _isTrackingChanges = false;
+
+    final fullText = _controller.text;
+    final globalStart = _getGlobalOffset(startIndex, startOffset);
+    final globalEnd = _getGlobalOffset(endIndex, endOffset);
+    _controller.text = fullText.replaceRange(
+      globalStart,
+      globalEnd,
       insertText,
     );
-    _controller.text = newText;
-    _controller.selection = TextSelection.collapsed(
-      offset: selection.start + insertText.length,
+
+    final newGlobalOffset = globalStart + insertText.length;
+    final (newLineIndex, newLineOffset) = _getLinePosition(newGlobalOffset);
+    _controller.selection = CodeLineSelection.collapsed(
+      index: newLineIndex,
+      offset: newLineOffset,
     );
+
+    _isTrackingChanges = true;
+
+    if (_currentEditPosition < _undoStack.length - 1) {
+      _undoStack.removeRange(_currentEditPosition + 1, _undoStack.length);
+    }
+    _undoStack.add(_controller.text);
+    _currentEditPosition = _undoStack.length - 1;
     setState(() {});
   }
 
@@ -330,6 +338,31 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
     await _save();
   }
 
+  int _getGlobalOffset(int lineIndex, int lineOffset) {
+    final codeLines = _controller.codeLines;
+    int offset = 0;
+    for (int i = 0; i < lineIndex && i < codeLines.length; i++) {
+      offset += codeLines[i].text.length + 1; // +1 for newline
+    }
+    return offset + lineOffset;
+  }
+
+  (int lineIndex, int lineOffset) _getLinePosition(int globalOffset) {
+    final codeLines = _controller.codeLines;
+    int offset = 0;
+    for (int i = 0; i < codeLines.length; i++) {
+      final lineLength = codeLines[i].text.length;
+      if (offset + lineLength >= globalOffset) {
+        return (i, globalOffset - offset);
+      }
+      offset += lineLength + 1; // +1 for newline
+    }
+    return (
+      codeLines.length - 1,
+      codeLines.isEmpty ? 0 : codeLines.last.text.length,
+    );
+  }
+
   @override
   void dispose() {
     _controller.removeListener(_trackChanges);
@@ -340,7 +373,9 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final noteFontSize = (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 15) + 1.5;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final noteFontSize =
+        (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 15) + 1.5;
 
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -348,14 +383,12 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
 
     return Shortcuts(
       shortcuts: {
-        // Ctrl+Z / Cmd+Z 撤销
         LogicalKeySet(
           Platform.isMacOS
               ? LogicalKeyboardKey.meta
               : LogicalKeyboardKey.control,
           LogicalKeyboardKey.keyZ,
         ): const _UndoIntent(),
-        // Ctrl+Shift+Z / Cmd+Shift+Z 重做
         LogicalKeySet(
           Platform.isMacOS
               ? LogicalKeyboardKey.meta
@@ -363,7 +396,6 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
           LogicalKeyboardKey.shift,
           LogicalKeyboardKey.keyZ,
         ): const _RedoIntent(),
-        // Ctrl+Y / Cmd+Y 重做 (备选)
         LogicalKeySet(
           Platform.isMacOS
               ? LogicalKeyboardKey.meta
@@ -399,22 +431,21 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
                       ? null
                       : Theme.of(context).colorScheme.outline,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 _buildToolbarButton(
                   icon: Icons.undo,
                   onPressed: _currentEditPosition > 0 ? _undo : null,
                   tooltip: context.t.common.undo,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 _buildToolbarButton(
                   icon: Icons.redo,
-                  onPressed:
-                      _currentEditPosition < _undoStack.length - 1
-                          ? _redo
-                          : null,
+                  onPressed: _currentEditPosition < _undoStack.length - 1
+                      ? _redo
+                      : null,
                   tooltip: context.t.common.redo,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 _buildToolbarButton(
                   icon: Icons.image_outlined,
                   onPressed: _insertImageFromPicker,
@@ -431,134 +462,170 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
               ],
             ),
             const SizedBox(height: 8),
-        // 编辑器 / 预览
-        Expanded(
-          child: _isPreviewMode
-              ? Container(
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: colorScheme.outlineVariant.withOpacity(0.5),
-                    ),
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return _controller.text.trim().isEmpty
-                          ? Center(
-                              child: Text(
-                                context.t.note.previewEmpty,
-                                style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: noteFontSize,
-                                ),
-                              ),
-                            )
-                          : SingleChildScrollView(
-                              padding: const EdgeInsets.all(12),
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  minWidth: constraints.maxWidth,
-                                ),
-                                child: MarkdownBody(
-                                  data: _normalizeMarkdownLinks(
-                                    _controller.text,
+            // 编辑器 / 预览
+            Expanded(
+              child: _isPreviewMode
+                  ? Container(
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withOpacity(0.5),
+                        ),
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return _controller.text.trim().isEmpty
+                              ? Center(
+                                  child: Text(
+                                    context.t.note.previewEmpty,
+                                    style: TextStyle(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontSize: noteFontSize,
+                                    ),
                                   ),
-                                  styleSheet: buildMarkdownStyleSheet(context),
-                                  imageBuilder: (uri, title, alt) =>
-                                      NoteMarkdownMediaImage(
-                                    uri: uri,
-                                    altText: alt,
-                                    onWidthPercentResolved:
-                                        _persistImageWidthPercent,
+                                )
+                              : SingleChildScrollView(
+                                  padding: const EdgeInsets.all(12),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minWidth: constraints.maxWidth,
+                                    ),
+                                    child: MarkdownBody(
+                                      data: _normalizeMarkdownLinks(
+                                        _controller.text,
+                                      ),
+                                      styleSheet: buildMarkdownStyleSheet(
+                                        context,
+                                        fontSize: noteFontSize,
+                                      ),
+                                      imageBuilder: (uri, title, alt) =>
+                                          NoteMarkdownMediaImage(
+                                        uri: uri,
+                                        altText: alt,
+                                        onWidthPercentResolved:
+                                            _persistImageWidthPercent,
+                                      ),
+                                      onTapLink: (text, href, title) {
+                                        if (href != null) {
+                                          _handlePreviewLinkTap(href);
+                                        }
+                                      },
+                                    ),
                                   ),
-                                  onTapLink: (text, href, title) {
-                                    if (href != null) {
-                                      _handlePreviewLinkTap(href);
-                                    }
+                                );
+                        },
+                      ),
+                    )
+                  : Container(
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withOpacity(0.5),
+                        ),
+                      ),
+                      child: DropTarget(
+                        onDragEntered: (_) {
+                          if (!_isPreviewMode && mounted) {
+                            setState(() => _isDraggingImage = true);
+                          }
+                        },
+                        onDragExited: (_) {
+                          if (mounted) {
+                            setState(() => _isDraggingImage = false);
+                          }
+                        },
+                        onDragDone: (detail) async {
+                          await _handleDroppedFiles(detail.files);
+                        },
+                        child: Stack(
+                          children: [
+                            CodeEditor(
+                              controller: _controller,
+                              toolbarController: _toolbarController,
+                              shortcutOverrideActions: {
+                                CodeShortcutPasteIntent:
+                                    CallbackAction<CodeShortcutPasteIntent>(
+                                  onInvoke: (_) {
+                                    _handlePaste();
+                                    return null;
                                   },
                                 ),
+                              },
+                              style: CodeEditorStyle(
+                                fontSize: noteFontSize,
+                                fontFamily: 'monospace',
+                                fontFamilyFallback: AppTheme.fontFamilyFallback,
+                                backgroundColor: colorScheme.surface,
+                                codeTheme: CodeHighlightTheme(
+                                  languages: {
+                                    'markdown': CodeHighlightThemeMode(
+                                      mode: langMarkdown,
+                                    ),
+                                  },
+                                  theme: isDark
+                                      ? builtThemes['atom-one-dark']!
+                                      : builtThemes['atom-one-light']!,
+                                ),
                               ),
-                            );
-                    },
-                  ),
-                )
-              : Container(
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: colorScheme.outlineVariant.withOpacity(0.5),
-                    ),
-                  ),
-                  child: DropTarget(
-                    onDragEntered: (_) {
-                      if (!_isPreviewMode && mounted) {
-                        setState(() => _isDraggingImage = true);
-                      }
-                    },
-                    onDragExited: (_) {
-                      if (mounted) {
-                        setState(() => _isDraggingImage = false);
-                      }
-                    },
-                    onDragDone: (detail) async {
-                      await _handleDroppedFiles(detail.files);
-                    },
-                    child: Stack(
-                      children: [
-                        TextField(
-                          controller: _controller,
-                          maxLines: null,
-                          expands: true,
-                          textAlignVertical: TextAlignVertical.top,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.all(12),
-                            border: InputBorder.none,
-                            hintText: context.t.note.placeholder,
-                            hintStyle: TextStyle(
-                              color: colorScheme.onSurfaceVariant
-                                  .withOpacity(0.5),
-                              fontSize: noteFontSize,
+                              wordWrap: true,
+                              indicatorBuilder:
+                                  (context, editingController,
+                                      chunkController, notifier) {
+                                return const SizedBox.shrink();
+                              },
                             ),
-                          ),
-                          style: TextStyle(
-                            fontSize: noteFontSize,
-                            fontFamily: 'monospace',
-                            fontFamilyFallback: AppTheme.fontFamilyFallback,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                        if (_isDraggingImage)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary.withOpacity(0.1),
-                                  border: Border.all(
-                                    color: colorScheme.primary,
-                                    width: 1.5,
+                            if (_controller.text.trim().isEmpty)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Align(
+                                      alignment: Alignment.topLeft,
+                                      child: Text(
+                                        context.t.note.placeholder,
+                                        style: TextStyle(
+                                          color: colorScheme.onSurfaceVariant
+                                              .withOpacity(0.5),
+                                          fontSize: noteFontSize,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.add_photo_alternate,
-                                  color: colorScheme.primary,
-                                  size: 28,
                                 ),
                               ),
-                            ),
-                          ),
-                      ],
+                            if (_isDraggingImage)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.primary
+                                          .withOpacity(0.1),
+                                      border: Border.all(
+                                        color: colorScheme.primary,
+                                        width: 1.5,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.add_photo_alternate,
+                                      color: colorScheme.primary,
+                                      size: 28,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+            ),
+          ],
         ),
-      ],
-    ),
-  ),
-  );
+      ),
+    );
   }
 
   Widget _buildToolbarButton({
@@ -573,7 +640,10 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
       onPressed: onPressed,
       icon: Icon(
         icon,
-        color: color ?? (onPressed != null ? colorScheme.primary : colorScheme.outline),
+        color: color ??
+            (onPressed != null
+                ? colorScheme.primary
+                : colorScheme.outline),
         size: 20,
       ),
       tooltip: tooltip,

@@ -977,6 +977,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
                                                       styleSheet:
                                                           buildMarkdownStyleSheet(
                                                             context,
+                                                            fontSize: noteFontSize,
                                                           ),
                                                       imageBuilder:
                                                           (

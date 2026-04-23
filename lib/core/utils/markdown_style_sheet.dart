@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 /// 缓存的 MarkdownStyleSheet 对象，避免每次调用都创建新对象
 MarkdownStyleSheet? _cachedMarkdownStyleSheet;
 ThemeData? _cachedTheme;
+double? _cachedFontSize;
 
 /// 构建统一风格的 MarkdownStyleSheet。
 ///
@@ -12,12 +13,19 @@ ThemeData? _cachedTheme;
 /// - 使用默认字体 SourceSans3，不使用用户自定义字体
 /// - 但保留正确的中文字体回退，避免显示日文字形
 /// - 自定义 blockquote、code、表格的装饰样式
-MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
+///
+/// [fontSize] 可选参数：当与编辑器共用时应传入编辑器实际使用的字号，
+/// 确保预览与编辑界面字号完全一致。
+MarkdownStyleSheet buildMarkdownStyleSheet(
+  BuildContext context, {
+  double? fontSize,
+}) {
   final theme = Theme.of(context);
 
-  // 检查缓存：如果主题相同，直接返回缓存的样式表
+  // 检查缓存：如果主题和字号都相同，直接返回缓存的样式表
   if (_cachedMarkdownStyleSheet != null &&
-      identical(_cachedTheme, theme)) {
+      identical(_cachedTheme, theme) &&
+      _cachedFontSize == fontSize) {
     return _cachedMarkdownStyleSheet!;
   }
 
@@ -28,10 +36,12 @@ MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
   const defaultFont = 'SourceSans3';
   final fallback = AppTheme.fontFamilyFallback;
   // 笔记/AI 聊天内容字号比默认 bodyMedium 大 1.5pt
-  final fontSize = (theme.textTheme.bodyMedium?.fontSize ?? 14) + 1.5;
+  // 如果外部传入了 fontSize（如编辑器实际字号），直接使用，保证编辑与预览完全一致
+  final effectiveFontSize =
+      fontSize ?? ((theme.textTheme.bodyMedium?.fontSize ?? 15) + 1.5);
 
   final baseBody = TextStyle(
-    fontSize: fontSize,
+    fontSize: effectiveFontSize,
     fontFamily: defaultFont,
     fontFamilyFallback: fallback,
     color: theme.textTheme.bodyMedium?.color,
@@ -41,31 +51,31 @@ MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
     p: baseBody,
     a: TextStyle(
       color: cs.primary,
-      fontSize: fontSize,
+      fontSize: effectiveFontSize,
       fontFamily: defaultFont,
       fontFamilyFallback: fallback,
     ),
     h1: TextStyle(
-      fontSize: theme.textTheme.titleLarge?.fontSize ?? 22,
+      fontSize: (theme.textTheme.titleLarge?.fontSize ?? 22) + 1.5,
       fontWeight: FontWeight.w700,
       fontFamily: defaultFont,
       fontFamilyFallback: fallback,
     ),
     h2: TextStyle(
-      fontSize: theme.textTheme.titleMedium?.fontSize ?? 16,
+      fontSize: (theme.textTheme.titleMedium?.fontSize ?? 16) + 1.5,
       fontWeight: FontWeight.w700,
       fontFamily: defaultFont,
       fontFamilyFallback: fallback,
     ),
     h3: TextStyle(
-      fontSize: theme.textTheme.titleSmall?.fontSize ?? 14,
+      fontSize: (theme.textTheme.titleSmall?.fontSize ?? 14) + 1.5,
       fontWeight: FontWeight.w600,
       fontFamily: defaultFont,
       fontFamilyFallback: fallback,
     ),
     code: TextStyle(
       fontFamily: 'Consolas',
-      fontSize: fontSize * 0.9,
+      fontSize: effectiveFontSize * 0.9,
       color: cs.onSurfaceVariant,
       backgroundColor: cs.surfaceContainerHighest,
     ),
@@ -106,6 +116,7 @@ MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
   // 更新缓存
   _cachedMarkdownStyleSheet = styleSheet;
   _cachedTheme = theme;
+  _cachedFontSize = fontSize;
 
   return styleSheet;
 }
