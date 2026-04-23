@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import '../theme/app_theme.dart';
 
 /// 缓存的 MarkdownStyleSheet 对象，避免每次调用都创建新对象
 MarkdownStyleSheet? _cachedMarkdownStyleSheet;
@@ -9,6 +10,7 @@ ThemeData? _cachedTheme;
 ///
 /// 用户笔记和AI聊天内容使用相同的样式策略：
 /// - 使用默认字体 SourceSans3，不使用用户自定义字体
+/// - 但保留正确的中文字体回退，避免显示日文字形
 /// - 自定义 blockquote、code、表格的装饰样式
 MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
   final theme = Theme.of(context);
@@ -22,13 +24,16 @@ MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
   final cs = theme.colorScheme;
 
   // 使用默认字体 SourceSans3，不使用用户自定义字体
+  // 但保留 AppTheme 提供的中文字体回退，确保 CJK 使用中国大陆字形
   const defaultFont = 'SourceSans3';
-  final fontSize = theme.textTheme.bodyMedium?.fontSize ?? 14;
+  final fallback = AppTheme.fontFamilyFallback;
+  // 笔记/AI 聊天内容字号比默认 bodyMedium 大 1.5pt
+  final fontSize = (theme.textTheme.bodyMedium?.fontSize ?? 14) + 1.5;
 
   final baseBody = TextStyle(
     fontSize: fontSize,
     fontFamily: defaultFont,
-    fontFamilyFallback: const [],
+    fontFamilyFallback: fallback,
     color: theme.textTheme.bodyMedium?.color,
   );
 
@@ -38,25 +43,25 @@ MarkdownStyleSheet buildMarkdownStyleSheet(BuildContext context) {
       color: cs.primary,
       fontSize: fontSize,
       fontFamily: defaultFont,
-      fontFamilyFallback: const [],
+      fontFamilyFallback: fallback,
     ),
     h1: TextStyle(
       fontSize: theme.textTheme.titleLarge?.fontSize ?? 22,
       fontWeight: FontWeight.w700,
       fontFamily: defaultFont,
-      fontFamilyFallback: const [],
+      fontFamilyFallback: fallback,
     ),
     h2: TextStyle(
       fontSize: theme.textTheme.titleMedium?.fontSize ?? 16,
       fontWeight: FontWeight.w700,
       fontFamily: defaultFont,
-      fontFamilyFallback: const [],
+      fontFamilyFallback: fallback,
     ),
     h3: TextStyle(
       fontSize: theme.textTheme.titleSmall?.fontSize ?? 14,
       fontWeight: FontWeight.w600,
       fontFamily: defaultFont,
-      fontFamilyFallback: const [],
+      fontFamilyFallback: fallback,
     ),
     code: TextStyle(
       fontFamily: 'Consolas',

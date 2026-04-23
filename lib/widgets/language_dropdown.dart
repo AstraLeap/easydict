@@ -7,6 +7,8 @@ class LanguageDropdown extends StatelessWidget {
   final List<String> availableLanguages;
   final bool showAllOption;
   final ValueChanged<String?> onSelected;
+  /// 额外的特殊选项，key 为选项值，value 为显示文本
+  final Map<String, String> extraOptions;
 
   const LanguageDropdown({
     super.key,
@@ -14,12 +16,16 @@ class LanguageDropdown extends StatelessWidget {
     required this.availableLanguages,
     required this.onSelected,
     this.showAllOption = true,
+    this.extraOptions = const {},
   });
 
   String _getSelectedLabel(Translations t) {
     if (selectedLanguage == null ||
         (showAllOption && selectedLanguage == 'ALL')) {
       return '';
+    }
+    if (extraOptions.containsKey(selectedLanguage)) {
+      return extraOptions[selectedLanguage]!;
     }
     return LanguageUtils.getDisplayName(selectedLanguage!, t);
   }
@@ -83,6 +89,28 @@ class LanguageDropdown extends StatelessWidget {
               ),
             ),
           );
+
+          if (extraOptions.isNotEmpty) {
+            items.add(const PopupMenuDivider(height: 1));
+            items.addAll(
+              extraOptions.entries.map(
+                (entry) => PopupMenuItem(
+                  value: entry.key,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.sticky_note_2_outlined,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(entry.value),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
 
           return items;
         },

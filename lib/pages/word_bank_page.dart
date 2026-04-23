@@ -13,6 +13,8 @@ import '../core/utils/toast_utils.dart';
 import '../core/utils/word_list_dialog.dart';
 import '../core/utils/language_utils.dart';
 import '../widgets/search_bar.dart';
+import '../widgets/note_inline_editor.dart';
+import '../services/note_service.dart';
 import '../services/advanced_search_settings_service.dart';
 import '../services/dictionary_manager.dart';
 import '../services/entry_event_bus.dart';
@@ -20,6 +22,8 @@ import '../services/font_loader_service.dart';
 import '../components/global_scale_wrapper.dart';
 import '../core/logger.dart';
 import '../i18n/strings.g.dart';
+
+const double _kNotesWideLayoutThreshold = 800.0;
 
 enum SortMode {
   addTimeDesc,
@@ -90,6 +94,10 @@ class _WordBankPageState extends State<WordBankPage> {
   static const int _pageSize = 50;
   int _currentPage = 0;
   bool _hasMoreData = true;
+
+  // 笔记相关
+  Map<String, dynamic>? _selectedNote;
+  // 使用文件级别常量 _kNotesWideLayoutThreshold
 
   @override
   void initState() {
@@ -178,10 +186,16 @@ class _WordBankPageState extends State<WordBankPage> {
         .toSet();
     final merged = {...wordBankLangs, ...dictLangs}.toList();
     final savedOrder = await _advancedSettingsService.getLanguageOrder();
-    return AdvancedSearchSettingsService.sortLanguagesByOrder(
+    final sorted = AdvancedSearchSettingsService.sortLanguagesByOrder(
       merged,
       savedOrder,
     );
+    // 如果存在笔记，添加用户笔记选项
+    final notesCount = await _wordBankService.getNotesCount();
+    if (notesCount > 0) {
+      sorted.add('NOTES');
+    }
+    return sorted;
   }
 
   /// 词典启用状态变化时，重新加载语言列表
@@ -192,7 +206,9 @@ class _WordBankPageState extends State<WordBankPage> {
     setState(() {
       _languages = languages;
       // 如果当前选中的语言已不在列表中，重置为 null（全部）
-      if (_selectedLanguage != null && !languages.contains(_selectedLanguage)) {
+      if (_selectedLanguage != null &&
+          _selectedLanguage != 'NOTES' &&
+          !languages.contains(_selectedLanguage)) {
         _selectedLanguage = null;
       }
     });
@@ -210,15 +226,21 @@ class _WordBankPageState extends State<WordBankPage> {
     _allWords = [];
     _wordsByList = {};
     _languageWordCounts = {};
+    _selectedNote = null;
 
     // 直接加载单词，不使用 _loadMoreWords 以避免触发分页加载状态
     try {
       final int offset = 0;
 
-      if (_selectedLanguage == null) {
+      if (_selectedLanguage == 'NOTES') {
+        // 用户笔记模式
+        Logger.d('加载用户笔记', tag: 'WordBank');
+        await _loadNotes(offset: offset, limit: _pageSize);
+      } else if (_selectedLanguage == null) {
         // 显示所有语言的单词
         Logger.d('加载所有语言的单词: ${_languages.join(", ")}', tag: 'WordBank');
         for (final lang in _languages) {
+          if (lang == 'NOTES') continue;
           await _loadWordsForLanguage(
             lang,
             addToAll: true,
@@ -254,7 +276,7 @@ class _WordBankPageState extends State<WordBankPage> {
     final endTime = DateTime.now();
     final duration = endTime.difference(startTime);
     Logger.d(
-      '_loadWords 完成: 耗时 ${duration.inMilliseconds}ms, 总单词数: ${_allWords.length}',
+      '_loadWords 完成: 耗时 ${duration.inMilliseconds}ms, 总条数: ${_allWords.length}',
       tag: 'WordBank',
     );
   }
@@ -270,10 +292,15 @@ class _WordBankPageState extends State<WordBankPage> {
     try {
       final int offset = _currentPage * _pageSize;
 
-      if (_selectedLanguage == null) {
+      if (_selectedLanguage == 'NOTES') {
+        // 用户笔记模式
+        Logger.d('加载更多用户笔记', tag: 'WordBank');
+        await _loadNotes(offset: offset, limit: _pageSize);
+      } else if (_selectedLanguage == null) {
         // 显示所有语言的单词
         Logger.d('加载所有语言的单词: ${_languages.join(", ")}', tag: 'WordBank');
         for (final lang in _languages) {
+          if (lang == 'NOTES') continue;
           await _loadWordsForLanguage(
             lang,
             addToAll: true,
@@ -310,7 +337,7 @@ class _WordBankPageState extends State<WordBankPage> {
     final endTime = DateTime.now();
     final duration = endTime.difference(startTime);
     Logger.d(
-      '_loadMoreWords 完成: 耗时 ${duration.inMilliseconds}ms, 总单词数: ${_allWords.length}',
+      '_loadMoreWords 完成: 耗时 ${duration.inMilliseconds}ms, 总条数: ${_allWords.length}',
       tag: 'WordBank',
     );
   }
@@ -319,7 +346,9 @@ class _WordBankPageState extends State<WordBankPage> {
   ({String sortBy, bool ascending}) _getSortParams() {
     switch (_currentSortMode) {
       case SortMode.addTimeDesc:
-        return (sortBy: 'created_at', ascending: false);
+        // 笔记模式按更新时间排序，单词模式按创建时间排序
+        final sortBy = _selectedLanguage == 'NOTES' ? 'updated_at' : 'created_at';
+        return (sortBy: sortBy, ascending: false);
       case SortMode.alphabetical:
         return (sortBy: 'word', ascending: true);
       case SortMode.random:
@@ -411,6 +440,51 @@ class _WordBankPageState extends State<WordBankPage> {
     );
   }
 
+  /// 加载用户笔记
+  Future<void> _loadNotes({int offset = 0, int? limit}) async {
+    final startTime = DateTime.now();
+    Logger.d('_loadNotes 开始, offset=$offset, limit=$limit', tag: 'WordBank');
+
+    List<Map<String, dynamic>> notes;
+    final sortParams = _getSortParams();
+    if (_searchQuery.isNotEmpty) {
+      Logger.d('搜索笔记: $_searchQuery', tag: 'WordBank');
+      notes = await _wordBankService.searchNotes(_searchQuery);
+    } else {
+      Logger.d(
+        '从数据库加载笔记: sortBy=${sortParams.sortBy}, ascending=${sortParams.ascending}, offset=$offset, limit=$limit',
+        tag: 'WordBank',
+      );
+      notes = await _wordBankService.getAllNotes(
+        sortBy: sortParams.sortBy,
+        ascending: sortParams.ascending,
+        offset: offset,
+        limit: limit,
+      );
+    }
+    Logger.d('加载到 ${notes.length} 个笔记', tag: 'WordBank');
+
+    // 复制列表，为每个笔记添加 language 字段（用于 UI 区分）
+    notes = notes.map((n) {
+      final noteWithLang = Map<String, dynamic>.from(n);
+      noteWithLang['language'] = n['language'] ?? 'unknown';
+      return noteWithLang;
+    }).toList();
+
+    if (offset == 0) {
+      _allWords = notes;
+    } else {
+      _allWords.addAll(notes);
+    }
+
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime);
+    Logger.d(
+      '_loadNotes 完成: 耗时 ${duration.inMilliseconds}ms',
+      tag: 'WordBank',
+    );
+  }
+
   /// 应用排序（仅在搜索模式下需要，因为搜索时数据库排序不支持）
   void _applySort() {
     // 非搜索模式下，数据已从数据库按正确顺序加载，无需内存排序
@@ -421,12 +495,13 @@ class _WordBankPageState extends State<WordBankPage> {
     // 搜索模式下需要在内存中排序
     switch (_currentSortMode) {
       case SortMode.addTimeDesc:
-        // 按添加时间排序（最新的在前），时间相同则按字母排序
+        // 按添加/更新时间排序（最新的在前），时间相同则按字母排序
+        final timeField = _selectedLanguage == 'NOTES' ? 'updated_at' : 'created_at';
         _wordsByList = _wordsByList.map((listName, words) {
           final sorted = List<Map<String, dynamic>>.from(words)
             ..sort((a, b) {
-              final timeA = a['created_at'] as int? ?? 0;
-              final timeB = b['created_at'] as int? ?? 0;
+              final timeA = a[timeField] as int? ?? 0;
+              final timeB = b[timeField] as int? ?? 0;
               final timeCompare = timeB.compareTo(timeA);
               if (timeCompare != 0) return timeCompare;
               // 时间相同则按字母排序
@@ -437,8 +512,8 @@ class _WordBankPageState extends State<WordBankPage> {
           return MapEntry(listName, sorted);
         });
         _allWords.sort((a, b) {
-          final timeA = a['created_at'] as int? ?? 0;
-          final timeB = b['created_at'] as int? ?? 0;
+          final timeA = a[timeField] as int? ?? 0;
+          final timeB = b[timeField] as int? ?? 0;
           final timeCompare = timeB.compareTo(timeA);
           if (timeCompare != 0) return timeCompare;
           // 时间相同则按字母排序
@@ -1075,6 +1150,11 @@ class _WordBankPageState extends State<WordBankPage> {
 
   /// 构建词表筛选器
   Widget _buildListFilter() {
+    if (_selectedLanguage == 'NOTES') {
+      // 用户笔记模式不需要词表筛选栏
+      return const SizedBox.shrink();
+    }
+
     if (_selectedLanguage == null) {
       // "全部"模式下，显示所有语言的词表
       final List<Widget> chips = [];
@@ -1103,27 +1183,24 @@ class _WordBankPageState extends State<WordBankPage> {
         for (final list in wordLists) {
           final listKey = '${lang}_${list.name}';
           final isSelected = _selectedList == listKey;
-          final count = _wordsByList[listKey]?.length ?? 0;
 
-          if (count > 0) {
-            chips.add(
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  selected: isSelected,
-                  label: Text(
-                    '${LanguageUtils.getDisplayName(lang, context.t)}-${list.displayName}',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  onSelected: (selected) {
-                    setState(() {
-                      _selectedList = selected ? listKey : null;
-                    });
-                  },
+          chips.add(
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                selected: isSelected,
+                label: Text(
+                  '${LanguageUtils.getDisplayName(lang, context.t)}-${list.displayName}',
+                  style: const TextStyle(fontSize: 13),
                 ),
+                onSelected: (selected) {
+                  setState(() {
+                    _selectedList = selected ? listKey : null;
+                  });
+                },
               ),
-            );
-          }
+            ),
+          );
         }
       }
 
@@ -1613,6 +1690,11 @@ class _WordBankPageState extends State<WordBankPage> {
 
     final contentScale = FontLoaderService().getDictionaryContentScale();
 
+    // 用户笔记模式使用独立的布局
+    if (_selectedLanguage == 'NOTES') {
+      return _buildNotesScaffold(contentScale);
+    }
+
     return Scaffold(
       body: PageScaleWrapper(
         scale: contentScale,
@@ -1635,7 +1717,9 @@ class _WordBankPageState extends State<WordBankPage> {
                         controller: _searchController,
                         focusNode: _searchFocusNode,
                         selectedLanguage: _selectedLanguage ?? 'ALL',
-                        availableLanguages: _languages,
+                        availableLanguages: _languages
+                            .where((l) => l != 'NOTES')
+                            .toList(),
                         onLanguageSelected: (value) async {
                           setState(() {
                             _selectedLanguage = value == 'ALL' ? null : value;
@@ -1651,6 +1735,10 @@ class _WordBankPageState extends State<WordBankPage> {
                             );
                           }
                           await _loadWords();
+                        },
+                        extraLanguageOptions: {
+                          if (_languages.contains('NOTES'))
+                            'NOTES': context.t.wordBank.notes,
                         },
                         hintText: context.t.search.hintWordBank,
                         showAllOption: true,
@@ -1785,6 +1873,564 @@ class _WordBankPageState extends State<WordBankPage> {
     );
   }
 
+  // ─────────────────────────────────────────────
+  // 用户笔记相关方法
+  // ─────────────────────────────────────────────
+
+  Widget _buildNotesScaffold(double contentScale) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideLayout = screenWidth >= _kNotesWideLayoutThreshold;
+
+    return Scaffold(
+      body: PageScaleWrapper(
+        scale: contentScale,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.surface,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 12,
+                        bottom: 12,
+                      ),
+                      child: UnifiedSearchBarFactory.withLanguageSelector(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        selectedLanguage: 'NOTES',
+                        availableLanguages: _languages
+                            .where((l) => l != 'NOTES')
+                            .toList(),
+                        onLanguageSelected: (value) async {
+                          setState(() {
+                            _selectedLanguage =
+                                value == 'ALL' ? null : value;
+                            _selectedList = null;
+                          });
+                          if (value == null || value == 'ALL') {
+                            await _wordBankService
+                                .saveLastSelectedLanguage('ALL');
+                          } else {
+                            await _wordBankService
+                                .saveLastSelectedLanguage(value);
+                          }
+                          await _loadWords();
+                        },
+                        extraLanguageOptions: {
+                          if (_languages.contains('NOTES'))
+                            'NOTES': context.t.wordBank.notes,
+                        },
+                        hintText: context.t.wordBank.noteKeyword,
+                        showAllOption: true,
+                        onTap: () {
+                          if (!_wasFocused &&
+                              _searchController.text.isNotEmpty) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              _searchController.selection = TextSelection(
+                                baseOffset: 0,
+                                extentOffset: _searchController.text.length,
+                              );
+                            });
+                          }
+                          _wasFocused = true;
+                        },
+                        extraSuffixIcons: [
+                          PopupMenuButton<SortMode>(
+                            tooltip: context.t.wordBank.sortTooltip,
+                            offset: const Offset(0, 40),
+                            icon: Icon(
+                              Icons.swap_vert,
+                              size: 20,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                            onSelected: (mode) => _changeSortMode(mode),
+                            itemBuilder: (context) => SortMode.values
+                                .map(
+                                  (mode) => PopupMenuItem<SortMode>(
+                                    value: mode,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _currentSortMode == mode
+                                              ? Icons.check_circle
+                                              : Icons.circle_outlined,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(mode.label(context)),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.arrow_forward, size: 20),
+                            onPressed: () {
+                              _loadWords();
+                            },
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 40,
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          _searchQuery = value;
+                        },
+                        onSubmitted: (value) {
+                          _searchQuery = value;
+                          _loadWords();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _buildNotesBody(isWideLayout),
+              ),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showNewNoteDialog,
+        tooltip: context.t.wordBank.newNote,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildNotesBody(bool isWideLayout) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isLoadingWordsNotifier,
+      builder: (context, isLoadingWords, _) {
+        if (isLoadingWords) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (_allWords.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.sticky_note_2_outlined,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  context.t.wordBank.noNotes,
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (isWideLayout) {
+          // 宽屏：左侧列表 + 右侧详情
+          return Row(
+            children: [
+              SizedBox(
+                width: 320,
+                child: _buildNotesListView(),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Theme.of(
+                  context,
+                ).colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+              Expanded(
+                child: _selectedNote != null
+                    ? _buildNoteDetailPanel(_selectedNote!)
+                    : Center(
+                        child: Text(
+                          context.t.wordBank.editNote,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          );
+        }
+
+        // 窄屏：只显示列表
+        return _buildNotesListView();
+      },
+    );
+  }
+
+  Widget _buildNotesListView() {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (ScrollNotification scrollInfo) {
+        if (!_isLoadingMore &&
+            _hasMoreData &&
+            scrollInfo.metrics.pixels >=
+                scrollInfo.metrics.maxScrollExtent - 200) {
+          _loadMoreWords();
+        }
+        return false;
+      },
+      child: ListView.builder(
+        cacheExtent: 500,
+        itemCount: _allWords.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= _allWords.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          final note = _allWords[index];
+          final isSelected = _selectedNote != null &&
+              _selectedNote!['word'] == note['word'] &&
+              _selectedNote!['language'] == note['language'];
+
+          return _buildNoteListItem(note, isSelected);
+        },
+      ),
+    );
+  }
+
+  Widget _buildNoteListItem(Map<String, dynamic> note, bool isSelected) {
+    final word = note['word'] as String? ?? '';
+    final language = note['language'] as String? ?? '';
+    final content = note['content'] as String? ?? '';
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: () {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isWideLayout = screenWidth >= _kNotesWideLayoutThreshold;
+        if (isWideLayout) {
+          setState(() {
+            _selectedNote = Map<String, dynamic>.from(note);
+          });
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => _NoteDetailPage(
+                word: word,
+                language: language,
+                initialContent: content,
+                onDeleted: () {
+                  setState(() {
+                    _allWords.removeWhere(
+                      (n) =>
+                          n['word'] == word &&
+                          n['language'] == language,
+                    );
+                  });
+                },
+                onSwitchToWide: () {
+                  setState(() {
+                    _selectedNote = Map<String, dynamic>.from(note);
+                  });
+                },
+              ),
+            ),
+          );
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? colorScheme.primaryContainer.withOpacity(0.3)
+              : null,
+          border: Border(
+            bottom: BorderSide(
+              color: colorScheme.outlineVariant.withOpacity(0.3),
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                word,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Text(
+              LanguageUtils.getDisplayName(language, context.t),
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.outline,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoteDetailPanel(Map<String, dynamic> note) {
+    final word = note['word'] as String? ?? '';
+    final language = note['language'] as String? ?? '';
+    final content = note['content'] as String? ?? '';
+
+    return Column(
+      children: [
+        // 标题栏
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: Theme.of(
+                  context,
+                ).colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  word,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                LanguageUtils.getDisplayName(language, context.t),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () => _deleteNote(word, language),
+                tooltip: context.t.common.delete,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+        // 编辑器
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: NoteInlineEditor(
+              word: word,
+              language: language,
+              initialContent: content,
+              onSaved: () {
+                // 刷新当前笔记内容
+                _refreshNote(word, language);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _refreshNote(String word, String language) async {
+    final noteService = NoteService();
+    final note = await noteService.getNote(word, language);
+    if (note != null && mounted) {
+      setState(() {
+        final index = _allWords.indexWhere(
+          (n) =>
+              n['word'].toString().toLowerCase() ==
+                  word.toLowerCase() &&
+              n['language'].toString().toLowerCase() ==
+                  language.toLowerCase(),
+        );
+        if (index >= 0) {
+          _allWords[index] = note.toDbMap();
+          _allWords[index]['language'] = language;
+        }
+        if (_selectedNote != null) {
+          _selectedNote = Map<String, dynamic>.from(_allWords[index]);
+        }
+      });
+    }
+  }
+
+  Future<void> _deleteNote(String word, String language) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.t.common.delete),
+        content: Text(
+          context.t.wordBank.deleteNoteConfirm(word: word),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.t.common.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.t.common.delete),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final noteService = NoteService();
+      await noteService.deleteNote(word, language);
+      if (mounted) {
+        showToast(context, context.t.wordBank.noteDeleted);
+        setState(() {
+          _allWords.removeWhere(
+            (n) =>
+                n['word'].toString().toLowerCase() ==
+                    word.toLowerCase() &&
+                n['language'].toString().toLowerCase() ==
+                    language.toLowerCase(),
+          );
+          if (_selectedNote != null &&
+              _selectedNote!['word'].toString().toLowerCase() ==
+                  word.toLowerCase() &&
+              _selectedNote!['language'].toString().toLowerCase() ==
+                  language.toLowerCase()) {
+            _selectedNote = null;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _showNewNoteDialog() async {
+    String word = '';
+    String language = 'en';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text(context.t.wordBank.newNote),
+              content: SizedBox(
+                width: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: context.t.wordBank.noteKeyword,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => word = value.trim(),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: language,
+                      decoration: InputDecoration(
+                        labelText: context.t.wordBank.noteLanguage,
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: _languages
+                          .where((l) => l != 'NOTES')
+                          .map(
+                            (lang) => DropdownMenuItem(
+                              value: lang,
+                              child: Text(
+                                LanguageUtils.getDisplayName(
+                                  lang,
+                                  context.t,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => language = value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(context.t.common.cancel),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text(context.t.common.ok),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true && word.isNotEmpty) {
+      final noteService = NoteService();
+      final existing = await noteService.getNote(word, language);
+      if (existing != null && existing.isNotEmpty && mounted) {
+        showToast(context, context.t.wordBank.wordListUpdated);
+        return;
+      }
+
+      await noteService.saveNote(
+        Note(word: word, language: language, content: ''),
+      );
+
+      if (mounted) {
+        showToast(context, context.t.wordBank.noteSaved);
+        await _loadWords();
+        // 如果是宽屏，自动选中新笔记
+        final screenWidth = MediaQuery.of(context).size.width;
+        if (screenWidth >= _kNotesWideLayoutThreshold) {
+          final newNote = _allWords.firstWhere(
+            (n) =>
+                n['word'].toString().toLowerCase() ==
+                    word.toLowerCase() &&
+                n['language'].toString().toLowerCase() ==
+                    language.toLowerCase(),
+            orElse: () => <String, dynamic>{},
+          );
+          if (newNote.isNotEmpty) {
+            setState(() {
+              _selectedNote = Map<String, dynamic>.from(newNote);
+            });
+          }
+        }
+      }
+    }
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -1814,6 +2460,108 @@ class _WordBankPageState extends State<WordBankPage> {
         ],
       ),
     );
+  }
+}
+
+/// 窄屏笔记详情页
+class _NoteDetailPage extends StatefulWidget {
+  final String word;
+  final String language;
+  final String? initialContent;
+  final VoidCallback? onDeleted;
+  final VoidCallback? onSwitchToWide;
+
+  const _NoteDetailPage({
+    required this.word,
+    required this.language,
+    this.initialContent,
+    this.onDeleted,
+    this.onSwitchToWide,
+  });
+
+  @override
+  State<_NoteDetailPage> createState() => _NoteDetailPageState();
+}
+
+class _NoteDetailPageState extends State<_NoteDetailPage> {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // 如果从窄屏切换到宽屏，自动返回并选中当前笔记
+    if (screenWidth >= _kNotesWideLayoutThreshold) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onSwitchToWide?.call();
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context);
+          }
+        }
+      });
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.word),
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              LanguageUtils.getDisplayName(widget.language, context.t),
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.outline,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _deleteNote,
+            tooltip: context.t.common.delete,
+          ),
+        ],
+      ),
+      body: NoteInlineEditor(
+        word: widget.word,
+        language: widget.language,
+        initialContent: widget.initialContent,
+      ),
+    );
+  }
+
+  Future<void> _deleteNote() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.t.common.delete),
+        content: Text(
+          context.t.wordBank.deleteNoteConfirm(word: widget.word),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.t.common.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.t.common.delete),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final noteService = NoteService();
+      await noteService.deleteNote(widget.word, widget.language);
+      if (mounted) {
+        showToast(context, context.t.wordBank.noteDeleted);
+        widget.onDeleted?.call();
+        Navigator.pop(context);
+      }
+    }
   }
 }
 

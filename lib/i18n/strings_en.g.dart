@@ -262,6 +262,15 @@ class _TranslationsWordBankEn extends TranslationsWordBankZh {
 	@override String adjustLists({required Object word}) => 'Adjust lists for "${word}"';
 	@override String get newListHint => 'Add new list...';
 	@override String get removeWord => 'Remove word';
+	@override String get notes => 'User Notes';
+	@override String get newNote => 'New Note';
+	@override String get noteKeyword => 'Keyword';
+	@override String get noteLanguage => 'Language';
+	@override String get noNotes => 'No notes yet';
+	@override String get noteSaved => 'Note saved';
+	@override String get noteDeleted => 'Note deleted';
+	@override String deleteNoteConfirm({required Object word}) => 'Delete note for "${word}"?';
+	@override String get editNote => 'Edit Note';
 }
 
 // Path: theme
@@ -1313,6 +1322,15 @@ extension on TranslationsEn {
 			'wordBank.adjustLists' => ({required Object word}) => 'Adjust lists for "${word}"',
 			'wordBank.newListHint' => 'Add new list...',
 			'wordBank.removeWord' => 'Remove word',
+			'wordBank.notes' => 'User Notes',
+			'wordBank.newNote' => 'New Note',
+			'wordBank.noteKeyword' => 'Keyword',
+			'wordBank.noteLanguage' => 'Language',
+			'wordBank.noNotes' => 'No notes yet',
+			'wordBank.noteSaved' => 'Note saved',
+			'wordBank.noteDeleted' => 'Note deleted',
+			'wordBank.deleteNoteConfirm' => ({required Object word}) => 'Delete note for "${word}"?',
+			'wordBank.editNote' => 'Edit Note',
 			'theme.title' => 'Theme Settings',
 			'theme.light' => 'Light',
 			'theme.dark' => 'Dark',
@@ -1603,6 +1621,8 @@ extension on TranslationsEn {
 			'dict.onlineCount' => ({required Object count}) => '${count}',
 			'dict.loadFailed' => 'Load failed',
 			'dict.loadOnlineFailed' => 'Failed to load online dictionaries',
+			_ => null,
+		} ?? switch (path) {
 			'dict.noOnlineDicts' => 'No online dictionaries',
 			'dict.noOnlineDictsHint' => 'Configure subscription URL in Settings → Cloud Service first',
 			'dict.noCreatorDicts' => 'No uploaded dictionaries',
@@ -1612,8 +1632,6 @@ extension on TranslationsEn {
 			'dict.allUpToDate' => 'All dictionaries are up to date',
 			'dict.checkUpdates' => 'Check Updates',
 			'dict.refreshStore' => 'Refresh Store',
-			_ => null,
-		} ?? switch (path) {
 			'dict.refreshStoreSuccess' => 'Store refreshed',
 			'dict.refreshLocal' => 'Refresh Local',
 			'dict.refreshLocalSuccess' => 'Local dictionaries refreshed',

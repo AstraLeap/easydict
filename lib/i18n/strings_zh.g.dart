@@ -564,6 +564,33 @@ class TranslationsWordBankZh {
 
 	/// zh: '从单词本移除'
 	String get removeWord => '从单词本移除';
+
+	/// zh: '用户笔记'
+	String get notes => '用户笔记';
+
+	/// zh: '新建笔记'
+	String get newNote => '新建笔记';
+
+	/// zh: '关键词'
+	String get noteKeyword => '关键词';
+
+	/// zh: '语言'
+	String get noteLanguage => '语言';
+
+	/// zh: '暂无笔记'
+	String get noNotes => '暂无笔记';
+
+	/// zh: '笔记已保存'
+	String get noteSaved => '笔记已保存';
+
+	/// zh: '笔记已删除'
+	String get noteDeleted => '笔记已删除';
+
+	/// zh: '删除 "{word}" 的笔记？'
+	String deleteNoteConfirm({required Object word}) => '删除 "${word}" 的笔记？';
+
+	/// zh: '编辑笔记'
+	String get editNote => '编辑笔记';
 }
 
 // Path: theme
@@ -2966,6 +2993,15 @@ extension on Translations {
 			'wordBank.adjustLists' => ({required Object word}) => '调整"${word}"的词表',
 			'wordBank.newListHint' => '新建词表...',
 			'wordBank.removeWord' => '从单词本移除',
+			'wordBank.notes' => '用户笔记',
+			'wordBank.newNote' => '新建笔记',
+			'wordBank.noteKeyword' => '关键词',
+			'wordBank.noteLanguage' => '语言',
+			'wordBank.noNotes' => '暂无笔记',
+			'wordBank.noteSaved' => '笔记已保存',
+			'wordBank.noteDeleted' => '笔记已删除',
+			'wordBank.deleteNoteConfirm' => ({required Object word}) => '删除 "${word}" 的笔记？',
+			'wordBank.editNote' => '编辑笔记',
 			'theme.title' => '主题设置',
 			'theme.light' => '浅色',
 			'theme.dark' => '深色',
@@ -3254,6 +3290,8 @@ extension on Translations {
 			'dict.languageOrderTitle' => '语言排序',
 			'dict.onlineDicts' => '在线词典列表',
 			'dict.onlineCount' => ({required Object count}) => '${count} 个',
+			_ => null,
+		} ?? switch (path) {
 			'dict.loadFailed' => '加载失败',
 			'dict.loadOnlineFailed' => '加载在线词典失败',
 			'dict.noOnlineDicts' => '暂无在线词典',
@@ -3263,8 +3301,6 @@ extension on Translations {
 			'dict.updateCount' => ({required Object count}) => '更新 (${count})',
 			'dict.hasUpdates' => ({required Object count}) => '发现 ${count} 个词典有更新',
 			'dict.allUpToDate' => '所有词典已是最新版本',
-			_ => null,
-		} ?? switch (path) {
 			'dict.checkUpdates' => '检查更新',
 			'dict.refreshStore' => '刷新商店',
 			'dict.refreshStoreSuccess' => '商店已刷新',

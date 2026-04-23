@@ -134,6 +134,7 @@ class UnifiedSearchBarWithLanguageSelector extends StatefulWidget {
   final VoidCallback? onTap;
   final bool enabled;
   final bool showClearButton;
+  final Map<String, String> extraLanguageOptions;
 
   const UnifiedSearchBarWithLanguageSelector({
     super.key,
@@ -150,6 +151,7 @@ class UnifiedSearchBarWithLanguageSelector extends StatefulWidget {
     this.onTap,
     this.enabled = true,
     this.showClearButton = true,
+    this.extraLanguageOptions = const {},
   });
 
   @override
@@ -227,6 +229,7 @@ class _UnifiedSearchBarWithLanguageSelectorState
                 availableLanguages: widget.availableLanguages,
                 showAllOption: widget.showAllOption,
                 onSelected: widget.onLanguageSelected,
+                extraOptions: widget.extraLanguageOptions,
               ),
             ),
             prefixIconConstraints: const BoxConstraints(
@@ -289,6 +292,7 @@ class UnifiedSearchBarFactory {
     VoidCallback? onTap,
     bool enabled = true,
     bool showClearButton = true,
+    Map<String, String> extraLanguageOptions = const {},
   }) {
     return UnifiedSearchBarWithLanguageSelector(
       key: key,
@@ -305,6 +309,7 @@ class UnifiedSearchBarFactory {
       onTap: onTap,
       enabled: enabled,
       showClearButton: showClearButton,
+      extraLanguageOptions: extraLanguageOptions,
     );
   }
 }

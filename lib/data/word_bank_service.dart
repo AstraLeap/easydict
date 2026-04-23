@@ -970,6 +970,74 @@ class WordBankService {
     }
   }
 
+  /// 获取所有笔记（支持排序和分页）
+  /// [sortBy] 排序方式: 'word' 字母顺序, 'created_at' 添加时间, 'updated_at' 更新时间, 'random' 随机
+  /// [ascending] 是否升序，默认true
+  /// [offset] 偏移量，用于分页
+  /// [limit] 限制数量，用于分页
+  Future<List<Map<String, dynamic>>> getAllNotes({
+    String sortBy = 'updated_at',
+    bool ascending = false,
+    int offset = 0,
+    int? limit,
+  }) async {
+    final db = await database;
+
+    String orderBy;
+    if (sortBy == 'random') {
+      orderBy = 'RANDOM()';
+    } else {
+      final direction = ascending ? 'ASC' : 'DESC';
+      orderBy = '$sortBy $direction';
+    }
+
+    try {
+      String? limitClause;
+      List<dynamic>? limitArgs;
+
+      if (limit != null) {
+        limitClause = 'LIMIT ? OFFSET ?';
+        limitArgs = [limit, offset];
+      } else {
+        limitClause = 'LIMIT ? OFFSET ?';
+        limitArgs = [2147483647, offset];
+      }
+
+      final query = 'SELECT * FROM notes ORDER BY $orderBy $limitClause';
+      return await db.rawQuery(query, limitArgs);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// 搜索笔记（按 keyword，即 word 字段）
+  Future<List<Map<String, dynamic>>> searchNotes(String query) async {
+    final db = await database;
+    final queryLower = query.toLowerCase();
+
+    try {
+      return await db.query(
+        'notes',
+        where: 'word LIKE ?',
+        whereArgs: ['%$queryLower%'],
+        orderBy: 'word ASC',
+      );
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// 获取笔记总数
+  Future<int> getNotesCount() async {
+    final db = await database;
+    try {
+      final result = await db.rawQuery('SELECT COUNT(*) as count FROM notes');
+      return Sqflite.firstIntValue(result) ?? 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   /// 批量导入单词到词表
   /// [language] 语言代码
   /// [listName] 词表名称

@@ -234,7 +234,16 @@
     "selectLists": "Select lists",
     "adjustLists": "Adjust lists for \"{word}\"",
     "newListHint": "Add new list...",
-    "removeWord": "Remove word"
+    "removeWord": "Remove word",
+    "notes": "User Notes",
+    "newNote": "New Note",
+    "noteKeyword": "Keyword",
+    "noteLanguage": "Language",
+    "noNotes": "No notes yet",
+    "noteSaved": "Note saved",
+    "noteDeleted": "Note deleted",
+    "deleteNoteConfirm": "Delete note for \"{word}\"?",
+    "editNote": "Edit Note"
   },
   "theme": {
     "title": "Theme Settings",

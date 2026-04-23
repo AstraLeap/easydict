@@ -236,7 +236,16 @@
     "selectLists": "选择词表",
     "adjustLists": "调整\"{word}\"的词表",
     "newListHint": "新建词表...",
-    "removeWord": "从单词本移除"
+    "removeWord": "从单词本移除",
+    "notes": "用户笔记",
+    "newNote": "新建笔记",
+    "noteKeyword": "关键词",
+    "noteLanguage": "语言",
+    "noNotes": "暂无笔记",
+    "noteSaved": "笔记已保存",
+    "noteDeleted": "笔记已删除",
+    "deleteNoteConfirm": "删除 \"{word}\" 的笔记？",
+    "editNote": "编辑笔记"
   },
   "theme": {
     "title": "主题设置",

@@ -745,7 +745,7 @@ class _NoteEditorBottomSheetState extends State<NoteEditorBottomSheet> {
     final screenSize = MediaQuery.of(context).size;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isDesktop = Theme.of(context).platform.isDesktopLike;
-    final noteFontSize = Theme.of(context).textTheme.bodyMedium?.fontSize ?? 15;
+    final noteFontSize = (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 15) + 1.5;
     final previewBackground = colorScheme.surface;
 
     return PopScope(
