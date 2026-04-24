@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -896,22 +897,42 @@ class WordBankService {
     }
   }
 
-  /// 获取某个词表的所有单词
+  /// 获取某个词表的所有单词（支持分页）
   Future<List<Map<String, dynamic>>> getWordsByList(
     String language,
-    String listName,
-  ) async {
+    String listName, {
+    String sortBy = 'word',
+    bool ascending = true,
+    int offset = 0,
+    int? limit,
+  }) async {
     final db = await database;
     final langLower = language.toLowerCase();
     final listNameClean = listName.trim();
 
+    String orderBy;
+    if (sortBy == 'random') {
+      orderBy = 'RANDOM()';
+    } else {
+      final direction = ascending ? 'ASC' : 'DESC';
+      orderBy = '$sortBy $direction';
+    }
+
     try {
-      return await db.query(
-        langLower,
-        where: '"$listNameClean" = ?',
-        whereArgs: [1],
-        orderBy: 'word ASC',
-      );
+      String? limitClause;
+      List<dynamic>? limitArgs;
+
+      if (limit != null) {
+        limitClause = 'LIMIT ? OFFSET ?';
+        limitArgs = [limit, offset];
+      } else {
+        limitClause = 'LIMIT ? OFFSET ?';
+        limitArgs = [2147483647, offset];
+      }
+
+      final query =
+          'SELECT * FROM $langLower WHERE "$listNameClean" = ? ORDER BY $orderBy $limitClause';
+      return await db.rawQuery(query, [1, ...limitArgs]);
     } catch (e) {
       return [];
     }
@@ -1038,16 +1059,20 @@ class WordBankService {
     }
   }
 
-  /// 批量导入单词到词表
+  /// 批量导入单词到词表（高性能批量版）
   /// [language] 语言代码
   /// [listName] 词表名称
   /// [words] 要导入的单词列表
+  /// [onProgress] 进度回调 (current, total)
+  /// [isCancelled] 取消检查回调，返回 true 则中止导入
   /// 返回成功导入的单词数量
   Future<int> importWordsToList(
     String language,
     String listName,
-    List<String> words,
-  ) async {
+    List<String> words, {
+    void Function(int current, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
     final db = await database;
     final langLower = language.toLowerCase();
     final listNameClean = listName.trim();
@@ -1063,59 +1088,89 @@ class WordBankService {
     // 2. 创建新词表列
     await addWordList(langLower, listNameClean);
 
+    // 3. 预处理和去重
+    final normalizedWords = words
+        .map((w) => w.toLowerCase().trim())
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (normalizedWords.isEmpty) return 0;
+
+    final total = normalizedWords.length;
     int importedCount = 0;
 
-    // 3. 批量导入单词
-    for (final word in words) {
-      final wordLower = word.toLowerCase().trim();
-      if (wordLower.isEmpty) continue;
-
-      try {
-        // 检查单词是否已存在
-        final existing = await db.query(
-          langLower,
-          where: 'word = ?',
-          whereArgs: [wordLower],
-          limit: 1,
-        );
-
-        if (existing.isNotEmpty) {
-          // 已存在，更新词表归属
-          await db.update(
-            langLower,
-            {'"$listNameClean"': 1},
-            where: 'word = ?',
-            whereArgs: [wordLower],
-          );
-        } else {
-          // 不存在，插入新记录
-          final values = <String, dynamic>{
-            'word': wordLower,
-            'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-            '"$listNameClean"': 1,
-          };
-
-          // 初始化其他词表列为0
-          for (final list in wordLists) {
-            if (list.name.toLowerCase() != listNameClean.toLowerCase()) {
-              values['"${list.name}"'] = 0;
-            }
-          }
-
-          final columns = values.keys.join(', ');
-          final placeholders = List.filled(values.length, '?').join(', ');
-          final args = values.values.toList();
-
-          await db.rawInsert(
-            'INSERT INTO $langLower ($columns) VALUES ($placeholders)',
-            args,
-          );
-        }
-        importedCount++;
-      } catch (e) {
-        // 忽略单个单词导入错误
-        continue;
+    // 4. 一次性查询已存在的单词（分批，规避 SQLite 参数上限 999）
+    const queryBatchSize = 900;
+    final existingWords = <String>{};
+    for (var i = 0; i < normalizedWords.length; i += queryBatchSize) {
+      if (isCancelled?.call() ?? false) {
+        throw Exception('CANCELLED');
       }
+      final batch = normalizedWords.skip(i).take(queryBatchSize).toList();
+      final placeholders = List.filled(batch.length, '?').join(',');
+      final results = await db.rawQuery(
+        'SELECT word FROM $langLower WHERE word IN ($placeholders)',
+        batch,
+      );
+      for (final row in results) {
+        final w = row['word'] as String?;
+        if (w != null) existingWords.add(w);
+      }
+    }
+
+    final wordsToUpdate = normalizedWords.where((w) => existingWords.contains(w)).toList();
+    final wordsToInsert = normalizedWords.where((w) => !existingWords.contains(w)).toList();
+
+    // 5. 批量更新已存在的单词
+    const updateBatchSize = 900;
+    for (var i = 0; i < wordsToUpdate.length; i += updateBatchSize) {
+      if (isCancelled?.call() ?? false) {
+        throw Exception('CANCELLED');
+      }
+      final batch = wordsToUpdate.skip(i).take(updateBatchSize).toList();
+      final placeholders = List.filled(batch.length, '?').join(',');
+      await db.rawUpdate(
+        'UPDATE $langLower SET "$listNameClean" = 1 WHERE word IN ($placeholders)',
+        batch,
+      );
+      importedCount += batch.length;
+      onProgress?.call(importedCount, total);
+    }
+
+    // 6. 批量插入新单词
+    // 获取其他词表列名，用于插入时初始化为 0
+    final otherListNames = wordLists
+        .where((l) => l.name.toLowerCase() != listNameClean.toLowerCase())
+        .map((l) => l.name)
+        .toList();
+
+    final columns = ['word', 'created_at', listNameClean, ...otherListNames];
+    final columnStr = columns.map((c) => '"$c"').join(', ');
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    // 每行参数数 = 2 (word, created_at) + 1 (本词表) + otherListNames.length
+    final rowParamCount = 2 + 1 + otherListNames.length;
+    // SQLite 参数上限 999，所以每批行数 = 999 ~/ rowParamCount
+    final insertBatchSize = max(1, 999 ~/ rowParamCount);
+
+    for (var i = 0; i < wordsToInsert.length; i += insertBatchSize) {
+      if (isCancelled?.call() ?? false) {
+        throw Exception('CANCELLED');
+      }
+      final batch = wordsToInsert.skip(i).take(insertBatchSize).toList();
+      final valuesClauses = <String>[];
+      final args = <dynamic>[];
+
+      for (final word in batch) {
+        final rowValues = [word, now, 1, ...List.filled(otherListNames.length, 0)];
+        valuesClauses.add('(${List.filled(rowValues.length, '?').join(', ')})');
+        args.addAll(rowValues);
+      }
+
+      await db.rawInsert(
+        'INSERT INTO $langLower ($columnStr) VALUES ${valuesClauses.join(', ')}',
+        args,
+      );
+      importedCount += batch.length;
+      onProgress?.call(importedCount, total);
     }
 
     return importedCount;

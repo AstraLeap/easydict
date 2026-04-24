@@ -214,6 +214,26 @@ class _WordBankPageState extends State<WordBankPage> {
     });
   }
 
+  /// 从当前选中的词表标识解析出语言和词表名
+  /// "全部"模式下格式为 "{lang}_{listName}"，特定语言模式下格式为 "{listName}"
+  ({String? lang, String? listName}) _parseSelectedList() {
+    if (_selectedList == null || _selectedList!.isEmpty) {
+      return (lang: null, listName: null);
+    }
+    if (_selectedLanguage != null) {
+      // 特定语言模式下，_selectedList 就是词表名
+      return (lang: _selectedLanguage, listName: _selectedList);
+    }
+    // "全部"模式下，格式为 "{lang}_{listName}"
+    final idx = _selectedList!.indexOf('_');
+    if (idx <= 0 || idx >= _selectedList!.length - 1) {
+      return (lang: null, listName: null);
+    }
+    final lang = _selectedList!.substring(0, idx);
+    final listName = _selectedList!.substring(idx + 1);
+    return (lang: lang, listName: listName);
+  }
+
   Future<void> _loadWords() async {
     final startTime = DateTime.now();
     Logger.d('_loadWords 开始', tag: 'WordBank');
@@ -231,6 +251,7 @@ class _WordBankPageState extends State<WordBankPage> {
     // 直接加载单词，不使用 _loadMoreWords 以避免触发分页加载状态
     try {
       final int offset = 0;
+      final selectedListInfo = _parseSelectedList();
 
       if (_selectedLanguage == 'NOTES') {
         // 用户笔记模式
@@ -238,15 +259,30 @@ class _WordBankPageState extends State<WordBankPage> {
         await _loadNotes(offset: offset, limit: _pageSize);
       } else if (_selectedLanguage == null) {
         // 显示所有语言的单词
-        Logger.d('加载所有语言的单词: ${_languages.join(", ")}', tag: 'WordBank');
-        for (final lang in _languages) {
-          if (lang == 'NOTES') continue;
+        if (selectedListInfo.lang != null) {
+          // 按特定词表加载
+          Logger.d(
+            '按词表加载单词: lang=${selectedListInfo.lang}, list=${selectedListInfo.listName}',
+            tag: 'WordBank',
+          );
           await _loadWordsForLanguage(
-            lang,
+            selectedListInfo.lang!,
             addToAll: true,
             offset: offset,
             limit: _pageSize,
+            listName: selectedListInfo.listName,
           );
+        } else {
+          Logger.d('加载所有语言的单词: ${_languages.join(", ")}', tag: 'WordBank');
+          for (final lang in _languages) {
+            if (lang == 'NOTES') continue;
+            await _loadWordsForLanguage(
+              lang,
+              addToAll: true,
+              offset: offset,
+              limit: _pageSize,
+            );
+          }
         }
       } else {
         // 只显示特定语言的单词
@@ -256,6 +292,7 @@ class _WordBankPageState extends State<WordBankPage> {
           addToAll: false,
           offset: offset,
           limit: _pageSize,
+          listName: selectedListInfo.listName,
         );
       }
 
@@ -273,6 +310,10 @@ class _WordBankPageState extends State<WordBankPage> {
 
     _isLoadingWords = false;
 
+    if (mounted) {
+      setState(() {});
+    }
+
     final endTime = DateTime.now();
     final duration = endTime.difference(startTime);
     Logger.d(
@@ -288,9 +329,11 @@ class _WordBankPageState extends State<WordBankPage> {
     Logger.d('_loadMoreWords 开始, 页码: $_currentPage', tag: 'WordBank');
 
     _isLoadingMore = true;
+    final int previousLength = _allWords.length;
 
     try {
       final int offset = _currentPage * _pageSize;
+      final selectedListInfo = _parseSelectedList();
 
       if (_selectedLanguage == 'NOTES') {
         // 用户笔记模式
@@ -298,15 +341,30 @@ class _WordBankPageState extends State<WordBankPage> {
         await _loadNotes(offset: offset, limit: _pageSize);
       } else if (_selectedLanguage == null) {
         // 显示所有语言的单词
-        Logger.d('加载所有语言的单词: ${_languages.join(", ")}', tag: 'WordBank');
-        for (final lang in _languages) {
-          if (lang == 'NOTES') continue;
+        if (selectedListInfo.lang != null) {
+          // 按特定词表加载更多
+          Logger.d(
+            '按词表加载更多单词: lang=${selectedListInfo.lang}, list=${selectedListInfo.listName}',
+            tag: 'WordBank',
+          );
           await _loadWordsForLanguage(
-            lang,
+            selectedListInfo.lang!,
             addToAll: true,
             offset: offset,
             limit: _pageSize,
+            listName: selectedListInfo.listName,
           );
+        } else {
+          Logger.d('加载所有语言的单词: ${_languages.join(", ")}', tag: 'WordBank');
+          for (final lang in _languages) {
+            if (lang == 'NOTES') continue;
+            await _loadWordsForLanguage(
+              lang,
+              addToAll: true,
+              offset: offset,
+              limit: _pageSize,
+            );
+          }
         }
       } else {
         // 只显示特定语言的单词
@@ -316,14 +374,18 @@ class _WordBankPageState extends State<WordBankPage> {
           addToAll: true,
           offset: offset,
           limit: _pageSize,
+          listName: selectedListInfo.listName,
         );
       }
 
       _applySort();
 
       // 检查是否还有更多数据
-      // 如果加载后的总数小于 (currentPage + 1) * pageSize，说明最后一页没满，没有更多数据了
-      if (_allWords.length < (offset + _pageSize)) {
+      if (_allWords.length == previousLength) {
+        // 本次没有加载到新数据，说明已到底
+        _hasMoreData = false;
+      } else if (_allWords.length < (offset + _pageSize)) {
+        // 最后一页没满
         _hasMoreData = false;
       } else {
         _currentPage++;
@@ -332,6 +394,9 @@ class _WordBankPageState extends State<WordBankPage> {
       Logger.e('_loadMoreWords 错误: $e', tag: 'WordBank');
     } finally {
       _isLoadingMore = false;
+      if (mounted) {
+        setState(() {});
+      }
     }
 
     final endTime = DateTime.now();
@@ -361,10 +426,11 @@ class _WordBankPageState extends State<WordBankPage> {
     required bool addToAll,
     int offset = 0,
     int? limit,
+    String? listName,
   }) async {
     final startTime = DateTime.now();
     Logger.d(
-      '_loadWordsForLanguage 开始: $language, offset=$offset, limit=$limit',
+      '_loadWordsForLanguage 开始: $language, offset=$offset, limit=$limit, listName=$listName',
       tag: 'WordBank',
     );
 
@@ -374,6 +440,19 @@ class _WordBankPageState extends State<WordBankPage> {
       // 搜索时暂不支持数据库排序，仍需内存排序
       Logger.d('执行搜索: $_searchQuery', tag: 'WordBank');
       words = await _wordBankService.searchWords(_searchQuery, language);
+    } else if (listName != null && listName.isNotEmpty) {
+      Logger.d(
+        '从数据库按词表加载单词: listName=$listName, sortBy=${sortParams.sortBy}, ascending=${sortParams.ascending}, offset=$offset, limit=$limit',
+        tag: 'WordBank',
+      );
+      words = await _wordBankService.getWordsByList(
+        language,
+        listName,
+        sortBy: sortParams.sortBy,
+        ascending: sortParams.ascending,
+        offset: offset,
+        limit: limit,
+      );
     } else {
       Logger.d(
         '从数据库加载单词: sortBy=${sortParams.sortBy}, ascending=${sortParams.ascending}, offset=$offset, limit=$limit',
@@ -628,6 +707,9 @@ class _WordBankPageState extends State<WordBankPage> {
     String? selectedFilePath;
     List<String> previewWords = [];
     bool isImporting = false;
+    bool isCancelled = false;
+    int importProgress = 0;
+    int importTotal = 0;
 
     final result = await showDialog<bool>(
       context: context,
@@ -667,6 +749,7 @@ class _WordBankPageState extends State<WordBankPage> {
                     ),
                     const SizedBox(height: 8),
                     TextField(
+                      enabled: !isImporting,
                       decoration: InputDecoration(
                         border: const OutlineInputBorder(),
                         hintText: context.t.wordBank.listNameHint,
@@ -683,33 +766,35 @@ class _WordBankPageState extends State<WordBankPage> {
 
                     // 文件选择按钮
                     ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
-                          allowedExtensions: ['txt', 'text', 'csv'],
-                          allowMultiple: false,
-                        );
+                      onPressed: isImporting
+                          ? null
+                          : () async {
+                              final result = await FilePicker.platform.pickFiles(
+                                type: FileType.custom,
+                                allowedExtensions: ['txt', 'text', 'csv'],
+                                allowMultiple: false,
+                              );
 
-                        if (result != null &&
-                            result.files.single.path != null) {
-                          final filePath = result.files.single.path!;
-                          final file = File(filePath);
-                          final content = await file.readAsString();
+                              if (result != null &&
+                                  result.files.single.path != null) {
+                                final filePath = result.files.single.path!;
+                                final file = File(filePath);
+                                final content = await file.readAsString();
 
-                          // 解析单词（支持逗号或回车分割）
-                          final words = content
-                              .split(RegExp(r'[,，\n\r]+'))
-                              .map((w) => w.trim())
-                              .where((w) => w.isNotEmpty)
-                              .toList();
+                                // 解析单词（支持逗号或回车分割）
+                                final words = content
+                                    .split(RegExp(r'[,，\n\r]+'))
+                                    .map((w) => w.trim())
+                                    .where((w) => w.isNotEmpty)
+                                    .toList();
 
-                          setState(() {
-                            selectedFilePath = filePath;
-                            // 显示前10个单词作为预览
-                            previewWords = words.take(10).toList();
-                          });
-                        }
-                      },
+                                setState(() {
+                                  selectedFilePath = filePath;
+                                  // 显示前10个单词作为预览
+                                  previewWords = words.take(10).toList();
+                                });
+                              }
+                            },
                       icon: const Icon(Icons.file_open),
                       label: Text(context.t.wordBank.pickFile),
                     ),
@@ -752,13 +837,35 @@ class _WordBankPageState extends State<WordBankPage> {
                         ),
                       ),
                     ],
+                    if (isImporting && importTotal > 0) ...[
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: importProgress / importTotal,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '导入中... $importProgress / $importTotal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text(context.t.common.cancel),
+                  onPressed: isImporting
+                      ? () {
+                          setState(() {
+                            isCancelled = true;
+                          });
+                        }
+                      : () => Navigator.pop(context, false),
+                  child: Text(isImporting
+                      ? context.t.wordBank.stopImportBtn
+                      : context.t.common.cancel),
                 ),
                 ElevatedButton(
                   onPressed:
@@ -769,6 +876,9 @@ class _WordBankPageState extends State<WordBankPage> {
                       : () async {
                           setState(() {
                             isImporting = true;
+                            isCancelled = false;
+                            importProgress = 0;
+                            importTotal = 0;
                           });
 
                           try {
@@ -781,9 +891,23 @@ class _WordBankPageState extends State<WordBankPage> {
                                 .where((w) => w.isNotEmpty)
                                 .toList();
 
+                            setState(() {
+                              importTotal = words.length;
+                            });
+
                             // 导入词表
-                            final count = await _wordBankService
-                                .importWordsToList(language, listName, words);
+                            final count = await _wordBankService.importWordsToList(
+                              language,
+                              listName,
+                              words,
+                              onProgress: (current, total) {
+                                setState(() {
+                                  importProgress = current;
+                                  importTotal = total;
+                                });
+                              },
+                              isCancelled: () => isCancelled,
+                            );
 
                             if (mounted) {
                               Navigator.pop(context, true);
@@ -800,18 +924,23 @@ class _WordBankPageState extends State<WordBankPage> {
                             }
                           } catch (e) {
                             if (mounted) {
-                              String errorMessage =
-                                  context.t.wordBank.importFailed;
-                              if (e.toString().contains('已存在')) {
-                                errorMessage = context.t.wordBank
-                                    .importListExists(list: listName);
-                              } else if (e.toString().contains(
-                                'No such file',
-                              )) {
-                                errorMessage =
-                                    context.t.wordBank.importFileError;
+                              if (e.toString().contains('CANCELLED')) {
+                                await _wordBankService.removeWordList(language, listName);
+                                showToast(context, context.t.wordBank.importCancelled);
+                              } else {
+                                String errorMessage =
+                                    context.t.wordBank.importFailed;
+                                if (e.toString().contains('已存在')) {
+                                  errorMessage = context.t.wordBank
+                                      .importListExists(list: listName);
+                                } else if (e.toString().contains(
+                                  'No such file',
+                                )) {
+                                  errorMessage =
+                                      context.t.wordBank.importFileError;
+                                }
+                                showToast(context, errorMessage);
                               }
-                              showToast(context, errorMessage);
                             }
                           } finally {
                             setState(() {
@@ -820,11 +949,7 @@ class _WordBankPageState extends State<WordBankPage> {
                           }
                         },
                   child: isImporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? Text('${(importProgress / (importTotal > 0 ? importTotal : 1) * 100).toStringAsFixed(0)}%')
                       : Text(context.t.common.import),
                 ),
               ],
@@ -836,6 +961,239 @@ class _WordBankPageState extends State<WordBankPage> {
 
     if (result == true) {
       // 导入成功，刷新数据
+      await _loadData();
+    }
+  }
+
+  /// 显示从词典导入词表对话框
+  Future<void> _showImportFromDictionaryDialog() async {
+    final dictManager = DictionaryManager();
+    final dictionaries = await dictManager.getAllDictionariesMetadata();
+    if (dictionaries.isEmpty) {
+      if (mounted) {
+        showToast(context, context.t.wordBank.noDictionaries);
+      }
+      return;
+    }
+
+    String? selectedDictId;
+    String listName = '';
+    bool isImporting = false;
+    bool isCancelled = false;
+    int importProgress = 0;
+    int importTotal = 0;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final selectedDict = dictionaries.firstWhere(
+              (d) => d.id == selectedDictId,
+              orElse: () => dictionaries.first,
+            );
+            if (selectedDictId == null) {
+              selectedDictId = selectedDict.id;
+              listName = selectedDict.name;
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.menu_book,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(context.t.wordBank.importFromDictTitle),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 500,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.t.wordBank.selectDictionary,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: selectedDictId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      items: dictionaries.map((dict) {
+                        return DropdownMenuItem<String>(
+                          value: dict.id,
+                          child: Text(
+                            '${dict.name} (${dict.sourceLanguage} → ${dict.targetLanguages.join(", ")})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: isImporting
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                final dict = dictionaries.firstWhere((d) => d.id == value);
+                                setState(() {
+                                  selectedDictId = value;
+                                  listName = dict.name;
+                                });
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      context.t.wordBank.listNameLabel,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: TextEditingController(text: listName)
+                        ..selection = TextSelection.collapsed(offset: listName.length),
+                      enabled: !isImporting,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        hintText: context.t.wordBank.listNameHint,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        listName = value.trim();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      context.t.wordBank.importFromDictHint,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                    if (isImporting && importTotal > 0) ...[
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: importProgress / importTotal,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '导入中... $importProgress / $importTotal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isImporting
+                      ? () {
+                          setState(() {
+                            isCancelled = true;
+                          });
+                        }
+                      : () => Navigator.pop(context, false),
+                  child: Text(isImporting
+                      ? context.t.wordBank.stopImportBtn
+                      : context.t.common.cancel),
+                ),
+                ElevatedButton(
+                  onPressed: isImporting || listName.isEmpty || selectedDictId == null
+                      ? null
+                      : () async {
+                          setState(() {
+                            isImporting = true;
+                            isCancelled = false;
+                            importProgress = 0;
+                            importTotal = 0;
+                          });
+
+                          try {
+                            final dict = dictionaries.firstWhere((d) => d.id == selectedDictId);
+                            final language = LanguageUtils.normalizeSourceLanguage(dict.sourceLanguage);
+                            final words = await dictManager.getDictionaryIndicesHeadwords(dict.id);
+
+                            if (words.isEmpty) {
+                              if (mounted) {
+                                showToast(context, context.t.wordBank.dictionaryNoWords);
+                              }
+                              Navigator.pop(context, false);
+                              return;
+                            }
+
+                            setState(() {
+                              importTotal = words.length;
+                            });
+
+                            final count = await _wordBankService.importWordsToList(
+                              language,
+                              listName,
+                              words,
+                              onProgress: (current, total) {
+                                setState(() {
+                                  importProgress = current;
+                                  importTotal = total;
+                                });
+                              },
+                              isCancelled: () => isCancelled,
+                            );
+
+                            if (mounted) {
+                              Navigator.pop(context, true);
+                              showToast(
+                                context,
+                                context.t.wordBank.importSuccess(count: count, list: listName),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              if (e.toString().contains('CANCELLED')) {
+                                // 用户取消，删除已创建的词表
+                                final dict = dictionaries.firstWhere((d) => d.id == selectedDictId);
+                                final language = LanguageUtils.normalizeSourceLanguage(dict.sourceLanguage);
+                                await _wordBankService.removeWordList(language, listName);
+                                showToast(context, context.t.wordBank.importCancelled);
+                              } else {
+                                String errorMessage = context.t.wordBank.importFailed;
+                                if (e.toString().contains('已存在')) {
+                                  errorMessage = context.t.wordBank.importListExists(list: listName);
+                                }
+                                showToast(context, errorMessage);
+                              }
+                            }
+                          } finally {
+                            setState(() {
+                              isImporting = false;
+                            });
+                          }
+                        },
+                  child: isImporting
+                      ? Text('${(importProgress / (importTotal > 0 ? importTotal : 1) * 100).toStringAsFixed(0)}%')
+                      : Text(context.t.common.import),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true) {
       await _loadData();
     }
   }
@@ -1079,6 +1437,19 @@ class _WordBankPageState extends State<WordBankPage> {
                       icon: const Icon(Icons.file_download),
                       label: Text(context.t.wordBank.importListBtn),
                     ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(context, false);
+                        await _showImportFromDictionaryDialog();
+                      },
+                      icon: const Icon(Icons.menu_book),
+                      label: Text(context.t.wordBank.importFromDictBtn),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
                     const Spacer(),
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -2504,30 +2875,27 @@ class _NoteDetailPageState extends State<_NoteDetailPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.word),
+        titleSpacing: 0,
         backgroundColor: colorScheme.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Text(
-              LanguageUtils.getDisplayName(widget.language, context.t),
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.outline,
-              ),
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _deleteNote,
+              tooltip: context.t.common.delete,
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _deleteNote,
-            tooltip: context.t.common.delete,
           ),
         ],
       ),
-      body: NoteInlineEditor(
-        word: widget.word,
-        language: widget.language,
-        initialContent: widget.initialContent,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+        child: NoteInlineEditor(
+          word: widget.word,
+          language: widget.language,
+          initialContent: widget.initialContent,
+        ),
       ),
     );
   }

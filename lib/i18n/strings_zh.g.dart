@@ -544,6 +544,30 @@ class TranslationsWordBankZh {
 	/// zh: '导入词表'
 	String get importListBtn => '导入词表';
 
+	/// zh: '从词典导入'
+	String get importFromDictBtn => '从词典导入';
+
+	/// zh: '从词典导入词表'
+	String get importFromDictTitle => '从词典导入词表';
+
+	/// zh: '选择词典'
+	String get selectDictionary => '选择词典';
+
+	/// zh: '将按词典索引顺序导入所有去重后的词条'
+	String get importFromDictHint => '将按词典索引顺序导入所有去重后的词条';
+
+	/// zh: '词典中没有词条'
+	String get dictionaryNoWords => '词典中没有词条';
+
+	/// zh: '没有已安装的词典'
+	String get noDictionaries => '没有已安装的词典';
+
+	/// zh: '停止导入'
+	String get stopImportBtn => '停止导入';
+
+	/// zh: '已取消，词表已删除'
+	String get importCancelled => '已取消，词表已删除';
+
 	/// zh: '词表已更新'
 	String get listSaved => '词表已更新';
 
@@ -2986,6 +3010,14 @@ extension on Translations {
 			'wordBank.deleteList' => '删除词表',
 			'wordBank.deleteListConfirm' => ({required Object name}) => '确定要删除词表 "${name}" 吗？\n\n这将删除该词表及其所有数据。如果一个单词不属于任何其他词表，也会被删除。',
 			'wordBank.importListBtn' => '导入词表',
+			'wordBank.importFromDictBtn' => '从词典导入',
+			'wordBank.importFromDictTitle' => '从词典导入词表',
+			'wordBank.selectDictionary' => '选择词典',
+			'wordBank.importFromDictHint' => '将按词典索引顺序导入所有去重后的词条',
+			'wordBank.dictionaryNoWords' => '词典中没有词条',
+			'wordBank.noDictionaries' => '没有已安装的词典',
+			'wordBank.stopImportBtn' => '停止导入',
+			'wordBank.importCancelled' => '已取消，词表已删除',
 			'wordBank.listSaved' => '词表已更新',
 			'wordBank.listOpFailed' => '操作失败',
 			'wordBank.listNameExists' => '词表名称已存在，请使用其他名称',
@@ -3282,6 +3314,8 @@ extension on Translations {
 			'dict.dirSet' => ({required Object dir}) => '词典目录已设置: ${dir}',
 			'dict.noDict' => '还没有词典',
 			'dict.noDictHint' => '切换到"在线订阅"Tab设置订阅地址\n或点击右下角的商店按钮浏览在线词典',
+			_ => null,
+		} ?? switch (path) {
 			'dict.enabled' => '已启用（长按拖动排序）',
 			'dict.disabled' => '已禁用',
 			'dict.enabledCount' => ({required Object count}) => '${count} 个',
@@ -3290,8 +3324,6 @@ extension on Translations {
 			'dict.languageOrderTitle' => '语言排序',
 			'dict.onlineDicts' => '在线词典列表',
 			'dict.onlineCount' => ({required Object count}) => '${count} 个',
-			_ => null,
-		} ?? switch (path) {
 			'dict.loadFailed' => '加载失败',
 			'dict.loadOnlineFailed' => '加载在线词典失败',
 			'dict.noOnlineDicts' => '暂无在线词典',

@@ -556,7 +556,8 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
                               style: CodeEditorStyle(
                                 fontSize: noteFontSize,
                                 fontFamily: 'monospace',
-                                fontFamilyFallback: AppTheme.fontFamilyFallback,
+                                fontFamilyFallback:
+                                    AppTheme.fontFamilyFallback,
                                 backgroundColor: colorScheme.surface,
                                 codeTheme: CodeHighlightTheme(
                                   languages: {
@@ -569,6 +570,7 @@ class _NoteInlineEditorState extends State<NoteInlineEditor> {
                                       : builtThemes['atom-one-light']!,
                                 ),
                               ),
+                              padding: const EdgeInsets.all(12),
                               wordWrap: true,
                               indicatorBuilder:
                                   (context, editingController,

@@ -255,6 +255,14 @@ class _TranslationsWordBankEn extends TranslationsWordBankZh {
 	@override String get deleteList => 'Delete List';
 	@override String deleteListConfirm({required Object name}) => 'Delete list "${name}"?\n\nThis will delete the list and all its data. Words not in any other list will also be deleted.';
 	@override String get importListBtn => 'Import List';
+	@override String get importFromDictBtn => 'Import from Dictionary';
+	@override String get importFromDictTitle => 'Import from Dictionary';
+	@override String get selectDictionary => 'Select Dictionary';
+	@override String get importFromDictHint => 'Import all unique entries in dictionary index order';
+	@override String get dictionaryNoWords => 'No entries in dictionary';
+	@override String get noDictionaries => 'No dictionaries installed';
+	@override String get stopImportBtn => 'Stop Import';
+	@override String get importCancelled => 'Import cancelled, list removed';
 	@override String get listSaved => 'List updated';
 	@override String get listOpFailed => 'Operation failed';
 	@override String get listNameExists => 'List name already exists, please use a different name';
@@ -1315,6 +1323,14 @@ extension on TranslationsEn {
 			'wordBank.deleteList' => 'Delete List',
 			'wordBank.deleteListConfirm' => ({required Object name}) => 'Delete list "${name}"?\n\nThis will delete the list and all its data. Words not in any other list will also be deleted.',
 			'wordBank.importListBtn' => 'Import List',
+			'wordBank.importFromDictBtn' => 'Import from Dictionary',
+			'wordBank.importFromDictTitle' => 'Import from Dictionary',
+			'wordBank.selectDictionary' => 'Select Dictionary',
+			'wordBank.importFromDictHint' => 'Import all unique entries in dictionary index order',
+			'wordBank.dictionaryNoWords' => 'No entries in dictionary',
+			'wordBank.noDictionaries' => 'No dictionaries installed',
+			'wordBank.stopImportBtn' => 'Stop Import',
+			'wordBank.importCancelled' => 'Import cancelled, list removed',
 			'wordBank.listSaved' => 'List updated',
 			'wordBank.listOpFailed' => 'Operation failed',
 			'wordBank.listNameExists' => 'List name already exists, please use a different name',
@@ -1613,6 +1629,8 @@ extension on TranslationsEn {
 			'dict.noDictHint' => 'Go to "Online Subscription" tab to set a URL\nor tap the store button to browse online dicts',
 			'dict.enabled' => 'Enabled (long-press to reorder)',
 			'dict.disabled' => 'Disabled',
+			_ => null,
+		} ?? switch (path) {
 			'dict.enabledCount' => ({required Object count}) => '${count}',
 			'dict.disabledCount' => ({required Object count}) => '${count}',
 			'dict.dragHint' => 'Reorder languages',
@@ -1621,8 +1639,6 @@ extension on TranslationsEn {
 			'dict.onlineCount' => ({required Object count}) => '${count}',
 			'dict.loadFailed' => 'Load failed',
 			'dict.loadOnlineFailed' => 'Failed to load online dictionaries',
-			_ => null,
-		} ?? switch (path) {
 			'dict.noOnlineDicts' => 'No online dictionaries',
 			'dict.noOnlineDictsHint' => 'Configure subscription URL in Settings → Cloud Service first',
 			'dict.noCreatorDicts' => 'No uploaded dictionaries',

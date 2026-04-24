@@ -357,7 +357,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
         }
       }
 
-      if (wordBankIndices.length <= 5) return;
+      if (wordBankIndices.length <= 1) return;
 
       int indexToClose = closeFromLeft
           ? wordBankIndices.first
@@ -409,7 +409,7 @@ class _EntryTabHostPageState extends State<EntryTabHostPage>
     required bool insertToLeft,
   }) async {
     // 单词本：若目标方向已有标签，则仅做普通标签切换；
-    // 若该方向没有标签，再按单词本 browseList 扩展一个新词，并关闭另一端最远标签保持 5 个。
+    // 若该方向没有标签，再按单词本 browseList 扩展一个新词，并关闭另一端最远标签保持 1 个。
     final adjacentIndex = insertToLeft
         ? _tabService.activeIndex - 1
         : _tabService.activeIndex + 1;

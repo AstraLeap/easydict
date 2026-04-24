@@ -948,6 +948,43 @@ class DictionaryManager {
     }
   }
 
+  /// 从词典 indices 表按原始顺序获取去重后的 headword 列表
+  Future<List<String>> getDictionaryIndicesHeadwords(String dictionaryId) async {
+    try {
+      final db = await openDictionaryDatabase(dictionaryId);
+
+      // 先列出数据库中所有表名，便于诊断
+      final allTables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+      );
+      final tableNames = allTables.map((r) => r['name'] as String).toList();
+      Logger.d(
+        '词典 $dictionaryId 的表: $tableNames',
+        tag: 'DictionaryManager',
+      );
+
+      if (!tableNames.contains('indices')) {
+        Logger.w(
+          '词典 $dictionaryId 没有 indices 表，无法导入词表',
+          tag: 'DictionaryManager',
+        );
+        return [];
+      }
+
+      final results = await db.rawQuery(
+        'SELECT headword FROM indices GROUP BY headword ORDER BY MIN(rowid)',
+      );
+      return results
+          .map((row) => row['headword'] as String?)
+          .where((word) => word != null && word.isNotEmpty)
+          .cast<String>()
+          .toList();
+    } catch (e) {
+      Logger.e('获取词典索引词条失败: $e', tag: 'DictionaryManager', error: e);
+      return [];
+    }
+  }
+
   Future<int> getDictionaryEntryCount(String dictionaryId) async {
     try {
       final db = await openDictionaryDatabase(dictionaryId);
