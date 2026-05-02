@@ -74,3 +74,15 @@ venv/
 # Third party dictionaries build tools (auxiliary)
 auxi_tools/venv/
 auxi_tools/__pycache__/
+
+# Slang generated files
+lib/i18n/*.g.dart
+
+# Library package lock files (should be resolved by the app)
+third_party/**/pubspec.lock
+
+# VS Code personal settings (contains absolute paths)
+.vscode/settings.json
+
+# Documentation drafts (not for version control)
+docs/
