@@ -472,8 +472,30 @@ def build_database_from_jsonl(
         print("Error: No data found in JSONL.")
         return
 
+    # ZDICT_trainFromBuffer 对样本有硬性下限：
+    # - 样本数量必须 >= 7（否则报 "Src size is incorrect"）
+    # - 单个样本不能过小（推荐 > 8 字节）
+    # 详见 https://github.com/facebook/zstd/issues/1735
+    MIN_SAMPLES = 7
+    if len(samples) < MIN_SAMPLES:
+        print(
+            f"Error: Zstd dictionary training requires at least {MIN_SAMPLES} valid entries, "
+            f"but only {len(samples)} found in '{jsonl_path}'.\n"
+            "Please check that the JSONL file is not empty and contains enough non-empty lines."
+        )
+        return
+
+    total_sample_size = sum(len(s) for s in samples)
+    target_dict_size = dict_size_kb * 1024
+    if total_sample_size < target_dict_size * 10:
+        print(
+            f"Warning: Total sample size ({total_sample_size} bytes) is less than 10x the requested "
+            f"dictionary size ({target_dict_size} bytes). The trained dictionary may be ineffective. "
+            "Consider adding more entries or reducing --dict-size."
+        )
+
     print("Training Zstd dictionary...")
-    dict_data = zstd.train_dictionary(dict_size_kb * 1024, samples)
+    dict_data = zstd.train_dictionary(target_dict_size, samples)
     dict_bytes = dict_data.as_bytes()
     del samples  # 释放内存
 
